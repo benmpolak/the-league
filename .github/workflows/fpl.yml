@@ -1,0 +1,30 @@
+name: Refresh FPL data
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fpl-refresh
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch FPL data
+        run: python3 scripts/fetch_fpl.py
+      - name: Commit if changed
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          git add js/data.js data/stats.json data/fixtures.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'data: FPL refresh'
+            git push
+          fi

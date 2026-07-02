@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "leagues": {
+      "$league": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
