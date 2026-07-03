@@ -2053,13 +2053,20 @@ function viewTeam() {
         <div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `<div class="pitch-chip mu-chip" data-pcard="${p.id}">${kitImg(p.team, p.pos === 'GK')}<span class="pitch-name">${esc(p.name)}</span></div>`).join('')}</div>`).join('')}</div>
       </div><div class="mu-side"><h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3><p class="muted" style="font-size:11px;text-align:center">Your pitch is below — this is who you're up against.</p></div></div>`;
     })()}
+    ${(() => {
+      // browsing someone else's team: every chip opens the player card.
+      // your own team: the NAME opens the card, the chip itself swaps.
+      const browsing = !demoMode && whoami && whoami !== -1 && mid !== whoami;
+      const chipAttrs = p => browsing ? `data-pcard="${p.id}" style="cursor:pointer"` : `data-pitch="${p.id}" draggable="${!locked}"`;
+      const nameSpan = p => `<span class="pitch-name" ${browsing ? '' : `data-pcard="${p.id}" title="Tap name for stats"`}>${esc(p.name)}</span>`;
+      return `
     <div class="pitch">
       ${['GK', 'DF', 'MF', 'FW'].map(pos => `
         <div class="pitch-row">
           ${xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
-            <div class="pitch-chip ${teamView.pitchSel === p.id ? 'sel' : ''}" data-pitch="${p.id}" draggable="${!locked}">
+            <div class="pitch-chip ${teamView.pitchSel === p.id ? 'sel' : ''}" ${chipAttrs(p)}>
               ${kitImg(p.team, p.pos === 'GK')}
-              <span class="pitch-name">${esc(p.name)}</span>
+              ${nameSpan(p)}
               ${!gwIsOver(gw) ? `<span class="pitch-vs">${esc(nextOpp(p.team, GAMEWEEKS[gw].n) || '—')}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
             </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}
         </div>`).join('')}
@@ -2067,12 +2074,13 @@ function viewTeam() {
     <div class="bench-strip">
       <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
       ${benchFor(mid, gw).map((p, k) => `
-        <div class="pitch-chip benched ${teamView.pitchSel === p.id ? 'sel' : ''}" data-pitch="${p.id}" draggable="${!locked}" title="Auto-sub priority ${k + 1} — leftmost comes on first">
+        <div class="pitch-chip benched ${teamView.pitchSel === p.id ? 'sel' : ''}" ${chipAttrs(p)} title="Auto-sub priority ${k + 1} — leftmost comes on first">
           <span class="tag" style="font-size:9px;padding:1px 5px">${k + 1}</span>
           ${kitImg(p.team, p.pos === 'GK')}
-          <span class="pitch-name">${esc(p.name)}</span>
+          ${nameSpan(p)}
         </div>`).join('')}
-    </div>
+    </div>`;
+    })()}
     <p class="muted" style="font-size:11px;margin-top:6px">Drag (or tap two players) to swap — within a line to arrange it, bench onto pitch to substitute, <b>two bench players to set auto-sub order</b> (leftmost comes on first).</p>
   </div>
   <div class="draft-layout">
@@ -2088,7 +2096,7 @@ function viewTeam() {
           return `<div class="squad-row lineup-row ${starting ? 'starting' : 'benched'}" data-toggle="${p.id}" ${locked ? '' : 'style="cursor:pointer"'}>
             <span class="shirt-no" data-num="${p.id}" title="Click to assign a squad number">${shirtNum(mid, p.id)}</span>
             <span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}
-            <span>${esc(p.name)} ${statusChip(p)}</span>
+            <span><span data-pcard="${p.id}" style="cursor:pointer" title="Tap for stats">${esc(p.name)}</span> ${statusChip(p)}</span>
             <span class="muted" style="font-size:11.5px">${esc(p.club)}</span>
             <span class="sp-pts ${pts > 0 ? 'gold' : 'muted'}">${pts}</span>
             <span class="xi-chip">${starting ? 'XI' : 'bench'}</span>
