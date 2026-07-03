@@ -321,3 +321,5 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .motw-tag { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--accent); text-align: center; margin-bottom: 4px; }
 .pct { font-size: 11px; color: var(--muted); }
 .preview-note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 3px; }
+.plink { cursor: pointer; }
+.plink:hover { text-decoration: underline; text-underline-offset: 2px; }

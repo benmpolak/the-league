@@ -354,6 +354,8 @@ const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
   return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-66.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
 };
+// clickable player name — opens the stats card, usable in any text row
+const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}</span>` : '?';
 // expected points next gameweek: FPL's own projection, then points-per-game, then a guess
 const playerXp = p => (p.xp > 0 ? p.xp : p.ppg > 0 ? p.ppg : p.pts > 0 ? p.pts / 38 : p.price / 4);
 const projectedGwScore = (mid, gwIdx) =>
@@ -1446,7 +1448,7 @@ function viewDraft() {
           const p = PLAYER_BY_ID[pid];
           const gone = draftedIds().has(pid);
           return p ? `<div class="lrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
-            <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${esc(p.name)}
+            <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
             <span style="margin-left:auto;display:flex;gap:4px">
               ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
               <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
@@ -1457,7 +1459,7 @@ function viewDraft() {
         <h2>${esc(managerName(mid))}'s squad</h2>
         <div class="quota-bar">${quotaPills(mid)}</div>
         ${managerSquad(mid).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `
-          <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}<span>${esc(p.name)}</span></div>
+          <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}</div>
         `).join('') || '<span class="muted">No picks yet</span>'}
       </div>
       ${punditryDesk()}
@@ -1466,7 +1468,7 @@ function viewDraft() {
         <div class="pick-log">
           ${[...state.draft.picks].reverse().slice(0, 40).map(pk => {
             const p = PLAYER_BY_ID[pk.playerId];
-            return `<div class="lrow"><span class="muted">#${pk.n}</span><b>${esc(managerName(pk.managerId))}</b> ${flagImg(p.team)} ${esc(p.name)}</div>`;
+            return `<div class="lrow"><span class="muted">#${pk.n}</span><b>${esc(managerName(pk.managerId))}</b> ${flagImg(p.team)} ${pname(p)}</div>`;
           }).join('') || '<span class="muted">First pick incoming…</span>'}
         </div>
       </div>
@@ -1649,7 +1651,7 @@ function viewDraftRecap() {
     <div class="pick-log" style="max-height:none">
     ${state.draft.picks.map(pk => {
       const p = PLAYER_BY_ID[pk.playerId];
-      return `<div class="lrow"><span class="muted" style="width:38px">#${pk.n}</span><b style="width:130px">${esc(managerName(pk.managerId))}</b>${flagImg(p.team)} ${esc(p.name)} <span class="muted">· ${p.pos} · ${esc(p.team)}</span></div>`;
+      return `<div class="lrow"><span class="muted" style="width:38px">#${pk.n}</span><b style="width:130px">${esc(managerName(pk.managerId))}</b>${flagImg(p.team)} ${pname(p)} <span class="muted">· ${p.pos} · ${esc(p.team)}</span></div>`;
     }).join('')}
     </div></div>`;
 }
@@ -1716,8 +1718,8 @@ function viewTeam() {
           const orderStrip = ctl === 'auto' ? `<div class="order-strip" style="margin-bottom:10px" title="Waiver priority — bottom of the table first">${order.map(om => `<span class="order-chip">${esc(managerName(om))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}</div>` : '';
           const claimRows = claims.length ? claims.map((c, k) => `
             <div class="lrow" style="font-size:12.5px">
-              <span class="muted">#${k + 1}</span> <b>${esc(PLAYER_BY_ID[c.in]?.name || '?')}</b>
-              <span class="muted">in, ${esc(PLAYER_BY_ID[c.out]?.name || '?')} out</span>
+              <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+              <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
               <span style="margin-left:auto;display:flex;gap:4px">
                 ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
                 <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
@@ -1743,14 +1745,14 @@ function viewTeam() {
         })()}
         <h3 style="margin-top:16px">Transfer log</h3>
         ${state.transfers.filter(t => t.managerId === mid).map(t =>
-          `<div class="lrow" style="font-size:12.5px;padding:3px 0"><span class="muted">GW${GAMEWEEKS[t.gw].n}${t.trade ? ' ↔' : ''}</span> ${esc(PLAYER_BY_ID[t.outId].name)} <span class="muted">→</span> <b>${esc(PLAYER_BY_ID[t.inId].name)}</b></div>`).join('') || '<span class="muted" style="font-size:12.5px">None yet.</span>'}
+          `<div class="lrow" style="font-size:12.5px;padding:3px 0"><span class="muted">GW${GAMEWEEKS[t.gw].n}${t.trade ? ' ↔' : ''}</span> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') || '<span class="muted" style="font-size:12.5px">None yet.</span>'}
       </div>
       <div class="card">
         <h2>Trade desk ${toArr(state.trades).some(t => t.status === 'pending' && t.to === mid) ? '<span class="tag live-tag">OFFER IN</span>' : ''}</h2>
         <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap; it executes the instant the other manager accepts. Doesn't touch waivers.</p>
         ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
           <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
-            <span><b>${esc(managerName(t.from))}</b> gives <b>${esc(PLAYER_BY_ID[t.give]?.name || '?')}</b> for <b>${esc(PLAYER_BY_ID[t.get]?.name || '?')}</b></span>
+            <span><b>${esc(managerName(t.from))}</b> gives <b>${pname(PLAYER_BY_ID[t.give])}</b> for <b>${pname(PLAYER_BY_ID[t.get])}</b></span>
             <span style="margin-left:auto;display:flex;gap:4px">
               ${t.to === mid ? `<button class="btn small" data-tracc="${t.id}">Accept</button><button class="btn ghost small" data-trrej="${t.id}">Reject</button>`
                 : `<button class="btn ghost small" data-trwd="${t.id}">Withdraw</button>`}
@@ -1870,7 +1872,11 @@ function bindTeam() {
         toast(`${inP.name} signed from the Trough. First come, first served.`);
       });
     }
-    renderTrResults();
+    if (window._troughFocus) {
+      search.value = window._troughFocus;
+      window._troughFocus = null;
+      renderTrResults();
+    } else renderTrResults();
   }
   // --- trade desk: propose / accept / reject / withdraw ---
   document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = () => {
@@ -1895,6 +1901,16 @@ function bindTeam() {
     toast('Offer withdrawn. Never happened.');
   });
   const tradeWith = $('#tradeWith'), pickers = $('#tradePickers');
+  if (tradeWith && window._tradeFocus) {
+    const tf = window._tradeFocus;
+    window._tradeFocus = null;
+    tradeWith.value = tf.other;
+    setTimeout(() => {
+      tradeWith.onchange();
+      const sel = $('#tradeTheirs');
+      if (sel) sel.value = tf.get;
+    }, 0);
+  }
   if (tradeWith) {
     tradeWith.onchange = () => {
       const other = +tradeWith.value;
@@ -2412,11 +2428,54 @@ function showPlayerCard(pid) {
       <span class="quota-pill" title="FPL expected points, next gameweek">xPts next ${playerXp(p).toFixed(1)}</span>
     </div>
     ${pp.lines.length ? `<p class="muted" style="font-size:12px;margin-bottom:8px">${esc(pp.lines.join(' \u00b7 '))}</p>` : ''}
+    ${(() => {
+      const hist = [];
+      const pk = state.draft.picks.find(x => x.playerId === pid);
+      if (pk) hist.push(`Drafted pick #${pk.n} by ${teamName(pk.managerId)}`);
+      for (const t of state.transfers) {
+        if (t.inId === pid) hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'claimed off waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}`);
+        else if (t.outId === pid && !t.trade) hist.push(`GW${GAMEWEEKS[t.gw].n}: dropped by ${teamName(t.managerId)}`);
+      }
+      return hist.length ? `<p class="muted" style="font-size:11.5px;margin-bottom:8px"><b style="color:var(--text)">History:</b> ${hist.map(esc).join(' \u00b7 ')}</p>` : '';
+    })()}
     <div style="max-height:260px;overflow-y:auto">${gwRows.join('') || '<p class="muted" style="font-size:12px">No gameweek data yet this season.</p>'}</div>
+    <div id="pcardActions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
     <p class="muted" style="font-size:10.5px;margin-top:8px">League pts use our scoring (no bonus). FPL official shown for arguments.</p>
   </div>`;
   ov.onclick = e => { if (e.target === ov || e.target.id === 'pcardClose') ov.remove(); };
   document.body.appendChild(ov);
+  // context actions — the card is a place to DO things, not just read them
+  const acts = ov.querySelector('#pcardActions');
+  const btn = (label, fn, ghost = false) => {
+    const b = document.createElement('button');
+    b.className = `btn small${ghost ? ' ghost' : ''}`;
+    b.innerHTML = label;
+    b.onclick = e => { e.stopPropagation(); fn(); };
+    acts.appendChild(b);
+  };
+  const iAmManager = whoami && whoami !== -1;
+  if (state.phase === 'draft' && !draftedIds().has(pid)) {
+    const myTurn = currentManagerId() != null && canActFor(currentManagerId()) && canPick(currentManagerId(), p);
+    if (myTurn) btn('Draft him', () => { ov.remove(); makePick(pid); });
+    if (iAmManager && !toArr(state.autolists?.[whoami]).includes(pid)) {
+      btn('&#9734; Add to autopick list', () => { setAutolist(whoami, [...toArr(state.autolists?.[whoami]), pid]); ov.remove(); toast(`${p.name} added to your list`); }, true);
+    }
+  }
+  if (state.phase === 'season' && iAmManager) {
+    if (!owner) {
+      btn(onWaivers(p) ? 'Claim in My Team' : 'Sign in My Team', () => {
+        ov.remove();
+        window._troughFocus = p.name;
+        teamView.mid = whoami; state.view = 'team'; save(); render();
+      });
+    } else if (owner.id !== whoami) {
+      btn('Propose a trade', () => {
+        ov.remove();
+        window._tradeFocus = { other: owner.id, get: pid };
+        teamView.mid = whoami; state.view = 'team'; save(); render();
+      });
+    }
+  }
 }
 // any player photo/kit anywhere opens the card (capture phase beats row handlers)
 document.addEventListener('click', e => {
