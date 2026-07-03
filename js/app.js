@@ -1243,6 +1243,8 @@ function renderNav() {
   nav.innerHTML = NAV_ITEMS.map(([id, label]) =>
     `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${label}</button>`).join('');
   nav.querySelectorAll('button').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
+  // phones: the nav is a swipeable strip — keep the active tab in view
+  if (nav.scrollWidth > nav.clientWidth) nav.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
 }
 
 function renderSyncArea() {

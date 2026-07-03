@@ -385,3 +385,15 @@ tr.st-red .pname { color: #ff9c9c; }
 .sub-arrow { font-size: 10px; font-weight: 800; }
 .sub-arrow.in { color: #3fb96d; }
 .sub-arrow.out { color: #e05555; }
+
+/* phones: nav collapses to one swipeable row instead of stacking four deep */
+@media (max-width: 700px) {
+  .topbar { gap: 10px; padding: 12px 14px; }
+  .nav {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    order: 3; flex: 1 1 100%; min-width: 100%;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav button { white-space: nowrap; flex: 0 0 auto; }
+  .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+}
