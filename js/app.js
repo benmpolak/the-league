@@ -132,8 +132,17 @@ const syncOn = () => !SYNC_OFF && !!window.WCSync;
 const netOn = () => syncOn() && !demoMode;
 const isCommissioner = () => whoami === state.managers[0]?.id;
 const canActFor = mid => demoMode || !syncOn() || whoami === mid || isCommissioner();
+// use for actions: blocks other managers, and makes the commissioner explicitly
+// confirm before touching a team that isn't theirs (no more accidents)
+function actGuard(mid, what = 'team') {
+  if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s ${what}, not yours`); return false; }
+  if (netOn() && !demoMode && whoami !== mid && isCommissioner()) {
+    return confirm(`COMMISSIONER OVERRIDE — you are changing ${managerName(mid)}'s ${what}, not your own. Proceed?`);
+  }
+  return true;
+}
 
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -180,6 +189,7 @@ window.onSharedSnapshot = data => {
   const fresh = data.phase === 'draft' && data.draft.picks.length === 0;
   data.transfers = toArr(data.transfers);
   data.trades = toArr(data.trades);
+  data.pins = data.pins || {};
   data.autolists = data.autolists || {};
   for (const mid of Object.keys(data.autolists)) data.autolists[mid] = toArr(data.autolists[mid]);
   data.lineups = data.lineups || {};
@@ -232,6 +242,7 @@ function freshState() {
     },
     draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0 },
     autolists: {},         // managerId -> [pid] ranked personal autopick list / shortlist
+    pins: {},              // managerId -> salted SHA-256 of their PIN
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
     transfers: [],         // [{managerId, outId, inId, gw, n, t, trade?, waiver?}]
@@ -347,6 +358,7 @@ function load() {
     if (s && !s.claims) s.claims = {};
     if (s && !s.autolists) s.autolists = {};
     if (s && !s.trades) s.trades = [];
+    if (s && !s.pins) s.pins = {};
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
@@ -967,6 +979,32 @@ function render() {
   }
 }
 
+async function pinHash(mid, pin) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`tl2627:${mid}:${pin}`));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// claim an identity: verify the PIN if one is set, offer to set one if not
+async function claimIdentity(mid) {
+  if (mid !== -1 && state.pins?.[mid]) {
+    const pin = prompt(`PIN for ${managerName(mid)}:`);
+    if (pin == null) return false;
+    if (await pinHash(mid, pin.trim()) !== state.pins[mid]) { toast('Wrong PIN. The Committee has logged this attempt.'); return false; }
+  } else if (mid !== -1 && netOn()) {
+    const pin = prompt(`Set a PIN for ${managerName(mid)} (4+ digits — you'll need it to act as them on any device). Cancel to stay PIN-less:`);
+    if (pin && pin.trim().length >= 4) {
+      (state.pins = state.pins || {})[mid] = await pinHash(mid, pin.trim());
+      pushShared(`pins/${mid}`, state.pins[mid]);
+      save();
+      toast('PIN set. Do not tell Tussie.');
+    } else if (pin != null) { toast('PIN needs at least 4 digits — not set'); }
+  }
+  whoami = mid;
+  localStorage.setItem(WHO_KEY, whoami);
+  render();
+  toast(mid === -1 ? 'Spectator mode.' : `Welcome, ${managerName(mid)}. This conversation is being recorded.`);
+  return true;
+}
+
 function renderIdentity() {
   let ov = $('#whoOverlay');
   const needed = netOn() && state.phase !== 'setup' && !whoami;
@@ -978,17 +1016,14 @@ function renderIdentity() {
   ov.innerHTML = `<div class="card" style="max-width:420px;width:92%">
     <h2>Who are you?</h2>
     <p class="muted" style="font-size:13px;margin-bottom:14px">Actions from this device count for the manager you pick. Choose honestly — the Committee has your number. And your Monzo handle.</p>
-    ${state.managers.map((m, i) => `<button class="btn ghost" data-who="${m.id}" style="width:100%;margin-bottom:8px;text-align:left">${esc(m.name)}${i === 0 ? ' <span class="tag">commissioner</span>' : ''}</button>`).join('')}
+    ${state.managers.map((m, i) => `<button class="btn ghost" data-who="${m.id}" style="width:100%;margin-bottom:8px;text-align:left">${esc(m.name)}${state.pins?.[m.id] ? ' &#128274;' : ''}${i === 0 ? ' <span class="tag">commissioner</span>' : ''}</button>`).join('')}
     <button class="btn ghost" data-who="-1" style="width:100%;opacity:.7">Just watching</button>
     <button class="btn ghost" id="whoDemo" style="width:100%;opacity:.7">&#127918; Just exploring — show me a demo season</button>
   </div>`;
   document.body.appendChild(ov);
   ov.querySelector('#whoDemo').onclick = () => { ov.remove(); enterDemo(); };
-  ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
-    whoami = +b.dataset.who;
-    localStorage.setItem(WHO_KEY, whoami);
-    render();
-    toast(whoami === -1 ? 'Spectator mode. Probably a journalist.' : `Welcome, ${managerName(whoami)}. This conversation is being recorded.`);
+  ov.querySelectorAll('[data-who]').forEach(b => b.onclick = async () => {
+    await claimIdentity(+b.dataset.who);
   });
 }
 
@@ -1702,7 +1737,7 @@ function viewDraftRecap() {
 let teamView = { mid: null, gw: null, transferOut: null, pitchSel: null, showOpp: false };
 
 function viewTeam() {
-  if (teamView.mid == null) teamView.mid = state.managers[0].id;
+  if (teamView.mid == null) teamView.mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
   if (teamView.gw == null) teamView.gw = currentGwIndex();
   const mid = teamView.mid, gw = teamView.gw;
   const squad = squadAt(mid, gw).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
@@ -1720,7 +1755,9 @@ function viewTeam() {
     return `<span class="quota-pill ${ok ? 'full' : 'bad'}">${pos} ${counts[pos]} <span class="muted">(${lo}–${hi})</span></span>`;
   }).join('') + `<span class="quota-pill ${xi.length === 11 ? 'full' : 'bad'}">XI ${xi.length}/11</span>`;
 
+  const notMine = netOn() && whoami && whoami !== -1 && mid !== whoami;
   return `
+  ${notMine ? `<div class="card" style="margin-bottom:12px;border-color:var(--accent)"><p style="font-size:13px">&#128065;&#65039; You're looking at <b>${esc(teamName(mid))}</b> — ${esc(managerName(mid))}'s team${isCommissioner() ? '. Commissioner changes require confirmation.' : '. Look, don\'t touch.'} <button class="btn small" id="backToMine" style="margin-left:8px">Back to my team</button></p></div>` : ''}
   <div class="team-controls card">
     <select id="teamMgr">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
     <select id="teamGw">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
@@ -1859,11 +1896,13 @@ function viewTeam() {
 
 function bindTeam() {
   $('#teamMgr').onchange = e => { teamView.mid = +e.target.value; teamView.transferOut = null; render(); };
+  const btm = $('#backToMine');
+  if (btm) btm.onclick = () => { teamView.mid = whoami; teamView.transferOut = null; render(); };
   $('#teamGw').onchange = e => { teamView.gw = +e.target.value; render(); };
   const gw = teamView.gw, mid = teamView.mid;
   if (demoMode || !gwHasStarted(gw)) {
     document.querySelectorAll('[data-toggle]').forEach(row => row.onclick = () => {
-      if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s team, not yours`); return; }
+      if (!actGuard(mid, 'lineup')) return;
       const pid = +row.dataset.toggle;
       const xi = [...lineupFor(mid, gw)];
       const i = xi.indexOf(pid);
@@ -1882,7 +1921,7 @@ function bindTeam() {
   // --- stadium naming ---
   const sb2 = $('#stadiumBtn');
   if (sb2) sb2.onclick = () => {
-    if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s ground, not yours`); return; }
+    if (!actGuard(mid, 'stadium')) return;
     const v = prompt(`Name ${teamName(mid)}'s stadium:`, stadium(mid));
     if (v == null || !v.trim()) return;
     state.managers.find(m => m.id === mid).stadium = v.trim().slice(0, 40);
@@ -1917,8 +1956,7 @@ function bindTeam() {
   };
   const pitchGuard = () => {
     if (!demoMode && gwHasStarted(gw)) { toast('Lineup is locked for this gameweek'); return false; }
-    if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s pitch, not yours`); return false; }
-    return true;
+    return actGuard(mid, 'lineup');
   };
   let dragPid = null;
   document.querySelectorAll('[data-pitch]').forEach(chip => {
@@ -1946,7 +1984,7 @@ function bindTeam() {
   // --- custom squad numbers ---
   document.querySelectorAll('[data-num]').forEach(el => el.onclick = e => {
     e.stopPropagation();
-    if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s squad numbering, not yours`); return; }
+    if (!actGuard(mid, 'squad numbers')) return;
     const pid = +el.dataset.num;
     const cur2 = currentGwIndex();
     const v = prompt(`Squad number for ${PLAYER_BY_ID[pid].name} (1–99):`, shirtNum(mid, pid));
@@ -1964,11 +2002,11 @@ function bindTeam() {
   const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
   // claim list management (withdraw / reprioritise)
   document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
-    if (!canActFor(mid)) { toast(`Those are ${managerName(mid)}'s claims, not yours`); return; }
+    if (!actGuard(mid, 'waiver claims')) return;
     const arr = [...myClaims(mid)]; arr.splice(+b.dataset.claimdel, 1); setClaims(mid, arr);
   });
   document.querySelectorAll('[data-claimup]').forEach(b => b.onclick = () => {
-    if (!canActFor(mid)) { toast(`Those are ${managerName(mid)}'s claims, not yours`); return; }
+    if (!actGuard(mid, 'waiver claims')) return;
     const k = +b.dataset.claimup, arr = [...myClaims(mid)];
     [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setClaims(mid, arr);
   });
@@ -1999,7 +2037,7 @@ function bindTeam() {
          <button class="btn small ${waiv ? 'ghost' : ''}" style="margin-left:auto" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${waiv ? 'Claim' : 'Sign'}</button></div>`;
       }).join('') || '<span class="muted">The Trough is empty. Somehow.</span>';
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
-        if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s squad, not yours`); return; }
+        if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = teamView.transferOut;
         const inP = PLAYER_BY_ID[inId];
         if (b.dataset.waiv === '1') {
@@ -2029,19 +2067,19 @@ function bindTeam() {
   document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = () => {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.tracc);
     if (!tr) return;
-    if (!canActFor(tr.to)) { toast(`Only ${managerName(tr.to)} can accept this`); return; }
+    if (!actGuard(tr.to, 'trade')) return;
     respondTrade(tr.id, true);
   });
   document.querySelectorAll('[data-trrej]').forEach(b => b.onclick = () => {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.trrej);
     if (!tr) return;
-    if (!canActFor(tr.to)) { toast(`Only ${managerName(tr.to)} can reject this`); return; }
+    if (!actGuard(tr.to, 'trade')) return;
     respondTrade(tr.id, false);
   });
   document.querySelectorAll('[data-trwd]').forEach(b => b.onclick = () => {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.trwd);
     if (!tr) return;
-    if (!canActFor(tr.from)) { toast(`Only ${managerName(tr.from)} can withdraw this`); return; }
+    if (!actGuard(tr.from, 'trade')) return;
     tr.status = 'withdrawn';
     pushShared('trades', state.trades);
     save(); render();
@@ -2076,7 +2114,7 @@ function bindTeam() {
         </select>
         <button class="btn small" id="tradeGo">Propose trade</button>`;
       $('#tradeGo').onclick = () => {
-        if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s trade to propose`); return; }
+        if (!actGuard(mid, 'trade')) return;
         const a = +$('#tradeMine').value, b = +$('#tradeTheirs').value;
         if (!a || !b) { toast('Pick a player from each side'); return; }
         const pa = PLAYER_BY_ID[a], pb = PLAYER_BY_ID[b];
@@ -2614,6 +2652,15 @@ function viewSettings() {
         <button class="btn danger" id="resetBtn">Reset everything</button>
       </div>
       <p class="muted" style="font-size:12px;margin-top:10px">One file is the truth. Commissioner makes lineup/transfer changes, exports, drops it in the group; everyone else imports.</p>
+      <h3 style="margin-top:18px">PIN resets</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:8px">Forgotten PINs go to the Chairman. Reset lets the manager set a new one on next sign-in.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="pinMgr" style="flex:1;min-width:160px">
+          <option value="">Pick a manager…</option>
+          ${state.managers.filter(m => state.pins?.[m.id]).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
+        </select>
+        <button class="btn small" id="pinReset">Reset PIN</button>
+      </div>
       <h3 style="margin-top:18px">Manual point adjustments</h3>
       <p class="muted" style="font-size:12px;margin-bottom:8px">If a stat feed gets something wrong, add/subtract points per player.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -2668,6 +2715,16 @@ function bindSettings() {
       if (netOn()) window.WCSync.setRoot(null);
       save(); render();
     }
+  };
+  const pr = $('#pinReset');
+  if (pr) pr.onclick = () => {
+    if (netOn() && !isCommissioner()) { toast('Only the Chairman resets PINs'); return; }
+    const mid2 = +$('#pinMgr').value;
+    if (!mid2) return;
+    delete state.pins[mid2];
+    pushShared(`pins/${mid2}`, null);
+    save(); render();
+    toast(`${managerName(mid2)}'s PIN cleared — they'll set a new one on next sign-in`);
   };
   $('#adjApply').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner adjusts points'); return; }
