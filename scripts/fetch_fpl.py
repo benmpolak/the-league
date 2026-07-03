@@ -59,6 +59,9 @@ def main():
             'code': e['code'],
             'status': e['status'],           # a/d/i/s/u
             'news': e.get('news') or '',
+            # when the news line last changed + chance of playing, for the Treatment Room
+            'newsAdded': e.get('news_added') or '',
+            'chance': e.get('chance_of_playing_next_round'),
             'price': e['now_cost'] / 10,
             'pts': pts,
             # draft-room guide: points if the season has any, else price as proxy

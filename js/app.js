@@ -142,7 +142,7 @@ function actGuard(mid, what = 'team') {
   return true;
 }
 
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -251,6 +251,8 @@ function freshState() {
     covenants: [],         // the offline bits: [{id, from, to, text, t, gw}] — the register of nonsense
     claims: {},            // gwIndex -> { managerId: [{in, out}] ranked }
     waiverMeta: { lastRun: null, control: 'auto' }, // control: auto | open | closed
+    draftPool: null,       // draft-night snapshot {at, ids: {pid: club}} — anyone outside it is a locked "new arrival"
+    windowDraft: null,     // {status: live|done, order, turn, passes, picks} — post-window mini-draft of arrivals
     fixtures: [],
     matchStats: {},        // 'gw{n}' -> { gw, label, date, final, playerStats: {pid:{min,st,sub,g,a,cs,gc,og,ps,pm,yc,rc,sv}} }
     adjustments: {},
@@ -364,6 +366,8 @@ function load() {
     if (s && !s.covenants) s.covenants = [];
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
     if (s && !s.shirtNums) s.shirtNums = {};
+    if (s && s.draftPool === undefined) s.draftPool = null;
+    if (s && s.windowDraft === undefined) s.windowDraft = null;
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
     if (s && !s.settings.posMax) s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
@@ -528,6 +532,41 @@ function onWaivers(p) {
   }
   return false;
 }
+
+/* ---------------- new arrivals & the Window Draft ----------------
+   League tradition: anyone who joins a PL club after draft night is locked
+   until the transfer window shuts. The Chairman then runs the Window Draft —
+   snaking backwards from the original order (pick 12 goes first) until a full
+   lap of passes — and whatever's left spills into the Trough. */
+const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] !== p.club;
+const arrivalLocked = p => isArrival(p); // unlocks when the Window Draft ends (snapshot refreshes)
+function lockedArrivals() {
+  if (!state.draftPool?.ids) return [];
+  const owned = ownedIdsAt(currentGwIndex());
+  return PLAYERS.filter(p => isArrival(p) && !owned.has(p.id));
+}
+function wdActor() {
+  const wd = state.windowDraft, ord = wd.order;
+  const lap = Math.floor(wd.turn / ord.length), i = wd.turn % ord.length;
+  return lap % 2 === 0 ? ord[i] : ord[ord.length - 1 - i];
+}
+function wdAdvance(passed) {
+  const wd = state.windowDraft;
+  wd.passes = passed ? (wd.passes || 0) + 1 : 0;
+  wd.turn++;
+  if (wd.passes >= wd.order.length || !lockedArrivals().length) { wdFinish(); return; }
+  pushShared('windowDraft', state.windowDraft);
+  save(); render();
+}
+function wdFinish() {
+  if (state.windowDraft) state.windowDraft = { ...state.windowDraft, status: 'done' };
+  // refresh the snapshot: every remaining arrival unlocks into the Trough
+  state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
+  pushShared('windowDraft', state.windowDraft);
+  pushShared('draftPool', state.draftPool);
+  save(); render();
+  toast('The window business is done — anyone left is loose in the Trough.');
+}
 function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); }
 function setClaims(mid, arr) {
   const cur = currentGwIndex();
@@ -673,6 +712,7 @@ function currentManagerId() {
   return (round % 2 === 0) ? order[idx] : order[m - 1 - idx];
 }
 function canPick(mid, player) {
+  if (arrivalLocked(player)) return false; // new arrivals wait for the Window Draft
   const { squadSize, posMin, posMax } = state.settings;
   const c = posCount(mid);
   const size = managerSquad(mid).length;
@@ -1197,6 +1237,8 @@ function bindSetup() {
       ? state.managers.map(m => m.id).sort(() => Math.random() - 0.5)
       : state.managers.map(m => m.id);
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + 5 * 60 * 1000;
+    // draft-night snapshot: anyone who joins a PL club after this is locked until the window shuts
+    state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
     state.phase = 'draft';
     state.view = 'draft';
     publishAll();
@@ -1516,7 +1558,7 @@ function broadcastOnPick() {
 }
 
 /* ----- the console (draft) ----- */
-let poolFilter = { q: '', team: '', pos: '', sort: 'rating', limit: 60 };
+let poolFilter = { q: '', team: '', pos: '', sort: 'pts', limit: 60 };
 
 function viewDraft() {
   if (state.phase === 'season') return viewDraftRecap();
@@ -1610,6 +1652,91 @@ function quotaPills(mid) {
     `<span class="quota-pill ${c[p] >= posMax[p] ? 'full' : ''}" title="min ${posMin[p]}, max ${posMax[p]}">${p} ${c[p]}/${posMax[p]}</span>`).join('');
 }
 
+/* ---- season-aware player metrics (Console pool + the Trough) ----
+   Once gameweeks have synced stats, every number is THIS league's scoring,
+   computed from matchStats. Until then, fall back to FPL's aggregates. */
+const seasonHasStats = () => Object.values(state.matchStats || {}).some(ev => Object.keys(ev.playerStats || {}).length > 0);
+let _metricsCache = new Map(), _metricsKey = '';
+function metricsFor(p) {
+  const live = seasonHasStats();
+  const key = live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre';
+  if (_metricsKey !== key) { _metricsCache = new Map(); _metricsKey = key; }
+  let m = _metricsCache.get(p.id);
+  if (m) return m;
+  if (live) {
+    const { pts, agg } = playerPoints(p.id);
+    const evs = Object.values(state.matchStats).filter(ev => ev.playerStats).sort((a, b) => a.gw - b.gw);
+    let min = 0;
+    for (const ev of evs) min += ev.playerStats[p.id]?.min || 0;
+    const last5 = evs.slice(-5);
+    const f5 = last5.length ? last5.reduce((t, ev) => t + (ev.playerStats[p.id] ? statPoints(p, ev.playerStats[p.id]) : 0), 0) / last5.length : 0;
+    m = { pts, apps: agg.app, min, f5, gw: gwPlayerPoints(p.id, currentGwIndex()), g: agg.g, a: agg.a, cs: agg.cs, ppg: agg.app ? pts / agg.app : 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
+  } else {
+    m = { pts: rating(p), apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
+  }
+  _metricsCache.set(p.id, m);
+  return m;
+}
+// next fixture chip, Draft-Fantasy "Vs" style — comes alive once 26/27 fixtures land
+const TEAM_SHORT_BY_NAME = Object.fromEntries(TEAMS.map(t => [t.name, t.short]));
+let _fxCache = new Map(), _fxKey = '';
+function nextFx(team) {
+  const key = String((state.fixtures || []).length);
+  if (_fxKey !== key) { _fxCache = new Map(); _fxKey = key; }
+  if (_fxCache.has(team)) return _fxCache.get(team);
+  const f = (state.fixtures || []).find(x => !x.finished && (x.home === team || x.away === team));
+  const v = f ? (f.home === team ? `${TEAM_SHORT_BY_NAME[f.away] || f.away} (H)` : `${TEAM_SHORT_BY_NAME[f.home] || f.home} (A)`) : '—';
+  _fxCache.set(team, v);
+  return v;
+}
+// the full column menu, Draft Fantasy style; users pick their own set (kept per device)
+const ALL_STAT_COLS = live => [
+  { k: 'vs', h: 'Vs', t: 'Next fixture (H/A)', v: (m, p) => nextFx(p.team), cls: ' muted', sortable: false },
+  { k: 'price', h: '£m', t: 'Current FPL price', v: m => m.price.toFixed(1) },
+  { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
+  { k: 'min', h: 'MP', t: 'Minutes played', v: m => m.min },
+  { k: 'g', h: 'G', t: 'Goals', v: m => m.g },
+  { k: 'a', h: 'A', t: 'Assists', v: m => m.a },
+  { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
+  { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(1), cls: ' muted' },
+  { k: 'f5', h: 'F5', t: 'Form — average points over the last five gameweeks (league scoring)', v: m => m.f5.toFixed(1) },
+  { k: 'gw', h: 'GW', t: 'Points this gameweek', v: m => m.gw },
+  { k: 'ppg', h: 'PPG', t: live ? 'League points per appearance' : 'FPL points per game, last season', v: m => m.ppg.toFixed(1) },
+  { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
+];
+const DEFAULT_COL_KEYS = live => live
+  ? ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
+  : ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts'];
+let _colPrefs;
+function visibleColKeys(live) {
+  if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem('tl2627-cols')); } catch { _colPrefs = null; } }
+  return _colPrefs || DEFAULT_COL_KEYS(live);
+}
+const STAT_COLS = live => ALL_STAT_COLS(live).filter(c => visibleColKeys(live).includes(c.k));
+window._colsOpen = false;
+function colToggleHtml(live) {
+  const vis = visibleColKeys(live);
+  return `<details class="col-toggle" style="position:relative;margin-left:auto" ${window._colsOpen ? 'open' : ''}>
+    <summary class="btn ghost small" style="list-style:none;display:inline-block">Columns &#9881;</summary>
+    <div style="position:absolute;right:0;z-index:6;background:#131c31;border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:5px;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+      ${ALL_STAT_COLS(live).map(c => `<label style="font-size:12px;display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b style="min-width:30px">${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`).join('')}
+    </div>
+  </details>`;
+}
+function bindColToggle(rerender) {
+  document.querySelectorAll('.col-toggle').forEach(d => d.ontoggle = () => { window._colsOpen = d.open; });
+  document.querySelectorAll('[data-coltoggle]').forEach(cb => cb.onchange = () => {
+    const live = seasonHasStats();
+    const set = new Set(visibleColKeys(live));
+    cb.checked ? set.add(cb.dataset.coltoggle) : set.delete(cb.dataset.coltoggle);
+    _colPrefs = ALL_STAT_COLS(live).map(c => c.k).filter(k => set.has(k)); // keep column order
+    localStorage.setItem('tl2627-cols', JSON.stringify(_colPrefs));
+    rerender();
+  });
+}
+const metricSort = s => (a, b) => s === 'name' ? a.name.localeCompare(b.name)
+  : ((metricsFor(b)[s] ?? 0) - (metricsFor(a)[s] ?? 0)) || rating(b) - rating(a);
+
 function poolTable() {
   const taken = draftedIds();
   const mid = currentManagerId();
@@ -1621,26 +1748,19 @@ function poolTable() {
   if (poolFilter.team) rows = rows.filter(p => p.team === poolFilter.team);
   if (poolFilter.pos) rows = rows.filter(p => p.pos === poolFilter.pos);
   const s = poolFilter.sort;
-  rows.sort((a, b) => s === 'name' ? a.name.localeCompare(b.name)
-    : s === 'price' ? b.price - a.price
-    : s === 'ppg' ? (b.ppg || 0) - (a.ppg || 0)
-    : s === 'g' ? (b.g || 0) - (a.g || 0)
-    : s === 'a' ? (b.a || 0) - (a.a || 0)
-    : s === 'xgi' ? ((b.xg || 0) + (b.xa || 0)) - ((a.xg || 0) + (a.xa || 0))
-    : rating(b) - rating(a));
+  const cols = STAT_COLS(seasonHasStats());
+  rows.sort(metricSort(s));
   const total = rows.length;
   rows = rows.slice(0, poolFilter.limit);
   return `
+  <div class="pool-wrap">
+  <div style="display:flex;align-items:center;margin-bottom:4px">${colToggleHtml(seasonHasStats())}</div>
+  <div style="overflow-x:auto">
   <table class="pool-table">
     <thead><tr>
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
-      <th class="num" data-sort="price" title="Current FPL price">£m ${s === 'price' ? '▾' : ''}</th>
-      <th class="num" data-sort="ppg" title="Points per game, last season">PPG ${s === 'ppg' ? '▾' : ''}</th>
-      <th class="num" data-sort="g" title="Goals">G ${s === 'g' ? '▾' : ''}</th>
-      <th class="num" data-sort="a" title="Assists">A ${s === 'a' ? '▾' : ''}</th>
-      <th class="num" data-sort="xgi" title="Expected goals + assists">xGI ${s === 'xgi' ? '▾' : ''}</th>
-      <th class="num" data-sort="rating" title="Total FPL points, last season">Pts ${s === 'rating' ? '▾' : ''}</th><th></th>
+      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
     </tr></thead>
     <tbody>
       ${rows.map(p => `
@@ -1649,17 +1769,14 @@ function poolTable() {
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
-        <td class="num">${p.price.toFixed(1)}</td>
-        <td class="num">${(p.ppg || 0).toFixed(1)}</td>
-        <td class="num">${p.g || 0}</td>
-        <td class="num">${p.a || 0}</td>
-        <td class="num muted">${((p.xg || 0) + (p.xa || 0)).toFixed(1)}</td>
-        <td class="num gold">${rating(p)}</td>
+        ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
         <td style="white-space:nowrap"><button class="btn small" data-pick="${p.id}" ${canPick(mid, p) && canActFor(mid) ? '' : `disabled title="${canActFor(mid) ? 'Position limits hit' : `${esc(managerName(mid))} is on the clock, not you`}"`}>Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
-  ${total > poolFilter.limit ? `<div class="show-more"><button class="btn ghost small" id="showMore">Show more (${total - poolFilter.limit} hidden)</button></div>` : ''}`;
+  </div>
+  ${total > poolFilter.limit ? `<div class="show-more"><button class="btn ghost small" id="showMore">Show more (${total - poolFilter.limit} hidden)</button></div>` : ''}
+  </div>`;
 }
 
 let clockTimer = null;
@@ -1742,6 +1859,7 @@ function bindDraft() {
 }
 function refreshPool() {
   const card = document.querySelector('.draft-layout .card');
+  card.querySelector('.pool-wrap')?.remove();
   card.querySelector('.pool-table')?.remove();
   card.querySelector('.show-more')?.remove();
   card.insertAdjacentHTML('beforeend', poolTable());
@@ -1767,6 +1885,7 @@ function bindPoolTable() {
     [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setAutolist(whoami, arr);
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
+  bindColToggle(refreshPool);
   const sm = $('#showMore');
   if (sm) sm.onclick = () => { poolFilter.limit += 100; refreshPool(); };
 }
@@ -2010,7 +2129,7 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null };
+let transfersView = { tab: 'trough', out: null, pos: '', scope: 'free', sort: 'pts', limit: 20 };
 function viewTransfers() {
   const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
   const cur = currentGwIndex();
@@ -2023,6 +2142,43 @@ function viewTransfers() {
     <span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>
   </div>`;
   if (tab === 'trough') {
+    const wd = state.windowDraft;
+    const arrivals = lockedArrivals();
+    let wdCard = '';
+    if (wd?.status === 'live') {
+      const actor = wdActor();
+      const ord = wd.order;
+      const lap = Math.floor(wd.turn / ord.length);
+      const lapOrd = lap % 2 ? [...ord].reverse() : ord;
+      wdCard = `<div class="card" style="margin-bottom:14px">
+        <h2>The Window Draft <span class="tag live-tag"><span class="rec"></span>LIVE</span> <span class="muted" style="font-weight:400;font-size:12px">new arrivals only &middot; snakes backwards from the last pick &middot; a full lap of passes ends it</span></h2>
+        <div class="order-strip" style="margin:8px 0">${lapOrd.map(id => `<span class="order-chip ${id === actor ? 'now' : ''}">${esc(managerName(id))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}<span class="tag" style="margin-left:10px">Lap ${lap + 1}${lap % 2 ? ' (reversed)' : ''}</span></div>
+        <p style="font-size:13px"><b>${esc(managerName(actor))}</b> is on the clock. Sign one of the new arrivals (someone goes out), or pass.</p>
+        ${canActFor(actor) ? `
+        <select id="wdOut" style="width:100%;max-width:420px;margin:8px 0;display:block">
+          <option value="">Player out…</option>
+          ${squadAt(actor, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}">${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
+        </select>` : `<p class="muted" style="font-size:12px">Lean on them in the group chat.</p>`}
+        <div class="pick-log" style="max-height:320px">
+          ${[...arrivals].sort(metricSort('pts')).map(p => `<div class="lrow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} ${statusChip(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
+            <button class="btn small" style="margin-left:auto" data-wdin="${p.id}" ${canActFor(actor) ? '' : `disabled title="It's ${esc(managerName(actor))}'s turn"`}>Sign</button></div>`).join('') || '<span class="muted">No arrivals left.</span>'}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          ${canActFor(actor) ? `<button class="btn ghost small" id="wdPass">Pass</button>` : ''}
+          ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="wdEnd">End it — leftovers to the Trough</button>` : ''}
+        </div>
+        ${wd.picks?.length ? `<p class="muted" style="font-size:11.5px;margin-top:8px"><b style="color:var(--text)">So far:</b> ${wd.picks.map(k => `${esc(managerName(k.mid))} → ${esc(PLAYER_BY_ID[k.in]?.name || '?')}`).join(' · ')}</p>` : ''}
+      </div>`;
+    } else if (arrivals.length) {
+      wdCard = `<div class="card" style="margin-bottom:14px">
+        <h2>The Window <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
+        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough.</p>
+        ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+          <button class="btn small" id="wdStart">Start the Window Draft</button>
+          <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
+        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Wait for the window to actually shut.</p>`}
+      </div>`;
+    }
     const ctl = waiverControl();
     const claims = myClaims(mid);
     const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
@@ -2038,7 +2194,7 @@ function viewTransfers() {
           <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
-    return `${head}<div class="card">
+    return `${head}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
@@ -2048,7 +2204,7 @@ function viewTransfers() {
         ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
-      <div id="trResults" class="pick-log" style="max-height:420px"></div>`}
+      <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers">Run waivers now</button>
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
@@ -2095,7 +2251,7 @@ function viewTransfers() {
   if (tab === 'history') {
     const rows = [...state.transfers].reverse().map(t => `<div class="lrow" style="font-size:12.5px">
       <span class="muted" style="width:44px">GW${GAMEWEEKS[t.gw].n}</span>
-      <span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : 'trough'}</span>
+      <span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span>
       <b style="min-width:120px">${esc(teamName(t.managerId))}</b>
       ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b>
     </div>`).join('');
@@ -2128,6 +2284,38 @@ function bindTransfers() {
     save(); render();
     toast('Recorded. It is now canon.');
   };
+  // --- the Window Draft ---
+  const wds = $('#wdStart');
+  if (wds) wds.onclick = () => {
+    const ord = [...state.draft.order].reverse();
+    if (!ord.length) { toast('No draft order on record'); return; }
+    if (!confirm(`Start the Window Draft? Order snakes backwards from draft night: ${ord.map(managerName).join(' › ')}. It runs until a full lap of passes.`)) return;
+    state.windowDraft = { status: 'live', order: ord, turn: 0, passes: 0, picks: [] };
+    pushShared('windowDraft', state.windowDraft);
+    save(); render();
+  };
+  const wdr = $('#wdRelease');
+  if (wdr) wdr.onclick = () => { if (confirm('Release every new arrival straight into the Trough — no Window Draft?')) wdFinish(); };
+  const wde = $('#wdEnd');
+  if (wde) wde.onclick = () => { if (confirm('End the Window Draft? Remaining arrivals go to the Trough.')) wdFinish(); };
+  const wdp = $('#wdPass');
+  if (wdp) wdp.onclick = () => { if (!actGuard(wdActor(), 'window draft')) return; toast(`${managerName(wdActor())} passes.`); wdAdvance(true); };
+  document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = () => {
+    const actor = wdActor();
+    if (!actGuard(actor, 'window draft')) return;
+    const outId = +($('#wdOut')?.value || 0);
+    if (!outId) { toast('Pick who goes out first'); return; }
+    const inP = PLAYER_BY_ID[+b.dataset.wdin];
+    if (!squadShapeOk([...squadAt(actor, cur).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+    state.transfers.push({ managerId: actor, outId, inId: inP.id, gw: cur, n: state.transfers.length + 1, t: Date.now(), windowDraft: true });
+    const lu = state.lineups[actor]?.[cur];
+    if (lu) state.lineups[actor][cur] = lu.filter(id => id !== outId);
+    pushShared('transfers', state.transfers);
+    if (state.lineups[actor]?.[cur]) pushShared(`lineups/${actor}/${cur}`, state.lineups[actor][cur]);
+    state.windowDraft.picks.push({ mid: actor, in: inP.id, out: outId });
+    toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`);
+    wdAdvance(false);
+  });
   // --- waivers & the Trough ---
   const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
   // claim list management (withdraw / reprioritise)
@@ -2154,18 +2342,64 @@ function bindTransfers() {
       const outP = transfersView.out ? PLAYER_BY_ID[transfersView.out] : null;
       const squadAfterOut = squadAt(mid, cur).filter(p => !outP || p.id !== outP.id);
       const claimedIds = new Set(myClaims(mid).map(c => c.in));
-      let pool = PLAYERS.filter(p => !owned.has(p.id));
+      const ownedBy = {};
+      for (const mm of state.managers) for (const sp of squadAt(mm.id, cur)) ownedBy[sp.id] = mm.id;
+      let pool = transfersView.scope === 'all' ? [...PLAYERS] : PLAYERS.filter(p => !owned.has(p.id));
+      if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
-      pool.sort((a, b) => rating(b) - rating(a));
+      const s = transfersView.sort;
+      const live = seasonHasStats();
+      const cols = STAT_COLS(live);
+      pool.sort(metricSort(s));
+      const total = pool.length;
+      const shown = pool.slice(0, transfersView.limit);
       const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
-        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — choose a player out above to unlock signing and claiming.</div>';
-      results.innerHTML = hint + pool.slice(0, 20).map(p => {
-        const waiv = onWaivers(p);
-        const ok = outP && squadShapeOk([...squadAfterOut, p]) && !claimedIds.has(p.id);
-        const why = !outP ? 'Pick who goes out first' : claimedIds.has(p.id) ? 'Already claimed' : 'Breaks the squad position limits';
-        return `<div class="lrow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${esc(p.name)} ${statusChip(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${rating(p)} pts</span>
-         <button class="btn small ${waiv ? 'ghost' : ''}" style="margin-left:auto" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${waiv ? 'Claim' : 'Sign'}</button></div>`;
-      }).join('') || '<span class="muted">The Trough is empty. Somehow.</span>';
+        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — choose a player out above to unlock signing and claiming. Tap a column to sort.</div>';
+      const table = `
+      <div style="overflow-x:auto">
+      <table class="pool-table">
+        <thead><tr>
+          <th data-trsort="name">Player</th><th></th>
+          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
+        </tr></thead>
+        <tbody>${shown.map(p => {
+          const ownerMid = ownedBy[p.id];
+          const locked = !ownerMid && arrivalLocked(p);
+          const waiv = !ownerMid && !locked && onWaivers(p);
+          const ok = !ownerMid && !locked && outP && squadShapeOk([...squadAfterOut, p]) && !claimedIds.has(p.id);
+          const why = locked ? 'New arrival — locked until the window shuts, then the Window Draft'
+            : !outP ? 'Pick who goes out first' : claimedIds.has(p.id) ? 'Already claimed' : 'Breaks the squad position limits';
+          const m = metricsFor(p);
+          const action = ownerMid
+            ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
+            : `<button class="btn small ${waiv || locked ? 'ghost' : ''}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+          return `<tr>
+            <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
+            <td>${statusChip(p)}</td>
+            ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
+            <td>${action}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+      ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more (${total - transfersView.limit} hidden)</button></div>` : ''}`;
+      results.innerHTML = hint + `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
+        ${['', 'GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${transfersView.pos === pp ? '' : 'ghost'}" data-trpos="${pp}">${pp || 'All'}</button>`).join('')}
+        <span style="width:8px"></span>
+        <button class="btn small ${transfersView.scope !== 'all' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
+        <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
+        ${colToggleHtml(live)}
+      </div>` + (shown.length ? table : '<span class="muted">The Trough is empty. Somehow.</span>');
+      results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
+      results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => { transfersView.scope = b.dataset.trscope; transfersView.limit = 20; renderTrResults(); });
+      results.querySelectorAll('[data-trtrade]').forEach(b => b.onclick = () => {
+        const [other, get] = b.dataset.trtrade.split(':').map(Number);
+        transfersView.tab = 'trades'; window._tradeFocus = { other, get }; render();
+      });
+      results.querySelectorAll('[data-trsort]').forEach(th => th.onclick = () => { transfersView.sort = th.dataset.trsort; renderTrResults(); });
+      bindColToggle(renderTrResults);
+      const more = results.querySelector('#trMore');
+      if (more) more.onclick = () => { transfersView.limit += 30; renderTrResults(); };
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
         if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = transfersView.out;
@@ -2305,16 +2539,64 @@ function viewDash() {
     </div>
     <div class="card">
       <h2>Around the league</h2>
-      ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
+      ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
       ${covs.length ? `<h3 style="margin-top:12px">Latest covenants</h3>${covs.map(c => `<div class="lrow" style="font-size:12px">&#128220; <b>${esc(managerName(c.from))}</b> &harr; <b>${esc(managerName(c.to))}</b>: ${esc(c.text)}</div>`).join('')}` : ''}
       <h3 style="margin-top:12px">The table</h3>
       ${table.slice(0, 4).map((r, i) => `<div class="lrow" style="font-size:12.5px"><span class="muted">${i + 1}</span> <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
       ${myPos > 4 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
     </div>
+  </div>
+  ${treatmentRoomCard()}`;
+}
+/* ----- the Treatment Room: league-wide injury desk + fixture quirks -----
+   Injury lines ride the official FPL feed (Premier Injuries / Ben Dinnery data);
+   blank & double gameweeks are computed from the fixture list, Crellin-style. */
+let trmShowAll = false;
+function treatmentRoomCard() {
+  const ownedBy = {};
+  for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
+  // owned players: every flag matters; free agents: injuries/doubts/bans only (skip loanees)
+  const flagged = PLAYERS.filter(p => p.status !== 'a' && (ownedBy[p.id] != null || 'ids'.includes(p.status)))
+    .sort((a, b) => ((ownedBy[b.id] != null) - (ownedBy[a.id] != null)) || (b.newsAdded || '').localeCompare(a.newsAdded || ''));
+  const shown = trmShowAll ? flagged : flagged.slice(0, 10);
+  const when = p => p.newsAdded ? ` <span style="opacity:.6">(${new Date(p.newsAdded).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>` : '';
+  const rows = shown.map(p => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
+      ${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
+      ${ownedBy[p.id] != null ? `<span class="tag">${esc(teamName(ownedBy[p.id]))}</span>` : '<span class="muted" style="font-size:10.5px">free agent</span>'}
+      <span class="muted" style="font-size:11px;margin-left:auto;text-align:right">${esc(p.news || 'No update')}${p.chance != null && p.chance > 0 && p.chance < 100 ? ` · <b style="color:var(--text)">${p.chance}%</b>` : ''}${when(p)}</span>
+    </div>`).join('');
+  // fixture desk: blank & double gameweeks still to come
+  const byGw = {};
+  for (const f of (state.fixtures || [])) if (f.gw) (byGw[f.gw] = byGw[f.gw] || []).push(f);
+  const curN = GAMEWEEKS[currentGwIndex()].n;
+  const clubs = TEAMS.map(t => t.name);
+  const short = name => TEAMS.find(t => t.name === name)?.short || name;
+  const quirks = [];
+  for (const [gwN, fx] of Object.entries(byGw)) {
+    if (+gwN < curN) continue;
+    const count = {};
+    for (const f of fx) { count[f.home] = (count[f.home] || 0) + 1; count[f.away] = (count[f.away] || 0) + 1; }
+    const dgw = clubs.filter(c => (count[c] || 0) > 1);
+    const bgw = fx.length >= 5 ? clubs.filter(c => !count[c]) : []; // <5 fixtures = unscheduled data, not a BGW
+    if (dgw.length || bgw.length) quirks.push({ n: +gwN, dgw, bgw });
+  }
+  quirks.sort((a, b) => a.n - b.n);
+  return `<div class="card" style="margin-top:14px">
+    <h2>The Treatment Room <span class="muted" style="font-weight:400;font-size:12px">who's crocked, league-wide</span></h2>
+    ${rows || '<p class="muted" style="font-size:12.5px">A clean bill of health across the league. Suspicious.</p>'}
+    ${flagged.length > 10 ? `<button class="btn ghost small" id="trmMore" style="margin-top:8px">${trmShowAll ? 'Show fewer' : `Show all ${flagged.length}`}</button>` : ''}
+    <h3 style="margin-top:14px">Fixture desk <span class="muted" style="font-weight:400;font-size:11px">blanks &amp; doubles ahead</span></h3>
+    ${quirks.length ? quirks.slice(0, 4).map(q => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap"><span class="tag">GW${q.n}</span>
+      ${q.dgw.length ? `<span>DOUBLE: <b>${q.dgw.map(short).join(', ')}</b></span>` : ''}
+      ${q.bgw.length ? `<span class="muted">BLANK: ${q.bgw.map(short).join(', ')}</span>` : ''}</div>`).join('')
+      : '<p class="muted" style="font-size:12.5px">No blank or double gameweeks on the horizon.</p>'}
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Injury lines from the official FPL feed (Premier Injuries data), refreshed every 15 minutes. Deep cuts: <a href="https://x.com/BenDinnery" target="_blank" rel="noopener" style="color:var(--accent)">@BenDinnery</a> · <a href="https://x.com/BenCrellin" target="_blank" rel="noopener" style="color:var(--accent)">@BenCrellin</a>.</p>
   </div>`;
 }
 function bindDash() {
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
+  const tm = $('#trmMore');
+  if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
     showMatchup(a, b, i);
@@ -2813,6 +3095,7 @@ function viewRules() {
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
       <p class="rules-p"><b>Waivers:</b> everyone goes on waivers when a gameweek starts, and dropped players go back on waivers. Lodge ranked claims (blind); they resolve <b>Tuesdays &amp; Fridays at 10:00 UTC</b> in reverse table order — win a claim, drop to the back. The Chairman can run waivers early, or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
+      <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Knitty-grittys confirmed nearer the time, as is tradition.</p>
       <p class="rules-p"><b>Trades:</b> player-for-player swaps between managers, agreed in the group, any time until the playoff lock. Doesn't use your waiver turn.</p>
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>

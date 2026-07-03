@@ -2,3 +2,6 @@ seed.html
 data/squads_raw.json
 .DS_Store
 firebase-debug.log
+node_modules/
+package.json
+package-lock.json
