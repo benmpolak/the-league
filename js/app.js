@@ -2182,11 +2182,15 @@ function showMatchup(a, b, i) {
   ov.querySelector('#muTable').onclick = e => { e.stopPropagation(); muView = 'table'; showMatchup(a, b, i); };
   document.body.appendChild(ov);
 }
+let h2hView = { gw: null };
 function bindH2H() {
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
     showMatchup(a, b, i);
   });
+  const prev = $('#gwPrev'), next = $('#gwNext');
+  if (prev) prev.onclick = () => { h2hView.gw = Math.max(0, h2hView.gw - 1); render(); };
+  if (next) next.onclick = () => { h2hView.gw = Math.min(REGULAR_GWS - 1, h2hView.gw + 1); render(); };
 }
 
 /* ----- the weekly preview ----- */
@@ -2345,16 +2349,23 @@ function viewH2H() {
   </div>
   ${gwPreviewCard(cur)}
   ${playoffCard()}
-  ${GAMEWEEKS.slice(0, REGULAR_GWS).map((g, i) => {
+  ${(() => {
+    if (h2hView.gw == null) h2hView.gw = Math.min(cur, REGULAR_GWS - 1);
+    const i = h2hView.gw, g = GAMEWEEKS[i];
     const st = gwStatus(i);
-    if (st === 'upcoming' && i > cur + 2) return ''; // don't render 30 empty future cards
     const tag = st === 'final' ? '<span class="tag">FT</span>'
       : st === 'live' ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>'
       : st === 'underway' ? '<span class="tag">underway — tap the lines</span>'
       : '<span class="tag">upcoming</span>';
     return `
     <div class="card" style="margin-bottom:12px">
-      <h2 style="display:flex;align-items:center;gap:10px">GW${g.n} ${tag}</h2>
+      <h2 style="display:flex;align-items:center;gap:10px">GW${g.n} Matches ${tag}
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+          <button class="btn ghost small" id="gwPrev" ${i === 0 ? 'disabled' : ''}>&#8249; Previous</button>
+          <span class="tag">${g.n}</span>
+          <button class="btn ghost small" id="gwNext" ${i >= REGULAR_GWS - 1 ? 'disabled' : ''}>Next &#8250;</button>
+        </span>
+      </h2>
       ${pairingsFor(i).map(([a, b]) => {
         const pa = st === 'upcoming' ? '–' : gwManagerPoints(a, i);
         const pb = st === 'upcoming' ? '–' : gwManagerPoints(b, i);
@@ -2366,8 +2377,21 @@ function viewH2H() {
         </div>
         <div class="venue-line">${esc(stadium(a))}</div>`;
       }).join('')}
+      <h3 style="margin-top:14px">GW${g.n} — the real fixtures</h3>
+      ${(() => {
+        const fxs = state.fixtures.filter(f => f.gw === g.n);
+        return fxs.map(f => {
+          const live = f.started && !f.finished;
+          const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''} – ${f.as ?? ''}`;
+          return `<div class="h2h-fx" style="font-size:12.5px">
+            <span style="flex:1;text-align:right">${esc(f.home)} ${flagImg(f.home)}</span>
+            <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : ''}</span>
+            <span style="flex:1">${flagImg(f.away)} ${esc(f.away)}</span>
+          </div>`;
+        }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
+      })()}
     </div>`;
-  }).join('')}`;
+  })()}`;
 }
 
 /* ----- the Monzo Cup (last man standing, from GW8) ----- */
