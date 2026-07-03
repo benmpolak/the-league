@@ -2,7 +2,7 @@
 
 Private draft fantasy Premier League game for twelve managers. Est. 2015. Formerly hosted
 on Draft Fantasy (£145 a season to the site); now self-hosted for £0. Vive la révolution.
-A Calciopoli Production, forked from the World Cup 2026 build.
+Forked from the World Cup 2026 build; reskinned for this group.
 
 ## What it is
 - Snake draft over every Premier League player ("The Console") — pick timer, timewastes, punditry desk, opening ceremony
@@ -39,5 +39,5 @@ python3 -m http.server 8123        # then open http://localhost:8123
 
 ## Lineage
 Forked from `~/worldcup-draft` (see its README). The sync layer, draft console,
-scoring engine shape, pomp and Moggi are all inherited. Firebase project:
+scoring engine shape and pomp are all inherited (Moggi stayed behind — different group). Firebase project:
 `calciopoli-wc26`, league key `leagues/the-league-2627`.

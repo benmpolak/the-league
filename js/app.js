@@ -10,10 +10,12 @@ const POS_LABEL = { GK: 'Goalkeepers', DF: 'Defenders', MF: 'Midfielders', FW: '
 // how many players outrank you on last season's points — used for pundit judgement
 const ratingRank = r => PLAYERS.filter(x => (x.rating ?? 0) > r).length;
 
+// Draft Fantasy's default table (docs.draftfantasy.com), minus bonus points.
+// Yes, a goalkeeper goal really is 10.
 const DEFAULT_SCORING = {
   appearance: 1,
   appearance60: 2,
-  goalGK: 6, goalDF: 6, goalMF: 5, goalFW: 4,
+  goalGK: 10, goalDF: 6, goalMF: 5, goalFW: 4,
   assist: 3,
   cleanSheet: 4,
   cleanSheetMF: 1,
@@ -43,46 +45,46 @@ const SCORING_LABELS = {
 // starting XI shape
 const XI_RULES = { size: 11, GK: [1, 1], DF: [3, 5], MF: [2, 5], FW: [1, 3] };
 
-/* ---------------- Moggi desk ---------------- */
-const MOGGI_QUOTES = [
-  'A fine pick. The referees have been informed.',
-  'I made three phone calls. He was always coming to you.',
-  'Don’t thank me. Officially, we never spoke.',
-  'His bookings this tournament will be… managed.',
-  'I know his agent. I know everyone’s agent.',
-  'The draft order was random, of course. Everything is always random.',
-  'He’ll win penalties. I’ve spoken to the right people.',
-  'Good. Now delete this conversation.',
-  'A bold selection. The linesmen owe me a favour anyway.',
-  'Trust the process. The process is me.',
+/* ---------------- The Committee (est. 2015, minutes unavailable) ---------------- */
+const COMMITTEE_QUOTES = [
+  'The Committee notes this pick with interest.',
+  'A solid pick. Your ROI per gameweek improves marginally.',
+  'Noted, logged, and screenshotted for use against you in May.',
+  'The waiting list — ten years deep — would have picked better.',
+  'Conway says he doesn’t care (hate it).',
+  'Singer says it’s only a game and doesn’t really matter BUT—',
+  'Blanky reminds the room it’s all irrelevant post GW10.',
+  'Lee asks why he wasn’t consulted. The fraternity remains democratic.',
+  'Stick that one in your Monzo savings pot.',
+  'The Committee has seen worse. The Committee has minutes proving it.',
 ];
-const moggiSays = () => `Moggi: “${MOGGI_QUOTES[Math.floor(Math.random() * MOGGI_QUOTES.length)]}”`;
+const committeeSays = () => `The Committee: “${COMMITTEE_QUOTES[Math.floor(Math.random() * COMMITTEE_QUOTES.length)]}”`;
 
 const INTERCEPTS = [
-  'Listen carefully, {name}. The player you want… he is already yours. I made the call an hour ago.',
-  '{name}, my friend. The other three suspect nothing.',
-  'Tell {name} the medical was passed. We did not look too closely.',
-  '{name} hesitates. Weakness. In my day we drafted by fax and fear.',
-  'The scouts recommended a defender. I recommended ignoring the scouts. {name} understands.',
-  'If {name} picks another goalkeeper, the federation will have questions.',
-  'The room is clean, {name}. I swept it myself. Twice.',
-  '{name} is on the clock. The clock, naturally, reports to me.',
-  'Whatever {name} selects, write down that it was always the plan.',
-  'Remind {name}: a snake draft has two ends, and I have friends at both.',
+  '{name} is on the clock. The group chat has already moved on to discussing his mistake.',
+  'Eleven managers watch {name} type… stop typing… and type again.',
+  '{name} has three tabs open and none of them are helping.',
+  'Sources close to {name} confirm the plan was abandoned two picks ago.',
+  'The autodraft list watches {name} silently. Judging. (RIP Lints.)',
+  '{name} once spent ten years on the waiting list for this. Worth it, apparently.',
+  'A £4.0 defender trembles somewhere as {name} deliberates.',
+  '{name} is consulting the same podcast as everyone else. The edge is imaginary.',
+  'Committee reminder for {name}: it’s only a game and doesn’t really matter BUT—',
+  '{name} hesitates. Somewhere, Blanky mutters that it’s all irrelevant post GW10.',
 ];
 const interceptFor = (n, name) =>
   INTERCEPTS[n % INTERCEPTS.length].replaceAll('{name}', name);
 
-const INVESTIGATIONS = [
-  'Intercepted call, 02:41 — “{L} cannot keep getting away with this. Find out which referees they know.”',
-  'The committee notes {L}’s points total “with interest”. {B} has been offered Serie B and a plea deal.',
-  'Moggi’s verdict: “{L}? Talented. Connected. Probably both.” {B} has been reported to the authorities, who laughed.',
-  'Forensics found nothing on {L}’s phone. Forensics also found that {L} has two phones. {B} has been eliminated from enquiries — and from contention.',
-  'An anonymous source close to {L} says it’s all legitimate. The source sounded exactly like {L}.',
+const WEEKLY_MINUTES = [
+  'COMMITTEE MINUTES — {L} tops the table and has already drafted the acceptance speech. {B} has enquired about the Chumpionship. The Chumpionship no longer exists.',
+  'COMMITTEE MINUTES — {L}’s form is noted “with suspicion”. {B}’s ROI per gameweek has been recalculated and it’s upsetting.',
+  'COMMITTEE MINUTES — {L} claims it’s all about process. {B} claims it’s all irrelevant post GW10. One of them is coping.',
+  'COMMITTEE MINUTES — the waiting list (est. wait: 10 years) has submitted a formal complaint that {B} is wasting a seat.',
+  'COMMITTEE MINUTES — {L} has been reported to the Committee for competence. {B} remains under no such suspicion.',
 ];
 const investigationLine = (L, B) => {
   const day = new Date().getDate();
-  return INVESTIGATIONS[day % INVESTIGATIONS.length].replaceAll('{L}', L).replaceAll('{B}', B);
+  return WEEKLY_MINUTES[day % WEEKLY_MINUTES.length].replaceAll('{L}', L).replaceAll('{B}', B);
 };
 
 /* ---------------- gameweeks ---------------- */
@@ -130,7 +132,7 @@ const netOn = () => syncOn() && !demoMode;
 const isCommissioner = () => whoami === state.managers[0]?.id;
 const canActFor = mid => demoMode || !syncOn() || whoami === mid || isCommissioner();
 
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'waivers', 'adjustments', 'shirtNums'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -172,16 +174,22 @@ window.onSharedSnapshot = data => {
   data.draft.order = toArr(data.draft.order);
   data.draft.picks = toArr(data.draft.picks);
   data.draft.breaksDone = toArr(data.draft.breaksDone);
+  data.draft.paused = !!data.draft.paused;
   // first sight of a fresh draft on this device → roll the opening ceremony
   const fresh = data.phase === 'draft' && data.draft.picks.length === 0;
   data.transfers = toArr(data.transfers);
+  data.autolists = data.autolists || {};
+  for (const mid of Object.keys(data.autolists)) data.autolists[mid] = toArr(data.autolists[mid]);
   data.lineups = data.lineups || {};
   for (const mid of Object.keys(data.lineups)) {
     data.lineups[mid] = data.lineups[mid] || {};
     for (const gw of Object.keys(data.lineups[mid])) data.lineups[mid][gw] = toArr(data.lineups[mid][gw]);
   }
-  data.waivers = data.waivers || {};
-  for (const gw of Object.keys(data.waivers)) data.waivers[gw] = { actions: toArr(data.waivers[gw].actions) };
+  data.claims = data.claims || {};
+  for (const gw of Object.keys(data.claims)) {
+    for (const mid of Object.keys(data.claims[gw] || {})) data.claims[gw][mid] = toArr(data.claims[gw][mid]);
+  }
+  data.waiverMeta = data.waiverMeta || { lastRun: null, control: 'auto' };
   data.adjustments = data.adjustments || {};
   data.shirtNums = data.shirtNums || {};
   for (const k of SHARED_KEYS) if (data[k] !== undefined) state[k] = data[k];
@@ -220,11 +228,13 @@ function freshState() {
       pickTimer: 30,
       scoring: { ...DEFAULT_SCORING },
     },
-    draft: { order: [], picks: [], breaksDone: [], timewastes: {} },
+    draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0 },
+    autolists: {},         // managerId -> [pid] ranked personal autopick list / shortlist
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
-    transfers: [],         // [{managerId, outId, inId, gw, n, trade?}]
-    waivers: {},           // gwIndex -> { actions: [{mid, outId?, inId?, pass?}] }
+    transfers: [],         // [{managerId, outId, inId, gw, n, t, trade?, waiver?}]
+    claims: {},            // gwIndex -> { managerId: [{in, out}] ranked }
+    waiverMeta: { lastRun: null, control: 'auto' }, // control: auto | open | closed
     fixtures: [],
     matchStats: {},        // 'gw{n}' -> { gw, label, date, final, playerStats: {pid:{min,st,sub,g,a,cs,gc,og,ps,pm,yc,rc,sv}} }
     adjustments: {},
@@ -314,7 +324,9 @@ function load() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_KEY));
     if (s && !s.lineups) { s.lineups = {}; s.transfers = []; } // migrate pre-lineup saves
-    if (s && !s.waivers) s.waivers = {};
+    if (s && !s.claims) s.claims = {};
+    if (s && !s.autolists) s.autolists = {};
+    if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
@@ -331,13 +343,20 @@ const flagImg = (team, big = false) => {
   const t = TEAM_BY_NAME[team];
   return t ? `<img class="flag${big ? ' big' : ''}" loading="lazy" src="https://resources.premierleague.com/premierleague/badges/70/t${t.code}.png" alt="${esc(team)}" title="${esc(team)}">` : '';
 };
-// official PL headshot, falling back to the league's own "Photo Missing" card
-const photoImg = p => `<img class="headshot" loading="lazy" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="${esc(p.name)}">`;
-// the actual kit artwork FPL uses (GK variant for keepers)
-const kitImg = (team, gk = false) => {
+// official PL headshot, falling back to the league's own "Photo Missing" card.
+// data-pcard makes every photo a button that opens the player's stats card.
+const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+// the actual kit artwork FPL uses (GK variant for keepers); pass p to make it clickable too
+const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
-  return t ? `<img class="kit" loading="lazy" src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-66.png" alt="${esc(team)}" title="${esc(team)}">` : '';
+  return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-66.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
 };
+// expected points next gameweek: FPL's own projection, then points-per-game, then a guess
+const playerXp = p => (p.xp > 0 ? p.xp : p.ppg > 0 ? p.ppg : p.pts > 0 ? p.pts / 38 : p.price / 4);
+const projectedGwScore = (mid, gwIdx) =>
+  Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => t + playerXp(PLAYER_BY_ID[pid]), 0));
+// win chance from the projected-score gap (logistic; ~12-point gap ≈ 70%)
+const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
 // injury/availability chip from the FPL status flag
 const STATUS_ICON = { d: '⚠️', i: '🏥', s: '🟥', u: '🚫', n: '🚫' };
 const statusChip = p => STATUS_ICON[p.status]
@@ -389,12 +408,100 @@ function shirtNum(mid, pid) {
   return state.shirtNums?.[mid]?.[pid] ?? '–';
 }
 
-/* ---------------- gameweek waiver draft ---------------- */
-// Weekly waivers: ordered, one swap each, bottom of the table feeds first.
-// (A January re-draft window can be flipped on here when the group decides.)
-function waiverMode(gwIdx) { return 'ordered'; }
-function troughUsed(mid, gwIdx) {
-  return (state.waivers?.[gwIdx]?.actions || []).some(a => a.mid === mid);
+/* ---------------- waivers & the Trough (Draft Fantasy mechanics) ----------------
+   Everyone goes on waivers when a gameweek starts; dropped players go on waivers.
+   Claims are ranked and blind. Waivers process Tue & Fri 10:00 UTC (or whenever
+   the Chairman says so); order = reverse standings, winners drop to the back.
+   Whatever clears waivers is free in the Trough — first come, first served. */
+
+// next scheduled processing after a given time: Tue & Fri 10:00 UTC
+function nextWaiverRun(afterTs) {
+  const d = new Date(afterTs);
+  for (let k = 0; k < 9; k++) {
+    const c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + k, 10, 0, 0));
+    if (c.getTime() > d.getTime() && [2, 5].includes(c.getUTCDay())) return c;
+  }
+  return new Date(d.getTime() + 3 * 864e5);
+}
+const waiverControl = () => state.waiverMeta?.control || 'auto';
+const lastWaiverRun = () => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
+function waiverRunDue() {
+  if (state.phase !== 'season' || waiverControl() !== 'auto') return false;
+  const anchor = lastWaiverRun() || new Date(gwFrom(0)).getTime();
+  return Date.now() > nextWaiverRun(anchor).getTime();
+}
+// is this player currently stuck on waivers (claim-only), or free to sign now?
+function onWaivers(p) {
+  const ctl = waiverControl();
+  if (ctl === 'open') return false;
+  if (ctl === 'closed') return true;
+  const cur = currentGwIndex();
+  // the gameweek starting locks everyone until the next processing
+  if (gwHasStarted(cur) && lastWaiverRun() < new Date(gwFrom(cur)).getTime()) return true;
+  // recently dropped players wait for the next processing
+  for (const t of state.transfers) {
+    if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
+  }
+  return false;
+}
+function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); }
+function setClaims(mid, arr) {
+  const cur = currentGwIndex();
+  (state.claims[cur] = state.claims[cur] || {})[mid] = arr;
+  pushShared(`claims/${cur}/${mid}`, arr);
+  save(); render();
+}
+// commissioner-only: resolve all pending claims, then open the Trough
+function processWaivers(manual = false) {
+  if (netOn() && !isCommissioner()) { toast('Only the Chairman runs waivers'); return; }
+  const cur = currentGwIndex();
+  const claimsByMid = state.claims?.[cur] || {};
+  const queue = waiverOrder(cur); // reverse standings — weekly reset
+  const pending = {};
+  for (const mid of queue) pending[mid] = [...toArr(claimsByMid[mid])];
+  const executed = [];
+  const touchedLineups = new Set();
+  let progressed = true;
+  while (progressed) {
+    progressed = false;
+    for (let qi = 0; qi < queue.length; qi++) {
+      const mid = queue[qi];
+      while (pending[mid].length) {
+        const c = pending[mid].shift();
+        const inP = PLAYER_BY_ID[c.in];
+        if (!inP || ownedIdsAt(cur).has(c.in)) continue;              // gone — try next claim
+        if (!managerSquad(mid).some(x => x.id === c.out)) continue;   // out-player no longer theirs
+        if (!squadShapeOk([...squadAt(mid, cur).filter(x => x.id !== c.out), inP])) continue;
+        state.transfers.push({ managerId: mid, outId: c.out, inId: c.in, gw: cur, n: state.transfers.length + 1, t: Date.now(), waiver: true });
+        const lu = state.lineups[mid]?.[cur];
+        if (lu) { state.lineups[mid][cur] = lu.filter(id => id !== c.out); touchedLineups.add(mid); }
+        executed.push({ mid, in: c.in, out: c.out });
+        queue.splice(qi, 1); queue.push(mid); // winner drops to the back
+        progressed = true;
+        break;
+      }
+      if (progressed) break;
+    }
+  }
+  state.claims[cur] = {};
+  state.waiverMeta = { ...state.waiverMeta, lastRun: new Date().toISOString() };
+  pushShared(`claims/${cur}`, null);
+  pushShared('waiverMeta', state.waiverMeta);
+  pushShared('transfers', state.transfers);
+  for (const mid of touchedLineups) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
+  save(); render();
+  toast(executed.length
+    ? `Waivers processed — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
+    : `Waivers processed — no claims landed. The Trough is open.`);
+}
+function setWaiverControl(mode) {
+  if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
+  state.waiverMeta = { ...state.waiverMeta, control: mode };
+  pushShared('waiverMeta', state.waiverMeta);
+  save(); render();
+  toast(mode === 'open' ? 'The Trough is thrown open — everything is free to sign.'
+    : mode === 'closed' ? 'The Trough is closed. The Chairman has spoken.'
+    : 'Back on schedule — waivers Tue & Fri, 10:00 UTC.');
 }
 // standings using ONLY gameweeks final before gwIdx — deterministic, can't reshuffle mid-round
 function standingsBefore(gwIdx) {
@@ -420,20 +527,6 @@ function waiverOrder(gwIdx) {
   const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
   return [...base].reverse(); // bottom feeds first
 }
-function waiverState(gwIdx) {
-  const mode = waiverMode(gwIdx);
-  const actions = state.waivers?.[gwIdx]?.actions || [];
-  if (mode === 'open') return { mode, actions, order: [], turnMid: null, complete: false };
-  const order = waiverOrder(gwIdx);
-  if (mode === 'ordered') {
-    return { mode, order, actions, turnMid: order[actions.length] ?? null, complete: actions.length >= order.length };
-  }
-  // redraft: keep cycling the order until a full lap of passes
-  const lap = actions.slice(-order.length);
-  const complete = actions.length >= order.length && lap.every(a => a.pass);
-  return { mode, order, actions, turnMid: complete ? null : order[actions.length % order.length], complete };
-}
-
 /* ---------------- draft logic ---------------- */
 function totalPicks() { return state.managers.length * state.settings.squadSize; }
 function pickNo() { return state.draft.picks.length; }
@@ -459,7 +552,7 @@ function draftedIds() { return new Set(state.draft.picks.map(p => p.playerId)); 
 function makePick(playerId, force = false) {
   const mid = currentManagerId();
   if (mid == null) return;
-  if (!force && !canActFor(mid)) { toast(`It's ${managerName(mid)}'s pick — Moggi is watching you`); return; }
+  if (!force && !canActFor(mid)) { toast(`It's ${managerName(mid)}'s pick — the group chat is watching you`); return; }
   const player = PLAYER_BY_ID[playerId];
   if (!canPick(mid, player)) { toast(`${managerName(mid)} can't fit another ${player.pos} — position limits`); return; }
   const rec = { managerId: mid, playerId, n: pickNo() + 1 };
@@ -472,9 +565,9 @@ function makePick(playerId, force = false) {
       state.phase = 'season';
       if (whoami === mid) state.view = 'team';
       pushShared('phase', 'season');
-      toast('Draft complete. Moggi has filed the paperwork. Game on.');
+      toast('Draft complete. The Committee has ratified the minutes. Game on.');
     } else if (Math.random() < 0.3) {
-      toast(moggiSays());
+      toast(committeeSays());
     }
     save(); render();
   };
@@ -499,9 +592,17 @@ function autoPick(force = false) {
   const mid = currentManagerId();
   if (mid == null) return;
   const taken = draftedIds();
-  const best = PLAYERS.filter(p => !taken.has(p.id) && canPick(mid, p))
+  // the manager's own autopick list first, then best available by rating
+  let best = toArr(state.autolists?.[mid]).map(id => PLAYER_BY_ID[id])
+    .find(p => p && !taken.has(p.id) && canPick(mid, p));
+  if (!best) best = PLAYERS.filter(p => !taken.has(p.id) && canPick(mid, p))
     .sort((a, b) => rating(b) - rating(a))[0];
   if (best) makePick(best.id, force);
+}
+function setAutolist(mid, arr) {
+  state.autolists[mid] = arr;
+  pushShared(`autolists/${mid}`, arr);
+  save(); render();
 }
 
 /* ---------------- lineups ---------------- */
@@ -662,10 +763,11 @@ function gwStatus(i) {
   if (gwHasStarted(i)) return 'underway';
   return 'upcoming';
 }
-function h2hStandings() {
+function h2hStandings(includeLive = false) {
   const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, name: m.name, team: m.team, p: 0, w: 0, d: 0, l: 0, pts: 0 }]));
   for (let i = 0; i < REGULAR_GWS; i++) {
-    if (gwStatus(i) !== 'final') continue;
+    const st = gwStatus(i);
+    if (st !== 'final' && !(includeLive && st === 'live')) continue;
     for (const [a, b] of pairingsFor(i)) {
       const pa = gwManagerPoints(a, i), pb = gwManagerPoints(b, i);
       rows[a].p++; rows[b].p++;
@@ -685,7 +787,7 @@ let liveTimer = null;
 function anyMatchLive() { return state.fixtures.some(f => f.started && !f.finished); }
 
 async function syncNow(manual = false) {
-  if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Moggi’s innocence'); return; }
+  if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Tapping…'; }
   try {
@@ -795,7 +897,7 @@ function renderIdentity() {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:420px;width:92%">
     <h2>Who are you?</h2>
-    <p class="muted" style="font-size:13px;margin-bottom:14px">Actions from this device count for the manager you pick. Choose honestly — Moggi has your number. Literally.</p>
+    <p class="muted" style="font-size:13px;margin-bottom:14px">Actions from this device count for the manager you pick. Choose honestly — the Committee has your number. And your Monzo handle.</p>
     ${state.managers.map((m, i) => `<button class="btn ghost" data-who="${m.id}" style="width:100%;margin-bottom:8px;text-align:left">${esc(m.name)}${i === 0 ? ' <span class="tag">commissioner</span>' : ''}</button>`).join('')}
     <button class="btn ghost" data-who="-1" style="width:100%;opacity:.7">Just watching</button>
   </div>`;
@@ -830,13 +932,13 @@ function renderSyncArea() {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'never';
     bits.push(`<span>Last intercept: ${last}</span><button id="syncBtn" class="btn small">&#128222; Tap the lines</button>`);
   }
-  bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" title="Broadcast sound (Iain's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
+  bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
   const mb = $('#muteBtn');
   if (mb) mb.onclick = () => {
     localStorage.setItem('tl2627-mute', soundOn() ? '1' : '0');
     renderSyncArea();
-    toast(soundOn() ? 'Broadcast sound on. Sorry, Iain.' : 'Broadcast muted. Iain wins this one.');
+    toast(soundOn() ? 'Broadcast sound on. Sorry, Ian.' : 'Broadcast muted. Ian wins this one.');
   };
   const wb = $('#whoBtn');
   if (wb) wb.onclick = () => { whoami = null; localStorage.removeItem(WHO_KEY); render(); };
@@ -861,6 +963,7 @@ function viewSetup() {
           <span class="mgr-num">${i + 1}</span>
           <input type="text" maxlength="24" placeholder="Manager ${i + 1} name" data-mgr="${mg.id}" value="${esc(mg.name)}">
           <input type="text" maxlength="28" placeholder="Team name" data-mgrteam="${mg.id}" value="${esc(mg.team || '')}">
+          <button class="btn ghost small" data-mgrup="${i}" ${i === 0 ? 'disabled' : ''} title="Move up the draft order">&#9650;</button>
         </div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">First manager listed is the commissioner. Team names pulled from the archive — correct as you see fit.</p>
     </div>
@@ -880,12 +983,13 @@ function viewSetup() {
         <input type="number" min="11" max="20" id="squadSize" value="${state.settings.squadSize}" style="width:60px">
         <label style="font-size:12px;color:var(--muted);font-weight:700;margin-left:10px">PICK TIMER</label>
         <select id="pickTimer">
-          ${[0, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — Moggi picks at zero' : 'Off'}</option>`).join('')}
+          ${[0, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — autopick at zero' : 'Off'}</option>`).join('')}
         </select>
       </div>
       <div class="setup-total" id="setupTotal"></div>
     </div>
     <button class="btn" id="startDraft" style="padding:14px;font-size:16px">Randomise order &amp; start the draft</button>
+    <button class="btn ghost" id="startDraftOrdered" style="padding:12px">Start in the order listed above</button>
     <button class="btn ghost" id="demoBtn">Have a look around first — demo a finished season</button>
   </div>`;
 }
@@ -910,7 +1014,12 @@ function bindSetup() {
   $('#pickTimer').onchange = e => { state.settings.pickTimer = +e.target.value || 0; };
   updateTotal();
   $('#demoBtn').onclick = enterDemo;
-  $('#startDraft').onclick = () => {
+  document.querySelectorAll('[data-mgrup]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.mgrup;
+    [state.managers[i - 1], state.managers[i]] = [state.managers[i], state.managers[i - 1]];
+    render();
+  });
+  const startDraft = randomise => {
     if (!confirm('This starts the REAL draft for all twelve managers. Everyone ready?')) return;
     state.managers.forEach((m, i) => { if (!m.name.trim()) m.name = `Manager ${i + 1}`; });
     if (state.settings.squadSize < 11) { toast('Squads need at least 11 for a starting XI'); return; }
@@ -918,7 +1027,9 @@ function bindSetup() {
     const minSum = posMin.GK + posMin.DF + posMin.MF + posMin.FW;
     const maxSum = posMax.GK + posMax.DF + posMax.MF + posMax.FW;
     if (minSum > state.settings.squadSize || maxSum < state.settings.squadSize) { toast('Position min/max can’t make a legal squad'); return; }
-    state.draft.order = state.managers.map(m => m.id).sort(() => Math.random() - 0.5);
+    state.draft.order = randomise
+      ? state.managers.map(m => m.id).sort(() => Math.random() - 0.5)
+      : state.managers.map(m => m.id);
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + 5 * 60 * 1000;
     state.phase = 'draft';
     state.view = 'draft';
@@ -927,10 +1038,12 @@ function bindSetup() {
     localStorage.setItem('tl2627-ceremony-seen', state.draft.order.join('-'));
     showCeremony();
   };
+  $('#startDraft').onclick = () => startDraft(true);
+  $('#startDraftOrdered').onclick = () => startDraft(false);
 }
 
-/* ----- opening ceremony (requested by Marc, dedicated to Iain) ----- */
-// each club's flag is carried by a selected legend (selection panel: Moggi)
+/* ----- opening ceremony (requested by Marc, dedicated to Ian) ----- */
+// each club's flag is carried by a selected legend (selection panel: the Committee)
 const FLAG_BEARERS = {
   'Arsenal': 'Ian Wright, already crying',
   'Aston Villa': 'Prince William, heir to the throne, season ticket in the Holte End apparently',
@@ -959,11 +1072,11 @@ function showCeremony() {
   if (!order.length) return;
   const ordinals = ['twelfth', 'eleventh', 'tenth', 'ninth', 'eighth', 'seventh', 'sixth', 'fifth', 'fourth', 'third', 'second', 'FIRST'];
   const steps = [
-    { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Iain, be upstanding. Especially you.' },
+    { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
     { h: '&#127884; THE PARADE OF CLUBS', p: '', parade: true },
     { h: '&#127908; Main stage', p: 'Coldplay perform Viva la Vida in its 9-minute extended ceremony arrangement. Chris Martin has been told this is a twelve-man WhatsApp league that left its old website over £145. He says every revolution is beautiful.' },
-    { h: '&#127930; The anthems', p: 'The stadium now rises for a full and unabridged rendition of North London Forever. Marc weeps openly. Iain has been located attempting to leave the venue. Stewards have returned him to his seat.', anthem: true },
-    { h: '&#129309; The draw', p: 'Luciano Moggi shuffles the envelopes. The envelopes were sealed. The seals were his.' },
+    { h: '&#127930; The anthems', p: 'The stadium now rises for a full and unabridged rendition of North London Forever. Marc weeps openly. Ian has been located attempting to leave the venue. Stewards have returned him to his seat.', anthem: true },
+    { h: '&#129309; The draw', p: 'The Committee shuffles the envelopes. The order is random. The complaints will not be.' },
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
@@ -986,7 +1099,7 @@ function showCeremony() {
         : s.big ? `<div class="ceremony-name">${esc(s.p)}</div>` : `<p class="rules-p" style="text-align:center">${esc(s.p)}</p>`}
       <div style="margin-top:18px;display:flex;gap:8px;justify-content:center">
         <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'To the Console' : 'Continue the pomp'}</button>
-        <button class="btn ghost small" id="cerSkip" title="Reserved for Iain">Skip ceremony (Iain's button)</button>
+        <button class="btn ghost small" id="cerSkip" title="Reserved for Ian">Skip ceremony (Ian's button)</button>
       </div></div>`;
     if (s.parade) {
       playSound('sting');
@@ -996,7 +1109,7 @@ function showCeremony() {
         const slot = $('#paradeSlot');
         if (!slot) { clearInterval(paradeTimer); return; }
         if (f >= nations.length) {
-          slot.innerHTML = `<p class="rules-p" style="text-align:center">All ${nations.length} clubs present. Iain checked his watch ${nations.length} times.</p>`;
+          slot.innerHTML = `<p class="rules-p" style="text-align:center">All ${nations.length} clubs present. Ian checked his watch ${nations.length} times.</p>`;
           clearInterval(paradeTimer);
           return;
         }
@@ -1018,19 +1131,19 @@ function showCeremony() {
         src="https://www.youtube-nocookie.com/embed/wjCJv4W4kvw?autoplay=1&rel=0&playsinline=1"
         title="Louis Dunford — The Angel (North London Forever)"
         allow="autoplay; encrypted-media" allowfullscreen></iframe>
-        <div style="background:var(--card2);font-size:11px;color:var(--muted);padding:6px 10px;text-align:center">Louis Dunford &mdash; The Angel (North London Forever). If your phone blocks autoplay, tap play. Iain: volume stays up.</div>`;
+        <div style="background:var(--card2);font-size:11px;color:var(--muted);padding:6px 10px;text-align:center">Louis Dunford &mdash; The Angel (North London Forever). If your phone blocks autoplay, tap play. Ian: volume stays up.</div>`;
       $('#cerStage').appendChild(player);
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { ov.remove(); toast('Ceremony skipped. Iain nods, once.'); };
+    $('#cerSkip').onclick = () => { ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
   };
   show();
 }
 
-/* ----- drinks breaks (mandatory, per Marc; non-negotiable, per Iain's objections) ----- */
+/* ----- drinks breaks (mandatory, per Marc; non-negotiable, per Ian's objections) ----- */
 const DRINKS_COPY = [
-  'FIRST DRINKS BREAK — a third of the way. Hydrate. Moggi is having a Negroni with a man he has never officially met.',
-  'SECOND DRINKS BREAK — two thirds done. Stretch the legs. Iain: this break is contractually mandatory and was added specifically because of you.',
+  'FIRST DRINKS BREAK — a third of the way. Hydrate. The Committee is having a Negroni and reviewing your picks with interest.',
+  'SECOND DRINKS BREAK — two thirds done. Stretch the legs. Ian: this break is contractually mandatory and was added specifically because of you.',
 ];
 function drinksBreakAt(n) {
   const t = totalPicks();
@@ -1151,7 +1264,7 @@ const CLUB_FACTS = {
  "Fulham": "Craven Cottage has an actual cottage in the corner. It's listed. The football is not.",
  "Leeds": "Under Bielsa, players were weighed daily and murderball was legal. Some of them are still running.",
  "Liverpool": "The anthem is from a 1945 musical. The bench mob knows all the words.",
- "Man City": "The 115 charges have their own Wikipedia page, several podcasts, and a defence bill bigger than most squads. Moggi calls it 'apprentice work'.",
+ "Man City": "The 115 charges have their own Wikipedia page, several podcasts, and a defence bill bigger than most squads. The Committee declines to comment.",
  "Man Utd": "The scoreboard clock at Old Trafford has been showing 'time since last title' in the away end's heads for years.",
  "Newcastle": "Alan Shearer scored 206 goals for them and won nothing. The city named a stand, a statue and several children after him anyway.",
  "Nott'm Forest": "Won back-to-back European Cups with a manager who called himself 'in the top one'. Correctly.",
@@ -1177,7 +1290,7 @@ function punditryDesk() {
   </div>`;
 }
 
-/* ----- broadcast audio (synthesized, no files, Iain-mutable) ----- */
+/* ----- broadcast audio (synthesized, no files, Ian-mutable) ----- */
 let audioCtx = null;
 const soundOn = () => localStorage.getItem('tl2627-mute') !== '1';
 function actx() {
@@ -1258,7 +1371,8 @@ function viewDraft() {
       ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
       ${state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       <button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>
-      <button class="btn ghost small" id="autoPick" title="Luciano makes a call. Untraceable, naturally.">&#128222; Ask Moggi</button>
+      ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
+      <button class="btn ghost small" id="autoPick" title="Best available player, no thought required.">&#129302; Autopick</button>
     </div>
   </div>
   <div class="order-strip">${draftOrderStrip()}</div>
@@ -1275,11 +1389,25 @@ function viewDraft() {
       ${poolTable()}
     </div>
     <div class="draft-side">
+      ${whoami && whoami !== -1 ? `<div class="card">
+        <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
+        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Star players in the pool to add them.</p>
+        ${toArr(state.autolists?.[whoami]).map((pid, k) => {
+          const p = PLAYER_BY_ID[pid];
+          const gone = draftedIds().has(pid);
+          return p ? `<div class="lrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
+            <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${esc(p.name)}
+            <span style="margin-left:auto;display:flex;gap:4px">
+              ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
+              <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
+            </span></div>` : '';
+        }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>'}
+      </div>` : ''}
       <div class="card side-squad">
         <h2>${esc(managerName(mid))}'s squad</h2>
         <div class="quota-bar">${quotaPills(mid)}</div>
         ${managerSquad(mid).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `
-          <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK')}<span>${esc(p.name)}</span></div>
+          <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}<span>${esc(p.name)}</span></div>
         `).join('') || '<span class="muted">No picks yet</span>'}
       </div>
       ${punditryDesk()}
@@ -1349,7 +1477,7 @@ function poolTable() {
         <td>${statusChip(p)}</td>
         <td class="num">${p.price.toFixed(1)}</td>
         <td class="num gold">${rating(p)}</td>
-        <td><button class="btn small" data-pick="${p.id}" ${canPick(mid, p) && canActFor(mid) ? '' : `disabled title="${canActFor(mid) ? 'Position limits hit' : `${esc(managerName(mid))} is on the clock, not you`}"`}>Draft</button></td>
+        <td style="white-space:nowrap"><button class="btn small" data-pick="${p.id}" ${canPick(mid, p) && canActFor(mid) ? '' : `disabled title="${canActFor(mid) ? 'Position limits hit' : `${esc(managerName(mid))} is on the clock, not you`}"`}>Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -1382,17 +1510,36 @@ function bindDraft() {
       if (!el || state.phase !== 'draft') { clearInterval(clockTimer); return; }
       const bn = pickNo();
       const breakDue = drinksBreakAt(bn) && !(state.draft.breaksDone || []).includes(bn);
+      if (state.draft.paused) { el.textContent = 'PAUSED'; el.classList.remove('urgent'); return; }
       if (breakDue || $('#drinksBreak') || $('#ceremony')) return; // clock politely waits for pomp
       const left = Math.max(0, Math.round(((state.draft.deadline || 0) - Date.now()) / 1000));
       el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       el.classList.toggle('urgent', left <= 10);
-      if (left <= 0 && state.draft.deadline && firedDeadline !== state.draft.deadline) {
+      if (left <= 0 && !state.draft.paused && state.draft.deadline && firedDeadline !== state.draft.deadline) {
         firedDeadline = state.draft.deadline;
-        toast('Time! Moggi makes the call.');
+        toast('Time! Autopick makes the call.');
         autoPick(true);
       }
     }, 400);
   }
+  const pb = $('#pauseDraft');
+  if (pb) pb.onclick = () => {
+    if (netOn() && !isCommissioner()) { toast('Only the commissioner pauses the draft'); return; }
+    if (state.draft.paused) {
+      state.draft.paused = false;
+      if (state.settings.pickTimer) state.draft.deadline = Date.now() + (state.draft.pausedLeft || state.settings.pickTimer * 1000);
+      pushShared('draft/paused', false);
+      pushShared('draft/deadline', state.draft.deadline);
+      toast('Draft resumed. The clock is live.');
+    } else {
+      state.draft.paused = true;
+      state.draft.pausedLeft = Math.max(5000, (state.draft.deadline || Date.now()) - Date.now());
+      pushShared('draft/paused', true);
+      pushShared('draft/pausedLeft', state.draft.pausedLeft);
+      toast('Draft paused by the commissioner.');
+    }
+    save(); render();
+  };
   const q = $('#poolQ');
   q.oninput = () => { poolFilter.q = q.value; poolFilter.limit = 60; refreshPool(); };
   $('#poolTeam').onchange = e => { poolFilter.team = e.target.value; poolFilter.limit = 60; refreshPool(); };
@@ -1426,6 +1573,21 @@ function refreshPool() {
 }
 function bindPoolTable() {
   document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => makePick(+b.dataset.pick));
+  document.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => {
+    if (!whoami || whoami === -1) return;
+    const pid = +b.dataset.auto;
+    const list = toArr(state.autolists?.[whoami]);
+    if (list.includes(pid)) { toast('Already on your list'); return; }
+    setAutolist(whoami, [...list, pid]);
+    toast(`${PLAYER_BY_ID[pid].name} added to your autopick list`);
+  });
+  document.querySelectorAll('[data-autodel]').forEach(b => b.onclick = () => {
+    const arr = [...toArr(state.autolists?.[whoami])]; arr.splice(+b.dataset.autodel, 1); setAutolist(whoami, arr);
+  });
+  document.querySelectorAll('[data-autoup]').forEach(b => b.onclick = () => {
+    const k = +b.dataset.autoup, arr = [...toArr(state.autolists?.[whoami])];
+    [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setAutolist(whoami, arr);
+  });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   const sm = $('#showMore');
   if (sm) sm.onclick = () => { poolFilter.limit += 100; refreshPool(); };
@@ -1457,7 +1619,6 @@ function viewTeam() {
   const locked = !demoMode && gwHasStarted(gw);
   const cur = currentGwIndex();
   const ownedNow = ownedIdsAt(cur);
-  const swapUsed = troughUsed(mid, cur);
 
   const countsBar = ['GK', 'DF', 'MF', 'FW'].map(pos => {
     const [lo, hi] = XI_RULES[pos];
@@ -1484,7 +1645,7 @@ function viewTeam() {
           const pts = gwPlayerPoints(p.id, gw);
           return `<div class="squad-row lineup-row ${starting ? 'starting' : 'benched'}" data-toggle="${p.id}" ${locked ? '' : 'style="cursor:pointer"'}>
             <span class="shirt-no" data-num="${p.id}" title="Click to assign a squad number">${shirtNum(mid, p.id)}</span>
-            <span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK')}
+            <span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}
             <span>${esc(p.name)} ${statusChip(p)}</span>
             <span class="muted" style="font-size:11.5px">${esc(p.club)}</span>
             <span class="sp-pts ${pts > 0 ? 'gold' : 'muted'}">${pts}</span>
@@ -1495,31 +1656,40 @@ function viewTeam() {
     <div class="draft-side">
       <div class="card">
         ${(() => {
-          const wv = waiverState(cur);
-          const title = wv.mode === 'redraft' ? `THE JANUARY RE-DRAFT <span class="tag">bottom of the league up</span>`
-            : wv.mode === 'ordered' ? `GW${GAMEWEEKS[cur].n} Waivers <span class="tag">bottom feeds first</span>`
-            : `The Trough <span class="tag">GW${GAMEWEEKS[cur].n}</span>`;
-          const blurb = wv.mode === 'redraft' ? 'The great replenishment: snake through the order, swap as many as you like, pass when done. Round ends after a full lap of passes.'
-            : wv.mode === 'ordered' ? 'One swap each, in reverse table order. Pass if the Trough offers nothing.'
-            : 'One swap per manager this gameweek — drop anyone, sign any free agent. No queue, no ceremony.';
-          const chips = wv.mode === 'open'
-            ? `<div class="quota-bar" style="margin-bottom:10px">${state.managers.map(m => `<span class="quota-pill ${troughUsed(m.id, cur) ? 'full' : ''}">${esc(m.name)} ${troughUsed(m.id, cur) ? '✓ fed' : '—'}</span>`).join('')}</div>`
-            : `<div class="order-strip" style="margin-bottom:10px">${wv.order.map(om => `<span class="order-chip ${om === wv.turnMid ? 'now' : ''}">${esc(managerName(om))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}</div>`;
-          const actorMid = wv.mode === 'open' ? mid : wv.turnMid;
-          let body;
-          if (wv.complete) body = `<p class="muted" style="font-size:12.5px">Round complete. The Trough reopens next gameweek.</p>`;
-          else if (wv.mode === 'open' && troughUsed(mid, cur)) body = `<p class="muted" style="font-size:12.5px">${esc(managerName(mid))} has fed this gameweek.</p>`;
-          else if (!canActFor(actorMid)) body = `<p class="muted" style="font-size:12.5px"><b style="color:var(--text)">${esc(managerName(actorMid))}</b> is at the Trough. Lean on them in the group chat.</p>`;
-          else body = `
-            ${wv.mode !== 'open' ? `<p style="font-size:13px;margin-bottom:8px"><b>${esc(managerName(actorMid))}</b> is at the Trough</p>` : ''}
-            <select id="trOut" style="width:100%;margin-bottom:8px">
-              <option value="">Player out…</option>
-              ${squadAt(actorMid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `<option value="${p.id}" ${teamView.transferOut === p.id ? 'selected' : ''}>${p.pos} — ${esc(p.name)} (${esc(p.team)})</option>`).join('')}
-            </select>
-            <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;margin-bottom:8px">
-            <div id="trResults" class="pick-log"></div>
-            ${wv.mode !== 'open' ? `<button class="btn ghost small" id="trPass" style="margin-top:8px">Pass${wv.mode === 'redraft' ? ' — I\'m done feeding' : ''}</button>` : ''}`;
-          return `<h2>${title}</h2><p class="muted" style="font-size:12px;margin-bottom:10px">${blurb}</p>${chips}${body}`;
+          const ctl = waiverControl();
+          const claims = myClaims(mid);
+          const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+          const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
+            : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
+            : `<span class="tag">waivers process ${nextRun.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC</span>`;
+          const order = waiverOrder(cur);
+          const orderStrip = ctl === 'auto' ? `<div class="order-strip" style="margin-bottom:10px" title="Waiver priority — bottom of the table first">${order.map(om => `<span class="order-chip">${esc(managerName(om))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}</div>` : '';
+          const claimRows = claims.length ? claims.map((c, k) => `
+            <div class="lrow" style="font-size:12.5px">
+              <span class="muted">#${k + 1}</span> <b>${esc(PLAYER_BY_ID[c.in]?.name || '?')}</b>
+              <span class="muted">in, ${esc(PLAYER_BY_ID[c.out]?.name || '?')} out</span>
+              <span style="margin-left:auto;display:flex;gap:4px">
+                ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
+                <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
+              </span>
+            </div>`).join('') : '';
+          return `<h2>Waivers &amp; The Trough ${status}</h2>
+          <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
+          ${orderStrip}
+          ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
+          ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
+          <select id="trOut" style="width:100%;margin:8px 0">
+            <option value="">Player out…</option>
+            ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `<option value="${p.id}" ${teamView.transferOut === p.id ? 'selected' : ''}>${p.pos} — ${esc(p.name)} (${esc(p.club)})</option>`).join('')}
+          </select>
+          <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;margin-bottom:8px">
+          <div id="trResults" class="pick-log"></div>`}
+          ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+            <button class="btn small" id="runWaivers">Run waivers now</button>
+            <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
+            <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
+            <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
+          </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>` : ''}`;
         })()}
         <h3 style="margin-top:16px">Transfer log</h3>
         ${state.transfers.filter(t => t.managerId === mid).map(t =>
@@ -1583,54 +1753,63 @@ function bindTeam() {
     save(); render();
     toast(`${PLAYER_BY_ID[pid].name} takes the number ${n} shirt`);
   });
-  // --- the Trough / waivers / re-draft ---
-  const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults'), passBtn = $('#trPass');
+  // --- waivers & the Trough ---
+  const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
+  // claim list management (withdraw / reprioritise)
+  document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
+    if (!canActFor(mid)) { toast(`Those are ${managerName(mid)}'s claims, not yours`); return; }
+    const arr = [...myClaims(mid)]; arr.splice(+b.dataset.claimdel, 1); setClaims(mid, arr);
+  });
+  document.querySelectorAll('[data-claimup]').forEach(b => b.onclick = () => {
+    if (!canActFor(mid)) { toast(`Those are ${managerName(mid)}'s claims, not yours`); return; }
+    const k = +b.dataset.claimup, arr = [...myClaims(mid)];
+    [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setClaims(mid, arr);
+  });
+  // Chairman's office
+  const rw = $('#runWaivers');
+  if (rw) rw.onclick = () => { if (confirm('Run waivers now for everyone? Claims resolve in reverse table order and the Trough opens.')) processWaivers(true); };
+  ['open', 'closed', 'auto'].forEach(m => { const b = $(`#ctl${m[0].toUpperCase()}${m.slice(1)}`); if (b) b.onclick = () => setWaiverControl(m); });
   if (out) {
     const cur = currentGwIndex();
-    const wv = waiverState(cur);
-    const actorMid = wv.mode === 'open' ? mid : wv.turnMid;
     out.onchange = () => { teamView.transferOut = +out.value || null; renderTrResults(); };
     search.oninput = renderTrResults;
-    if (passBtn) passBtn.onclick = () => {
-      if (!canActFor(actorMid)) { toast(`It's ${managerName(actorMid)}'s turn`); return; }
-      (state.waivers[cur] = state.waivers[cur] || { actions: [] }).actions.push({ mid: actorMid, pass: true });
-      pushShared(`waivers/${cur}/actions`, state.waivers[cur].actions);
-      teamView.transferOut = null;
-      save(); render();
-      toast(`${managerName(actorMid)} passes.`);
-    };
     function renderTrResults() {
       const q = normName(search.value || '');
       const owned = ownedIdsAt(cur);
       const outP = teamView.transferOut ? PLAYER_BY_ID[teamView.transferOut] : null;
-      const squadAfterOut = squadAt(actorMid, cur).filter(p => !outP || p.id !== outP.id);
+      const squadAfterOut = squadAt(mid, cur).filter(p => !outP || p.id !== outP.id);
+      const claimedIds = new Set(myClaims(mid).map(c => c.in));
       let pool = PLAYERS.filter(p => !owned.has(p.id));
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
       pool.sort((a, b) => rating(b) - rating(a));
-      const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Replacements for ${esc(outP.name)} (${outP.pos}):</div>`
-        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — choose a player out above to unlock signing.</div>';
+      const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
+        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — choose a player out above to unlock signing and claiming.</div>';
       results.innerHTML = hint + pool.slice(0, 20).map(p => {
-        const ok = outP && squadShapeOk([...squadAfterOut, p]);
-        const why = !outP ? 'Pick who goes out first' : 'Breaks the squad position limits';
+        const waiv = onWaivers(p);
+        const ok = outP && squadShapeOk([...squadAfterOut, p]) && !claimedIds.has(p.id);
+        const why = !outP ? 'Pick who goes out first' : claimedIds.has(p.id) ? 'Already claimed' : 'Breaks the squad position limits';
         return `<div class="lrow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${esc(p.name)} ${statusChip(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${rating(p)} pts</span>
-         <button class="btn small" style="margin-left:auto" data-trin="${p.id}" ${ok ? '' : `disabled title="${why}"`}>Sign</button></div>`;
+         <button class="btn small ${waiv ? 'ghost' : ''}" style="margin-left:auto" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${waiv ? 'Claim' : 'Sign'}</button></div>`;
       }).join('') || '<span class="muted">The Trough is empty. Somehow.</span>';
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
-        if (!canActFor(actorMid)) { toast(`It's ${managerName(actorMid)}'s turn at the Trough`); return; }
-        if (wv.mode === 'open' && troughUsed(actorMid, cur)) { toast('Swap already used this gameweek'); return; }
+        if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s squad, not yours`); return; }
         const inId = +b.dataset.trin, outId = teamView.transferOut;
         const inP = PLAYER_BY_ID[inId];
-        if (!squadShapeOk([...squadAt(actorMid, cur).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
-        state.transfers.push({ managerId: actorMid, outId, inId, gw: cur, n: state.transfers.length + 1 });
-        (state.waivers[cur] = state.waivers[cur] || { actions: [] }).actions.push({ mid: actorMid, outId, inId });
-        const lu = state.lineups[actorMid]?.[cur];
-        if (lu) state.lineups[actorMid][cur] = lu.filter(id => id !== outId);
+        if (b.dataset.waiv === '1') {
+          setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
+          teamView.transferOut = null;
+          toast(`Claim lodged: ${inP.name}. Resolves when waivers run.`);
+          return;
+        }
+        if (!squadShapeOk([...squadAt(mid, cur).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+        state.transfers.push({ managerId: mid, outId, inId, gw: cur, n: state.transfers.length + 1, t: Date.now() });
+        const lu = state.lineups[mid]?.[cur];
+        if (lu) state.lineups[mid][cur] = lu.filter(id => id !== outId);
         pushShared('transfers', state.transfers);
-        pushShared(`waivers/${cur}/actions`, state.waivers[cur].actions);
-        if (state.lineups[actorMid]?.[cur]) pushShared(`lineups/${actorMid}/${cur}`, state.lineups[actorMid][cur]);
+        if (state.lineups[mid]?.[cur]) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
         teamView.transferOut = null;
         save(); render();
-        toast(`${inP.name} signed from the Trough. Moggi handled the paperwork.`);
+        toast(`${inP.name} signed from the Trough. First come, first served.`);
       });
     }
     renderTrResults();
@@ -1663,8 +1842,8 @@ function bindTeam() {
             !squadShapeOk([...squadAt(other, cur).filter(p => p.id !== b), pa])) {
           toast('Trade breaks a squad\'s position limits'); return;
         }
-        state.transfers.push({ managerId: mid, outId: a, inId: b, gw: cur, n: state.transfers.length + 1, trade: true });
-        state.transfers.push({ managerId: other, outId: b, inId: a, gw: cur, n: state.transfers.length + 1, trade: true });
+        state.transfers.push({ managerId: mid, outId: a, inId: b, gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
+        state.transfers.push({ managerId: other, outId: b, inId: a, gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
         for (const [m2, gone] of [[mid, a], [other, b]]) {
           const lu = state.lineups[m2]?.[cur];
           if (lu) {
@@ -1726,28 +1905,130 @@ function playoffCard() {
 }
 
 /* ----- head-to-head ----- */
+/* ----- the weekly preview ----- */
+function lastMeetings(a, b, before) {
+  const res = [];
+  for (let i = 0; i < before; i++) {
+    if (gwStatus(i) !== 'final') continue;
+    if (pairingsFor(i).some(([x, y]) => (x === a && y === b) || (x === b && y === a))) {
+      res.push({ gw: i, pa: gwManagerPoints(a, i), pb: gwManagerPoints(b, i) });
+    }
+  }
+  return res;
+}
+// average FPL strength of the clubs a manager's XI faces this gameweek (lower = kinder)
+function fixtureEase(mid, gwIdx) {
+  const gwN = GAMEWEEKS[gwIdx].n;
+  const opps = [];
+  for (const pid of lineupFor(mid, gwIdx)) {
+    const p = PLAYER_BY_ID[pid];
+    for (const f of state.fixtures) {
+      if (f.gw !== gwN) continue;
+      if (f.home === p.team) opps.push(TEAM_BY_NAME[f.away]?.str);
+      else if (f.away === p.team) opps.push(TEAM_BY_NAME[f.home]?.str);
+    }
+  }
+  const vals = opps.filter(Boolean);
+  return vals.length ? vals.reduce((t, v) => t + v, 0) / vals.length : null;
+}
+function rivalryFor(a, b, seed) {
+  if (typeof RIVALRIES === 'undefined') return null;
+  const hits = RIVALRIES.filter(r => (r.pair[0] === a && r.pair[1] === b) || (r.pair[0] === b && r.pair[1] === a));
+  return hits.length ? hits[seed % hits.length].line : null;
+}
+function gwPreviewCard(i) {
+  if (i >= REGULAR_GWS || gwStatus(i) === 'final' || !state.draft.picks.length) return '';
+  const pairs = pairingsFor(i);
+  if (!pairs.length) return '';
+  const table = h2hStandings();
+  const posOf = Object.fromEntries(table.map((r, k) => [r.id, k + 1]));
+  const anyPlayed = table.some(r => r.p > 0);
+  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
+  const rows = pairs.map(([a, b]) => {
+    const sa = projectedGwScore(a, i), sb = projectedGwScore(b, i);
+    return { a, b, sa, sb, p: winChance(sa, sb), riv: rivalryFor(a, b, i) };
+  });
+  // matchup of the week: a rivalry if one is on, else the tightest projection
+  const motw = [...rows].sort((x, y) => (y.riv ? 1 : 0) - (x.riv ? 1 : 0) || Math.abs(x.sa - x.sb) - Math.abs(y.sa - y.sb))[0];
+  const notes = r => {
+    const out = [];
+    if (r.riv) out.push(r.riv);
+    const met = lastMeetings(r.a, r.b, i);
+    if (met.length) {
+      const m = met[met.length - 1];
+      out.push(m.pa === m.pb
+        ? `Last met GW${GAMEWEEKS[m.gw].n}: a ${m.pa}–${m.pb} draw nobody enjoyed.`
+        : `Last met GW${GAMEWEEKS[m.gw].n}: ${teamName(m.pa > m.pb ? r.a : r.b)} won it ${Math.max(m.pa, m.pb)}–${Math.min(m.pa, m.pb)}.`);
+    } else if (anyPlayed) out.push('First meeting of the season.');
+    if (anyPlayed && out.length < 2) {
+      for (const id of [r.a, r.b]) {
+        if (posOf[id] >= 10) { out.push(`${teamName(id)} (${ord(posOf[id])}) badly needs the points.`); break; }
+        if (posOf[id] === 5) { out.push(`${teamName(id)} sits 5th — right on the playoff line.`); break; }
+      }
+    }
+    if (out.length < 2) {
+      const ea = fixtureEase(r.a, i), eb = fixtureEase(r.b, i);
+      if (ea && eb && Math.abs(ea - eb) > 40) out.push(`${teamName(ea < eb ? r.a : r.b)}'s players have the kinder club fixtures this week.`);
+    }
+    if (out.length < 2 && typeof MANAGER_LORE !== 'undefined') {
+      for (const id of [r.a, r.b]) if (MANAGER_LORE[id]) { out.push(`${managerName(id)} ${MANAGER_LORE[id]}.`); break; }
+    }
+    return out.slice(0, 2);
+  };
+  const recent = state.transfers.filter(t => t.gw === i || t.gw === i - 1).slice(-6);
+  const trough = recent.length ? `<p class="muted" style="font-size:12px;margin-top:10px"><b>Trough watch:</b> ${recent.map(t => `${esc(managerName(t.managerId))} ${t.trade ? 'traded for' : 'signed'} ${esc(PLAYER_BY_ID[t.inId]?.name || '?')}`).join(' · ')}</p>` : '';
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span></h2>
+    ${[motw, ...rows.filter(r => r !== motw)].map(r => {
+      const pct = Math.round(r.p * 100);
+      return `<div class="preview-fx${r === motw ? ' motw' : ''}">
+        ${r === motw ? '<div class="motw-tag">&#11088; MATCHUP OF THE WEEK</div>' : ''}
+        <div class="h2h-fx">
+          <span style="flex:1;text-align:right">${esc(teamName(r.a))} <b class="pct">${pct}%</b></span>
+          <span class="fx-score" title="projected score">${r.sa} &ndash; ${r.sb}</span>
+          <span style="flex:1"><b class="pct">${100 - pct}%</b> ${esc(teamName(r.b))}</span>
+        </div>
+        ${notes(r).map(n => `<div class="preview-note">${esc(n)}</div>`).join('')}
+      </div>`;
+    }).join('')}
+    ${trough}
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Projections built from FPL expected points for each current XI. The Committee accepts no liability.</p>
+  </div>`;
+}
+
 function viewH2H() {
-  const standings = h2hStandings();
-  const anyFinal = standings.some(r => r.p > 0);
   const cur = currentGwIndex();
+  const liveNow = GAMEWEEKS.slice(0, REGULAR_GWS).some((g, i) => gwStatus(i) === 'live');
+  const standings = h2hStandings(liveNow);
+  const anyFinal = standings.some(r => r.p > 0);
+  let delta = {};
+  if (liveNow) {
+    const base = h2hStandings(false);
+    const basePos = Object.fromEntries(base.map((r, k) => [r.id, k]));
+    standings.forEach((r, k) => { delta[r.id] = basePos[r.id] - k; });
+  }
+  const arrow = id => !liveNow || !delta[id] ? ''
+    : delta[id] > 0 ? `<span style="color:#3fb96d;font-size:11px">&#9650;${delta[id]}</span>`
+    : `<span style="color:#e05555;font-size:11px">&#9660;${-delta[id]}</span>`;
   return `
   <div class="card" style="margin-bottom:18px">
-    <h2>Head-to-Head table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
+    <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <table class="pool-table">
       <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
         <tr class="${i === 3 ? 'playoff-line' : ''}">
           <td class="muted">${i + 1}</td>
-          <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
+          <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
           <td class="num gold">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
         </tr>`).join('')}
       </tbody>
     </table>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top four make the playoffs.</p>
+    <p class="muted" style="font-size:11px;margin-top:6px">Top four make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
   </div>
+  ${gwPreviewCard(cur)}
   ${playoffCard()}
   ${GAMEWEEKS.slice(0, REGULAR_GWS).map((g, i) => {
     const st = gwStatus(i);
@@ -1818,13 +2099,13 @@ function viewTable() {
   return `
     ${investigation}
     ${ranked.map((m, i) => {
-      const moggiTag = !hasPts ? '' :
-        i === 0 ? '<span class="tag" title="Calciopoli, Article 6">&#128269; under investigation</span>' :
-        i === ranked.length - 1 ? '<span class="tag">&#11015;&#65039; Serie B awaits</span>' : '';
+      const commTag = !hasPts ? '' :
+        i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
+        i === ranked.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
       return `
       <div class="league-row ${i === 0 && m.pts > 0 ? 'leader' : ''}" data-mgr-row="${m.id}" style="cursor:pointer">
         <span class="rank">${i + 1}</span>
-        <span class="lname">${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${moggiTag}</span>
+        <span class="lname">${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
         <span class="lpts">${m.pts}</span>
       </div>
       <div class="breakdown" id="bd-${m.id}" style="display:none">
@@ -1918,7 +2199,8 @@ function viewRules() {
       ${Object.keys(DEFAULT_SCORING).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus-point nonsense. Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
-      <p class="rules-p"><b>Weekly waivers:</b> one swap each, taken in reverse table order — bottom feeds first. Pass if the Trough offers nothing.</p>
+      <p class="rules-p"><b>Waivers:</b> everyone goes on waivers when a gameweek starts, and dropped players go back on waivers. Lodge ranked claims (blind); they resolve <b>Tuesdays &amp; Fridays at 10:00 UTC</b> in reverse table order — win a claim, drop to the back. The Chairman can run waivers early, or open/close the Trough entirely.</p>
+      <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Knitty-grittys confirmed nearer the time, as is tradition.</p>
       <p class="rules-p"><b>Trades:</b> player-for-player swaps between managers, agreed in the group, any time until the playoff lock. Doesn't use your waiver turn.</p>
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>
@@ -1930,7 +2212,7 @@ function viewRules() {
       <p class="rules-p">£50 each. Last season's split: £250 playoff winner, £130 runner-up, £75 last man standing — and <b>£145 to the site</b>. The site now costs <b>£0</b>, because we built our own. That's £145 back in the pot; redistribution to be argued about in the group chat. Vive la révolution.</p>
       <h3 style="margin-top:16px">The small print</h3>
       <p class="rules-p">Stats sync automatically from the official FPL feed (goals land within ~15 minutes on matchdays). The commissioner (${esc(managerName(state.managers[0]?.id))}) settles disputes, can act for absent managers, and adjusts points if the feed errs.</p>
-      <p class="rules-p muted" style="font-style:italic">All decisions are final. Especially the pre-arranged ones. — L. Moggi</p>
+      <p class="rules-p muted" style="font-style:italic">All decisions are final. Complaints may be lodged in the group chat, where they will be enjoyed. — The Committee</p>
     </div>
   </div>`;
 }
@@ -2020,8 +2302,69 @@ function bindSettings() {
   };
 }
 
+/* ---------------- player stats card ---------------- */
+function showPlayerCard(pid) {
+  const p = PLAYER_BY_ID[pid];
+  if (!p) return;
+  $('#pcardOverlay')?.remove();
+  const owner = state.managers.find(m => managerSquad(m.id).some(x => x.id === pid));
+  const pp = playerPoints(pid);
+  const gwRows = [];
+  for (let i = GAMEWEEKS.length - 1; i >= 0; i--) {
+    const s = gwEvent(i)?.playerStats?.[pid];
+    if (!s) continue;
+    const bits = [];
+    if (s.g) bits.push(`\u26bd\u00d7${s.g}`);
+    if (s.a) bits.push(`A\u00d7${s.a}`);
+    if (s.cs) bits.push('CS');
+    if (s.ps) bits.push('pen save');
+    if (s.yc) bits.push('\ud83d\udfe8');
+    if (s.rc) bits.push('\ud83d\udfe5');
+    if (s.og) bits.push('OG');
+    gwRows.push(`<div class="score-row"><span>GW${GAMEWEEKS[i].n} <span class="muted" style="font-size:11px">${s.min || 0}&prime; ${bits.join(' ')}</span></span><b class="${gwPlayerPoints(pid, i) > 0 ? 'gold' : 'muted'}">${gwPlayerPoints(pid, i)}</b></div>`);
+  }
+  const ov = document.createElement('div');
+  ov.id = 'pcardOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card pcard">
+    <div class="pcard-head">
+      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="">
+      <div>
+        <h2 style="margin-bottom:2px">${esc(p.name)} <span class="pos-badge pos-${p.pos}">${p.pos}</span></h2>
+        <p class="muted" style="font-size:12px">${esc(p.full)}</p>
+        <p style="font-size:13px;margin-top:4px">${flagImg(p.team)} ${esc(p.team)} &middot; \u00a3${p.price.toFixed(1)}m</p>
+        ${p.news ? `<p class="warn" style="font-size:12px;margin-top:4px">${statusChip(p)} ${esc(p.news)}</p>` : ''}
+        <p class="muted" style="font-size:12px;margin-top:4px">${owner ? `Owned by <b style="color:var(--text)">${esc(teamName(owner.id))}</b>` : 'Free agent' + (state.phase === 'season' && onWaivers(p) ? ' \u2014 on waivers' : ' \u2014 in the Trough')}</p>
+      </div>
+      <button class="btn ghost small" id="pcardClose" style="margin-left:auto">\u2715</button>
+    </div>
+    <div class="quota-bar" style="margin:10px 0">
+      <span class="quota-pill">League pts <b class="gold">&nbsp;${pp.pts}</b></span>
+      <span class="quota-pill">FPL official ${p.pts}</span>
+      <span class="quota-pill" title="FPL expected points, next gameweek">xPts next ${playerXp(p).toFixed(1)}</span>
+    </div>
+    ${pp.lines.length ? `<p class="muted" style="font-size:12px;margin-bottom:8px">${esc(pp.lines.join(' \u00b7 '))}</p>` : ''}
+    <div style="max-height:260px;overflow-y:auto">${gwRows.join('') || '<p class="muted" style="font-size:12px">No gameweek data yet this season.</p>'}</div>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">League pts use our scoring (no bonus). FPL official shown for arguments.</p>
+  </div>`;
+  ov.onclick = e => { if (e.target === ov || e.target.id === 'pcardClose') ov.remove(); };
+  document.body.appendChild(ov);
+}
+// any player photo/kit anywhere opens the card (capture phase beats row handlers)
+document.addEventListener('click', e => {
+  const t = e.target.closest?.('[data-pcard]');
+  if (!t) return;
+  e.preventDefault();
+  e.stopPropagation();
+  showPlayerCard(+t.dataset.pcard);
+}, true);
+
 /* ---------------- boot ---------------- */
 render();
+// commissioner devices run overdue scheduled waivers automatically
+setTimeout(() => {
+  if (netOn() && isCommissioner() && waiverRunDue()) processWaivers(false);
+}, 4000);
 // auto-sync on load during the tournament (max once per 20 min, always if live)
 if (state.phase === 'season') {
   const stale = !state.lastSync || (Date.now() - new Date(state.lastSync).getTime()) > 20 * 60 * 1000;

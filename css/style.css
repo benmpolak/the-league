@@ -311,3 +311,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .headshot { width: 28px; height: 36px; border-radius: 5px; object-fit: cover; object-position: top; background: var(--bg2); flex-shrink: 0; }
 .pool-table .headshot { width: 32px; height: 41px; }
 .kit { width: 22px; height: 28px; object-fit: contain; flex-shrink: 0; }
+[data-pcard] { cursor: pointer; }
+.pcard { max-width: 480px; width: 94%; }
+.pcard-head { display: flex; gap: 14px; align-items: flex-start; }
+.pcard-photo { width: 84px; height: 84px; border-radius: 12px; object-fit: cover; object-position: top; background: var(--bg2); }
+.preview-fx { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.preview-fx:last-of-type { border-bottom: none; }
+.preview-fx.motw { background: var(--bg2); border-radius: 10px; padding: 10px; margin-bottom: 6px; border: 1px solid var(--accent); }
+.motw-tag { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--accent); text-align: center; margin-bottom: 4px; }
+.pct { font-size: 11px; color: var(--muted); }
+.preview-note { font-size: 12px; color: var(--muted); text-align: center; margin-top: 3px; }

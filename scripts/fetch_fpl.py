@@ -38,6 +38,8 @@ def main():
         'name': t['name'],
         'short': t['short_name'],
         'code': t['code'],
+        # blended FPL strength rating, used for fixture-ease in the weekly preview
+        'str': round((t['strength_overall_home'] + t['strength_overall_away']) / 2),
     } for t in boot['teams']]
     team_name = {t['id']: t['name'] for t in teams}
     team_short = {t['id']: t['short_name'] for t in boot['teams']}
@@ -61,6 +63,9 @@ def main():
             'pts': pts,
             # draft-room guide: points if the season has any, else price as proxy
             'rating': pts if pts > 0 else round(e['now_cost'] / 10),
+            # FPL's own expected points for the next gameweek — feeds projections
+            'xp': float(e.get('ep_next') or 0),
+            'ppg': float(e.get('points_per_game') or 0),
         })
 
     events = boot['events']
