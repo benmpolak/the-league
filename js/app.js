@@ -372,6 +372,13 @@ const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
   return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-66.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
 };
+// next fixture for a club in a gameweek — "MCI (H)" style
+function nextOpp(club, gwN) {
+  const f = state.fixtures.find(f => f.gw === gwN && (f.home === club || f.away === club));
+  if (!f) return null;
+  const opp = f.home === club ? f.away : f.home;
+  return `${TEAM_BY_NAME[opp]?.short || opp} (${f.home === club ? 'H' : 'A'})`;
+}
 // clickable player name — opens the stats card, usable in any text row
 const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}</span>` : '?';
 // expected points next gameweek: FPL's own projection, then points-per-game, then a guess
@@ -835,13 +842,15 @@ function gwStatus(i) {
   return 'upcoming';
 }
 function h2hStandings(includeLive = false) {
-  const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, name: m.name, team: m.team, p: 0, w: 0, d: 0, l: 0, pts: 0 }]));
+  const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, name: m.name, team: m.team, p: 0, w: 0, d: 0, l: 0, pts: 0, pf: 0, pa: 0 }]));
   for (let i = 0; i < REGULAR_GWS; i++) {
     const st = gwStatus(i);
     if (st !== 'final' && !(includeLive && st === 'live')) continue;
     for (const [a, b] of pairingsFor(i)) {
       const pa = gwManagerPoints(a, i), pb = gwManagerPoints(b, i);
       rows[a].p++; rows[b].p++;
+      rows[a].pf += pa; rows[a].pa += pb;
+      rows[b].pf += pb; rows[b].pa += pa;
       if (pa > pb) { rows[a].w++; rows[a].pts += 3; rows[b].l++; }
       else if (pb > pa) { rows[b].w++; rows[b].pts += 3; rows[a].l++; }
       else { rows[a].d++; rows[b].d++; rows[a].pts++; rows[b].pts++; }
@@ -1530,6 +1539,10 @@ function poolTable() {
   const s = poolFilter.sort;
   rows.sort((a, b) => s === 'name' ? a.name.localeCompare(b.name)
     : s === 'price' ? b.price - a.price
+    : s === 'ppg' ? (b.ppg || 0) - (a.ppg || 0)
+    : s === 'g' ? (b.g || 0) - (a.g || 0)
+    : s === 'a' ? (b.a || 0) - (a.a || 0)
+    : s === 'xgi' ? ((b.xg || 0) + (b.xa || 0)) - ((a.xg || 0) + (a.xa || 0))
     : rating(b) - rating(a));
   const total = rows.length;
   rows = rows.slice(0, poolFilter.limit);
@@ -1539,7 +1552,11 @@ function poolTable() {
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
       <th class="num" data-sort="price" title="Current FPL price">£m ${s === 'price' ? '▾' : ''}</th>
-      <th class="num" data-sort="rating" title="Last season's FPL points (price until the new season's data arrives)">Pts 25/26 ${s === 'rating' ? '▾' : ''}</th><th></th>
+      <th class="num" data-sort="ppg" title="Points per game, last season">PPG ${s === 'ppg' ? '▾' : ''}</th>
+      <th class="num" data-sort="g" title="Goals">G ${s === 'g' ? '▾' : ''}</th>
+      <th class="num" data-sort="a" title="Assists">A ${s === 'a' ? '▾' : ''}</th>
+      <th class="num" data-sort="xgi" title="Expected goals + assists">xGI ${s === 'xgi' ? '▾' : ''}</th>
+      <th class="num" data-sort="rating" title="Total FPL points, last season">Pts ${s === 'rating' ? '▾' : ''}</th><th></th>
     </tr></thead>
     <tbody>
       ${rows.map(p => `
@@ -1549,6 +1566,10 @@ function poolTable() {
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         <td class="num">${p.price.toFixed(1)}</td>
+        <td class="num">${(p.ppg || 0).toFixed(1)}</td>
+        <td class="num">${p.g || 0}</td>
+        <td class="num">${p.a || 0}</td>
+        <td class="num muted">${((p.xg || 0) + (p.xa || 0)).toFixed(1)}</td>
         <td class="num gold">${rating(p)}</td>
         <td style="white-space:nowrap"><button class="btn small" data-pick="${p.id}" ${canPick(mid, p) && canActFor(mid) ? '' : `disabled title="${canActFor(mid) ? 'Position limits hit' : `${esc(managerName(mid))} is on the clock, not you`}"`}>Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
@@ -1678,7 +1699,7 @@ function viewDraftRecap() {
 }
 
 /* ----- my team (lineups + transfers) ----- */
-let teamView = { mid: null, gw: null, transferOut: null, pitchSel: null };
+let teamView = { mid: null, gw: null, transferOut: null, pitchSel: null, showOpp: false };
 
 function viewTeam() {
   if (teamView.mid == null) teamView.mid = state.managers[0].id;
@@ -1708,7 +1729,22 @@ function viewTeam() {
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
   </div>
   <div class="card" style="margin-bottom:18px">
-    <h2>The pitch <span class="muted" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span></h2>
+    <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
+      ${(() => {
+        const opp = pairingsFor(gw).find(pr => pr.includes(mid));
+        return opp ? `<button class="btn ghost small" id="showOpp" style="margin-left:auto">${teamView.showOpp ? 'Hide' : 'Show'} opponent</button>` : '';
+      })()}
+    </h2>
+    ${(() => {
+      if (!teamView.showOpp) return '';
+      const pair = pairingsFor(gw).find(pr => pr.includes(mid));
+      if (!pair) return '';
+      const oppMid = pair[0] === mid ? pair[1] : pair[0];
+      const oxi = lineupFor(oppMid, gw);
+      return `<div class="mu-grid" style="margin-bottom:10px"><div class="mu-side"><h3 style="text-align:center">${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
+        <div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `<div class="pitch-chip mu-chip" data-pcard="${p.id}">${kitImg(p.team, p.pos === 'GK')}<span class="pitch-name">${esc(p.name)}</span></div>`).join('')}</div>`).join('')}</div>
+      </div><div class="mu-side"><h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3><p class="muted" style="font-size:11px;text-align:center">Your pitch is below — this is who you're up against.</p></div></div>`;
+    })()}
     <div class="pitch">
       ${['GK', 'DF', 'MF', 'FW'].map(pos => `
         <div class="pitch-row">
@@ -1716,6 +1752,7 @@ function viewTeam() {
             <div class="pitch-chip ${teamView.pitchSel === p.id ? 'sel' : ''}" data-pitch="${p.id}" draggable="${!locked}">
               ${kitImg(p.team, p.pos === 'GK')}
               <span class="pitch-name">${esc(p.name)}</span>
+              ${!gwIsOver(gw) ? `<span class="pitch-vs">${esc(nextOpp(p.team, GAMEWEEKS[gw].n) || '—')}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
             </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}
         </div>`).join('')}
     </div>
@@ -1840,6 +1877,8 @@ function bindTeam() {
       save(); render();
     });
   }
+  const so = $('#showOpp');
+  if (so) so.onclick = () => { teamView.showOpp = !teamView.showOpp; render(); };
   // --- stadium naming ---
   const sb2 = $('#stadiumBtn');
   if (sb2) sb2.onclick = () => {
@@ -2097,40 +2136,50 @@ function playoffCard() {
 }
 
 /* ----- head-to-head ----- */
-/* ----- fixture matchup: two XIs face to face ----- */
+/* ----- fixture matchup: side-by-side pitches, Draft Fantasy style ----- */
+let muView = 'pitch';
 function showMatchup(a, b, i) {
   $('#muOverlay')?.remove();
   const started = gwStatus(i) !== 'upcoming';
   const xiOf = mid => started ? effectiveXI(mid, i).xi : lineupFor(mid, i);
-  const chip = (pid, side) => {
+  const chip = pid => {
     const p = PLAYER_BY_ID[pid];
     const pts = started ? gwPlayerPoints(pid, i) : null;
-    return `<div class="pitch-chip mu-chip ${side}" data-pcard="${p.id}">
+    return `<div class="pitch-chip mu-chip" data-pcard="${p.id}">
       ${kitImg(p.team, p.pos === 'GK')}
       <span class="pitch-name">${esc(p.name)}</span>
-      ${pts != null ? `<span class="mu-pts">${pts}</span>` : `<span class="mu-pts xp">${playerXp(p).toFixed(1)}</span>`}
+      ${pts != null ? `<span class="mu-pts">${pts}</span>` : `<span class="pitch-vs">${esc(nextOpp(p.team, GAMEWEEKS[i].n) || '')}</span>`}
     </div>`;
   };
-  const rows = mid => ['GK', 'DF', 'MF', 'FW'].map(pos =>
-    `<div class="pitch-row">${xiOf(mid).map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => chip(p.id, '')).join('')}</div>`);
-  const pa = started ? gwManagerPoints(a, i) : projectedGwScore(a, i);
-  const pb = started ? gwManagerPoints(b, i) : projectedGwScore(b, i);
+  const sidePitch = mid => `<div class="pitch mu-pitch">
+    ${['GK', 'DF', 'MF', 'FW'].map(pos =>
+      `<div class="pitch-row">${xiOf(mid).map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => chip(p.id)).join('')}</div>`).join('')}
+  </div>`;
+  const sideTable = mid => `<div>${xiOf(mid).map(pid => PLAYER_BY_ID[pid])
+    .sort((x, y) => POS_ORDER[x.pos] - POS_ORDER[y.pos])
+    .map(p => `<div class="lrow" style="font-size:12px"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="sp-pts ${started && gwPlayerPoints(p.id, i) > 0 ? 'gold' : 'muted'}" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : playerXp(p).toFixed(1)}</span></div>`).join('')}</div>`;
+  const side = mid => `<div class="mu-side">
+    <h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
+  </div>`;
   const ov = document.createElement('div');
   ov.id = 'muOverlay';
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card mu-card">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <h2 style="flex:1">${esc(teamName(a))} <span class="fx-score">${pa} &ndash; ${pb}</span> ${esc(teamName(b))}</h2>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div class="pool-controls" style="margin:0">
+        <button class="btn small ${muView === 'pitch' ? '' : 'ghost'}" id="muPitch">Pitch</button>
+        <button class="btn small ${muView === 'table' ? '' : 'ghost'}" id="muTable">Table</button>
+      </div>
+      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; ${started ? (gwStatus(i) === 'final' ? 'full time' : 'in play') : 'projected'}</p>
       <button class="btn ghost small" id="muClose">&#10005;</button>
     </div>
-    <p class="venue-line" style="margin:0 0 8px">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; ${started ? (gwStatus(i) === 'final' ? 'full time' : 'in play') : 'projected — tap any player for stats'}</p>
-    <div class="pitch mu-pitch">
-      ${rows(a).join('')}
-      <div class="mu-divider"><span>${esc(chantFor(a, b, i)).replace(/^\u{1F3B5} |^\u{1F4CB} /u, '')}</span></div>
-      ${rows(b).reverse().join('')}
-    </div>
+    <div class="mu-grid">${side(a)}${side(b)}</div>
+    <p class="venue-line" style="margin-top:8px">${esc(chantFor(a, b, i))}</p>
   </div>`;
   ov.onclick = e => { if (e.target === ov || e.target.id === 'muClose') ov.remove(); };
+  ov.querySelector('#muPitch').onclick = e => { e.stopPropagation(); muView = 'pitch'; showMatchup(a, b, i); };
+  ov.querySelector('#muTable').onclick = e => { e.stopPropagation(); muView = 'table'; showMatchup(a, b, i); };
   document.body.appendChild(ov);
 }
 function bindH2H() {
@@ -2279,13 +2328,14 @@ function viewH2H() {
   <div class="card" style="margin-bottom:18px">
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <table class="pool-table">
-      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
+      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
         <tr class="${i === 3 ? 'playoff-line' : ''}">
           <td class="muted">${i + 1}</td>
           <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
+          <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
           <td class="num gold">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
         </tr>`).join('')}

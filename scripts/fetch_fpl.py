@@ -66,6 +66,13 @@ def main():
             # FPL's own expected points for the next gameweek — feeds projections
             'xp': float(e.get('ep_next') or 0),
             'ppg': float(e.get('points_per_game') or 0),
+            # season aggregates for the pool table and player cards
+            'mp': e.get('minutes') or 0,
+            'g': e.get('goals_scored') or 0,
+            'a': e.get('assists') or 0,
+            'cs': e.get('clean_sheets') or 0,
+            'xg': float(e.get('expected_goals') or 0),
+            'xa': float(e.get('expected_assists') or 0),
         })
 
     events = boot['events']

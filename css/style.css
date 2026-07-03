@@ -363,3 +363,7 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .mu-pts.xp { color: #cfe3d4; opacity: .8; }
 .mu-divider { border-top: 2px solid #ffffff33; margin: 4px 10px; text-align: center; }
 .mu-divider span { font-size: 10px; color: #ffffffb0; font-style: italic; }
+.pitch-vs { font-size: 9px; color: #cfe3d4; opacity: .85; text-shadow: 0 1px 2px #000a; }
+.mu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mu-card { max-width: 760px; }
+@media (max-width: 700px) { .mu-grid { grid-template-columns: 1fr; } }
