@@ -1,0 +1,30 @@
+name: Backup league state
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # hourly, 7 past
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: league-backup
+  cancel-in-progress: true
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Snapshot the league from Firebase
+        run: python3 scripts/backup_league.py
+      - name: Commit if changed
+        run: |
+          git config user.name 'league-backup-bot'
+          git config user.email 'actions@github.com'
+          git add data/backups/
+          if ! git diff --cached --quiet; then
+            git commit -m "backup: league state $(date -u '+%Y-%m-%d %H:%M')"
+            git push
+          fi
