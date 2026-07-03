@@ -142,7 +142,7 @@ function actGuard(mid, what = 'team') {
   return true;
 }
 
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -189,6 +189,7 @@ window.onSharedSnapshot = data => {
   const fresh = data.phase === 'draft' && data.draft.picks.length === 0;
   data.transfers = toArr(data.transfers);
   data.trades = toArr(data.trades);
+  data.covenants = toArr(data.covenants);
   data.pins = data.pins || {};
   data.autolists = data.autolists || {};
   for (const mid of Object.keys(data.autolists)) data.autolists[mid] = toArr(data.autolists[mid]);
@@ -246,7 +247,8 @@ function freshState() {
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
     transfers: [],         // [{managerId, outId, inId, gw, n, t, trade?, waiver?}]
-    trades: [],            // [{id, from, to, give, get, status: pending|done|rejected|withdrawn, t}]
+    trades: [],            // [{id, from, to, give, get, terms?, status: pending|done|rejected|withdrawn, t}]
+    covenants: [],         // the offline bits: [{id, from, to, text, t, gw}] — the register of nonsense
     claims: {},            // gwIndex -> { managerId: [{in, out}] ranked }
     waiverMeta: { lastRun: null, control: 'auto' }, // control: auto | open | closed
     fixtures: [],
@@ -359,6 +361,7 @@ function load() {
     if (s && !s.autolists) s.autolists = {};
     if (s && !s.trades) s.trades = [];
     if (s && !s.pins) s.pins = {};
+    if (s && !s.covenants) s.covenants = [];
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
@@ -571,8 +574,8 @@ function waiverOrder(gwIdx) {
   return [...base].reverse(); // bottom feeds first
 }
 /* ---------------- trades (Draft Fantasy style: propose, accept, done) ---------------- */
-function proposeTrade(from, to, give, get) {
-  state.trades = [...toArr(state.trades), { id: Date.now() + '-' + from, from, to, give, get, status: 'pending', t: Date.now() }];
+function proposeTrade(from, to, give, get, terms = '') {
+  state.trades = [...toArr(state.trades), { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() }];
   pushShared('trades', state.trades);
   save(); render();
   toast(`Trade proposed to ${managerName(to)}. Their move.`);
@@ -602,6 +605,10 @@ function respondTrade(id, accept) {
     toast('Trade would break a squad\'s position limits'); return;
   }
   tr.status = 'done';
+  if (tr.terms) {
+    state.covenants = [...toArr(state.covenants), { id: tr.id + '-cov', from: tr.from, to: tr.to, text: tr.terms, t: Date.now(), gw: GAMEWEEKS[cur].n }];
+    pushShared('covenants', state.covenants);
+  }
   state.transfers.push({ managerId: tr.from, outId: tr.give, inId: tr.get, gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
   state.transfers.push({ managerId: tr.to, outId: tr.get, inId: tr.give, gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
   for (const [m2, gone] of [[tr.from, tr.give], [tr.to, tr.get]]) {
@@ -926,6 +933,7 @@ async function syncNow(manual = false) {
 const NAV_ITEMS = [
   ['draft', 'The Console'],
   ['team', 'My Team'],
+  ['transfers', 'Transfers'],
   ['h2h', 'Head-to-Head'],
   ['cup', 'The Monzo Cup'],
   ['table', 'League Table'],
@@ -960,6 +968,7 @@ function render() {
     case 'draft': main.innerHTML = viewDraft(); bindDraft(); break;
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
+    case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
     case 'cup': main.innerHTML = viewCup(); break;
     case 'table': main.innerHTML = viewTable(); bindTable(); break;
     case 'fixtures': main.innerHTML = viewFixtures(); bindFixtures(); break;
@@ -1825,62 +1834,9 @@ function viewTeam() {
     </div>
     <div class="draft-side">
       <div class="card">
-        ${(() => {
-          const ctl = waiverControl();
-          const claims = myClaims(mid);
-          const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
-          const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
-            : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
-            : `<span class="tag">waivers process ${nextRun.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC</span>`;
-          const order = waiverOrder(cur);
-          const orderStrip = ctl === 'auto' ? `<div class="order-strip" style="margin-bottom:10px" title="Waiver priority — bottom of the table first">${order.map(om => `<span class="order-chip">${esc(managerName(om))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}</div>` : '';
-          const claimRows = claims.length ? claims.map((c, k) => `
-            <div class="lrow" style="font-size:12.5px">
-              <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
-              <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
-              <span style="margin-left:auto;display:flex;gap:4px">
-                ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
-                <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
-              </span>
-            </div>`).join('') : '';
-          return `<h2>Waivers &amp; The Trough ${status}</h2>
-          <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
-          ${orderStrip}
-          ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
-          ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
-          <select id="trOut" style="width:100%;margin:8px 0">
-            <option value="">Player out…</option>
-            ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `<option value="${p.id}" ${teamView.transferOut === p.id ? 'selected' : ''}>${p.pos} — ${esc(p.name)} (${esc(p.club)})</option>`).join('')}
-          </select>
-          <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;margin-bottom:8px">
-          <div id="trResults" class="pick-log"></div>`}
-          ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-            <button class="btn small" id="runWaivers">Run waivers now</button>
-            <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
-            <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
-            <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
-          </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>` : ''}`;
-        })()}
-        <h3 style="margin-top:16px">Transfer log</h3>
-        ${state.transfers.filter(t => t.managerId === mid).map(t =>
-          `<div class="lrow" style="font-size:12.5px;padding:3px 0"><span class="muted">GW${GAMEWEEKS[t.gw].n}${t.trade ? ' ↔' : ''}</span> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') || '<span class="muted" style="font-size:12.5px">None yet.</span>'}
-      </div>
-      <div class="card">
-        <h2>Trade desk ${toArr(state.trades).some(t => t.status === 'pending' && t.to === mid) ? '<span class="tag live-tag">OFFER IN</span>' : ''}</h2>
-        <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap; it executes the instant the other manager accepts. Doesn't touch waivers.</p>
-        ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
-          <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
-            <span><b>${esc(managerName(t.from))}</b> gives <b>${pname(PLAYER_BY_ID[t.give])}</b> for <b>${pname(PLAYER_BY_ID[t.get])}</b></span>
-            <span style="margin-left:auto;display:flex;gap:4px">
-              ${t.to === mid ? `<button class="btn small" data-tracc="${t.id}">Accept</button><button class="btn ghost small" data-trrej="${t.id}">Reject</button>`
-                : `<button class="btn ghost small" data-trwd="${t.id}">Withdraw</button>`}
-            </span>
-          </div>`).join('')}
-        <select id="tradeWith" style="width:100%;margin:8px 0">
-          <option value="">Trade ${esc(managerName(mid))} with…</option>
-          ${state.managers.filter(m => m.id !== mid).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
-        </select>
-        <div id="tradePickers"></div>
+        <h2>Transfers ${toArr(state.trades).some(t => t.status === 'pending' && t.to === mid) ? '<span class="tag live-tag">OFFER IN</span>' : ''}</h2>
+        <p class="muted" style="font-size:12.5px;margin-bottom:10px">The Trough, waivers and the Trade desk live in the <b>Transfers</b> tab.</p>
+        <button class="btn small" id="goTransfers">Open Transfers</button>
       </div>
       <div class="card">
         <h2>Gameweek points</h2>
@@ -1997,7 +1953,129 @@ function bindTeam() {
     pushShared(`shirtNums/${mid}`, state.shirtNums[mid]);
     save(); render();
     toast(`${PLAYER_BY_ID[pid].name} takes the number ${n} shirt`);
-  });
+  });  const gt = $('#goTransfers');
+  if (gt) gt.onclick = () => { state.view = 'transfers'; save(); render(); };
+}
+
+/* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
+let transfersView = { tab: 'trough', out: null };
+function viewTransfers() {
+  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  const cur = currentGwIndex();
+  const ownedNow = ownedIdsAt(cur);
+  const tabs = [['trough', 'The Trough & Waivers'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
+  const tab = transfersView.tab;
+  const pendingIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid).length;
+  const head = `<div class="team-controls card">
+    ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
+    <span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>
+  </div>`;
+  if (tab === 'trough') {
+    const ctl = waiverControl();
+    const claims = myClaims(mid);
+    const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+    const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
+      : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
+      : `<span class="tag">waivers process ${nextRun.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC</span>`;
+    const claimRows = claims.map((c, k) => `
+      <div class="lrow" style="font-size:12.5px">
+        <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+        <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
+        <span style="margin-left:auto;display:flex;gap:4px">
+          ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
+          <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
+        </span>
+      </div>`).join('');
+    return `${head}<div class="card">
+      <h2>Waivers &amp; The Trough ${status}</h2>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
+      ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
+      ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
+      <select id="trOut" style="width:100%;margin:8px 0;max-width:420px">
+        <option value="">Player out…</option>
+        ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
+      </select>
+      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
+      <div id="trResults" class="pick-log" style="max-height:420px"></div>`}
+      ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn small" id="runWaivers">Run waivers now</button>
+        <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
+        <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
+        <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
+      </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>` : ''}
+    </div>`;
+  }
+  if (tab === 'trades') {
+    return `${head}<div class="card">
+      <h2>Trade desk</h2>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap; it executes the instant the other manager accepts.</p>
+      ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
+        <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
+          <span><b>${esc(managerName(t.from))}</b> gives <b>${pname(PLAYER_BY_ID[t.give])}</b> for <b>${pname(PLAYER_BY_ID[t.get])}</b>${t.terms ? `<br><span class="muted" style="font-size:11px">&#128220; ${esc(t.terms)}</span>` : ''}</span>
+          <span style="margin-left:auto;display:flex;gap:4px">
+            ${t.to === mid ? `<button class="btn small" data-tracc="${t.id}">Accept</button><button class="btn ghost small" data-trrej="${t.id}">Reject</button>`
+              : `<button class="btn ghost small" data-trwd="${t.id}">Withdraw</button>`}
+          </span>
+        </div>`).join('') || '<p class="muted" style="font-size:12.5px">No offers on the table.</p>'}
+      <select id="tradeWith" style="width:100%;max-width:420px;margin:8px 0;display:block">
+        <option value="">Trade ${esc(managerName(mid))} with…</option>
+        ${state.managers.filter(m => m.id !== mid).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
+      </select>
+      <div id="tradePickers" style="max-width:420px"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>The Covenant Register <span class="tag">the offline bits, on the record</span></h2>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Loan-backs, first refusals, "you owe me one" — record it here so nobody can deny it in GW30. Witnessed by the Committee. Enforced by the group chat.</p>
+      ${[...toArr(state.covenants)].reverse().map(c => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
+        <span class="muted">GW${c.gw ?? '?'}</span>
+        <span><b>${esc(managerName(c.from))}</b> &harr; <b>${esc(managerName(c.to))}</b>: &#128220; ${esc(c.text)}</span>
+      </div>`).join('') || '<p class="muted" style="font-size:12px">No covenants recorded. Suspiciously clean.</p>'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <select id="covWith" style="min-width:150px">
+          <option value="">With…</option>
+          ${state.managers.filter(m => m.id !== mid).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
+        </select>
+        <input type="text" id="covText" maxlength="200" placeholder="The agreement, verbatim" style="flex:1;min-width:220px">
+        <button class="btn small" id="covAdd">Record it</button>
+      </div>
+    </div>`;
+  }
+  if (tab === 'history') {
+    const rows = [...state.transfers].reverse().map(t => `<div class="lrow" style="font-size:12.5px">
+      <span class="muted" style="width:44px">GW${GAMEWEEKS[t.gw].n}</span>
+      <span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : 'trough'}</span>
+      <b style="min-width:120px">${esc(teamName(t.managerId))}</b>
+      ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b>
+    </div>`).join('');
+    return `${head}<div class="card"><h2>Every move, on the record</h2>${rows || '<p class="muted">Nothing yet. Cowards.</p>'}</div>`;
+  }
+  // order
+  const order = waiverOrder(cur);
+  const claimCounts = state.managers.map(m => ({ m, n: myClaims(m.id).length }));
+  const waiverHist = state.transfers.filter(t => t.waiver);
+  return `${head}<div class="card">
+    <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
+    ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
+      <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} claim${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} pending</span></div>`).join('')}
+    <p class="muted" style="font-size:11px;margin-top:8px">Claims are blind — counts are public, targets are not. Next run: ${nextWaiverRun(Math.max(lastWaiverRun(), Date.now())).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC.</p>
+    <h3 style="margin-top:16px">Waiver history</h3>
+    ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> claimed ${pname(PLAYER_BY_ID[t.inId])} <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">No claims have landed yet.</p>'}
+  </div>`;
+}
+function bindTransfers() {
+  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  const cur = currentGwIndex();
+  document.querySelectorAll('[data-trtab]').forEach(b => b.onclick = () => { transfersView.tab = b.dataset.trtab; render(); });
+  const cov = $('#covAdd');
+  if (cov) cov.onclick = () => {
+    if (!actGuard(mid, 'covenant')) return;
+    const to = +$('#covWith').value, text = $('#covText').value.trim();
+    if (!to || !text) { toast('Pick a counterparty and state the nonsense'); return; }
+    state.covenants = [...toArr(state.covenants), { id: Date.now() + '-' + mid, from: mid, to, text: text.slice(0, 200), t: Date.now(), gw: GAMEWEEKS[cur].n }];
+    pushShared('covenants', state.covenants);
+    save(); render();
+    toast('Recorded. It is now canon.');
+  };
   // --- waivers & the Trough ---
   const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
   // claim list management (withdraw / reprioritise)
@@ -2016,12 +2094,12 @@ function bindTeam() {
   ['open', 'closed', 'auto'].forEach(m => { const b = $(`#ctl${m[0].toUpperCase()}${m.slice(1)}`); if (b) b.onclick = () => setWaiverControl(m); });
   if (out) {
     const cur = currentGwIndex();
-    out.onchange = () => { teamView.transferOut = +out.value || null; renderTrResults(); };
+    out.onchange = () => { transfersView.out = +out.value || null; renderTrResults(); };
     search.oninput = renderTrResults;
     function renderTrResults() {
       const q = normName(search.value || '');
       const owned = ownedIdsAt(cur);
-      const outP = teamView.transferOut ? PLAYER_BY_ID[teamView.transferOut] : null;
+      const outP = transfersView.out ? PLAYER_BY_ID[transfersView.out] : null;
       const squadAfterOut = squadAt(mid, cur).filter(p => !outP || p.id !== outP.id);
       const claimedIds = new Set(myClaims(mid).map(c => c.in));
       let pool = PLAYERS.filter(p => !owned.has(p.id));
@@ -2038,11 +2116,11 @@ function bindTeam() {
       }).join('') || '<span class="muted">The Trough is empty. Somehow.</span>';
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
         if (!actGuard(mid, 'squad')) return;
-        const inId = +b.dataset.trin, outId = teamView.transferOut;
+        const inId = +b.dataset.trin, outId = transfersView.out;
         const inP = PLAYER_BY_ID[inId];
         if (b.dataset.waiv === '1') {
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
-          teamView.transferOut = null;
+          transfersView.out = null;
           toast(`Claim lodged: ${inP.name}. Resolves when waivers run.`);
           return;
         }
@@ -2052,7 +2130,7 @@ function bindTeam() {
         if (lu) state.lineups[mid][cur] = lu.filter(id => id !== outId);
         pushShared('transfers', state.transfers);
         if (state.lineups[mid]?.[cur]) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
-        teamView.transferOut = null;
+        transfersView.out = null;
         save(); render();
         toast(`${inP.name} signed from the Trough. First come, first served.`);
       });
@@ -2112,6 +2190,7 @@ function bindTeam() {
           <option value="">${esc(managerName(other))} gives…</option>
           ${theirs.map(p => `<option value="${p.id}">${p.pos} — ${esc(p.name)} (${esc(p.club)})</option>`).join('')}
         </select>
+        <input type="text" id="tradeTerms" maxlength="200" placeholder="Side terms (optional) — loan-backs, first refusals, the nonsense…" style="width:100%;margin-bottom:8px">
         <button class="btn small" id="tradeGo">Propose trade</button>`;
       $('#tradeGo').onclick = () => {
         if (!actGuard(mid, 'trade')) return;
@@ -2122,7 +2201,7 @@ function bindTeam() {
             !squadShapeOk([...squadAt(other, cur).filter(p => p.id !== b), pa])) {
           toast('Trade would break a squad\'s position limits'); return;
         }
-        proposeTrade(mid, other, a, b);
+        proposeTrade(mid, other, a, b, $('#tradeTerms')?.value.trim() || '');
       };
     };
   }
@@ -2813,16 +2892,16 @@ function showPlayerCard(pid) {
   }
   if (state.phase === 'season' && iAmManager) {
     if (!owner) {
-      btn(onWaivers(p) ? 'Claim in My Team' : 'Sign in My Team', () => {
+      btn(onWaivers(p) ? 'Claim in Transfers' : 'Sign in Transfers', () => {
         ov.remove();
         window._troughFocus = p.name;
-        teamView.mid = whoami; state.view = 'team'; save(); render();
+        transfersView.tab = 'trough'; state.view = 'transfers'; save(); render();
       });
     } else if (owner.id !== whoami) {
       btn('Propose a trade', () => {
         ov.remove();
         window._tradeFocus = { other: owner.id, get: pid };
-        teamView.mid = whoami; state.view = 'team'; save(); render();
+        transfersView.tab = 'trades'; state.view = 'transfers'; save(); render();
       });
     }
   }
