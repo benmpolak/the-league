@@ -179,6 +179,38 @@ function publishAll() {
 }
 const toArr = x => Array.isArray(x) ? x : (x ? Object.values(x) : []);
 
+/* ----- concurrency-safe shared-array writes -----
+   Two phones acting in the same second must BOTH land (or one must get a
+   polite no) — never a silent last-write-wins. fn receives the array as the
+   server currently sees it and returns the new array, or null to abort.
+   fn must be pure: Firebase may re-run it on contention. */
+function txnArray(key, fn) {
+  if (!netOn()) {
+    const out = fn(toArr(state[key]));
+    if (out) { state[key] = out; save(); render(); }
+    return Promise.resolve(!!out);
+  }
+  return window.WCSync.txn(key, cur => fn(toArr(cur)) || undefined)
+    .then(res => {
+      if (!res.committed) return false;
+      state[key] = toArr(res.snapshot.val());
+      save(); render();
+      return true;
+    })
+    .catch(e => { console.warn('[sync] txn failed', key, e); return false; });
+}
+// ownership computed from an arbitrary transfers list — for in-transaction checks
+function ownedIdsGiven(transfers, gwIdx) {
+  const ids = new Set(state.draft.picks.map(p => p.playerId));
+  for (const t of transfers) if (t && t.gw <= gwIdx) { ids.delete(t.outId); ids.add(t.inId); }
+  return ids;
+}
+function squadIdsGiven(mid, transfers, gwIdx) {
+  const ids = new Set(state.draft.picks.filter(p => p.managerId === mid).map(p => p.playerId));
+  for (const t of transfers) if (t && t.managerId === mid && t.gw <= gwIdx) { ids.delete(t.outId); ids.add(t.inId); }
+  return ids;
+}
+
 // Firebase fires snapshots SYNCHRONOUSLY on local writes — if we applied them
 // inline, a function pushing several keys would have its own half-echoed state
 // wipe its later writes (the first waiver run of a season would silently undo
@@ -734,6 +766,7 @@ function processWaivers(manual = false) {
   // so they go back on waivers until the next one — no instant snipes
   const runStart = Date.now() - 1;
   const cur = currentGwIndex();
+  const preLen = state.transfers.length;
   const claimsByMid = state.claims?.[cur] || {};
   const queue = waiverOrder(cur); // reverse standings — weekly reset
   const pending = {};
@@ -764,14 +797,27 @@ function processWaivers(manual = false) {
   }
   state.claims[cur] = {};
   state.waiverMeta = { ...state.waiverMeta, lastRun: new Date(runStart).toISOString() };
-  pushShared('transfers', state.transfers); // the moves first — they're the truth
-  pushShared(`claims/${cur}`, null);
-  pushShared('waiverMeta', state.waiverMeta);
-  for (const mid of touchedLineups) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
-  save(); render();
-  toast(executed.length
-    ? `Waivers processed — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
-    : `Waivers processed — no claims landed. The Trough is open.`);
+  // merge the executions transactionally — anyone who signed from the Trough
+  // mid-run keeps their move, and their player can't be waivered over
+  const newRecs = state.transfers.slice(preLen);
+  state.transfers = state.transfers.slice(0, preLen); // the txn re-adds them authoritatively
+  txnArray('transfers', arr => {
+    const out = [...arr];
+    for (const r of newRecs) {
+      const owned = ownedIdsGiven(out, cur);
+      if (owned.has(r.inId) || !owned.has(r.outId)) continue; // sniped mid-run
+      out.push({ ...r, n: out.length + 1 });
+    }
+    return out;
+  }).then(() => {
+    pushShared(`claims/${cur}`, null);
+    pushShared('waiverMeta', state.waiverMeta);
+    for (const mid of touchedLineups) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
+    save(); render();
+    toast(executed.length
+      ? `Waivers processed — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
+      : `Waivers processed — no claims landed. The Trough is open.`);
+  });
 }
 function setWaiverControl(mode) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
@@ -814,58 +860,65 @@ const tradeNames = ids => ids.map(id => PLAYER_BY_ID[id]?.name || '?').join(' + 
 function proposeTrade(from, to, give, get, terms = '') {
   give = toArr(give); get = toArr(get);
   if (!give.length || give.length !== get.length) { toast('Trades swap the same number of players each way'); return; }
-  state.trades = [...toArr(state.trades), { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() }];
-  pushShared('trades', state.trades);
-  save(); render();
-  toast(`Trade proposed to ${managerName(to)}. Their move.`);
+  const offer = { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() };
+  txnArray('trades', arr => [...arr, offer])
+    .then(ok => toast(ok ? `Trade proposed to ${managerName(to)}. Their move.` : 'Proposal didn’t send — check connection and try again'));
 }
+// flip one trade's status, transaction-safe, only if it's still pending
+const setTradeStatus = (id, status) =>
+  txnArray('trades', arr => arr.some(x => x && x.id === id && x.status === 'pending')
+    ? arr.map(x => x && x.id === id ? { ...x, status } : x) : null);
 function respondTrade(id, accept) {
   const tr = toArr(state.trades).find(x => x.id === id);
   if (!tr || tr.status !== 'pending') return;
   if (!accept) {
-    tr.status = 'rejected';
-    pushShared('trades', state.trades);
-    save(); render();
-    toast('Trade rejected. Nothing personal. (It was personal.)');
+    setTradeStatus(id, 'rejected')
+      .then(() => toast('Trade rejected. Nothing personal. (It was personal.)'));
     return;
   }
   const cur = currentGwIndex();
   const give = tGive(tr), get = tGet(tr);
-  // validate at acceptance time — squads may have changed since the proposal
-  if (give.some(pid => !managerSquad(tr.from).some(x => x.id === pid)) ||
-      get.some(pid => !managerSquad(tr.to).some(x => x.id === pid))) {
-    tr.status = 'withdrawn';
-    pushShared('trades', state.trades);
-    save(); render();
-    toast('Trade void — a player involved has already moved on.');
-    return;
-  }
+  // quick local screen for a friendly message; the binding check re-runs
+  // inside the transaction against whatever the server holds at that moment
   const giveSet = new Set(give), getSet = new Set(get);
   const fromAfter = [...squadAt(tr.from, cur).filter(p => !giveSet.has(p.id)), ...get.map(pid => PLAYER_BY_ID[pid])];
   const toAfter = [...squadAt(tr.to, cur).filter(p => !getSet.has(p.id)), ...give.map(pid => PLAYER_BY_ID[pid])];
   if (!squadShapeOk(fromAfter) || !squadShapeOk(toAfter)) {
     toast('Trade would break a squad\'s position limits'); return;
   }
-  tr.status = 'done';
-  if (tr.terms) {
-    state.covenants = [...toArr(state.covenants), { id: tr.id + '-cov', from: tr.from, to: tr.to, text: tr.terms, t: Date.now(), gw: GAMEWEEKS[cur].n }];
-    pushShared('covenants', state.covenants);
-  }
-  for (let k = 0; k < give.length; k++) {
-    state.transfers.push({ managerId: tr.from, outId: give[k], inId: get[k], gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
-    state.transfers.push({ managerId: tr.to, outId: get[k], inId: give[k], gw: cur, n: state.transfers.length + 1, t: Date.now(), trade: true });
-  }
-  for (const [m2, gone] of [[tr.from, give], [tr.to, get]]) {
-    const lu = state.lineups[m2]?.[cur];
-    if (lu) {
-      state.lineups[m2][cur] = lu.filter(pid => !gone.includes(pid));
-      pushShared(`lineups/${m2}/${cur}`, state.lineups[m2][cur]);
+  txnArray('transfers', arr => {
+    const fromIds = squadIdsGiven(tr.from, arr, cur), toIds = squadIdsGiven(tr.to, arr, cur);
+    if (give.some(pid => !fromIds.has(pid)) || get.some(pid => !toIds.has(pid))) return null; // someone moved on
+    const fa = [...fromIds].filter(pid => !giveSet.has(pid)).concat(get).map(pid => PLAYER_BY_ID[pid]);
+    const ta = [...toIds].filter(pid => !getSet.has(pid)).concat(give).map(pid => PLAYER_BY_ID[pid]);
+    if (!squadShapeOk(fa) || !squadShapeOk(ta)) return null;
+    const out = [...arr];
+    for (let k = 0; k < give.length; k++) {
+      out.push({ managerId: tr.from, outId: give[k], inId: get[k], gw: cur, n: out.length + 1, t: Date.now(), trade: true });
+      out.push({ managerId: tr.to, outId: get[k], inId: give[k], gw: cur, n: out.length + 1, t: Date.now(), trade: true });
     }
-  }
-  pushShared('trades', state.trades);
-  pushShared('transfers', state.transfers);
-  save(); render();
-  toast(`Trade done: ${tradeNames(give)} ↔ ${tradeNames(get)}. Executed instantly, as is right and proper.`);
+    return out;
+  }).then(ok => {
+    if (!ok) {
+      setTradeStatus(id, 'withdrawn');
+      toast('Trade void — a player involved has already moved on.');
+      return;
+    }
+    setTradeStatus(id, 'done');
+    if (tr.terms) {
+      const covenant = { id: tr.id + '-cov', from: tr.from, to: tr.to, text: tr.terms, t: Date.now(), gw: GAMEWEEKS[cur].n };
+      txnArray('covenants', arr => arr.some(c => c && c.id === covenant.id) ? null : [...arr, covenant]);
+    }
+    for (const [m2, gone] of [[tr.from, give], [tr.to, get]]) {
+      const lu = state.lineups[m2]?.[cur];
+      if (lu) {
+        state.lineups[m2][cur] = lu.filter(pid => !gone.includes(pid));
+        pushShared(`lineups/${m2}/${cur}`, state.lineups[m2][cur]);
+      }
+    }
+    save(); render();
+    toast(`Trade done: ${tradeNames(give)} ↔ ${tradeNames(get)}. Executed instantly, as is right and proper.`);
+  });
 }
 
 /* ---------------- draft logic ---------------- */
@@ -2778,10 +2831,9 @@ function bindTransfers() {
     if (!actGuard(mid, 'covenant')) return;
     const to = +$('#covWith').value, text = $('#covText').value.trim();
     if (!to || !text) { toast('Pick a counterparty and state the nonsense'); return; }
-    state.covenants = [...toArr(state.covenants), { id: Date.now() + '-' + mid, from: mid, to, text: text.slice(0, 200), t: Date.now(), gw: GAMEWEEKS[cur].n }];
-    pushShared('covenants', state.covenants);
-    save(); render();
-    toast('Recorded. It is now canon.');
+    const covenant = { id: Date.now() + '-' + mid, from: mid, to, text: text.slice(0, 200), t: Date.now(), gw: GAMEWEEKS[cur].n };
+    txnArray('covenants', arr => [...arr, covenant])
+      .then(ok => toast(ok ? 'Recorded. It is now canon.' : 'Didn’t record — check connection and try again'));
   };
   // --- the Window Draft ---
   const wds = $('#wdStart');
@@ -2806,14 +2858,21 @@ function bindTransfers() {
     if (!outId) { toast('Pick who goes out first'); return; }
     const inP = PLAYER_BY_ID[+b.dataset.wdin];
     if (!squadShapeOk([...squadAt(actor, cur).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
-    state.transfers.push({ managerId: actor, outId, inId: inP.id, gw: cur, n: state.transfers.length + 1, t: Date.now(), windowDraft: true });
-    const lu = state.lineups[actor]?.[cur];
-    if (lu) state.lineups[actor][cur] = lu.filter(id => id !== outId);
-    pushShared('transfers', state.transfers);
-    if (state.lineups[actor]?.[cur]) pushShared(`lineups/${actor}/${cur}`, state.lineups[actor][cur]);
-    state.windowDraft.picks.push({ mid: actor, in: inP.id, out: outId });
-    toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`);
-    wdAdvance(false);
+    txnArray('transfers', arr => {
+      const owned = ownedIdsGiven(arr, cur);
+      if (owned.has(inP.id) || !owned.has(outId)) return null;
+      return [...arr, { managerId: actor, outId, inId: inP.id, gw: cur, n: arr.length + 1, t: Date.now(), windowDraft: true }];
+    }).then(ok => {
+      if (!ok) { toast(`${inP.name} is already spoken for — pick again.`); render(); return; }
+      const lu = state.lineups[actor]?.[cur];
+      if (lu) {
+        state.lineups[actor][cur] = lu.filter(id => id !== outId);
+        pushShared(`lineups/${actor}/${cur}`, state.lineups[actor][cur]);
+      }
+      state.windowDraft.picks.push({ mid: actor, in: inP.id, out: outId });
+      toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`);
+      wdAdvance(false);
+    });
   });
   // --- waivers & the Trough ---
   const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
@@ -2919,14 +2978,22 @@ function bindTransfers() {
           return;
         }
         if (!squadShapeOk([...squadAt(mid, cur).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
-        state.transfers.push({ managerId: mid, outId, inId, gw: cur, n: state.transfers.length + 1, t: Date.now() });
-        const lu = state.lineups[mid]?.[cur];
-        if (lu) state.lineups[mid][cur] = lu.filter(id => id !== outId);
-        pushShared('transfers', state.transfers);
-        if (state.lineups[mid]?.[cur]) pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
-        transfersView.out = null;
-        save(); render();
-        toast(`${inP.name} signed from the Trough. First come, first served.`);
+        // first come, first served — settled by a transaction, not by luck
+        txnArray('transfers', arr => {
+          const owned = ownedIdsGiven(arr, cur);
+          if (owned.has(inId) || !owned.has(outId)) return null; // beaten to him
+          return [...arr, { managerId: mid, outId, inId, gw: cur, n: arr.length + 1, t: Date.now() }];
+        }).then(ok => {
+          if (!ok) { toast(`${inP.name} was signed seconds before you got there. The Trough is cruel.`); render(); return; }
+          const lu = state.lineups[mid]?.[cur];
+          if (lu) {
+            state.lineups[mid][cur] = lu.filter(id => id !== outId);
+            pushShared(`lineups/${mid}/${cur}`, state.lineups[mid][cur]);
+          }
+          transfersView.out = null;
+          save(); render();
+          toast(`${inP.name} signed from the Trough. First come, first served.`);
+        });
       });
     }
     if (window._troughFocus) {
@@ -2952,10 +3019,8 @@ function bindTransfers() {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.trwd);
     if (!tr) return;
     if (!actGuard(tr.from, 'trade')) return;
-    tr.status = 'withdrawn';
-    pushShared('trades', state.trades);
-    save(); render();
-    toast('Offer withdrawn. Never happened.');
+    setTradeStatus(tr.id, 'withdrawn')
+      .then(ok => toast(ok ? 'Offer withdrawn. Never happened.' : 'Too late — the offer already moved.'));
   });
   // trade block: delist your own, make an offer for theirs
   document.querySelectorAll('[data-unblock]').forEach(b => b.onclick = () => {
