@@ -336,13 +336,49 @@ function buildDemoState() {
   }
   s.matchStats = { gw1: { gw: 0, label: 'Demo — fictional Gameweek 1', date: GAMEWEEKS[0]?.from || '2026-08-15T17:30Z', final: true, playerStats: ps } };
   s.lastSync = new Date().toISOString();
+  // the new toys, pre-loaded so the demo shows them all off
+  const demoSquad = mid => s.draft.picks.filter(pk => pk.managerId === mid).map(pk => PLAYER_BY_ID[pk.playerId]);
+  for (const mgr of s.managers) {
+    if (rnd() < 0.25) continue; // a few holdouts, for the shame list
+    const sq2 = demoSquad(mgr.id);
+    const lob = sq2.filter(p => p.pos === 'FW').sort((a, b) => rating(b) - rating(a))[0] || sq2[0];
+    s.lobus[mgr.id] = lob.id;
+  }
+  const freeAll = PLAYERS.filter(p => !taken.has(p.id)).sort((a, b) => rating(b) - rating(a));
+  const freeBy = pos => freeAll.filter(p => p.pos === pos);
+  s.hamCup = { gw: 8, drawnAt: new Date().toISOString(), entries: {} };
+  [1, 4, 5, 8, 11].forEach((mid, k) => {
+    s.hamCup.entries[mid] = [
+      ...freeBy('GK').slice(k, k + 1), ...freeBy('DF').slice(k * 4, k * 4 + 4),
+      ...freeBy('MF').slice(k * 4, k * 4 + 4), ...freeBy('FW').slice(k * 2, k * 2 + 2),
+    ].map(p => p.id);
+  });
+  s.covenants = [
+    { id: 1, from: 5, to: 8, text: 'Tussie holds first refusal on any City player Marc drops, in perpetuity.', t: Date.now(), gw: 0 },
+    { id: 2, from: 3, to: 9, text: 'The Haaland curse shall not be mentioned before 9pm on matchdays.', t: Date.now(), gw: 0 },
+  ];
+  s.tradeBlock = { 2: [s.draft.picks.find(pk => pk.managerId === 2).playerId] };
   return s;
 }
+let vidiStash = null;
 async function enterDemo() {
   if (demoMode) return;
   demoBackup = state;
   demoMode = true;
   state = buildDemoState();
+  // a live-looking Vidiprinter tape from real drafted names (memory only —
+  // the device's real tape is stashed and restored on exit)
+  const dsq = mid => state.draft.picks.filter(pk => pk.managerId === mid).map(pk => PLAYER_BY_ID[pk.playerId]);
+  const dfw = mid => dsq(mid).find(p => p.pos === 'FW') || dsq(mid)[0];
+  const ddf = mid => dsq(mid).find(p => p.pos === 'DF') || dsq(mid)[0];
+  vidiStash = vidiFeed;
+  vidiFeed = [
+    { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
+    { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
+    { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -3` },
+    { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
+    { txt: `⚽ GOAL — ${dfw(12).name} (${dfw(12).club}) — benched by ${teamName(12)} (!)` },
+  ].map((x, i) => ({ ts: Date.now() - (i + 2) * 7 * 60 * 1000, gw: 1, ...x }));
   render();
   toast('Demo mode — fake draft, fake results. Your real league is untouched.');
   // pull the full real season in, so every feature has something to show
@@ -367,6 +403,7 @@ function exitDemo() {
   state = demoBackup || load() || freshState();
   demoMode = false;
   demoBackup = null;
+  if (vidiStash !== null) { vidiFeed = vidiStash; vidiStash = null; }
   render();
 }
 function load() {
