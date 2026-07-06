@@ -227,9 +227,14 @@ function squadIdsGiven(mid, transfers, gwIdx) {
 // inline, a function pushing several keys would have its own half-echoed state
 // wipe its later writes (the first waiver run of a season would silently undo
 // itself). Defer by a tick and only apply the freshest snapshot.
-let _snapLatest, _snapQueued = false;
+let _snapLatest, _snapQueued = false, _snapSeen = false;
 window.onSharedSnapshot = data => {
   _snapLatest = data;
+  _snapSeen = true;
+  // learn what's in the cloud even while in demo mode, so writes aren't
+  // stuck "dropped, waiting for the server" after the user exits the demo
+  cloudKnown = true;
+  if (data) cloudHasData = true;
   if (_snapQueued) return;
   _snapQueued = true;
   setTimeout(() => { _snapQueued = false; applySharedSnapshot(_snapLatest); }, 0);
@@ -510,6 +515,9 @@ function exitDemo() {
   demoMode = false;
   demoBackup = null;
   if (vidiStash !== null) { vidiFeed = vidiStash; vidiStash = null; }
+  // any league changes that landed while we were in the demo were swallowed —
+  // apply the freshest snapshot now so we return to the real, current league
+  if (_snapSeen && netOn()) applySharedSnapshot(_snapLatest);
   render();
 }
 function load() {
@@ -1071,11 +1079,32 @@ function setAutolist(mid, arr) {
 }
 
 /* ---------------- lineups ---------------- */
-function autoXI(squad) {
-  const by = pos => squad.filter(p => p.pos === pos).sort((a, b) => rating(b) - rating(a));
-  const xi = [...by('GK').slice(0, 1), ...by('DF').slice(0, 4), ...by('MF').slice(0, 4), ...by('FW').slice(0, 2)];
-  return xi.map(p => p.id);
+// build a legal, best-rated XI from a (possibly empty/illegal/short) starter
+// set: keep the best within each position max, then fill minimums, then top up.
+// Guarantees 11 legal players whenever the squad allows one — no more 10-man XIs.
+function legalizeXI(start, squad) {
+  const squadIds = new Set(squad.map(p => p.id));
+  const cnt = { GK: 0, DF: 0, MF: 0, FW: 0 };
+  const xi = [];
+  for (const id of toArr(start).filter(id => squadIds.has(id)).sort((a, b) => rating(PLAYER_BY_ID[b]) - rating(PLAYER_BY_ID[a]))) {
+    const pos = PLAYER_BY_ID[id]?.pos;
+    if (pos && cnt[pos] < XI_RULES[pos][1] && xi.length < XI_RULES.size && !xi.includes(id)) { xi.push(id); cnt[pos]++; }
+  }
+  const cands = squad.filter(p => !xi.includes(p.id)).sort((a, b) => rating(b) - rating(a));
+  for (const pos of ['GK', 'DF', 'MF', 'FW']) {
+    while (xi.length < XI_RULES.size && xiCounts(xi)[pos] < XI_RULES[pos][0]) {
+      const c = cands.find(p => p.pos === pos && !xi.includes(p.id));
+      if (!c) break;
+      xi.push(c.id);
+    }
+  }
+  for (const c of cands) {
+    if (xi.length >= XI_RULES.size) break;
+    if (!xi.includes(c.id) && xiCounts(xi)[c.pos] < XI_RULES[c.pos][1]) xi.push(c.id);
+  }
+  return xi;
 }
+function autoXI(squad) { return legalizeXI([], squad); }
 // every manager-made XI change is time-stamped — the Committee sees edit
 // times, and an edit after kick-off (a wound-back phone clock) shows in red
 function saveLineup(mid, gw, xi) {
@@ -1103,23 +1132,11 @@ function lineupFor(mid, gwIdx) {
     }
   }
   if (!xi) return autoXI(squad);
-  // top up short lineups (e.g. a starter left via waiver/trade) with best legal players
-  if (xi.length < XI_RULES.size) {
-    const cands = squad.filter(p => !xi.includes(p.id)).sort((a, b) => rating(b) - rating(a));
-    // satisfy position minimums first, then best available within maximums
-    for (const pos of ['GK', 'DF', 'MF', 'FW']) {
-      while (xi.length < XI_RULES.size && xiCounts(xi)[pos] < XI_RULES[pos][0]) {
-        const c = cands.find(p => p.pos === pos && !xi.includes(p.id));
-        if (!c) break;
-        xi.push(c.id);
-      }
-    }
-    for (const c of cands) {
-      if (xi.length >= XI_RULES.size) break;
-      if (!xi.includes(c.id) && xiCounts(xi)[c.pos] < XI_RULES[c.pos][1]) xi.push(c.id);
-    }
-  }
-  return xi;
+  // the scored XI must ALWAYS be legal — the list editor can build an illegal
+  // shape (too many of a position, a short XI). Keep it if it's a clean 11,
+  // otherwise repair to the nearest legal best XI. No illegal XI ever scores.
+  if (xi.length === XI_RULES.size && xiValid(xi)) return xi;
+  return legalizeXI(xi, squad);
 }
 function xiCounts(pids) {
   const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
@@ -1352,8 +1369,11 @@ const blockList = mid => toArr(state.tradeBlock?.[mid]);
 const onBlock = pid => state.managers.some(m => blockList(m.id).includes(pid));
 function toggleBlock(mid, pid) {
   const list = blockList(mid);
-  state.tradeBlock = { ...(state.tradeBlock || {}), [mid]: list.includes(pid) ? list.filter(x => x !== pid) : [...list, pid] };
-  pushShared('tradeBlock', state.tradeBlock);
+  const next = list.includes(pid) ? list.filter(x => x !== pid) : [...list, pid];
+  state.tradeBlock = { ...(state.tradeBlock || {}), [mid]: next };
+  // write ONLY this manager's list — writing the whole node would revert
+  // another manager who listed a player at the same moment
+  pushShared(`tradeBlock/${mid}`, next);
   save(); render();
 }
 
@@ -2652,9 +2672,15 @@ function bindTeam() {
       const pid = +row.dataset.toggle;
       const xi = [...lineupFor(mid, gw)];
       const i = xi.indexOf(pid);
-      if (i >= 0) xi.splice(i, 1);
-      else {
+      if (i >= 0) {
+        // don't let a removal drop you below a position minimum
+        const pos = PLAYER_BY_ID[pid].pos;
+        if (xiCounts(xi)[pos] <= XI_RULES[pos][0]) { toast(`You need at least ${XI_RULES[pos][0]} ${pos} in your XI`); return; }
+        xi.splice(i, 1);
+      } else {
         if (xi.length >= 11) { toast('XI is full — bench someone first'); return; }
+        const pos = PLAYER_BY_ID[pid].pos;
+        if (xiCounts(xi)[pos] >= XI_RULES[pos][1]) { toast(`Max ${XI_RULES[pos][1]} ${pos} in the XI — the shape won't allow it`); return; }
         xi.push(pid);
       }
       saveLineup(mid, gw, xi);
@@ -2669,8 +2695,11 @@ function bindTeam() {
     if (!actGuard(mid, 'stadium')) return;
     const v = prompt(`Name ${teamName(mid)}'s stadium:`, stadium(mid));
     if (v == null || !v.trim()) return;
-    state.managers.find(m => m.id === mid).stadium = v.trim().slice(0, 40);
-    pushShared('managers', state.managers);
+    const idx = state.managers.findIndex(m => m.id === mid);
+    state.managers[idx].stadium = v.trim().slice(0, 40);
+    // write only this manager's stadium — never the whole 12-manager array,
+    // which would revert anyone else's just-changed name/team/stadium
+    pushShared(`managers/${idx}/stadium`, state.managers[idx].stadium);
     save(); render();
     toast(`${v.trim()} — naming rights sold for nothing.`);
   };
@@ -3839,7 +3868,9 @@ function hamCupCard() {
   const hc = state.hamCup;
   const head = `<h2>The Palwin Ham Cup <span class="tag">strictly Trough</span></h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:10px">One random gameweek. Every manager fields an XI drawn ONLY from the unowned — the Trough's finest, like the Milk Cup if the milk had turned. Entirely optional, entirely stupid. Proudly sponsored by Palwin.</p>`;
-  if (!hc) {
+  // a cancelled cup (tombstone) or a malformed one with no drawn GW both fall
+  // back to the "not drawn" state — never crash the Cup view on GAMEWEEKS[undefined]
+  if (!hc || hc.status === 'off' || GAMEWEEKS[hc.gw] === undefined) {
     return `<div class="card" style="margin-top:18px">${head}
       ${netOn() && !isCommissioner() ? '<p class="muted" style="font-size:12px">The tie has not been drawn. The Chairman holds the velvet bag.</p>'
         : '<button class="btn small" id="hamDraw">&#127829; Draw the Ham Cup tie</button>'}
@@ -3908,8 +3939,11 @@ function bindCup() {
   if (cancel) cancel.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the Chairman calls it off'); return; }
     if (!confirm('Call off the Ham Cup — for EVERYONE?')) return;
-    state.hamCup = null;
-    pushShared('hamCup', null);
+    // a tombstone, not a deletion: deleting the node would be invisible to
+    // other devices (an absent key reads as "never drawn"), so a lingering
+    // entry could resurrect a gw-less cup and crash the view
+    state.hamCup = { status: 'off' };
+    pushShared('hamCup', state.hamCup);
     save(); render();
     toast('The Ham Cup is off. Palwin has withdrawn its sponsorship in disgust.');
   };
@@ -3925,6 +3959,7 @@ function bindCup() {
   const hs = $('#hamSave');
   if (hs) hs.onclick = () => {
     if (!whoami || whoami === -1) { toast('Sign in first'); return; }
+    if (!state.hamCup || state.hamCup.status === 'off' || GAMEWEEKS[state.hamCup.gw] === undefined) { toast('No Ham Cup is running.'); render(); return; }
     const sel = hamView.sel ?? toArr(state.hamCup?.entries?.[whoami] || []);
     if (!xiValid(sel)) { toast('That XI is illegal, even for the Ham Cup'); return; }
     state.hamCup.entries = state.hamCup.entries || {};
@@ -4447,10 +4482,18 @@ document.addEventListener('click', e => {
 render();
 // ?demo drops visitors straight into the demo season
 if (new URLSearchParams(location.search).has('demo')) enterDemo();
-// commissioner devices run overdue scheduled waivers automatically
-setTimeout(() => {
-  if (netOn() && isCommissioner() && waiverRunDue()) processWaivers(false);
-}, 4000);
+// commissioner devices run overdue scheduled waivers automatically — but only
+// once the cloud has loaded (never on stale boot state) AND the stats feed is
+// fresh, or waiverOrder would fall back to reverse-draft order and resolve
+// every claim with the wrong priority
+function tryAutoWaivers(attempt = 0) {
+  if (!(netOn() && isCommissioner() && waiverRunDue())) return;
+  const statsFresh = state.lastSync && (Date.now() - new Date(state.lastSync).getTime()) < 20 * 60 * 1000
+    && Object.keys(state.matchStats || {}).length > 0;
+  if (cloudKnown && statsFresh) { processWaivers(false); return; }
+  if (attempt < 6) setTimeout(() => tryAutoWaivers(attempt + 1), 5000); // wait for cloud + feed
+}
+setTimeout(() => tryAutoWaivers(), 4000);
 // auto-sync on load during the tournament (max once per 20 min, always if live,
 // and always when stats aren't in memory — saves no longer persist them)
 if (state.phase === 'season') {
