@@ -41,3 +41,29 @@ python3 -m http.server 8123        # then open http://localhost:8123
 Forked from `~/worldcup-draft` (see its README). The sync layer, draft console,
 scoring engine shape and pomp are all inherited (Moggi stayed behind — different group). Firebase project:
 `calciopoli-wc26`, league key `leagues/the-league-2627`.
+
+## Tests
+```
+python3 -m http.server 8125            # from the repo root, then:
+node test/sim.test.js                  # full 26/27 season, 57 checks (offline engine)
+node test/e2e.multiclient.js           # 3 real browsers vs live Firebase (throwaway league) — port 8140
+node test/race.test.js                 # simultaneous-write races — port 8142
+node test/stress.test.js               # 8 clients, scrambles, offline/reconnect — port 8143
+```
+The live-Firebase suites use `leagues/the-league-e2e-test` and clean up after
+themselves. Never point them at the real league key.
+
+## If it all goes wrong (the runbook)
+- **Scores stale on a matchday** (amber "feed stale" pill): the FPL fetch Action
+  is failing — check Actions. Fallback: `python3 scripts/fetch_fpl.py && git push`
+  from any laptop. The site recovers on the next 15-min sync.
+- **Somebody wrecked the league state**: hourly snapshots live in `data/backups/`.
+  `python3 scripts/restore_league.py` puts the last good one back. Wipe protection
+  means the league can't be deleted without the two-step reset ritual.
+- **Firebase dies or the Google account is lost**: create a new Firebase project
+  (free), change `databaseURL` + deploy `database.rules.json`, restore from the
+  latest backup. One line in `js/sync.js` points the app at the new home.
+- **GitHub dies**: the repo is a full copy on every machine that ever cloned it;
+  Pages can be re-enabled on any fork in minutes.
+- **Mid-draft disaster**: the draft state is in Firebase and localStorage on every
+  device — reload and carry on. The Chairman has Pause and Undo-last-pick.

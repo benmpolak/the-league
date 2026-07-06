@@ -277,7 +277,10 @@ function applySharedSnapshot(data) {
   data.lineups = data.lineups || {};
   for (const mid of Object.keys(data.lineups)) {
     data.lineups[mid] = data.lineups[mid] || {};
-    for (const gw of Object.keys(data.lineups[mid])) data.lineups[mid][gw] = toArr(data.lineups[mid][gw]);
+    for (const gw of Object.keys(data.lineups[mid])) {
+      if (gw.endsWith('-t')) continue; // edit timestamps ride along untouched
+      data.lineups[mid][gw] = toArr(data.lineups[mid][gw]);
+    }
   }
   data.claims = data.claims || {};
   for (const gw of Object.keys(data.claims)) {
@@ -1005,6 +1008,21 @@ function autoXI(squad) {
   const by = pos => squad.filter(p => p.pos === pos).sort((a, b) => rating(b) - rating(a));
   const xi = [...by('GK').slice(0, 1), ...by('DF').slice(0, 4), ...by('MF').slice(0, 4), ...by('FW').slice(0, 2)];
   return xi.map(p => p.id);
+}
+// every manager-made XI change is time-stamped — the Committee sees edit
+// times, and an edit after kick-off (a wound-back phone clock) shows in red
+function saveLineup(mid, gw, xi) {
+  (state.lineups[mid] = state.lineups[mid] || {})[gw] = xi;
+  state.lineups[mid][`${gw}-t`] = Date.now();
+  pushShared(`lineups/${mid}/${gw}`, xi);
+  pushShared(`lineups/${mid}/${gw}-t`, state.lineups[mid][`${gw}-t`]);
+}
+function lineupStamp(mid, gwIdx) {
+  const ts = state.lineups?.[mid]?.[`${gwIdx}-t`];
+  if (!ts) return '<span class="muted">XI carried over — never touched</span>';
+  const late = ts > new Date(gwFrom(gwIdx)).getTime();
+  const when = new Date(ts).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  return `<span class="muted">XI set ${when}</span>${late ? ' <b style="color:#e05555" title="Edited after the deadline — the Committee has questions">AFTER KICK-OFF</b>' : ''}`;
 }
 function lineupFor(mid, gwIdx) {
   const squad = squadAt(mid, gwIdx);
@@ -2568,8 +2586,7 @@ function bindTeam() {
         if (xi.length >= 11) { toast('XI is full — bench someone first'); return; }
         xi.push(pid);
       }
-      (state.lineups[mid] = state.lineups[mid] || {})[gw] = xi;
-      pushShared(`lineups/${mid}/${gw}`, xi);
+      saveLineup(mid, gw, xi);
       save(); render();
     });
   }
@@ -2617,8 +2634,7 @@ function bindTeam() {
       save(); render();
       return;
     }
-    (state.lineups[mid] = state.lineups[mid] || {})[gw] = xi2;
-    pushShared(`lineups/${mid}/${gw}`, xi2);
+    saveLineup(mid, gw, xi2);
     teamView.pitchSel = null;
     save(); render();
   };
@@ -3467,6 +3483,7 @@ function showMatchup(a, b, i) {
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
     <h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
   </div>`;
   const ov = document.createElement('div');
