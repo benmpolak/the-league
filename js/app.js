@@ -582,6 +582,9 @@ const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}<
 const playerXp = p => (p.xp > 0 ? p.xp : p.ppg > 0 ? p.ppg : p.pts > 0 ? p.pts / 38 : lastSeasonOf(p)?.ppg || p.price / 4);
 const projectedGwScore = (mid, gwIdx) =>
   Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => t + playerXp(PLAYER_BY_ID[pid]), 0));
+// waiver/deadline times shown in the reader's OWN timezone — a UK league does
+// the BST maths wrong when the app insists on UTC
+const fmtWhen = d => new Date(d).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 // win chance from the projected-score gap (logistic; ~12-point gap ≈ 70%)
 const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
 
@@ -1730,8 +1733,8 @@ function renderSyncArea() {
     bits.push(`<button class="tag" id="whoBtn" style="cursor:pointer" title="Switch who this device acts as">${who}</button>`);
   }
   if (state.phase === 'season') {
-    const last = state.lastSync ? new Date(state.lastSync).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<span>Last intercept: ${last}</span><button id="syncBtn" class="btn small">&#128222; Tap the lines</button>`);
+    const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
+    bits.push(`<span title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#128222; Tap the lines</button>`);
   }
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
@@ -1751,6 +1754,21 @@ function renderSyncArea() {
 function viewSetup() {
   const m = state.managers;
   const { posMin, posMax } = state.settings;
+  // pre-draft, only the Chairman gets the editable console. Everyone else sees
+  // a calm waiting room (not a form they think they must fill in).
+  if (netOn() && !isCommissioner()) {
+    return `<div class="setup-wrap">
+      <div class="setup-hero">
+        <h2>&#9917; The League &mdash; 2026/27</h2>
+        <p>You're in. The draft hasn't started yet.</p>
+      </div>
+      <div class="card" style="text-align:center">
+        <p class="rules-p">${whoami && whoami !== -1 ? `Signed in as <b>${esc(teamName(whoami))}</b>. ` : ''}When ${esc(managerName(state.managers[0]?.id))} starts the draft, this screen becomes your draft board automatically — keep it open.</p>
+        <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
+        <button class="btn" id="waitDemo">&#127918; Try the demo</button>
+      </div>
+    </div>`;
+  }
   return `
   <div class="setup-wrap">
     <div class="setup-hero">
@@ -1795,6 +1813,8 @@ function viewSetup() {
   </div>`;
 }
 function bindSetup() {
+  const wd = $('#waitDemo');
+  if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
     const total = state.settings.squadSize;
     $('#setupTotal').innerHTML = `Squad size: <b>${total}</b> each &middot; <b>${total * state.managers.length}</b> of ${PLAYERS.length} players drafted &middot; starting XI picked each gameweek &middot; weekly waivers, bottom feeds first`;
@@ -2599,6 +2619,7 @@ function viewTeam() {
     <select id="teamGw">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
     <span class="tag">${locked ? (gwIsOver(gw) ? 'Gameweek finished — locked' : 'Deadline passed — locked') : `Lineup open — locks ${new Date(gwFrom(gw)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
     <span class="tag">GW points: <b class="gold">&nbsp;${gwManagerPoints(mid, gw)}</b></span>
+    <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
   </div>
   <div class="card" style="margin-bottom:18px">
@@ -2726,6 +2747,7 @@ function bindTeam() {
       }
       saveLineup(mid, gw, xi);
       save(); render();
+      toast(`Saved. ${gwHasStarted(gw) ? 'This gameweek is locked though.' : `Locks ${fmtWhen(gwFrom(gw))}.`}`);
     });
   }
   const so = $('#showOpp');
@@ -2778,6 +2800,7 @@ function bindTeam() {
     saveLineup(mid, gw, xi2);
     teamView.pitchSel = null;
     save(); render();
+    toast(`Saved. ${gwHasStarted(gw) ? 'This gameweek is locked though.' : `Locks ${fmtWhen(gwFrom(gw))}.`}`);
   };
   const pitchGuard = () => {
     if (!demoMode && gwHasStarted(gw)) { toast('Lineup is locked for this gameweek'); return false; }
@@ -2882,7 +2905,7 @@ function viewTransfers() {
     const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
     const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
-      : `<span class="tag">waivers process ${nextRun.toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC</span>`;
+      : `<span class="tag">waivers process ${fmtWhen(nextRun)}</span>`;
     const claimRows = claims.map((c, k) => `
       <div class="lrow" style="font-size:12.5px">
         <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
@@ -2974,7 +2997,7 @@ function viewTransfers() {
     <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
       <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} claim${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} pending</span></div>`).join('')}
-    <p class="muted" style="font-size:11px;margin-top:8px">Claims are blind — counts are public, targets are not. Next run: ${nextWaiverRun(Math.max(lastWaiverRun(), Date.now())).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC.</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">Claims are blind — counts are public, targets are not. Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
     <h3 style="margin-top:16px">Waiver history</h3>
     ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> claimed ${pname(PLAYER_BY_ID[t.inId])} <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">No claims have landed yet.</p>'}
   </div>`;
@@ -3268,7 +3291,7 @@ function viewDash() {
       ${pair ? `
       <div class="h2h-fx" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
         <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))}</b></span>
-        <span class="fx-score">${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
+        <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
         <span style="flex:1"><b>${esc(teamName(pair[1]))}</b></span>
       </div>
       <div class="venue-line">at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
@@ -3285,7 +3308,7 @@ function viewDash() {
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
-      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${nextWaiverRun(Math.max(lastWaiverRun(), Date.now())).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })} UTC.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
+      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
     </div>
     <div class="card">
       <h2>Around the league</h2>
@@ -3801,6 +3824,7 @@ function viewH2H() {
   return `
   <div class="card" style="margin-bottom:18px">
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
+    <div style="overflow-x:auto">
     <table class="pool-table">
       <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
       <tbody>
@@ -3815,6 +3839,7 @@ function viewH2H() {
         </tr>`).join('')}
       </tbody>
     </table>
+    </div>
     <p class="muted" style="font-size:11px;margin-top:6px">Top four make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
   </div>
   ${pointsGridCard(standings)}
@@ -4253,16 +4278,19 @@ function recordBookCards() {
 /* ----- settings ----- */
 function viewSettings() {
   const sc = state.settings.scoring;
+  const admin = !netOn() || isCommissioner(); // only the Chairman edits league settings
+  const ro = admin ? '' : 'disabled';
   return `<div class="settings-grid">
     <div class="card">
-      <h2>Scoring rules</h2>
+      <h2>Scoring rules ${admin ? '' : '<span class="tag">read-only</span>'}</h2>
       ${Object.keys(DEFAULT_SCORING).map(k => `
         <div class="score-row"><span>${SCORING_LABELS[k]}</span>
-        <input type="number" step="1" data-score="${k}" value="${sc[k]}"></div>`).join('')}
+        <input type="number" step="1" data-score="${k}" value="${sc[k]}" ${ro}></div>`).join('')}
       <div class="score-row" style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"><span>Lobus bonus <span class="muted" style="font-size:11px">(0 = off; +N any GW your starting Lobus scores or assists — ledger #1, Committee approval pending)</span></span>
-      <input type="number" step="1" id="lobusBonus" value="${+state.settings.lobusBonus || 0}"></div>
-      <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. Changes apply instantly to all past and future matches.</p>
+      <input type="number" step="1" id="lobusBonus" value="${+state.settings.lobusBonus || 0}" ${ro}></div>
+      <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only ${esc(managerName(state.managers[0]?.id))} can change scoring.`}</p>
     </div>
+    ${admin ? `
     <div class="card">
       <h2>League admin</h2>
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -4271,7 +4299,7 @@ function viewSettings() {
         <label class="btn ghost" style="text-align:center;cursor:pointer">Import league file<input type="file" id="importFile" accept=".json" style="display:none"></label>
         <button class="btn danger" id="resetBtn">Reset everything</button>
       </div>
-      <p class="muted" style="font-size:12px;margin-top:10px">One file is the truth. Commissioner makes lineup/transfer changes, exports, drops it in the group; everyone else imports.</p>
+      <p class="muted" style="font-size:12px;margin-top:10px">Backups only — the league syncs live on its own, no files to pass around. Export drops a snapshot to your device; import restores one if it all goes wrong.</p>
       <h3 style="margin-top:18px">PIN resets</h3>
       <p class="muted" style="font-size:12px;margin-bottom:8px">Forgotten PINs go to the Chairman. Reset lets the manager set a new one on next sign-in.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -4293,7 +4321,7 @@ function viewSettings() {
       </div>
       ${Object.entries(state.adjustments).filter(([, v]) => v).map(([pid, v]) =>
         `<div class="score-row"><span>${esc(PLAYER_BY_ID[pid]?.name)}</span><span class="gold">${v > 0 ? '+' : ''}${v}</span></div>`).join('')}
-    </div>
+    </div>` : `<div class="card"><h2>League admin <span class="tag">Chairman only</span></h2><p class="muted" style="font-size:12.5px">Scoring, resets and point adjustments are the Chairman's (${esc(managerName(state.managers[0]?.id))}'s). Backups and demo mode live there too.</p><button class="btn ghost" id="demoBtn2" style="margin-top:10px">Demo mode — preview with fake results</button></div>`}
     <div class="card">
       <h2>The Constitution <span class="muted" style="font-weight:400;font-size:12px">read-only, as all constitutions should be</span></h2>
       <p class="rules-p">&sect;1 The title is the playoffs. The table is for arguing.</p>
@@ -4322,8 +4350,10 @@ function bindSettings() {
     pushShared('settings/lobusBonus', state.settings.lobusBonus);
     save(); toast(state.settings.lobusBonus ? `Lobus bonus live: +${state.settings.lobusBonus}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.');
   };
-  $('#demoBtn2').onclick = enterDemo;
-  $('#exportBtn').onclick = () => {
+  const demoB = $('#demoBtn2'); if (demoB) demoB.onclick = enterDemo;
+  const exportB = $('#exportBtn');
+  if (!exportB) return; // non-commissioner: admin controls aren't rendered
+  exportB.onclick = () => {
     const blob = new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
