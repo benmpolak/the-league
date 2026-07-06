@@ -2641,12 +2641,16 @@ function viewTeam() {
     })()}
     ${(() => {
       // browsing someone else's team: every chip opens the player card.
-      // your own team: the NAME opens the card, the chip itself swaps.
+      // your own team: tapping a player SELECTS him to swap (the primary action
+      // on mobile — there's no drag on touch). The little ⓘ opens his stats.
+      // someone else's team: the whole chip opens the card (nothing to swap).
       const browsing = !demoMode && whoami && whoami !== -1 && mid !== whoami;
       const chipAttrs = p => browsing ? `data-pcard="${p.id}" style="cursor:pointer"` : `data-pitch="${p.id}" draggable="${!locked}"`;
-      // pic AND name open the player card everywhere; mid-swap taps still complete the swap
-      const nameSpan = p => `<span class="pitch-name" ${browsing ? '' : `data-pcard="${p.id}" title="Tap for stats"`}>${esc(p.name)}</span>`;
-      const pic = p => browsing ? kitImg(p.team, p.pos === 'GK') : kitImg(p.team, p.pos === 'GK', p);
+      // on your own pitch the kit/name carry NO data-pcard, so a tap can't be
+      // hijacked into opening the card — it falls through to the swap handler
+      const nameSpan = p => `<span class="pitch-name" ${browsing ? '' : ''}>${esc(p.name)}</span>`;
+      const pic = p => browsing ? kitImg(p.team, p.pos === 'GK') : kitImg(p.team, p.pos === 'GK');
+      const info = p => browsing ? '' : `<span class="pitch-info" data-pcard="${p.id}" title="${esc(p.name)} — stats">&#9432;</span>`;
       return `
     ${adStrip(mid * 37 + gw)}
     <div class="pitch">
@@ -2654,6 +2658,7 @@ function viewTeam() {
         <div class="pitch-row">
           ${xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
             <div class="pitch-chip ${statusClass(p)} ${teamView.pitchSel === p.id ? 'sel' : ''}" ${chipAttrs(p)}>
+              ${info(p)}
               ${pic(p)}
               ${nameSpan(p)}
               ${!gwIsOver(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
@@ -2665,12 +2670,13 @@ function viewTeam() {
       ${benchFor(mid, gw).map((p, k) => `
         <div class="pitch-chip benched ${statusClass(p)} ${teamView.pitchSel === p.id ? 'sel' : ''}" ${chipAttrs(p)} title="Auto-sub priority ${k + 1} — leftmost comes on first">
           <span class="tag" style="font-size:9px;padding:1px 5px">${k + 1}</span>
+          ${info(p)}
           ${pic(p)}
           ${nameSpan(p)}
         </div>`).join('')}
     </div>`;
     })()}
-    <p class="muted" style="font-size:11px;margin-top:6px">Drag (or tap two players) to swap — within a line to arrange it, bench onto pitch to substitute, <b>two bench players to set auto-sub order</b> (leftmost comes on first).</p>
+    <p class="muted" style="font-size:11px;margin-top:6px"><b>Tap a player, then tap another to swap them</b> — within a line to arrange it, bench onto pitch to substitute, two bench players to set auto-sub order (leftmost comes on first). On a computer you can also drag. Tap <span style="color:var(--text)">&#9432;</span> for a player's stats.</p>
   </div>
   <div class="draft-layout">
     <div class="card">

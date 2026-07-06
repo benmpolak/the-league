@@ -458,3 +458,14 @@ tr.st-red .pname { color: #ff9c9c; }
 /* projected (pre-kickoff) scores must not read as real results */
 .fx-score.projected { opacity: .72; font-weight: 600; }
 .proj-tag { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; vertical-align: middle; }
+
+/* the ⓘ info affordance on your own pitch chips (tap = stats; the chip = swap) */
+.pitch-chip { position: relative; }
+.pitch-info {
+  position: absolute; top: 2px; right: 3px; z-index: 2;
+  font-size: 13px; line-height: 1; color: var(--muted); cursor: pointer;
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
+.pitch-info:hover { color: var(--text); background: rgba(255,255,255,.08); }
+.pitch-chip.sel { border-color: var(--accent); background: rgba(45,212,167,.12); }
