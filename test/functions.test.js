@@ -374,6 +374,22 @@ const SB = 'the-league-sandbox';
     !(await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/${curGw}`).get()).val());
   await db.ref(`v2/leagues/${LG}/server/managerUid`).set(savedMidToUid);
 
+  /* sol r5: re-saving an IDENTICAL claim after planning is a NEW lodging (t
+     stamp) and must survive the replay */
+  const mfR = await freeNow('MF');
+  const rc = { in: mfR[0], out: byPos(await squadOf(2), 'MF')[0] };
+  chk('replacement-claim lodged', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [rc] }, tok2)).error);
+  const fpR = await T.mutate(LG, 'waiverRunNow', { runId: 'fpR', __failpoint: 'waivers:afterPlan' }, tok1);
+  chk('replacement scenario: run crashes after planning', !!fpR.error);
+  await new Promise(r => setTimeout(r, 5)); // distinct lodging stamp
+  chk('identical claim re-saved during the crash window', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [rc] }, tok2)).error);
+  const fpRr = await T.mutate(LG, 'waiverRunNow', { runId: 'fpR' }, tok1);
+  chk('replay completes (replacement scenario)', !fpRr.error, JSON.stringify(fpRr.error));
+  const rcLeft = Object.values((await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/${curGw}`).get()).val() || {});
+  chk('re-saved identical claim SURVIVES the replay (sol r5)', rcLeft.some(c => c && c.in === rc.in), JSON.stringify(rcLeft));
+  await T.mutate(LG, 'waiverRunNow', { runId: 'fpRb' }, tok1); // adjudicate the survivor (lapses — player now owned)
+  chk('survivor adjudicated by the next run', !(await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/${curGw}`).get()).val());
+
   /* ---------------- sol r3: a landed trade heals to done, covenant intact ---------------- */
   const hGive = byPos(await squadOf(2), 'DF')[0], hGet = byPos(await squadOf(3), 'DF')[0];
   const hProp = await T.mutate(LG, 'tradePropose', { to: 3, give: [hGive], get: [hGet], terms: 'Winner buys dinner' }, tok2);
@@ -403,8 +419,24 @@ const SB = 'the-league-sandbox';
   const pAccept = await T.mutate(LG, 'tradeRespond', { tradeId: pProp.result.id, action: 'accept' }, tok3);
   const pStatus = Object.values((await db.ref(`v2/leagues/${LG}/public/trades`).get()).val() || {}).find(t => t.id === pProp.result.id)?.status;
   chk('partial ledger refuses with Committee-surgery error, status untouched',
-    pAccept.error?.status === 'FAILED_PRECONDITION' && /partial/.test(pAccept.error?.message || '') && pStatus === 'pending', JSON.stringify({ e: pAccept.error, pStatus }));
+    pAccept.error?.status === 'FAILED_PRECONDITION' && /surgery/.test(pAccept.error?.message || '') && pStatus === 'pending', JSON.stringify({ e: pAccept.error, pStatus }));
   await trRef.set(Object.values((await trRef.get()).val() || {}).filter(t => t.trade !== pProp.result.id)); // remove the forgery
+  // sol r5: right COUNT but wrong CONTENT is still forged — refuse, don't heal
+  const wGive = byPos(await squadOf(2), 'GK')[0], wGet = byPos(await squadOf(3), 'GK')[0];
+  const wProp = await T.mutate(LG, 'tradePropose', { to: 3, give: [wGive], get: [wGet] }, tok2);
+  chk('wrong-content trade proposed', !wProp.error, JSON.stringify(wProp.error));
+  const wCur = Object.values((await trRef.get()).val() || {});
+  wCur.push({ managerId: 2, outId: 424242, inId: 434343, gw: curGw, t: Date.now(), trade: wProp.result.id, n: wCur.length + 1 });
+  wCur.push({ managerId: 3, outId: 434343, inId: 424242, gw: curGw, t: Date.now(), trade: wProp.result.id, n: wCur.length + 1 });
+  await trRef.set(wCur);
+  const wAccept = await T.mutate(LG, 'tradeRespond', { tradeId: wProp.result.id, action: 'accept' }, tok3);
+  chk('right-count wrong-content ledger refuses (not healed to done)',
+    wAccept.error?.status === 'FAILED_PRECONDITION' && /surgery/.test(wAccept.error?.message || ''), JSON.stringify(wAccept));
+  await trRef.set(Object.values((await trRef.get()).val() || {}).filter(t => t.trade !== wProp.result.id));
+  // sol r5: rejecting a DONE trade must answer truthfully
+  const rejDone = await T.mutate(LG, 'tradeRespond', { tradeId: hId, action: 'reject' }, tok3);
+  chk('reject of a done trade reports done+unchanged, never "rejected"',
+    !rejDone.error && rejDone.result?.status === 'done' && rejDone.result?.unchanged === true, JSON.stringify(rejDone));
   // sol r4: REJECTING a fully-landed trade must heal to done, never mark rejected
   const rGive = byPos(await squadOf(2), 'FW')[0], rGet = byPos(await squadOf(3), 'FW')[0];
   const rProp = await T.mutate(LG, 'tradePropose', { to: 3, give: [rGive], get: [rGet] }, tok2);
@@ -460,6 +492,8 @@ const SB = 'the-league-sandbox';
   const undoBlind = await T.mutate(LG, 'draftAdmin', { op: 'undo' }, tok1);
   chk('BLIND undo (no expectedCount — old client) is refused outright (sol r4 P0)',
     undoBlind.error?.status === 'INVALID_ARGUMENT', JSON.stringify(undoBlind));
+  const undoNeg = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: -1 }, tok1);
+  chk('negative expectedCount refused as INVALID_ARGUMENT (sol r5)', undoNeg.error?.status === 'INVALID_ARGUMENT', JSON.stringify(undoNeg));
   const undoOk = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 2 }, tok1);
   chk('undo with the seen count pops exactly one and re-arms the clock', !undoOk.error && undoOk.result?.total === 1 && await dl() > Date.now());
   // pick + deadline move in ONE txn on the draft node
@@ -485,6 +519,22 @@ const SB = 'the-league-sandbox';
     !healClock.error && healClock.result?.healed === true
     && (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season'
     && await dl() === null, JSON.stringify(healClock));
+  // sol r5 P0: a board that is NOT full must never be sealed — pop a pick,
+  // wedge the phase, and confirm no heal fires and drafting resumes
+  await db.ref(`v2/leagues/${LG}/public/phase`).set('draft');
+  const boardArr = Object.values((await db.ref(`v2/leagues/${LG}/public/draft/picks`).get()).val() || {});
+  const savedFinalPick = boardArr.pop();
+  await db.ref(`v2/leagues/${LG}/public/draft/picks`).set(boardArr);
+  const noHeal = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
+  chk('no seal on a 41-pick board — drafting resumes instead (heal cannot race undo)',
+    !noHeal.error && noHeal.result?.healed !== true
+    && (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'draft', JSON.stringify(noHeal));
+  boardArr.push(savedFinalPick);
+  await db.ref(`v2/leagues/${LG}/public/draft/picks`).set(boardArr);
+  const reHeal = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
+  chk('re-heal on the genuinely full board seals again',
+    !reHeal.error && reHeal.result?.healed === true
+    && (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season', JSON.stringify(reHeal));
 
   server.close();
   run.done();

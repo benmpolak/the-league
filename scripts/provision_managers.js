@@ -84,6 +84,9 @@ const db = admin.database();
     for (const uid of Object.keys(val)) {
       if (!keep.has(uid)) {
         await db.ref(`v2/leagues/${lg}/server/membership/${uid}`).remove();
+        // purge their private game state too: a dormant claim would resurrect
+        // and fire at the next waiver run if membership ever came back (sol r5)
+        await db.ref(`v2/leagues/${lg}/private/${uid}`).remove();
         prunedUids.add(uid);
         report.push({ pruned: uid, league: lg });
       }

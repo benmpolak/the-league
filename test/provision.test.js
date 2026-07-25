@@ -53,6 +53,8 @@ function runProvision(cfg) {
   chk('claims hint written', u3.customClaims?.leagues?.[LG]?.managerId === 3);
 
   /* round 2: manager 3 is out; manager 2 is REASSIGNED to id 3 */
+  // dormant private state for the soon-to-be-pruned user — the prune must purge it
+  await db.ref(`v2/leagues/${LG}/private/${uid3}/claims/3`).set([{ in: 101, out: 202, t: Date.now() }]);
   const r2 = runProvision({
     leagues: [LG],
     managers: [
@@ -64,6 +66,8 @@ function runProvision(cfg) {
   const mem2 = (await db.ref(`v2/leagues/${LG}/server/membership`).get()).val() || {};
   const map2 = (await db.ref(`v2/leagues/${LG}/server/managerUid`).get()).val() || {};
   chk('pruned user lost membership', !mem2[uid3]);
+  chk('pruned user\'s private claims purged with the prune (sol r5)',
+    !(await db.ref(`v2/leagues/${LG}/private/${uid3}`).get()).val());
   chk('two memberships remain', Object.keys(mem2).length === 2);
   chk('managerUid rebuilt with NO stale mapping', !map2[2] && Object.keys(map2).length === 2, JSON.stringify(map2));
   chk('reassigned manager points at the surviving uid', map2[3] === map1[2]);

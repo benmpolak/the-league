@@ -4413,7 +4413,7 @@ function bindCup() {
     const sel = hamView.sel ?? toArr(state.hamCup?.entries?.[whoami] || []);
     if (!xiValid(sel)) { toast('That XI is illegal, even for the Ham Cup'); return; }
     if (netOn()) {
-      serverAct('hamEnter', { xi: sel })
+      serverAct('hamEnter', { xi: sel, gw: state.hamCup.gw })
         .then(() => { hamView.sel = null; toast('Ham XI entered. May God have mercy.'); })
         .catch(() => {});
       return;
@@ -4966,6 +4966,12 @@ document.addEventListener('visibilitychange', () => {
 }
 render();
 manageWakeLock();
+// local mode: a refresh mid-ceremony replays the pomp, exactly like the online
+// snapshot path — otherwise the reload skips straight to a live clock (sol r5)
+if (!netOn() && state.phase === 'draft') {
+  const bootCer = ceremonyKey();
+  if (bootCer && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== bootCer) showCeremony();
+}
 // ?demo drops visitors straight into the demo season
 if (new URLSearchParams(location.search).has('demo')) enterDemo();
 // commissioner devices run overdue scheduled waivers automatically — but only

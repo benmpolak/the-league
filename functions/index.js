@@ -304,11 +304,14 @@ async function runWaivers(league, runId, trigger, failAt) {
         const eaten = toArr(plan.consumed?.[g]?.[wmid]);
         if (!eaten.length) continue;
         await db().ref(`${base}/private/${uid}/claims/${g}`).transaction(cur => {
+          // key includes the lodging stamp t: a re-saved identical pair carries
+          // a new t and survives; pre-stamp entries (no t) match by pair alone
+          const keyOf = c => `${c.in}:${c.out}:${c.t || ''}`;
           const budget = {};
-          eaten.forEach(c => { const k = `${c.in}:${c.out}`; budget[k] = (budget[k] || 0) + 1; });
+          eaten.forEach(c => { const k = keyOf(c); budget[k] = (budget[k] || 0) + 1; });
           const left = toArr(cur).filter(c => {
             if (!c) return false;
-            const k = `${c.in}:${c.out}`;
+            const k = keyOf(c);
             if (budget[k] > 0) { budget[k]--; return false; }
             return true;
           });
@@ -338,6 +341,26 @@ async function runWaivers(league, runId, trigger, failAt) {
 /* ---------------- action registry ---------------- */
 const ACTIONS = {};
 
+// Seal a full draft board: ONE txn on the public node that re-verifies the
+// board is STILL full at commit time — a concurrent undo popping the final
+// pick makes the CAS fail and the seal abort. Never write phase='season' for
+// a full board any other way (sol r5 P0: heal raced undo into a 41-pick season).
+async function sealFullBoard(league) {
+  const ref = db().ref(`${leagueBase(league)}/public`);
+  const seedSnap = (await ref.get()).val(); // raw server shape for the empty-cache first pass
+  const res = await ref.transaction(cur => {
+    const c = cur === null ? (seedSnap && JSON.parse(JSON.stringify(seedSnap))) : cur;
+    if (!c) return; // nothing to seal
+    const picks = toArr(c.draft && c.draft.picks);
+    const total = toArr(c.managers).length * ((c.settings && c.settings.squadSize) || 14);
+    if (c.phase !== 'draft' || !total || picks.length < total) return; // board moved — abort
+    c.phase = 'season';
+    if (c.draft) c.draft.deadline = null;
+    return c;
+  }).catch(() => ({ committed: false }));
+  return !!res.committed;
+}
+
 /* ----- draft ----- */
 ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const base = leagueBase(league);
@@ -346,7 +369,7 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const onClock = eng.currentManagerId(state);
   if (onClock == null) {
     // board full but phase never flipped (the final pick's follow-up died) — heal
-    await db().ref(`${base}/public/phase`).set('season').catch(() => {});
+    await sealFullBoard(league);
     throw new HttpsError('failed-precondition', 'draft is complete');
   }
   if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your pick');
@@ -368,15 +391,12 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   }));
   if (!res.committed) throw new HttpsError('aborted', 'the board moved on');
   const total = toArr(res.snapshot.val()?.picks).length;
-  // phase lives outside the draft node; retry hard. If the process dies here,
-  // the next draftPick/draftAutopick attempt heals the phase (see above).
+  // phase lives outside the draft node; the seal txn re-verifies fullness so a
+  // concurrent undo can't be overwritten. If the process dies here, the next
+  // pick attempt or the clock loop heals it (same seal).
   if (total >= eng.totalPicks(state)) {
-    let err = null;
-    for (let i = 0; i < 3; i++) {
-      try { await db().ref(`${base}/public/phase`).set('season'); err = null; break; }
-      catch (e) { err = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
-    }
-    if (err) throw err;
+    let sealed = false;
+    for (let i = 0; i < 3 && !sealed; i++) sealed = await sealFullBoard(league);
   }
   return { picked: player.id, total };
 };
@@ -386,7 +406,7 @@ ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   if (state.draft.paused) throw new HttpsError('failed-precondition', 'draft is paused');
   const onClock = eng.currentManagerId(state);
   if (onClock == null) {
-    await db().ref(`${leagueBase(league)}/public/phase`).set('season').catch(() => {}); // heal a died final follow-up
+    await sealFullBoard(league); // heal a died final follow-up (txn-verified)
     throw new HttpsError('failed-precondition', 'draft is complete');
   }
   // anyone signed in may trigger it once the clock has expired (so a sleeping
@@ -411,9 +431,9 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
     if (eng.currentManagerId(state) == null) {
       // full board still marked draft (a died final follow-up) — seal, don't arm.
-      // This is the heal path the client can actually reach from its clock loop.
-      await db().ref().update({ [`${base}/public/phase`]: 'season', [`${d}/deadline`]: null });
-      return { ok: true, armed: false, healed: true };
+      // The seal is a txn that re-verifies fullness, so it can't race an undo.
+      const healed = await sealFullBoard(league);
+      return { ok: true, armed: false, healed };
     }
     if (!state.settings.pickTimer || state.draft.deadline || state.draft.paused) return { ok: true, armed: false };
     await db().ref(`${d}/deadline`).set(Date.now() + state.settings.pickTimer * 1000);
@@ -467,7 +487,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     // MANDATORY: a blind undo (old client, replayed request) racing the final
     // pick is exactly how a league loses picks it can never re-make.
     const expected = data.expectedCount;
-    if (!Number.isInteger(expected)) throw new HttpsError('invalid-argument', 'undo requires expectedCount — refresh the page and try again');
+    if (!Number.isInteger(expected) || expected < 0) throw new HttpsError('invalid-argument', 'undo requires expectedCount — refresh the page and try again');
     const res = await db().ref(`${base}/public/draft`).transaction(seededObj(state.draft, dr => {
       const arr = toArr(dr.picks).map(x => ({ ...x }));
       if (arr.length !== expected) return;
@@ -479,10 +499,24 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     }));
     if (!res.committed) throw new HttpsError('aborted', 'undo clashed — the board moved on');
     if (state.phase === 'season') {
-      let err = null; // the final pick flipped it; undo flips it back — retry hard
+      // the final pick flipped it; undo flips it back — but only if the board
+      // really is short now (txn-verified; a refilled sealed board stays sealed)
+      let err = null;
       for (let i = 0; i < 3; i++) {
-        try { await db().ref(`${base}/public/phase`).set('draft'); err = null; break; }
-        catch (e) { err = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
+        try {
+          const pubRef = db().ref(`${base}/public`);
+          const pubSeed = (await pubRef.get()).val();
+          await pubRef.transaction(cur => {
+            const c = cur === null ? (pubSeed && JSON.parse(JSON.stringify(pubSeed))) : cur;
+            if (!c) return;
+            const picks = toArr(c.draft && c.draft.picks);
+            const total = toArr(c.managers).length * ((c.settings && c.settings.squadSize) || 14);
+            if (c.phase !== 'season' || picks.length >= total) return; // genuinely full — leave sealed
+            c.phase = 'draft';
+            return c;
+          });
+          err = null; break;
+        } catch (e) { err = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
       }
       if (err) throw err;
     }
@@ -536,7 +570,10 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   if (!Number.isInteger(g) || Math.abs(g - cur) > 1) throw new HttpsError('invalid-argument', 'claims go in the current gameweek bucket');
   const raw = toArr(data.claims);
   if (raw.length > 30) throw new HttpsError('invalid-argument', 'too many claims (max 30)');
-  const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out) }));
+  // t identifies each LODGING, not just the pair — waiver cleanup matches on
+  // it, so re-saving an identical {in,out} after a run planned is a NEW claim
+  // that survives the replay (sol r5)
+  const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out), t: Date.now() }));
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
   const tgw = eng.transferGw();
   const squad = eng.squadAt(state, a.managerId, tgw);
@@ -636,10 +673,18 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
   // 'done' — rejecting it would leave the swap standing under a lying status.
   const landedRecs = state.transfers.filter(tr => tr && tr.trade === trade.id);
   if (landedRecs.length && trade.status !== 'done') {
-    if (landedRecs.length !== give.length * 2) {
-      // a partial ledger can't come from the atomic transfers txn — this is
-      // forged or corrupt state, and no automatic story is honest here
-      throw new HttpsError('failed-precondition', `trade ledger is partial (${landedRecs.length}/${give.length * 2} records) — Committee surgery required`);
+    // the ledger must match this trade EXACTLY — right managers, right players,
+    // right directions, right multiplicity. Anything else (partial, or records
+    // tagged with this id but describing a different swap) is forged/corrupt
+    // state and no automatic story is honest.
+    const wanted = [];
+    give.forEach((pid, i) => {
+      wanted.push(`${trade.from}:${pid}>${get[i]}`);
+      wanted.push(`${trade.to}:${get[i]}>${pid}`);
+    });
+    const got = landedRecs.map(r => `${r.managerId}:${r.outId}>${r.inId}`);
+    if (wanted.length !== got.length || wanted.sort().join('|') !== got.sort().join('|')) {
+      throw new HttpsError('failed-precondition', `trade ledger does not match the offer (${got.length}/${wanted.length} records) — Committee surgery required`);
     }
     const upd = {};
     for (const side of [{ mid: trade.from, outs: give }, { mid: trade.to, outs: get }]) {
@@ -653,12 +698,16 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
   }
   if (action === 'reject' || action === 'withdraw') {
     const to = action === 'reject' ? 'rejected' : 'withdrawn';
-    await db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
+    const rres = await db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
       const t = arr.find(x => x.id === trade.id);
       if (!t || t.status !== 'pending') return;
       t.status = to;
       return arr;
     }));
+    if (!rres.committed) { // wasn't pending — report what it actually is, not what was asked
+      const curT = toArr(rres.snapshot.val()).find(x => x && x.id === trade.id);
+      return { status: curT?.status || trade.status, unchanged: true };
+    }
     return { status: to };
   }
   // stored offers may predate validation — a duplicated player corrupts both squads
@@ -794,7 +843,16 @@ ACTIONS.hamEnter = async ({ league, a, data, state, eng, ctx }) => {
   const owned = eng.ownedIdsAt(state, eng.currentGwIndex());
   if (xi.some(id => owned.has(id))) throw new HttpsError('invalid-argument', 'Ham Cup XIs come from the Trough only');
   if (xi.some(id => !ctx.PLAYER_BY_ID[id] || eng.arrivalLocked(state, ctx.PLAYER_BY_ID[id]))) throw new HttpsError('invalid-argument', 'locked or unknown player');
-  await db().ref(`${leagueBase(league)}/public/hamCup/entries/${mid}`).set(xi);
+  // entry lands via a txn on the cup node: if the cup was redrawn to a
+  // different GW after this device loaded it, the entry refuses instead of
+  // silently attaching to the new cup (client sends the gw it entered for)
+  const res = await db().ref(`${leagueBase(league)}/public/hamCup`).transaction(seededObj(state.hamCup, c => {
+    if (!c || c.status === 'off' || !c.gw) return;
+    if (Number.isInteger(data.gw) && c.gw !== data.gw) return; // cup changed underneath them
+    (c.entries = c.entries || {})[mid] = xi;
+    return c;
+  }));
+  if (!res.committed) throw new HttpsError('failed-precondition', 'the cup changed while you picked — reopen it and enter again');
   return { ok: true };
 };
 
@@ -808,12 +866,15 @@ ACTIONS.hamAdmin = async ({ league, a, data, state, eng, ctx }) => {
     if (eng.gwHasStarted(gw)) throw new HttpsError('failed-precondition', 'that gameweek has already kicked off');
     // an existing cup with entries — upcoming, live or settled — can't be
     // silently replaced (entries and results would vanish); the Chairman must
-    // cancel explicitly first. An entry-less upcoming draw may be redrawn.
-    if (state.hamCup?.gw != null && state.hamCup.status !== 'off'
-      && (eng.gwHasStarted(state.hamCup.gw) || Object.keys(state.hamCup.entries || {}).length)) {
-      throw new HttpsError('failed-precondition', 'the current cup has entries or is underway — cancel it explicitly before redrawing');
-    }
-    await db().ref(`${leagueBase(league)}/public/hamCup`).set({ gw, drawnAt: Date.now(), entries: {} });
+    // cancel explicitly first. The check runs INSIDE the txn so a simultaneous
+    // entry submission makes the redraw retry and then refuse, never the
+    // entry vanish. An entry-less upcoming draw may be redrawn.
+    const res = await db().ref(`${leagueBase(league)}/public/hamCup`).transaction(seededObj(state.hamCup || null, c => {
+      if (c && c.gw != null && c.status !== 'off'
+        && (eng.gwHasStarted(c.gw) || Object.keys(c.entries || {}).length)) return; // refuse
+      return { gw, drawnAt: Date.now(), entries: {} };
+    }));
+    if (!res.committed) throw new HttpsError('failed-precondition', 'the current cup has entries or is underway — cancel it explicitly before redrawing');
     return { ok: true };
   }
   throw new HttpsError('invalid-argument', 'unknown op');
