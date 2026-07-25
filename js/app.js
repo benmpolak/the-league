@@ -1788,7 +1788,7 @@ function viewSetup() {
   <div class="setup-wrap">
     <div class="setup-hero">
       <h2>&#9917; The League &mdash; 2026/27</h2>
-      <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. No phone taps. Allegedly.</p>
+      <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
     <div class="card">
       <h2>Managers</h2>
@@ -4221,7 +4221,7 @@ function viewRules() {
       <h2>Honours board &#127942;</h2>
       ${HONOURS_BOARD.map(([yr, who, stars]) => `<div class="score-row"><span>${yr}</span><b>${esc(who)} ${stars}</b></div>`).join('')}
       <h3 style="margin-top:16px">Prize money</h3>
-      <p class="rules-p">£50 each. Last season's split: £250 playoff winner, £130 runner-up, £75 last man standing — and <b>£145 to the site</b>. The site now costs <b>£0</b>, because we built our own. That's £145 back in the pot; redistribution to be argued about in the group chat. Vive la révolution.</p>
+      <p class="rules-p">£50 each. Last season's split: £250 playoff winner, £130 runner-up, £75 last man standing — and <b>£145 to the site</b>. The site now costs <b>£0</b>, because we built our own. That's £145 back in the pot; redistribution to be argued about in the group chat.</p>
       <h3 style="margin-top:16px">The small print</h3>
       <p class="rules-p">Stats sync automatically from the official FPL feed (goals land within ~15 minutes on matchdays). The commissioner (${esc(managerName(state.managers[0]?.id))}) settles disputes, can act for absent managers, and adjusts points if the feed errs.</p>
       <p class="rules-p muted" style="font-style:italic">All decisions are final. Complaints may be lodged in the group chat, where they will be enjoyed. — The Committee</p>
