@@ -41,6 +41,7 @@
   function make(ctx) {
     const PLAYERS = ctx.players;
     const GAMEWEEKS = ctx.gameweeks;
+    const FIXTURES = Array.isArray(ctx.fixtures) ? ctx.fixtures : []; // [{gw, date, ...}] — drives the waiver clock
     const LS_BY_CODE = ctx.lastSeasonByCode || {};
     const now = ctx.now || (() => Date.now());
     const PLAYER_BY_ID = Object.fromEntries(PLAYERS.map(p => [p.id, p]));
@@ -313,21 +314,73 @@
       return { rows, anyFinal };
     }
 
-    /* ---- waivers ---- */
-    function nextWaiverRun(afterTs) {
-      const d = new Date(afterTs);
-      for (let k = 0; k < 9; k++) {
-        const c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + k, 10, 0, 0));
-        if (c.getTime() > d.getTime() && [2, 5].includes(c.getUTCDay())) return c;
+    /* ---- waivers ----
+     * Committee timing (Toby, Jul 2026) — anchored to the FIXTURES, not the
+     * calendar: the post-run at 8pm (London) the day AFTER a gameweek's last
+     * fixture, the pre-run at 8pm the day BEFORE the next gameweek's first
+     * fixture. The Trough is closed from 90 minutes before a gameweek's first
+     * kick-off until its post-run has actually executed, then open. */
+    const gwKicks = g => {
+      const ts = FIXTURES.filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
+      return ts.length ? { first: Math.min(...ts), last: Math.max(...ts) } : null;
+    };
+    // minutes ahead of UTC that Europe/London sits at the given instant (0 or 60)
+    function londonOffsetMin(ms) {
+      const s = new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const m = s.match(/(\d+)\/(\d+)\/(\d+),? (\d+):(\d+)/);
+      if (!m) return 0;
+      return Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] % 24, +m[5]) - ms) / 60000);
+    }
+    // 20:00 Europe/London on (the London calendar day of `ms`) + dayOffset
+    function london20(ms, dayOffset) {
+      const wall = new Date(ms + londonOffsetMin(ms) * 60000);
+      const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, 20, 0);
+      return naive - londonOffsetMin(naive) * 60000;
+    }
+    const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
+    const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
+    // scheduled runs already due, within a bounded lookback (deterministic ids
+    // let the server's run ledger make each one exactly-once)
+    function waiverSchedule(horizonMs = 48 * 3600e3) {
+      const t = now(), out = [];
+      for (let g = 0; g < GAMEWEEKS.length; g++) {
+        const post = postRunAt(g), pre = preRunAt(g);
+        if (post != null && post <= t && t - post < horizonMs) out.push({ id: `gw${g + 1}-post`, at: post });
+        if (pre != null && pre <= t && t - pre < horizonMs) out.push({ id: `gw${g + 1}-pre`, at: pre });
       }
-      return new Date(d.getTime() + 3 * 864e5);
+      return out.sort((a, b) => a.at - b.at);
+    }
+    function nextWaiverRun(afterTs) {
+      const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
+      let best = null;
+      for (let g = 0; g < GAMEWEEKS.length; g++) {
+        for (const x of [postRunAt(g), preRunAt(g)]) if (x != null && x > t && (best == null || x < best)) best = x;
+      }
+      return new Date(best ?? (t + 7 * 864e5)); // no fixture data yet: quiet fallback
     }
     const waiverControl = state => state.waiverMeta?.control || 'auto';
     const lastWaiverRun = state => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
     function waiverRunDue(state) {
       if (state.phase !== 'season' || waiverControl(state) !== 'auto') return false;
-      const anchor = lastWaiverRun(state) || new Date(gwFrom(0)).getTime();
-      return now() > nextWaiverRun(anchor).getTime();
+      const lr = lastWaiverRun(state);
+      return waiverSchedule().some(d => d.at > lr);
+    }
+    /* Trough state under auto control: closed from 90 min before a gameweek's
+     * first fixture; reopens only once that gameweek's post-run has executed. */
+    function troughWindow(state) {
+      const t = now();
+      let cur = -1;
+      for (let g = 0; g < GAMEWEEKS.length; g++) {
+        const k = gwKicks(g);
+        if (k && k.first - 90 * 60000 <= t) cur = g;
+        else if (k && cur >= 0) break;
+      }
+      if (cur < 0) return { open: true };
+      const post = postRunAt(cur);
+      if (post == null) return { open: true };
+      if (t < post) return { open: false, until: post, why: 'the gameweek is underway' };
+      if (lastWaiverRun(state) < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
+      return { open: true };
     }
     function waiverOrder(state, gwIdx) {
       const { rows, anyFinal } = standingsBefore(state, gwIdx);
@@ -406,6 +459,7 @@
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
       nextWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
+      gwKicks, postRunAt, preRunAt, waiverSchedule, troughWindow,
       wdActor,
     };
   }

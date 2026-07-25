@@ -65,7 +65,17 @@ function genTestData() {
     JSON.stringify({ season: 'test', byCode: {} }));
   fs.writeFileSync(path.join(dir, 'data', 'stats.json'),
     JSON.stringify({ generated: new Date().toISOString(), currentGw: 2, gws: { 1: { finished: true, stats: gw1stats }, 2: { finished: false, stats: {} } } }));
-  fs.writeFileSync(path.join(dir, 'data', 'fixtures.json'), '[]');
+  // two fixtures per synthetic GW: first at the deadline+30min, last 3h later
+  // (same London day) — feeds the fixture-anchored waiver windows
+  const fixtures = gws.flatMap(g => {
+    const k1 = new Date(new Date(g.deadline).getTime() + 30 * 60e3).toISOString();
+    const k2 = new Date(new Date(g.deadline).getTime() + 210 * 60e3).toISOString();
+    return [
+      { id: g.n * 10 + 1, gw: g.n, date: k1, home: 'Arsenal', away: 'Everton', started: g.n <= 2, finished: g.n === 1, minutes: g.n === 1 ? 90 : 0 },
+      { id: g.n * 10 + 2, gw: g.n, date: k2, home: 'Spurs', away: 'Arsenal', started: g.n <= 2, finished: g.n === 1, minutes: g.n === 1 ? 90 : 0 },
+    ];
+  });
+  fs.writeFileSync(path.join(dir, 'data', 'fixtures.json'), JSON.stringify(fixtures));
   return { players, gws, dir };
 }
 

@@ -64,14 +64,16 @@ async function fetchJson(rel, label, maxBytes, { optional = false } = {}) {
 let _ctxCache = null;
 async function loadCtx() {
   if (_ctxCache && Date.now() - _ctxCache.at < 5 * 60 * 1000) return _ctxCache;
-  const [dataRaw, histRaw, statsRaw] = await Promise.all([
+  const [dataRaw, histRaw, statsRaw, fixturesRaw] = await Promise.all([
     fetchJson('data/data.json', 'data.json', Feed.LIMITS.dataBytes),
     fetchJson('data/history25.json', 'history25.json', Feed.LIMITS.historyBytes, { optional: true }),
     fetchJson('data/stats.json', 'stats.json', Feed.LIMITS.statsBytes),
+    fetchJson('data/fixtures.json', 'fixtures.json', Feed.LIMITS.dataBytes, { optional: true }),
   ]);
   const { TEAMS, PLAYERS, GAMEWEEKS_RAW } = Feed.validateData(dataRaw);
   const LAST_SEASON = histRaw ? Feed.validateHistory(histRaw) : { byCode: {} };
   const statsRes = Feed.validateStats(statsRaw);
+  const FIXTURES = fixturesRaw ? Feed.validateFixtures(fixturesRaw) : [];
   const gameweeks = GAMEWEEKS_RAW.map(g => ({ n: g.n, label: g.label, from: g.deadline, to: g.to, finished: g.finished }));
   // matchStats in the exact shape the client builds in syncNow()
   const matchStats = {};
@@ -80,7 +82,7 @@ async function loadCtx() {
     if (!gameweeks[i]) continue;
     matchStats[`gw${gwN}`] = { gw: i, label: gameweeks[i].label, date: gameweeks[i].from, final: !!gw.finished, playerStats: gw.stats || {} };
   }
-  const eng = Engine.make({ players: PLAYERS, gameweeks, lastSeasonByCode: LAST_SEASON.byCode || {}, now: () => Date.now() });
+  const eng = Engine.make({ players: PLAYERS, gameweeks, fixtures: FIXTURES, lastSeasonByCode: LAST_SEASON.byCode || {}, now: () => Date.now() });
   _ctxCache = { at: Date.now(), eng, PLAYERS, TEAMS, gameweeks, matchStats, PLAYER_BY_ID: Object.fromEntries(PLAYERS.map(p => [p.id, p])), feedGenerated: statsRes.generated || null };
   return _ctxCache;
 }
@@ -474,13 +476,12 @@ ACTIONS.troughSign = async ({ league, a, data, ctx, state, eng }) => {
   await stripLineup(league, state, mid, tgw, outP.id);
   return { ok: true, tgw };
 };
-// mirror of app.js onWaivers()
+// mirror of app.js onWaivers() — Committee fixture-window model
 function onWaiversServer(state, p, eng) {
   const ctl = eng.waiverControl(state);
   if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  const cur = eng.currentGwIndex();
-  if (eng.gwHasStarted(cur) && eng.lastWaiverRun(state) < new Date(eng.gwFrom(cur)).getTime()) return true;
+  if (!eng.troughWindow(state).open) return true;
   for (const t of state.transfers) if (t.outId === p.id && (t.t || 0) > eng.lastWaiverRun(state)) return true;
   return false;
 }
@@ -1106,10 +1107,19 @@ exports.mutate = onCall(async req => {
   return fn({ league, a, data, ctx, state, eng: ctx.eng });
 });
 
-// Tue & Fri 10:02 UTC, mirroring the old Action. Run id is derived from the
-// schedule slot so retries of the same slot can never double-process — and a
-// retry hitting a live lease gets an error, not a hollow success.
-exports.waiverTick = onSchedule({ schedule: '2 10 * * 2,5', timeZone: 'Etc/UTC', retryCount: 3 }, async () => {
-  const slot = new Date().toISOString().slice(0, 10);
-  await runWaivers('the-league-2627', `sched-${slot}`, 'schedule');
+// Hourly tick; the ENGINE decides which fixture-anchored runs are due
+// (post-run 8pm London the day after a gameweek's last fixture, pre-run 8pm
+// the day before the next one's first). Run ids are deterministic per window
+// slot, so the run ledger makes each exactly-once — and a retry hitting a
+// live lease gets an error, not a hollow success.
+exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', retryCount: 3 }, async () => {
+  const ctx = await loadCtx();
+  const due = ctx.eng.waiverSchedule();
+  const errs = [];
+  for (const d of due) {
+    await runWaivers('the-league-2627', `sched-${d.id}`, 'schedule').catch(e => {
+      errs.push(d.id + ': ' + String(e.message || e).slice(0, 80));
+    });
+  }
+  if (errs.length) throw new Error('waiverTick failures — ' + errs.join(' | ')); // real errors must reach the Scheduler's retry
 });

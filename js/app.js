@@ -786,36 +786,72 @@ function shirtNum(mid, pid) {
   return state.shirtNums?.[mid]?.[pid] ?? '–';
 }
 
-/* ---------------- waivers & the Trough (Draft Fantasy mechanics) ----------------
-   Everyone goes on waivers when a gameweek starts; dropped players go on waivers.
-   Claims are ranked and blind. Waivers process Tue & Fri 10:00 UTC (or whenever
-   the Chairman says so); order = reverse standings, winners drop to the back.
-   Whatever clears waivers is free in the Trough — first come, first served. */
+/* ---------------- waivers & the Trough ----------------
+   Committee timing (Toby, Jul 2026), anchored to the fixtures: the post-run at
+   8pm (London) the day AFTER a gameweek's last fixture, the pre-run at 8pm the
+   day BEFORE the next gameweek's first fixture. The Trough closes 90 minutes
+   before a gameweek's first kick-off and reopens once the post-run has
+   executed. Claims are ranked and blind; order = reverse standings, winners
+   drop to the back; dropped players go back on waivers. Mirrors js/engine.js. */
 
-// next scheduled processing after a given time: Tue & Fri 10:00 UTC
+const gwKicks = g => {
+  const ts = state.fixtures.filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
+  return ts.length ? { first: Math.min(...ts), last: Math.max(...ts) } : null;
+};
+function londonOffsetMin(ms) {
+  const s = new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const m = s.match(/(\d+)\/(\d+)\/(\d+),? (\d+):(\d+)/);
+  return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] % 24, +m[5]) - ms) / 60000) : 0;
+}
+function london20(ms, dayOffset) {
+  const wall = new Date(ms + londonOffsetMin(ms) * 60000);
+  const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, 20, 0);
+  return naive - londonOffsetMin(naive) * 60000;
+}
+const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
+const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
 function nextWaiverRun(afterTs) {
-  const d = new Date(afterTs);
-  for (let k = 0; k < 9; k++) {
-    const c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + k, 10, 0, 0));
-    if (c.getTime() > d.getTime() && [2, 5].includes(c.getUTCDay())) return c;
+  const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
+  let best = null;
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    for (const x of [postRunAt(g), preRunAt(g)]) if (x != null && x > t && (best == null || x < best)) best = x;
   }
-  return new Date(d.getTime() + 3 * 864e5);
+  return new Date(best ?? (t + 7 * 864e5));
 }
 const waiverControl = () => state.waiverMeta?.control || 'auto';
 const lastWaiverRun = () => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
 function waiverRunDue() {
   if (state.phase !== 'season' || waiverControl() !== 'auto') return false;
-  const anchor = lastWaiverRun() || new Date(gwFrom(0)).getTime();
-  return Date.now() > nextWaiverRun(anchor).getTime();
+  const t = Date.now(), lr = lastWaiverRun();
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    for (const x of [postRunAt(g), preRunAt(g)]) {
+      if (x != null && x <= t && t - x < 48 * 3600e3 && x > lr) return true;
+    }
+  }
+  return false;
+}
+// Trough state under auto control — closed during play, reopens post-waivers
+function troughWindow() {
+  const t = Date.now();
+  let cur = -1;
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    const k = gwKicks(g);
+    if (k && k.first - 90 * 60000 <= t) cur = g;
+    else if (k && cur >= 0) break;
+  }
+  if (cur < 0) return { open: true };
+  const post = postRunAt(cur);
+  if (post == null) return { open: true };
+  if (t < post) return { open: false, until: post, why: 'the gameweek is underway' };
+  if (lastWaiverRun() < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
+  return { open: true };
 }
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
   const ctl = waiverControl();
   if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  const cur = currentGwIndex();
-  // the gameweek starting locks everyone until the next processing
-  if (gwHasStarted(cur) && lastWaiverRun() < new Date(gwFrom(cur)).getTime()) return true;
+  if (!troughWindow().open) return true;
   // recently dropped players wait for the next processing
   for (const t of state.transfers) {
     if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
@@ -973,7 +1009,7 @@ function setWaiverControl(mode) {
   else { state.waiverMeta = { ...state.waiverMeta, control: mode }; save(); render(); }
   toast(mode === 'open' ? 'The Trough is thrown open — everything is free to sign.'
     : mode === 'closed' ? 'The Trough is closed. The Chairman has spoken.'
-    : 'Back on schedule — waivers Tue & Fri, 10:00 UTC.');
+    : 'Back on schedule — waivers follow the fixtures (8pm after the gameweek, 8pm before the next).');
 }
 // standings using ONLY gameweeks final before gwIdx — deterministic, can't reshuffle mid-round
 function standingsBefore(gwIdx) {
@@ -4409,7 +4445,7 @@ function viewRules() {
       ${Object.keys(DEFAULT_SCORING).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus-point nonsense. Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
-      <p class="rules-p"><b>Waivers:</b> everyone goes on waivers when a gameweek starts, and dropped players go back on waivers. Lodge ranked claims (blind); they resolve <b>Tuesdays &amp; Fridays at 10:00 UTC</b> in reverse table order — win a claim, drop to the back. The Chairman can run waivers early, or open/close the Trough entirely.</p>
+      <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
       <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Knitty-grittys confirmed nearer the time, as is tradition.</p>
@@ -4540,7 +4576,7 @@ function viewSettings() {
       <p class="rules-p">&sect;1 The title is the playoffs. The table is for arguing.</p>
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
-      <p class="rules-p">&sect;4 Waivers run Tuesdays and Fridays, 10:00 UTC, reverse table order. The Trough takes the rest.</p>
+      <p class="rules-p">&sect;4 Waivers follow the fixtures: 8pm after the gameweek, 8pm before the next. Reverse table order. The Trough takes the rest.</p>
       <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, knitty-grittys nearer the time, as is tradition.</p>
       <p class="rules-p">&sect;6 Every manager declares one (1) Lobus. The klaxon is ceremonial until the Committee says otherwise.</p>
       <p class="rules-p">&sect;7 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>

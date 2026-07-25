@@ -115,6 +115,19 @@ function validateStats(s) {
   return s;
 }
 
+/* data/fixtures.json — [{ id, gw, date, home, away, ... }] (drives the waiver clock) */
+function validateFixtures(fx) {
+  if (!Array.isArray(fx)) fail('fixtures.json: not an array');
+  if (fx.length > 600) fail('fixtures.json: too many fixtures');
+  for (const f of fx) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) fail('fixtures.json: fixture entry');
+    if (f.gw != null && (!isInt(f.gw) || f.gw < 1 || f.gw > 60)) fail(`fixtures.json: gw ${f.gw}`);
+    if (f.date != null && !isIso(f.date)) fail('fixtures.json: date');
+    if (!isStr(f.home || '', 60) || !isStr(f.away || '', 60)) fail('fixtures.json: team names');
+  }
+  return fx;
+}
+
 /* data/history25.json — { season, byCode: { "<code>": { ...archive row } } } */
 function validateHistory(h) {
   if (!h || typeof h !== 'object' || Array.isArray(h)) fail('history25.json: not an object');
@@ -133,4 +146,4 @@ function validateHistory(h) {
   return { byCode };
 }
 
-module.exports = { LIMITS, parseJson, validateData, validateStats, validateHistory };
+module.exports = { LIMITS, parseJson, validateData, validateStats, validateHistory, validateFixtures };
