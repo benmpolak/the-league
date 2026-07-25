@@ -110,7 +110,7 @@ const check = (label, ok, detail = '') => {
       // waiver claims: two managers contest the same top free agent
       const owned0 = ownedIdsAt(gw);
       const fa = PLAYERS.filter(x => !owned0.has(x.id) && !arrivalLocked(x)).sort((a, b) => rating(b) - rating(a));
-      const order = waiverOrder(gw); // who SHOULD win a contested claim: earliest in this queue
+      const order = waiverOrder(); // pre-kick queue — used only to PICK two contestants
       const [hi, lo] = [order[0], order[order.length - 1]];
       const target = fa.find(x => {
         const dropHi = [...squadAt(hi, gw)].sort((a, b) => rating(a) - rating(b)).find(d => squadShapeOk([...squadAt(hi, gw).filter(q => q.id !== d.id), x]));
@@ -147,9 +147,14 @@ const check = (label, ok, detail = '') => {
       const before = state.transfers.length;
       processWaivers(true);
       if (target) {
+        // the run resolves by the CURRENT table (the GW that just went final
+        // counts — sol 5.6 finding), so recompute the queue post-stats
+        const q = waiverOrder();
+        const expWin = q.indexOf(hi) < q.indexOf(lo) ? hi : lo;
+        const expLose = expWin === hi ? lo : hi;
         const winner = state.transfers.slice(before).find(t => t.inId === target.id && t.waiver);
-        out.checks.contestedToTopOfQueue = !!winner && winner.managerId === hi;
-        out.checks.loserGotNothing = !state.transfers.slice(before).some(t => t.inId === target.id && t.managerId === lo);
+        out.checks.contestedToTopOfQueue = !!winner && winner.managerId === expWin;
+        out.checks.loserGotNothing = !state.transfers.slice(before).some(t => t.inId === target.id && t.managerId === expLose);
       } else { out.checks.contestedToTopOfQueue = true; out.checks.loserGotNothing = true; }
 
       // a trough stroll: someone signs a free agent the moment waivers clear.

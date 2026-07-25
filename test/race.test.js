@@ -1,5 +1,14 @@
 // The Saturday-morning scramble: two managers sign DIFFERENT trough players in
 // the same instant. Whole-array writes mean last-write-wins — do both survive?
+// RETIRED (25 Jul 2026, sol 5.6 audit): this suite predates auth-v2 — it
+// drives localStorage identities and legacy RTDB paths that no longer exist,
+// and its emulator mode redirects ONLY the RTDB, so the current client's
+// callable mutations would hit PRODUCTION Functions. The v2 equivalents live
+// in functions.test.js (draft/trough/trade races) + rules.test.js.
+if (process.env.LEGACY_SUITE !== '1') {
+  console.log('SKIP retired legacy suite (set LEGACY_SUITE=1 to run against the pre-cutover stack)');
+  process.exit(0);
+}
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const fs = require('fs');

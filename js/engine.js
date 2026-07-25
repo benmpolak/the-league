@@ -61,7 +61,7 @@
     const gwHasStarted = i => now() > new Date(gwFrom(i)).getTime();
     // transfers NEVER land in a gameweek already being played (no retroactive rescoring)
     const transferGw = () => { const c = currentGwIndex(); return Math.min(c + (gwHasStarted(c) ? 1 : 0), GAMEWEEKS.length - 1); };
-    const gwEvent = (state, i) => state.matchStats[`gw${GAMEWEEKS[i].n}`];
+    const gwEvent = (state, i) => GAMEWEEKS[i] ? state.matchStats[`gw${GAMEWEEKS[i].n}`] : null;
     function gwStatus(state, i) {
       const ev = gwEvent(state, i);
       const synced = !!ev && Object.keys(ev.playerStats || {}).length > 0;
@@ -101,6 +101,8 @@
       return ids;
     }
     function squadShapeOk(state, squad) {
+      if (squad.length !== state.settings.squadSize) return false; // exact size — trades can't shrink/grow a squad
+      if (new Set(squad.map(p => p.id)).size !== squad.length) return false; // nobody owns a player twice
       const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
       squad.forEach(p => c[p.pos]++);
       const { posMin, posMax } = state.settings;
@@ -163,6 +165,8 @@
     }
     function xiValid(pids) {
       if (pids.length !== XI_RULES.size) return false;
+      if (new Set(pids).size !== pids.length) return false; // the same player can't start twice
+      if (pids.some(id => !PLAYER_BY_ID[id])) return false;
       const c = xiCounts(pids);
       return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1]);
     }
@@ -299,7 +303,7 @@
       const rows = state.managers.map(m => ({ id: m.id, h2h: 0, pts: 0 }));
       const byId = Object.fromEntries(rows.map(r => [r.id, r]));
       let anyFinal = false;
-      for (let i = 0; i < Math.min(gwIdx, REGULAR_GWS); i++) {
+      for (let i = 0; i < Math.min(gwIdx, REGULAR_GWS, GAMEWEEKS.length); i++) {
         if (gwStatus(state, i) !== 'final') continue;
         anyFinal = true;
         for (const r of rows) r.pts += gwManagerPoints(state, r.id, i);
@@ -341,7 +345,9 @@
     const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
     // scheduled runs already due, within a bounded lookback (deterministic ids
     // let the server's run ledger make each one exactly-once)
-    function waiverSchedule(horizonMs = 48 * 3600e3) {
+    function waiverSchedule(horizonMs = 14 * 24 * 3600e3) {
+      // 14-day lookback: a missed run must survive a long Functions outage.
+      // Exactly-once is the run ledger's job (deterministic ids), not this window's.
       const t = now(), out = [];
       for (let g = 0; g < GAMEWEEKS.length; g++) {
         const post = postRunAt(g), pre = preRunAt(g);
@@ -382,8 +388,11 @@
       if (lastWaiverRun(state) < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
       return { open: true };
     }
-    function waiverOrder(state, gwIdx) {
-      const { rows, anyFinal } = standingsBefore(state, gwIdx);
+    function waiverOrder(state) {
+      // reverse of the CURRENT table — every finished GW counts. Passing the
+      // current GW index here silently dropped the round that just finished
+      // (currentGwIndex doesn't advance until the next one starts).
+      const { rows, anyFinal } = standingsBefore(state, REGULAR_GWS);
       const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
       return [...base].reverse();
     }
@@ -405,7 +414,7 @@
         lineups: JSON.parse(JSON.stringify(state.lineups || {})),
       };
       const buckets = Object.keys(state.claims || {}).map(Number).filter(g => g <= cur).sort((a, b) => a - b);
-      const queue = waiverOrder(state, cur);
+      const queue = waiverOrder(state);
       const pending = {};
       for (const mid of queue) { pending[mid] = []; for (const g of buckets) pending[mid].push(...toArr(state.claims[g]?.[mid])); }
       const executed = [];

@@ -27,7 +27,8 @@ const T = require('./testenv.js');
 
   /* ---- anonymous ---- */
   chk('anon reads public', (await T.rest('GET', `v2/leagues/${LG}/public`)).status === 200);
-  chk('anon reads legacy (frozen read-only)', (await T.rest('GET', 'leagues/legacy-test')).status === 200);
+  chk('anon CANNOT read legacy (sealed at cutover — old PIN hashes/claims stay private; sol 5.6)',
+    [401, 403].includes((await T.rest('GET', 'leagues/legacy-test')).status));
   chk('anon read of private denied', (await T.rest('GET', `v2/leagues/${LG}/private/${members[1].uid}`)).status === 403 || (await T.rest('GET', `v2/leagues/${LG}/private/${members[1].uid}`)).status === 401);
   chk('anon read of whole league denied', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}`)).status));
   chk('anon read of membership denied', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/server/membership`)).status));

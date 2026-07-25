@@ -332,7 +332,17 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const upd = {};
   if (state.settings.pickTimer && total < eng.totalPicks(state)) upd[`${base}/public/draft/deadline`] = Date.now() + state.settings.pickTimer * 1000;
   if (total >= eng.totalPicks(state)) upd[`${base}/public/phase`] = 'season';
-  if (Object.keys(upd).length) await db().ref().update(upd);
+  // the pick txn and this follow-up can't share one atomic write (different
+  // subtrees); retry hard so a blip can't leave a fresh pick with a stale
+  // deadline (which would invite an early autopick for the next manager)
+  if (Object.keys(upd).length) {
+    let err = null;
+    for (let i = 0; i < 3; i++) {
+      try { await db().ref().update(upd); err = null; break; }
+      catch (e) { err = e; await new Promise(r => setTimeout(r, 250 * (i + 1))); }
+    }
+    if (err) throw err;
+  }
   return { picked: player.id, total };
 };
 
@@ -390,9 +400,18 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     return { ok: true };
   }
   if (op === 'undo') {
+    // draft-night tool only: during the draft, or immediately after the final
+    // pick flipped phase to season (still pre-GW1). Never mid-season — popping
+    // a pick then would corrupt every squad computation.
+    if (state.phase !== 'draft' && !(state.phase === 'season' && !eng.gwHasStarted(0))) {
+      throw new HttpsError('failed-precondition', 'undo is a draft-night tool');
+    }
+    if (!state.draft.picks.length) throw new HttpsError('failed-precondition', 'nothing to undo');
     const res = await db().ref(`${d}/picks`).transaction(seeded(state.draft.picks, arr => { arr.pop(); return arr; }));
     if (!res.committed) throw new HttpsError('aborted', 'undo clashed');
-    await db().ref(`${d}/deadline`).set(Date.now() + (state.settings.pickTimer || 30) * 1000);
+    const upd = { [`${d}/deadline`]: Date.now() + (state.settings.pickTimer || 30) * 1000 };
+    if (state.phase === 'season') upd[`${base}/public/phase`] = 'draft'; // the final pick flipped it; undo flips it back
+    await db().ref().update(upd);
     return { total: toArr(res.snapshot.val()).length };
   }
   throw new HttpsError('invalid-argument', 'unknown draft op');
@@ -493,6 +512,9 @@ ACTIONS.tradePropose = async ({ league, a, data, ctx, state, eng }) => {
   const cap = state.settings.squadSize || 14;
   const give = intArray(data.give, 'give', cap), get = intArray(data.get, 'get', cap);
   if (!give.length || give.length !== get.length) throw new HttpsError('invalid-argument', 'trades swap the same number each way');
+  if (new Set(give).size !== give.length || new Set(get).size !== get.length || give.some(id => get.includes(id))) {
+    throw new HttpsError('invalid-argument', 'a trade can’t repeat a player'); // dupes corrupt both squad sizes on execution
+  }
   const tgw = eng.transferGw();
   const mine = eng.squadIdsGiven(state, from, state.transfers, tgw);
   const theirs = eng.squadIdsGiven(state, to, state.transfers, tgw);
@@ -528,17 +550,47 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
     return { status: to };
   }
   if (action !== 'accept') throw new HttpsError('invalid-argument', 'unknown action');
+  const give = toArr(trade.give).length ? toArr(trade.give) : [trade.give].filter(Boolean);
+  const get = toArr(trade.get).length ? toArr(trade.get) : [trade.get].filter(Boolean);
+  const tgw = eng.transferGw();
+  const finishEarly = status => db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
+    const t = arr.find(x => x.id === trade.id);
+    if (t) t.status = status;
+    return arr;
+  }));
+  // stored offers may predate validation — a duplicated player corrupts both squads
+  if (new Set(give).size !== give.length || new Set(get).size !== get.length || give.some(id => get.includes(id))) {
+    await finishEarly('withdrawn');
+    throw new HttpsError('failed-precondition', 'malformed trade (repeated player) — withdrawn');
+  }
+  // crash recovery: a prior accept died mid-execution
+  if (trade.status === 'executing') {
+    const landed = state.transfers.some(tr => tr.trade === trade.id);
+    if (landed) { // transfers committed — finish the tail idempotently
+      const upd = {};
+      for (const side of [{ mid: trade.from, outs: give }, { mid: trade.to, outs: get }]) {
+        const lu = state.lineups[side.mid]?.[tgw];
+        if (lu) upd[`${base}/public/lineups/${side.mid}/${tgw}`] = toArr(lu).filter(id => !side.outs.includes(id));
+      }
+      if (Object.keys(upd).length) await db().ref().update(upd);
+      await finishEarly('done');
+      return { status: 'done' };
+    }
+    if (Date.now() - (trade.claimT || trade.t || 0) > 60000) { // stale claim, nothing landed — release it
+      await finishEarly('pending');
+      throw new HttpsError('aborted', 'the trade was stuck mid-execution — released, accept it again');
+    }
+    throw new HttpsError('aborted', 'trade already being executed');
+  }
   // phase 1: claim the trade (pending -> executing) so a double-accept is impossible
   const claim = await db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
     const t = arr.find(x => x.id === trade.id);
     if (!t || t.status !== 'pending') return;
     t.status = 'executing';
+    t.claimT = Date.now(); // lets a later accept tell a crashed claim from a live one
     return arr;
   }));
   if (!claim.committed) throw new HttpsError('aborted', 'trade already handled');
-  const give = toArr(trade.give).length ? toArr(trade.give) : [trade.give].filter(Boolean);
-  const get = toArr(trade.get).length ? toArr(trade.get) : [trade.get].filter(Boolean);
-  const tgw = eng.transferGw();
   const finish = status => db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
     const t = arr.find(x => x.id === trade.id);
     if (t) t.status = status;
@@ -570,9 +622,9 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
       if (lu) upd[`${base}/public/lineups/${side.mid}/${tgw}`] = toArr(lu).filter(id => !side.outs.includes(id));
     }
     if (trade.terms) {
-      const cov = { id: `c${Date.now()}`, from: trade.from, to: trade.to, text: trade.terms, t: Date.now(), gw: eng.currentGwIndex() };
+      const cov = { id: `c${Date.now()}`, trade: trade.id, from: trade.from, to: trade.to, text: trade.terms, t: Date.now(), gw: eng.currentGwIndex() };
       await db().ref(`${base}/public/covenants`).transaction(seeded(state.covenants, arr => {
-        if (!arr.some(c => c.id === cov.id)) arr.push(cov);
+        if (!arr.some(c => c.id === cov.id || c.trade === trade.id)) arr.push(cov); // one covenant per trade, even across a crash-replay
         return arr;
       }));
     }
@@ -641,6 +693,7 @@ ACTIONS.lobusDeclare = async ({ league, a, data, state, eng }) => {
 ACTIONS.hamEnter = async ({ league, a, data, state, eng, ctx }) => {
   const mid = actingManager(a, data);
   if (!state.hamCup || state.hamCup.status === 'off' || !state.hamCup.gw) throw new HttpsError('failed-precondition', 'no cup drawn');
+  if (eng.gwHasStarted(state.hamCup.gw)) throw new HttpsError('failed-precondition', 'the cup gameweek has kicked off — entries are locked');
   const xi = intArray(data.xi, 'xi', 11);
   if (!eng.xiValid(xi)) throw new HttpsError('invalid-argument', 'XI shape is illegal');
   const owned = eng.ownedIdsAt(state, eng.currentGwIndex());
@@ -944,21 +997,26 @@ ACTIONS.importState = async ({ league, a, data }) => {
   }
   const upd = { [`${base}/public`]: pub };
   const mem = (await db().ref(`${base}/server/managerUid`).get()).val() || {};
+  // the private tree is REPLACED wholesale, not merged: a restore that carries
+  // no claims must also delete the claims already there, or a stale claim
+  // survives the restore and fires at the next waiver run
+  const priv = {};
   for (const [g, byMid] of Object.entries(s.claims || {})) {
     if (!/^\d{1,2}$/.test(g)) importError(`claims bucket "${g}"`);
     for (const [mid, arr] of Object.entries(byMid || {})) {
       const list = toArr(arr);
       if (list.length > 30) importError('claims bucket too long');
       const uid = mem[mid];
-      if (uid) upd[`${base}/private/${uid}/claims/${g}`] = list;
+      if (uid) ((priv[uid] = priv[uid] || {}).claims = priv[uid].claims || {})[g] = list;
     }
   }
   for (const [mid, arr] of Object.entries(s.autolists || {})) {
     const list = toArr(arr);
     if (list.length > 300) importError('autolist too long');
     const uid = mem[mid];
-    if (uid) upd[`${base}/private/${uid}/autolist`] = list;
+    if (uid) (priv[uid] = priv[uid] || {}).autolist = list;
   }
+  upd[`${base}/private`] = Object.keys(priv).length ? priv : null;
   await db().ref().update(upd);
   return { ok: true };
 };

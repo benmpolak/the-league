@@ -152,7 +152,11 @@ let whoami = +localStorage.getItem(WHO_KEY) || null; // manager id, -1 = spectat
 let syncConnected = false;
 let demoMode = false;
 let demoBackup = null;
-const syncOn = () => !SYNC_OFF && !!window.WCSync;
+// sync is a matter of INTENT, not module presence: if sync.js failed to load
+// (cold start on dead network, CDN hiccup) the game must be READ-ONLY —
+// serverAct refuses while disconnected. Treating a load failure like ?nosync
+// would accept local writes that silently vanish on the next real snapshot.
+const syncOn = () => !SYNC_OFF;
 const netOn = () => syncOn() && !demoMode;
 // online identity comes from the server (Firebase sign-in + membership), never
 // from localStorage — an old stored whoami grants nothing once auth is live
@@ -782,6 +786,8 @@ function ownedIdsAt(gwIdx) {
 // flex squads: any 14 inside per-position min/max bounds. No club cap —
 // Tussie's right to draft the entire City team by GW30 is constitutionally protected.
 function squadShapeOk(squad) {
+  if (squad.length !== state.settings.squadSize) return false; // exact size — swaps can't shrink/grow a squad
+  if (new Set(squad.map(p => p.id)).size !== squad.length) return false; // nobody owns a player twice
   const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
   squad.forEach(p => c[p.pos]++);
   const { posMin, posMax } = state.settings;
@@ -951,7 +957,7 @@ function processWaivers(manual = false) {
   // sweep EVERY un-run claim bucket up to now (oldest first) so a claim lodged
   // between a Friday run and the Saturday deadline isn't orphaned by the index flip
   const buckets = Object.keys(state.claims || {}).map(Number).filter(g => g <= cur).sort((a, b) => a - b);
-  const queue = waiverOrder(cur); // reverse standings — weekly reset
+  const queue = waiverOrder(); // reverse standings — weekly reset
   const pending = {};
   for (const mid of queue) { pending[mid] = []; for (const g of buckets) pending[mid].push(...toArr(state.claims[g]?.[mid])); }
   const executed = [];
@@ -1035,8 +1041,10 @@ function standingsBefore(gwIdx) {
   rows.sort((x, y) => y.h2h - x.h2h || y.pts - x.pts || x.id - y.id);
   return { rows, anyFinal };
 }
-function waiverOrder(gwIdx) {
-  const { rows, anyFinal } = standingsBefore(gwIdx);
+function waiverOrder() {
+  // reverse of the CURRENT table — every finished GW counts (passing the
+  // current GW index dropped the round that just finished)
+  const { rows, anyFinal } = standingsBefore(REGULAR_GWS);
   const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
   return [...base].reverse(); // bottom feeds first
 }
@@ -1537,7 +1545,10 @@ function h2hStandings(includeLive = false) {
       else { rows[a].d++; rows[b].d++; rows[a].pts++; rows[b].pts++; }
     }
   }
-  return Object.values(rows).sort((x, y) => y.pts - x.pts || managerPoints(y.id) - managerPoints(x.id));
+  // tiebreak on regular-season overall points (pf = points scored across the
+  // GWs counted above) — managerPoints() spans all 38 GWs, so playoff scoring
+  // could reshuffle a settled regular-season table
+  return Object.values(rows).sort((x, y) => y.pts - x.pts || y.pf - x.pf);
 }
 
 /* ---------------- FPL sync ---------------- */
@@ -1843,7 +1854,7 @@ function renderIdentity() {
   const wc = ov.querySelector('#whoCancel');
   if (wc) wc.onclick = () => { forceIdentity = false; ov.remove(); };
   const so = ov.querySelector('#whoSignOut');
-  if (so) so.onclick = () => window.WCSync.auth.signOut();
+  if (so) so.onclick = () => window.WCSync ? window.WCSync.auth.signOut() : toast('Can’t reach the league right now — try a refresh');
   const rs = ov.querySelector('#whoResend');
   if (rs) rs.onclick = () => { linkSentTo = null; renderIdentity(); };
   const form = ov.querySelector('#whoEmailForm');
@@ -1851,6 +1862,7 @@ function renderIdentity() {
     e.preventDefault();
     const email = ov.querySelector('#whoEmail').value.trim();
     if (!email) return;
+    if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
     window.WCSync.auth.sendLink(email)
       .then(() => { linkSentTo = email; renderIdentity(); })
       .catch(err => toast(err.message || 'Could not send the link — check the address.'));
@@ -1935,7 +1947,7 @@ function renderSyncArea() {
       spectating = false;
       localStorage.removeItem(SPECT_KEY);
       if (authUser) {
-        if (confirm('Sign out of the league on this device?')) window.WCSync.auth.signOut();
+        if (confirm('Sign out of the league on this device?')) window.WCSync?.auth.signOut();
       } else { whoami = null; render(); }
       return;
     }
@@ -2674,7 +2686,7 @@ function bindDraft() {
       const breakDue = drinksBreakAt(bn) && !(state.draft.breaksDone || []).includes(bn);
       if (state.draft.paused) { el.textContent = 'PAUSED'; el.classList.remove('urgent'); if (el2) el2.textContent = 'PAUSED'; return; }
       if (breakDue || $('#drinksBreak') || $('#ceremony')) return; // clock politely waits for pomp
-      const { left, overBy } = draftDeadlineTiming(state.draft.deadline);
+      const { left, overBy, rawLeft } = draftDeadlineTiming(state.draft.deadline);
       el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       el.classList.toggle('urgent', left <= 10);
       if (el2) { el2.textContent = el.textContent; el2.classList.toggle('urgent', left <= 10); }
@@ -2683,10 +2695,12 @@ function bindDraft() {
         // on-clock manager's OWN device fires after an 8s grace. The pick
         // transaction is idempotent, so a double-fire is harmless — this just
         // guarantees the draft never stalls on one sleeping screen.
+        // rawLeft (unclamped) is the overdue test: overBy is floored at 0, so
+        // "overBy >= 0" is true even mid-countdown and must never gate firing.
         const iAmCommish = !netOn() || isCommissioner();
         const iAmOnClock = netOn() && currentManagerId() === whoami;
-        const mayFire = (overBy >= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock);
-        if (overBy >= 0 && mayFire) {
+        const mayFire = (rawLeft <= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock);
+        if (mayFire) {
           firedDeadline = state.draft.deadline;
           toast('Time! Autopick makes the call.');
           autoPick(true);
@@ -3204,7 +3218,7 @@ function viewTransfers() {
     return `${head}<div class="card"><h2>Every move, on the record</h2>${rows || '<p class="muted">Nothing yet. Cowards.</p>'}</div>`;
   }
   // order
-  const order = waiverOrder(cur);
+  const order = waiverOrder();
   const claimCounts = state.managers.map(m => ({ m, n: myClaims(m.id).length }));
   const waiverHist = state.transfers.filter(t => t.waiver);
   return `${head}<div class="card">

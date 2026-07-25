@@ -62,10 +62,12 @@ chk('trough closes again before the next gameweek', eng.troughWindow(ran).open =
 /* ---- due schedule (deterministic ids, bounded lookback) ---- */
 NOW = iso('2026-08-17T19:05:00Z');
 let due = eng.waiverSchedule();
-chk('post-run due just after 8pm with its slot id', due.length === 1 && due[0].id === 'gw1-post', JSON.stringify(due));
+chk('post-run due just after 8pm, newest last (ledger ids make replays exactly-once)',
+  due.length >= 1 && due[due.length - 1].id === 'gw1-post', JSON.stringify(due));
 NOW = iso('2026-08-21T19:05:00Z');
 due = eng.waiverSchedule();
-chk('pre-run due Friday evening; Monday run outside the 48h lookback', due.length === 1 && due[0].id === 'gw2-pre', JSON.stringify(due));
+chk('pre-run due Friday evening; a run missed days earlier still surfaces (14-day lookback, sol 5.6)',
+  due[due.length - 1].id === 'gw2-pre' && due.some(d => d.id === 'gw1-post'), JSON.stringify(due));
 chk('waiverRunDue false once lastRun covers the slot',
   eng.waiverRunDue(state({ waiverMeta: { lastRun: '2026-08-21T19:06:00Z', control: 'auto' } })) === false);
 chk('waiverRunDue true while the slot is uncovered', eng.waiverRunDue(S) === true);

@@ -4,7 +4,7 @@
     ".write": false,
 
     "leagues": {
-      "$league": { ".read": true }
+      "$league": { ".read": false }
     },
 
     "v2": {
