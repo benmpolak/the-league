@@ -104,7 +104,7 @@ const investigationLine = (L, B) => {
 /* ---------------- gameweeks ---------------- */
 // Generated from the FPL API — a gameweek runs from its deadline to the next one's
 const GAMEWEEKS = GAMEWEEKS_RAW.map(g => ({ n: g.n, label: g.label, from: g.deadline, to: g.to, finished: g.finished }));
-const REGULAR_GWS = 33; // GW33 ends the regular season; GW34–36 are the playoffs
+const REGULAR_GWS = 33; // GW33 ends the regular season; GW34–38 are the playoffs
 const CUP_START = 7;    // the Monzo Cup begins GW8 (index 7)
 let demoGwOverride = null;
 const gwFrom = i => GAMEWEEKS[i].from;
@@ -1495,7 +1495,7 @@ function playoffOdds(runs = 1000) {
     }
     state.managers.map(m => m.id)
       .sort((x, y) => (pts[y] - pts[x]) || (pf[y] - pf[x]))
-      .slice(0, 4).forEach(id => counts[id]++);
+      .slice(0, 8).forEach(id => counts[id]++);
   }
   return Object.fromEntries(Object.entries(counts).map(([id, c]) => [id, Math.round(100 * c / runs)]));
 }
@@ -3800,23 +3800,32 @@ function bindDash() {
   });
 }
 
-/* ----- playoffs (GW34 semis, GW35–36 two-legged final) ----- */
+/* ----- playoffs (top 8: GW34 handicap quarter-finals, GW35 semis, GW36–38 three-legged final) ----- */
+const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
+const QF_HANDICAPS = [12, 9, 6, 3]; // head start for the higher seed: 1v8, 2v7, 3v6, 4v5
 function playoffState() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') return null;
-  const seeds = standingsBefore(REGULAR_GWS).rows.map(r => r.id).slice(0, 4);
-  const semiIdx = REGULAR_GWS; // GW34
-  const semis = [[seeds[0], seeds[3]], [seeds[1], seeds[2]]];
-  const semiDone = gwStatus(semiIdx) === 'final';
+  const seeds = standingsBefore(REGULAR_GWS).rows.map(r => r.id).slice(0, 8);
+  const qfIdx = REGULAR_GWS;       // GW34
+  const semiIdx = REGULAR_GWS + 1; // GW35
+  const finalIdx = [REGULAR_GWS + 2, REGULAR_GWS + 3, REGULAR_GWS + 4]; // GW36–38
   const higherSeed = (a, b) => seeds.indexOf(a) < seeds.indexOf(b) ? a : b;
-  const semiWinners = semiDone ? semis.map(([a, b]) => {
+  const qfs = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  const qfWinners = gwStatus(qfIdx) === 'final' ? qfs.map(([a, b], k) => {
+    const pa = gwManagerPoints(a, qfIdx) + QF_HANDICAPS[k], pb = gwManagerPoints(b, qfIdx);
+    return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
+  }) : null;
+  // fixed bracket: winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6
+  const semis = qfWinners ? [[qfWinners[0], qfWinners[3]], [qfWinners[1], qfWinners[2]]] : null;
+  const semiWinners = semis && gwStatus(semiIdx) === 'final' ? semis.map(([a, b]) => {
     const pa = gwManagerPoints(a, semiIdx), pb = gwManagerPoints(b, semiIdx);
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
   }) : null;
   let champion = null;
-  if (semiWinners && gwStatus(REGULAR_GWS + 2) === 'final') {
+  if (semiWinners && gwStatus(finalIdx[2]) === 'final') {
     const [x, y] = semiWinners;
     let wx = 0, wy = 0, cx = 0, cy = 0;
-    for (const i of [REGULAR_GWS + 1, REGULAR_GWS + 2]) {
+    for (const i of finalIdx) {
       const px = gwManagerPoints(x, i), py = gwManagerPoints(y, i);
       cx += px; cy += py;
       if (px > py) wx++; else if (py > px) wy++;
@@ -3824,23 +3833,41 @@ function playoffState() {
     champion = wx > wy ? x : wy > wx ? y
       : cx > cy ? x : cy > cx ? y : higherSeed(x, y);
   }
-  return { seeds, semis, semiIdx, semiWinners, champion };
+  return { seeds, qfs, qfIdx, qfWinners, semis, semiIdx, semiWinners, finalIdx, champion };
 }
 function playoffCard() {
   const po = playoffState();
   if (!po) {
     return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top four go through: GW34 semi-finals (1st v 4th, 2nd v 3rd, one leg), GW35–36 the two-legged final. Ties: cumulative points, then regular-season position.</p></div>`;
+      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting +${QF_HANDICAPS.join(', +')}. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
   }
-  const semiScore = (a, b) => `${gwManagerPoints(a, po.semiIdx)} – ${gwManagerPoints(b, po.semiIdx)}`;
+  const seedNo = id => po.seeds.indexOf(id) + 1;
+  const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
+  const tieRow = (a, b, score, hcap) => `<div class="h2h-fx">
+      <span style="flex:1;text-align:right">${ord(seedNo(a))} ${esc(teamName(a))}${hcap ? ` <span class="gold" style="font-size:11px" title="handicap — the higher seed starts +${hcap}">+${hcap}</span>` : ''}</span>
+      <span class="fx-score">${score}</span>
+      <span style="flex:1">${esc(teamName(b))} ${ord(seedNo(b))}</span></div>`;
+  const qfRows = po.qfs.map(([a, b], k) => tieRow(a, b,
+    gwStatus(po.qfIdx) === 'upcoming' ? 'GW34' : `${gwManagerPoints(a, po.qfIdx) + QF_HANDICAPS[k]} – ${gwManagerPoints(b, po.qfIdx)}`,
+    QF_HANDICAPS[k])).join('');
+  const semiRows = po.semis ? po.semis.map(([a, b]) => tieRow(a, b,
+    gwStatus(po.semiIdx) === 'upcoming' ? 'GW35' : `${gwManagerPoints(a, po.semiIdx)} – ${gwManagerPoints(b, po.semiIdx)}`)).join('') : '';
+  let finalRows = '';
+  if (po.semiWinners) {
+    const [x, y] = po.semiWinners;
+    const played = po.finalIdx.filter(i => gwStatus(i) !== 'upcoming');
+    if (!played.length) finalRows = tieRow(x, y, 'GW36–38');
+    else {
+      const legs = played.map(i => `${gwManagerPoints(x, i)}–${gwManagerPoints(y, i)}`);
+      const agg = played.reduce((t, i) => [t[0] + gwManagerPoints(x, i), t[1] + gwManagerPoints(y, i)], [0, 0]);
+      finalRows = tieRow(x, y, `${agg[0]} – ${agg[1]}`)
+        + `<p class="muted" style="font-size:11px;text-align:center;margin:2px 0 0">legs: ${legs.join(' · ')}${played.length < 3 ? ` · ${3 - played.length} to play` : ' · aggregate'}</p>`;
+    }
+  }
   return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-    ${po.semis.map(([a, b], k) => `<div class="h2h-fx">
-      <span style="flex:1;text-align:right">${k === 0 ? '1st' : '2nd'} ${esc(teamName(a))}</span>
-      <span class="fx-score">${gwStatus(po.semiIdx) === 'upcoming' ? 'GW34' : semiScore(a, b)}</span>
-      <span style="flex:1">${esc(teamName(b))} ${k === 0 ? '4th' : '3rd'}</span></div>`).join('')}
-    ${po.semiWinners ? `<div class="h2h-fx"><span style="flex:1;text-align:right">${esc(teamName(po.semiWinners[0]))}</span>
-      <span class="fx-score">FINAL · GW35–36</span>
-      <span style="flex:1">${esc(teamName(po.semiWinners[1]))}</span></div>` : ''}
+    ${stageHead('Quarter-finals · GW34 · handicaps apply')}${qfRows}
+    ${po.semis ? stageHead('Semi-finals · GW35') + semiRows : ''}
+    ${finalRows ? stageHead('The Final · GW36–38 · three legs') + finalRows : ''}
     ${po.champion ? `<p style="text-align:center;font-size:16px;margin-top:10px">&#127942; <b>${esc(teamName(po.champion))}</b> — champions of The League 2026/27</p>` : ''}
   </div>`;
 }
@@ -3998,7 +4025,6 @@ function gwPreviewCard(i) {
   const table = h2hStandings();
   const posOf = Object.fromEntries(table.map((r, k) => [r.id, k + 1]));
   const anyPlayed = table.some(r => r.p > 0);
-  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
   const rows = pairs.map(([a, b]) => {
     const sa = projectedGwScore(a, i), sb = projectedGwScore(b, i);
     return { a, b, sa, sb, p: liveWinProb(a, b, i), riv: rivalryFor(a, b, i) };
@@ -4018,7 +4044,7 @@ function gwPreviewCard(i) {
     if (anyPlayed && out.length < 2) {
       for (const id of [r.a, r.b]) {
         if (posOf[id] >= 10) { out.push(`${teamName(id)} (${ord(posOf[id])}) badly needs the points.`); break; }
-        if (posOf[id] === 5) { out.push(`${teamName(id)} sits 5th — right on the playoff line.`); break; }
+        if (posOf[id] === 9) { out.push(`${teamName(id)} sits 9th — right on the playoff line.`); break; }
       }
     }
     if (out.length < 2) {
@@ -4075,7 +4101,7 @@ function viewH2H() {
       <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
-        <tr class="${i === 3 ? 'playoff-line' : ''}">
+        <tr class="${i === 7 ? 'playoff-line' : ''}">
           <td class="muted">${i + 1}</td>
           <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
@@ -4086,7 +4112,7 @@ function viewH2H() {
       </tbody>
     </table>
     </div>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top four make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
+    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
   </div>
   ${pointsGridCard(standings)}
   ${crystalBallCard(standings)}
@@ -4441,8 +4467,9 @@ function viewRules() {
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
       <p class="rules-p"><b>GW1–33</b>: regular season, head-to-head every week — everyone plays everyone, nearly three times over. Win 3, draw 1, loss 0.</p>
-      <p class="rules-p"><b>GW34</b>: playoff semi-finals, one leg — 1st v 4th, 2nd v 3rd.</p>
-      <p class="rules-p"><b>GW35–36</b>: the final, two legs. One win each → cumulative points. Still level → higher regular-season finish takes it.</p>
+      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting <b>+12, +9, +6, +3</b> respectively. Your reward for the regular season.</p>
+      <p class="rules-p"><b>GW35</b>: semi-finals, one leg — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. No handicaps from here.</p>
+      <p class="rules-p"><b>GW36–38</b>: the final, three legs. Most legs won → cumulative points → higher regular-season finish. All other ties: higher seed advances.</p>
       <p class="rules-p"><b>The Monzo League Cup</b>, from GW8: last man standing. Lowest score each gameweek is eliminated; ties roll over.</p>
     </div>
     <div class="card">

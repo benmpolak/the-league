@@ -1,6 +1,6 @@
 // Full 26/27 season simulation through the real app — snake draft, 33 H2H
 // gameweeks with lineups/bench orders/waivers/trough/trades, the Window Draft,
-// auto-subs, the Monzo Cup, and the GW34–36 playoffs. Runs against ?nosync.
+// auto-subs, the Monzo Cup, and the GW34–38 top-8 playoffs. Runs against ?nosync.
 // Usage: python3 -m http.server 8125 &  then  node test/sim.test.js
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -333,8 +333,8 @@ const check = (label, ok, detail = '') => {
   });
   check('Monzo Cup eliminations consistent with the card', cup.cardAgrees, `${cup.rounds} rounds, ${cup.alive} alive${cup.winner ? ', winner ' + cup.winner : ''}`);
 
-  // ---------- 7. playoffs: GW34 semis, GW35–36 two-legged final ----------
-  for (let gw = 33; gw < 36; gw++) {
+  // ---------- 7. playoffs: GW34 handicap QFs, GW35 semis, GW36–38 three-legged final ----------
+  for (let gw = 33; gw < 38; gw++) {
     await p.evaluate(gw => {
       const mid = (new Date(GAMEWEEKS[gw].from).getTime() + new Date(GAMEWEEKS[gw].to).getTime()) / 2;
       Date.now = () => mid;
@@ -350,35 +350,42 @@ const check = (label, ok, detail = '') => {
     }, gw);
   }
   const po = await p.evaluate(() => {
-    Date.now = () => new Date(GAMEWEEKS[36].from).getTime() + 1000;
+    Date.now = () => new Date(GAMEWEEKS[37].to).getTime() + 1000;
     const po = playoffState();
-    if (!po) return { err: 'playoffState null after GW36' };
+    if (!po) return { err: 'playoffState null after GW38' };
     // independent recompute
-    const seeds = standingsBefore(33).rows.map(r => r.id).slice(0, 4);
-    const semiW = [[seeds[0], seeds[3]], [seeds[1], seeds[2]]].map(([x, y]) => {
-      const px = gwManagerPoints(x, 33), py = gwManagerPoints(y, 33);
-      return px === py ? (seeds.indexOf(x) < seeds.indexOf(y) ? x : y) : (px > py ? x : y);
+    const seeds = standingsBefore(33).rows.map(r => r.id).slice(0, 8);
+    const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
+    const H = [12, 9, 6, 3];
+    const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
+      const px = gwManagerPoints(x, 33) + H[k], py = gwManagerPoints(y, 33);
+      return px === py ? hi(x, y) : (px > py ? x : y);
+    });
+    const semiW = [[qfW[0], qfW[3]], [qfW[1], qfW[2]]].map(([x, y]) => {
+      const px = gwManagerPoints(x, 34), py = gwManagerPoints(y, 34);
+      return px === py ? hi(x, y) : (px > py ? x : y);
     });
     let cx = 0, cy = 0, wx = 0, wy = 0;
-    for (const i of [34, 35]) {
+    for (const i of [35, 36, 37]) {
       const a = gwManagerPoints(semiW[0], i), b = gwManagerPoints(semiW[1], i);
       cx += a; cy += b;
       if (a > b) wx++; else if (b > a) wy++;
     }
     const champ = wx > wy ? semiW[0] : wy > wx ? semiW[1]
-      : cx > cy ? semiW[0] : cy > cx ? semiW[1] : (seeds.indexOf(semiW[0]) < seeds.indexOf(semiW[1]) ? semiW[0] : semiW[1]);
+      : cx > cy ? semiW[0] : cy > cx ? semiW[1] : hi(semiW[0], semiW[1]);
     state.view = 'h2h'; render();
     const html = document.querySelector('#main').innerHTML;
     return {
       seedsMatch: JSON.stringify(po.seeds) === JSON.stringify(seeds),
+      qfsMatch: JSON.stringify(po.qfWinners) === JSON.stringify(qfW),
       semisMatch: JSON.stringify(po.semiWinners) === JSON.stringify(semiW),
       champMatch: po.champion === champ,
       champ: teamName(champ),
       cardShowsChamp: html.includes('champions of The League'),
     };
   });
-  check('playoffs: seeds, semi winners and champion all agree with independent recompute',
-    !po.err && po.seedsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
+  check('playoffs: seeds, QF winners (handicaps), semi winners and champion all agree with independent recompute',
+    !po.err && po.seedsMatch && po.qfsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
 
   // ---------- 8. season-end table + analytics sanity ----------
   const finals = await p.evaluate(() => {

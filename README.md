@@ -9,7 +9,7 @@ Forked from the World Cup 2026 build; reskinned for this group.
 - Squads of 14, flexible make-up (1–2 GK / 3–6 DF / 3–6 MF / 1–4 FW), **no club cap**
 - **Starting XI picked each gameweek** — only starters score (1 GK, 3–5 DF, 2–5 MF, 1–3 FW); lineups lock at the FPL deadline
 - **Regular season GW1–33**: head-to-head every week (win 3 / draw 1 / loss 0), 11-round round robin × 3
-- **Playoffs**: GW34 semis (1st v 4th, 2nd v 3rd, one leg), GW35–36 two-legged final
+- **Playoffs**: top 8 — GW34 handicap quarter-finals (1v8 +12, 2v7 +9, 3v6 +6, 4v5 +3 to the higher seed), GW35 semis (fixed bracket), GW36–38 three-legged final
 - **The Monzo League Cup**: last man standing from GW8 — lowest gameweek score is eliminated, ties roll over
 - **Weekly waivers**: one swap each in reverse table order (bottom feeds first); trade desk for agreed swaps
 - **Auto-subs**: a starter who never plays is replaced by your best bench player who did (keeps XI shape legal)
