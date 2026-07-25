@@ -292,19 +292,30 @@ async function runWaivers(league, runId, trigger, failAt) {
     failpoint(failAt, 'waivers:afterTransfers');
     // clear ONLY the claims the plan adjudicated (executed or lapsed). A claim
     // lodged between planning and apply (crash window) stays for the next run.
-    const midToUid = (await db().ref(`${base}/server/managerUid`).get()).val() || {};
+    // Mapping comes from MEMBERSHIP — the same source loadState planned from —
+    // so a membership/managerUid divergence can't leave claims stranded.
+    // Removal is count-based: an identical {in,out} re-lodged after planning
+    // is one MORE entry than the plan consumed, and the extra one survives.
+    const mem = (await db().ref(`${base}/server/membership`).get()).val() || {};
     for (const g of (plan.buckets || [])) {
-      for (const [mid, uid] of Object.entries(midToUid)) {
-        const eaten = toArr(plan.consumed?.[g]?.[mid]);
-        if (!eaten.length || !uid) continue;
-        const key = new Set(eaten.map(c => `${c.in}:${c.out}`));
+      for (const [uid, m] of Object.entries(mem)) {
+        const wmid = m?.managerId;
+        if (!Number.isInteger(wmid)) continue;
+        const eaten = toArr(plan.consumed?.[g]?.[wmid]);
+        if (!eaten.length) continue;
         await db().ref(`${base}/private/${uid}/claims/${g}`).transaction(cur => {
-          const left = toArr(cur).filter(c => c && !key.has(`${c.in}:${c.out}`));
+          const budget = {};
+          eaten.forEach(c => { const k = `${c.in}:${c.out}`; budget[k] = (budget[k] || 0) + 1; });
+          const left = toArr(cur).filter(c => {
+            if (!c) return false;
+            const k = `${c.in}:${c.out}`;
+            if (budget[k] > 0) { budget[k]--; return false; }
+            return true;
+          });
           return left.length ? left : null;
         });
       }
     }
-    const mem = (await db().ref(`${base}/server/membership`).get()).val() || {};
     const upd = {};
     upd[`${base}/public/waiverMeta`] = plan.stampedMeta;
     // legacy plans (written before `consumed` existed) replay with the old wholesale clear
@@ -398,6 +409,12 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     // Any signed-in manager may arm it (idempotent; a sleeping Chairman
     // mustn't stall the room).
     if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
+    if (eng.currentManagerId(state) == null) {
+      // full board still marked draft (a died final follow-up) — seal, don't arm.
+      // This is the heal path the client can actually reach from its clock loop.
+      await db().ref().update({ [`${base}/public/phase`]: 'season', [`${d}/deadline`]: null });
+      return { ok: true, armed: false, healed: true };
+    }
     if (!state.settings.pickTimer || state.draft.deadline || state.draft.paused) return { ok: true, armed: false };
     await db().ref(`${d}/deadline`).set(Date.now() + state.settings.pickTimer * 1000);
     return { ok: true, armed: true };
@@ -447,10 +464,13 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     // same-node txn as draftPick: pop + deadline are atomic and serialised
     // against concurrent picks. expectedCount pins the undo to the board the
     // Chairman was LOOKING at — a pick landing first aborts it cleanly.
-    const expected = Number.isInteger(data.expectedCount) ? data.expectedCount : null;
+    // MANDATORY: a blind undo (old client, replayed request) racing the final
+    // pick is exactly how a league loses picks it can never re-make.
+    const expected = data.expectedCount;
+    if (!Number.isInteger(expected)) throw new HttpsError('invalid-argument', 'undo requires expectedCount — refresh the page and try again');
     const res = await db().ref(`${base}/public/draft`).transaction(seededObj(state.draft, dr => {
       const arr = toArr(dr.picks).map(x => ({ ...x }));
-      if (expected != null && arr.length !== expected) return;
+      if (arr.length !== expected) return;
       if (!arr.length) return;
       arr.pop();
       dr.picks = arr;
@@ -593,17 +613,7 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
   const mid = a.managerId;
   if (action === 'withdraw' && mid !== trade.from && !isCommish(a)) throw new HttpsError('permission-denied', 'not your offer');
   if ((action === 'accept' || action === 'reject') && mid !== trade.to && !isCommish(a)) throw new HttpsError('permission-denied', 'not your decision');
-  if (action === 'reject' || action === 'withdraw') {
-    const to = action === 'reject' ? 'rejected' : 'withdrawn';
-    await db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
-      const t = arr.find(x => x.id === trade.id);
-      if (!t || t.status !== 'pending') return;
-      t.status = to;
-      return arr;
-    }));
-    return { status: to };
-  }
-  if (action !== 'accept') throw new HttpsError('invalid-argument', 'unknown action');
+  if (!['accept', 'reject', 'withdraw'].includes(action)) throw new HttpsError('invalid-argument', 'unknown action');
   const give = toArr(trade.give).length ? toArr(trade.give) : [trade.give].filter(Boolean);
   const get = toArr(trade.get).length ? toArr(trade.get) : [trade.get].filter(Boolean);
   const tgw = eng.transferGw();
@@ -620,13 +630,17 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
       return arr;
     }));
   };
-  // crash recovery FIRST: if this trade's transfer records already landed, the
-  // players are swapped no matter what the status says ('executing' from a
-  // died tail, or 'pending' from an old catch handler that reset it). The only
-  // honest move is to finish the tail idempotently — a fresh accept would fail
-  // 'squads changed' forever while the swap stands.
-  const landedAlready = state.transfers.some(tr => tr && tr.trade === trade.id);
-  if (landedAlready && trade.status !== 'done') {
+  // ledger truth comes BEFORE any action, reject and withdraw included: if this
+  // trade's transfer records landed, the players are swapped no matter what the
+  // status says or what the caller asks for. A landed trade can only become
+  // 'done' — rejecting it would leave the swap standing under a lying status.
+  const landedRecs = state.transfers.filter(tr => tr && tr.trade === trade.id);
+  if (landedRecs.length && trade.status !== 'done') {
+    if (landedRecs.length !== give.length * 2) {
+      // a partial ledger can't come from the atomic transfers txn — this is
+      // forged or corrupt state, and no automatic story is honest here
+      throw new HttpsError('failed-precondition', `trade ledger is partial (${landedRecs.length}/${give.length * 2} records) — Committee surgery required`);
+    }
     const upd = {};
     for (const side of [{ mid: trade.from, outs: give }, { mid: trade.to, outs: get }]) {
       const lu = state.lineups[side.mid]?.[tgw];
@@ -635,7 +649,17 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
     if (Object.keys(upd).length) await db().ref().update(upd);
     await ensureCovenant();
     await finishEarly('done');
-    return { status: 'done' };
+    return { status: 'done', healed: true };
+  }
+  if (action === 'reject' || action === 'withdraw') {
+    const to = action === 'reject' ? 'rejected' : 'withdrawn';
+    await db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
+      const t = arr.find(x => x.id === trade.id);
+      if (!t || t.status !== 'pending') return;
+      t.status = to;
+      return arr;
+    }));
+    return { status: to };
   }
   // stored offers may predate validation — a duplicated player corrupts both squads
   if (new Set(give).size !== give.length || new Set(get).size !== get.length || give.some(id => get.includes(id))) {
@@ -782,10 +806,12 @@ ACTIONS.hamAdmin = async ({ league, a, data, state, eng, ctx }) => {
     if (!Number.isInteger(gw) || gw < CUP_START || gw >= Engine.REGULAR_GWS) throw new HttpsError('invalid-argument', 'draw a gameweek between the cup start and the end of the regular season');
     if (gw >= ctx.gameweeks.length) throw new HttpsError('invalid-argument', 'no such gameweek in the fixture calendar');
     if (eng.gwHasStarted(gw)) throw new HttpsError('failed-precondition', 'that gameweek has already kicked off');
-    // a live or settled cup can't be silently replaced (entries and results
-    // would vanish) — the Chairman must cancel explicitly first
-    if (state.hamCup?.gw != null && state.hamCup.status !== 'off' && eng.gwHasStarted(state.hamCup.gw)) {
-      throw new HttpsError('failed-precondition', 'the current cup is underway or settled — cancel it explicitly before redrawing');
+    // an existing cup with entries — upcoming, live or settled — can't be
+    // silently replaced (entries and results would vanish); the Chairman must
+    // cancel explicitly first. An entry-less upcoming draw may be redrawn.
+    if (state.hamCup?.gw != null && state.hamCup.status !== 'off'
+      && (eng.gwHasStarted(state.hamCup.gw) || Object.keys(state.hamCup.entries || {}).length)) {
+      throw new HttpsError('failed-precondition', 'the current cup has entries or is underway — cancel it explicitly before redrawing');
     }
     await db().ref(`${leagueBase(league)}/public/hamCup`).set({ gw, drawnAt: Date.now(), entries: {} });
     return { ok: true };

@@ -357,10 +357,9 @@ function applySharedSnapshot(data) {
   if (!state.settings.posMin) state.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
   if (!state.settings.posMax) state.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
   save(); render();
-  const cerKey = state.draft.order.join('-');
+  const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
   if (fresh && cerKey && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== cerKey) {
-    localStorage.setItem(`${LS_NS}-ceremony-seen`, cerKey);
-    showCeremony();
+    showCeremony(); // stamps "seen" itself, at the END — never at open
   }
 };
 window.onSyncConnection = up => { syncConnected = up; renderSyncArea(); };
@@ -2074,7 +2073,7 @@ function bindSetup() {
       // then the server flips the phase, stamps the pool and sets the clock
       serverAct('importState', { state: { ...sharedSnapshot(), draft: { ...state.draft, order } } })
         .then(() => serverAct('draftAdmin', { op: 'start', order }))
-        .then(() => { localStorage.setItem(`${LS_NS}-ceremony-seen`, order.join('-')); showCeremony(); })
+        .then(() => showCeremony()) // stamps "seen" itself at the end
         .catch(() => {});
       return;
     }
@@ -2085,8 +2084,7 @@ function bindSetup() {
     state.phase = 'draft';
     state.view = 'draft';
     save(); render();
-    localStorage.setItem(`${LS_NS}-ceremony-seen`, state.draft.order.join('-'));
-    showCeremony();
+    showCeremony(); // stamps "seen" itself at the end
   };
   $('#startDraft').onclick = () => startDraft(true);
   $('#startDraftOrdered').onclick = () => startDraft(false);
@@ -2116,10 +2114,15 @@ const FLAG_BEARERS = {
   'West Ham': 'Ray Winstone’s floating head, slightly too big',
   'Wolves': 'a very good sports scientist selling a very good midfielder',
 };
+const ceremonyKey = () => state.draft.order.length ? `${state.draft.order.join('-')}:${state.draftPool?.at || ''}` : '';
 function showCeremony() {
   if ($('#ceremony')) return;
   const order = state.draft.order;
   if (!order.length) return;
+  // "seen" is stamped only when the ceremony ENDS — stamping at open meant a
+  // refresh mid-pomp skipped straight to a live clock (sol r4). The key
+  // includes draftPool.at so a rehearsal/reset with the same order replays it.
+  const cerFinish = () => { localStorage.setItem(`${LS_NS}-ceremony-seen`, ceremonyKey()); };
   const ordinals = ['twelfth', 'eleventh', 'tenth', 'ninth', 'eighth', 'seventh', 'sixth', 'fifth', 'fourth', 'third', 'second', 'FIRST'];
   const steps = [
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
@@ -2141,7 +2144,7 @@ function showCeremony() {
   let paradeTimer = null;
   const show = () => {
     clearInterval(paradeTimer);
-    if (i >= steps.length) { ov.remove(); return; }
+    if (i >= steps.length) { cerFinish(); ov.remove(); return; }
     const s = steps[i];
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
@@ -2185,7 +2188,7 @@ function showCeremony() {
       $('#cerStage').appendChild(player);
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
+    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
   };
   show();
 }
@@ -2648,14 +2651,17 @@ let clockTimer = null;
 let firedDeadline = 0;
 let clockArming = false;
 function armClock() {
-  if (clockArming || !state.settings.pickTimer || state.draft.deadline) return;
+  if (clockArming || !state.settings.pickTimer) return;
+  if (state.draft.deadline && currentManagerId() != null) return; // armed with someone on the clock — nothing to do
   clockArming = true;
   if (netOn()) {
+    // clockStart also HEALS a full board stuck in draft phase server-side
     serverAct('draftAdmin', { op: 'clockStart' })
       .catch(() => {})
       .finally(() => setTimeout(() => { clockArming = false; }, 3000));
   } else {
-    state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
+    if (currentManagerId() == null) state.phase = 'season'; // local seal
+    else state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     clockArming = false;
     save(); render();
   }
@@ -2702,6 +2708,14 @@ function bindDraft() {
       const breakDue = drinksBreakAt(bn) && !(state.draft.breaksDone || []).includes(bn);
       if (state.draft.paused) { el.textContent = 'PAUSED'; el.classList.remove('urgent'); if (el2) el2.textContent = 'PAUSED'; return; }
       if (breakDue || $('#drinksBreak') || $('#ceremony')) return; // clock politely waits for pomp
+      if (currentManagerId() == null) {
+        // full board still marked draft: the phase flip was lost — ask the
+        // server to seal it (clockStart heals) instead of counting a dead clock
+        el.textContent = '—'; el.classList.remove('urgent');
+        if (el2) el2.textContent = '—';
+        armClock();
+        return;
+      }
       if (!state.draft.deadline) {
         // the start op leaves the deadline null so the ceremony can't eat pick
         // one's clock — the first device past the pomp arms it (op idempotent)
