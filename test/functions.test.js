@@ -340,6 +340,47 @@ const SB = 'the-league-sandbox';
   chk('expired lease re-claimed and completed', !reclaimed.error, JSON.stringify(reclaimed.error));
   chk('re-claimed run recorded done', (await db.ref(`v2/leagues/${LG}/server/waiverRuns/manual-lease1`).get()).val()?.status === 'done');
 
+  /* ---------------- sol r3: a claim lodged during a crash window survives ---------------- */
+  const freeNow = async pos => {
+    const taken = new Set([...(await squadOf(1)), ...(await squadOf(2)), ...(await squadOf(3))]);
+    return players.filter(p => p.pos === pos && !taken.has(p.id)).map(p => p.id);
+  };
+  const mfFree = await freeNow('MF');
+  const eaten = { in: mfFree[0], out: byPos(await squadOf(2), 'MF')[0] };
+  chk('adjudicated-claim lodged', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [eaten] }, tok2)).error);
+  const fp3 = await T.mutate(LG, 'waiverRunNow', { runId: 'fp3', __failpoint: 'waivers:afterPlan' }, tok1);
+  chk('late-claim scenario: run crashes after planning', !!fp3.error);
+  const late = { in: mfFree[1], out: byPos(await squadOf(3), 'MF')[0] };
+  chk('late claim lodged in the crash window', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [late] }, tok3)).error);
+  const fp3retry = await T.mutate(LG, 'waiverRunNow', { runId: 'fp3' }, tok1);
+  chk('replay completes the crashed run (late-claim scenario)', !fp3retry.error, JSON.stringify(fp3retry.error));
+  const lateLeft = Object.values((await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() || {});
+  chk('late claim SURVIVES the replay for the next run', lateLeft.some(c => c && c.in === late.in), JSON.stringify(lateLeft));
+  chk('adjudicated claim cleared by the replay', !(await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/${curGw}`).get()).val());
+  const fp3b = await T.mutate(LG, 'waiverRunNow', { runId: 'fp3b' }, tok1);
+  chk('surviving claim executes on the NEXT run', !fp3b.error
+    && !(await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val(), JSON.stringify(fp3b.error));
+
+  /* ---------------- sol r3: a landed trade heals to done, covenant intact ---------------- */
+  const hGive = byPos(await squadOf(2), 'DF')[0], hGet = byPos(await squadOf(3), 'DF')[0];
+  const hProp = await T.mutate(LG, 'tradePropose', { to: 3, give: [hGive], get: [hGet], terms: 'Winner buys dinner' }, tok2);
+  chk('heal-test trade proposed', !hProp.error, JSON.stringify(hProp.error));
+  const hId = hProp.result.id;
+  // forge sol's exact reproduced state: transfer records landed, status NOT done
+  const trRef = db.ref(`v2/leagues/${LG}/public/transfers`);
+  const trCur = Object.values((await trRef.get()).val() || {});
+  trCur.push({ managerId: 2, outId: hGive, inId: hGet, gw: curGw, t: Date.now(), trade: hId, n: trCur.length + 1 });
+  trCur.push({ managerId: 3, outId: hGet, inId: hGive, gw: curGw, t: Date.now(), trade: hId, n: trCur.length + 1 });
+  await trRef.set(trCur);
+  const heal = await T.mutate(LG, 'tradeRespond', { tradeId: hId, action: 'accept' }, tok3);
+  chk('accept of a landed-but-stuck trade heals to done', !heal.error && heal.result?.status === 'done', JSON.stringify(heal));
+  const hCovs = Object.values((await db.ref(`v2/leagues/${LG}/public/covenants`).get()).val() || {}).filter(c => c && c.trade === hId);
+  chk('covenant recreated exactly once on heal', hCovs.length === 1 && hCovs[0].text === 'Winner buys dinner', JSON.stringify(hCovs));
+  const healAgain = await T.mutate(LG, 'tradeRespond', { tradeId: hId, action: 'accept' }, tok3);
+  const stillOneCov = Object.values((await db.ref(`v2/leagues/${LG}/public/covenants`).get()).val() || {}).filter(c => c && c.trade === hId).length === 1;
+  chk('re-accept of a done trade refuses cleanly, covenant stays single',
+    healAgain.error?.status === 'ABORTED' && stillOneCov, JSON.stringify(healAgain));
+
   /* ---------------- reset: atomic, canonical, immediately usable ---------------- */
   chk('reset is Chairman-only', (await T.mutate(LG, 'resetLeague', { confirm: 'RESET' }, tok2)).error?.status === 'PERMISSION_DENIED');
   chk('reset demands the confirm word', (await T.mutate(LG, 'resetLeague', { confirm: 'yes?' }, tok1)).error?.status === 'FAILED_PRECONDITION');
@@ -358,8 +399,39 @@ const SB = 'the-league-sandbox';
   const restart = await T.mutate(LG, 'draftAdmin', { op: 'start', order: [2, 3, 1] }, tok1);
   chk('commissioner can start a new draft straight after reset', !restart.error, JSON.stringify(restart.error));
   chk('league is drafting again', (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'draft');
+  /* ---------------- sol r3: ceremony clock + pick/undo race + wedge heal ---------------- */
+  const dl = () => db.ref(`v2/leagues/${LG}/public/draft/deadline`).get().then(s => s.val());
+  chk('draft start leaves the clock UNARMED (the ceremony must not eat pick one)', await dl() === null);
+  const arm = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok3); // any manager, not just the Chairman
+  const dlArmed = await dl();
+  chk('any manager arms the clock after the pomp', !arm.error && arm.result?.armed === true
+    && dlArmed > Date.now() && dlArmed <= Date.now() + 31_000, JSON.stringify(arm));
+  const arm2 = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
+  chk('second arm is an idempotent no-op', !arm2.error && arm2.result?.armed === false && await dl() === dlArmed);
   const firstPick = await T.mutate(LG, 'draftPick', { playerId: players.find(p => p.pos === 'GK').id, expectedCount: 0 }, tok2);
   chk('first pick of the new era lands', !firstPick.error, JSON.stringify(firstPick.error));
+  // pick/undo race: undo is pinned to the board the Chairman SAW
+  const nightPick = await T.mutate(LG, 'draftAutopick', {}, tok1);
+  chk('autopick lands (board at 2)', !nightPick.error && nightPick.result?.total === 2, JSON.stringify(nightPick));
+  const undoStale = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 1 }, tok1);
+  chk('undo with a stale expectedCount aborts (pick/undo race is serialised)', undoStale.error?.status === 'ABORTED', JSON.stringify(undoStale));
+  const undoOk = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 2 }, tok1);
+  chk('undo with the seen count pops exactly one and re-arms the clock', !undoOk.error && undoOk.result?.total === 1 && await dl() > Date.now());
+  // pick + deadline move in ONE txn on the draft node
+  let auto = null;
+  for (let i = 1; i < 42; i++) { // 41 more autopicks fill the 3x14 board
+    auto = await T.mutate(LG, 'draftAutopick', {}, tok1);
+    if (auto.error) break;
+  }
+  chk('board fills by deterministic autopick', !auto.error, JSON.stringify(auto?.error));
+  chk('final pick flips phase to season and disarms the clock',
+    (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season' && await dl() === null);
+  // forge the wedge sol reproduced: full board, phase stuck in draft
+  await db.ref(`v2/leagues/${LG}/public/phase`).set('draft');
+  const healPick = await T.mutate(LG, 'draftAutopick', {}, tok1);
+  chk('pick attempt on a full board HEALS the phase to season',
+    healPick.error?.status === 'FAILED_PRECONDITION'
+    && (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season', JSON.stringify(healPick.error));
 
   server.close();
   run.done();

@@ -1275,6 +1275,8 @@ function xiCounts(pids) {
 }
 function xiValid(pids) {
   if (pids.length !== XI_RULES.size) return false;
+  if (new Set(pids).size !== pids.length) return false; // the same player can't start twice
+  if (pids.some(id => !PLAYER_BY_ID[id])) return false;
   const c = xiCounts(pids);
   return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1]);
 }
@@ -2077,7 +2079,7 @@ function bindSetup() {
       return;
     }
     state.draft.order = order;
-    if (state.settings.pickTimer) state.draft.deadline = Date.now() + 5 * 60 * 1000;
+    state.draft.deadline = null; // armed by armClock() once the ceremony ends
     // draft-night snapshot: anyone who joins a PL club after this is locked until the window shuts
     state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
     state.phase = 'draft';
@@ -2644,6 +2646,20 @@ function poolTable() {
 
 let clockTimer = null;
 let firedDeadline = 0;
+let clockArming = false;
+function armClock() {
+  if (clockArming || !state.settings.pickTimer || state.draft.deadline) return;
+  clockArming = true;
+  if (netOn()) {
+    serverAct('draftAdmin', { op: 'clockStart' })
+      .catch(() => {})
+      .finally(() => setTimeout(() => { clockArming = false; }, 3000));
+  } else {
+    state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
+    clockArming = false;
+    save(); render();
+  }
+}
 function draftDeadlineTiming(deadline, now = Date.now()) {
   const rawLeft = Math.round(((deadline || 0) - now) / 1000);
   return { rawLeft, left: Math.max(0, rawLeft), overBy: Math.max(0, -rawLeft) };
@@ -2686,6 +2702,14 @@ function bindDraft() {
       const breakDue = drinksBreakAt(bn) && !(state.draft.breaksDone || []).includes(bn);
       if (state.draft.paused) { el.textContent = 'PAUSED'; el.classList.remove('urgent'); if (el2) el2.textContent = 'PAUSED'; return; }
       if (breakDue || $('#drinksBreak') || $('#ceremony')) return; // clock politely waits for pomp
+      if (!state.draft.deadline) {
+        // the start op leaves the deadline null so the ceremony can't eat pick
+        // one's clock — the first device past the pomp arms it (op idempotent)
+        el.textContent = '—'; el.classList.remove('urgent');
+        if (el2) el2.textContent = '—';
+        armClock();
+        return;
+      }
       const { left, overBy, rawLeft } = draftDeadlineTiming(state.draft.deadline);
       el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       el.classList.toggle('urgent', left <= 10);
@@ -2735,8 +2759,9 @@ function bindDraft() {
   bindPoolTable();
   $('#undoPick').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can undo a pick'); return; }
-    if (netOn()) { serverAct('draftAdmin', { op: 'undo' }).catch(() => {}); return; }
+    if (netOn()) { serverAct('draftAdmin', { op: 'undo', expectedCount: state.draft.picks.length }).catch(() => {}); return; }
     state.draft.picks.pop();
+    if (state.phase === 'season') state.phase = 'draft'; // the final pick flipped it; undo reopens the board
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     save(); render();
   };
