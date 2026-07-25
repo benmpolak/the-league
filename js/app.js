@@ -3539,7 +3539,7 @@ function installCard(settingsPage = false) {
     <p class="muted" style="font-size:12.5px">&#9989; You're running the installed app — its own icon, full screen, same live league. Nothing to update; it always loads the latest build.</p></div>` : '';
   if (!settingsPage && localStorage.getItem(A2HS_KEY)) return '';
   const how = a2hsEvent ? ''
-    : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone, in <b>Safari</b>: tap the <b>Share</b> button (square with an up arrow) — or on newer iOS the <b>&#8943; menu</b> at the end of the address bar — then <b>Add to Home Screen</b>. That's it — own icon, full screen, no browser bar.</p>`
+    : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone, in <b>Safari</b>: tap the <b>Share</b> button (square with an up arrow) — or the <b>&#8943; menu</b> by the address bar — then <b>Add to Home Screen</b>. It hides sometimes: scroll down the list, or check <b>View More / Edit Actions</b>. Own icon, full screen, no browser bar.</p>`
     : `<p class="rules-p" style="font-size:12.5px">In Chrome: open the <b>&#8942; menu</b> and choose <b>Add to Home screen / Install app</b> (on desktop it's the install icon in the address bar).</p>`;
   return `<div class="card" style="margin-bottom:18px"><h2>Get the app &#128241;</h2>
     <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
