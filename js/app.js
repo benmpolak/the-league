@@ -1962,6 +1962,7 @@ function viewSetup() {
         <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
+      ${installCard(true)}
     </div>`;
   }
   return `
@@ -2008,6 +2009,7 @@ function viewSetup() {
   </div>`;
 }
 function bindSetup() {
+  bindInstall();
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
