@@ -1,8 +1,14 @@
-const CACHE = 'the-league-shell-v1';
+// The League service worker — strictly NETWORK-FIRST, everywhere.
+// The cache is an emergency generator: it only ever answers when the network
+// fails (tunnels, trains, draft-night Wi-Fi). While online, every request goes
+// to the network, so the stale-build watchdog in app.js stays authoritative
+// and a deploy is live on the very next load — installed app or not.
+const CACHE = 'the-league-shell-v2';
 const SHELL = [
-  './', './index.html', './css/style.css', './js/app.js', './js/data.js',
-  './js/history25.js', './js/lore.js', './manifest.json',
-  './icons/icon-192.png', './icons/icon-512.png',
+  './', './index.html', './css/style.css',
+  './js/hostguard.js', './js/data.js', './js/history25.js', './js/lore.js',
+  './js/engine.js', './js/app.js', './js/sync.js',
+  './manifest.json', './icons/icon-192.png', './icons/icon-512.png',
 ];
 
 self.addEventListener('install', event => {
@@ -19,29 +25,20 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET') return;
+  if (request.method !== 'GET') return; // HEAD probes (build watchdog) and writes pass straight through
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+  // same-origin shell + data, plus the Firebase SDK from gstatic (needed for a cold offline start)
+  const cacheable = url.origin === self.location.origin || url.hostname === 'www.gstatic.com';
+  if (!cacheable) return;
 
-  // Navigation and score feeds prefer the network, with the last good copy as
-  // an emergency fallback. Static assets render immediately and refresh behind
-  // the scenes, so an existing install never hangs on a poor connection.
-  const networkFirst = request.mode === 'navigate'
-    || url.pathname.endsWith('/data/stats.json')
-    || url.pathname.endsWith('/data/fixtures.json');
-  if (networkFirst) {
-    event.respondWith(fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE).then(cache => cache.put(request, response.clone()));
-      return response;
-    }).catch(() => caches.match(request).then(hit => hit || caches.match('./index.html'))));
-    return;
-  }
-
-  event.respondWith(caches.match(request).then(hit => {
-    const update = fetch(request).then(response => {
-      if (response.ok) caches.open(CACHE).then(cache => cache.put(request, response.clone()));
-      return response;
-    });
-    return hit || update;
-  }));
+  event.respondWith(fetch(request).then(response => {
+    if (response.ok || response.type === 'opaque') {
+      const copy = response.clone();
+      caches.open(CACHE).then(cache => cache.put(request, copy));
+    }
+    return response;
+  }).catch(() =>
+    caches.match(request, { ignoreSearch: request.mode === 'navigate' }).then(hit =>
+      hit || (request.mode === 'navigate' ? caches.match('./index.html') : Response.error()))
+  ));
 });
