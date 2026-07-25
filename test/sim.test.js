@@ -387,6 +387,16 @@ const check = (label, ok, detail = '') => {
   check('playoffs: seeds, QF winners (handicaps), semi winners and champion all agree with independent recompute',
     !po.err && po.seedsMatch && po.qfsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
 
+  // no champion may be crowned while any final leg is unsettled (sol 5.6 finding)
+  const early = await p.evaluate(() => {
+    const saved = state.matchStats['gw37'];
+    delete state.matchStats['gw37']; // middle leg no longer final
+    const po = playoffState();
+    state.matchStats['gw37'] = saved;
+    return { noChamp: po.champion === null, semisStand: !!po.semiWinners };
+  });
+  check('no champion until every final leg is final', early.noChamp && early.semisStand, JSON.stringify(early));
+
   // ---------- 8. season-end table + analytics sanity ----------
   const finals = await p.evaluate(() => {
     const st = h2hStandings();

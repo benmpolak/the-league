@@ -3531,7 +3531,9 @@ function installApp() {
   ev.prompt();
   ev.userChoice.then(c => {
     if (c.outcome === 'accepted') toast('Installed — The League is on your home screen');
-    else { a2hsEvent = ev; render(); }
+    // dismissed: the event is spent — show the manual instructions instead.
+    // Chrome refires beforeinstallprompt later and the one-tap button returns.
+    else render();
   });
 }
 function installCard(settingsPage = false) {
@@ -3868,7 +3870,7 @@ function playoffState() {
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
   }) : null;
   let champion = null;
-  if (semiWinners && gwStatus(finalIdx[2]) === 'final') {
+  if (semiWinners && finalIdx.every(i => gwStatus(i) === 'final')) {
     const [x, y] = semiWinners;
     let wx = 0, wy = 0, cx = 0, cy = 0;
     for (const i of finalIdx) {

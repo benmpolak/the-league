@@ -3,5 +3,7 @@
 // the sync module computes the league key. Inert on every other host/path.
 // External file because the page CSP rightly forbids inline scripts.
 if (location.pathname.includes('the-league-beta') && !location.search.includes('sandbox')) {
-  location.replace(location.pathname + '?sandbox' + location.hash);
+  // keep whatever else is on the URL (?demo, ?emu=...) — only append sandbox
+  var q = location.search ? location.search + '&sandbox' : '?sandbox';
+  location.replace(location.pathname + q + location.hash);
 }

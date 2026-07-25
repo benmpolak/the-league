@@ -409,13 +409,15 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
   body { padding-bottom: 66px; }
-  .topbar { gap: 10px; padding: 12px 14px; position: static; }
+  /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
+     containing block for position:fixed descendants, pinning the bottom nav
+     (and the More menu) to the header instead of the viewport */
+  .topbar { gap: 10px; padding: 12px 14px; position: static; backdrop-filter: none; -webkit-backdrop-filter: none; }
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px;
     padding: 7px max(8px, env(safe-area-inset-right)) calc(7px + env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     background: rgba(11,15,26,.96); border-top: 1px solid var(--line);
-    backdrop-filter: blur(12px);
   }
   .nav:empty { display: none; }
   .nav > button, .nav-more > summary {
