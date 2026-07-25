@@ -65,6 +65,24 @@ const chk = (name, ok, detail = '') => {
         if (statPoints(pl, s) !== eng.statPoints(state.settings.scoring, pl, s)) statDiffs++;
       }
     }
+    // crafted rows so every scoring shape is compared even pre-season, when
+    // the feed has no stats: starts/subs, the 60-min clean-sheet gate, cards,
+    // keeper arithmetic and double-gameweek fx rows
+    const crafted = [
+      { min: 90, st: 1, g: 1, a: 1, cs: 1 },
+      { min: 30, st: 1 }, { min: 70, st: 0, sub: 1 },
+      { min: 59, st: 1, cs: 1 }, { min: 60, st: 1, cs: 1 },
+      { min: 90, st: 1, gc: 5, sv: 7, ps: 1 },
+      { min: 90, st: 1, og: 1, pm: 1, yc: 1 }, { min: 12, st: 0, sub: 1, rc: 1 },
+      { min: 154, st: 2, fx: [{ min: 90, g: 1 }, { min: 64, gc: 2 }] },
+      { min: 110, st: 1, fx: [{ min: 20 }, { min: 90, cs: 1 }] },
+    ];
+    for (const pl of [PLAYERS.find(x => x.pos === 'GK'), PLAYERS.find(x => x.pos === 'DF'), PLAYERS.find(x => x.pos === 'MF'), PLAYERS.find(x => x.pos === 'FW')]) {
+      for (const s of crafted) {
+        statChecked++;
+        if (statPoints(pl, s) !== eng.statPoints(state.settings.scoring, pl, s)) statDiffs++;
+      }
+    }
     // shape validators across every stored lineup
     let xiDiffs = 0;
     for (const mid of mids) for (const g of [0, 1, 2]) {
@@ -74,7 +92,9 @@ const chk = (name, ok, detail = '') => {
     return { diffs, statDiffs, statChecked, xiDiffs };
   });
   chk('season: roster/lineup/scoring parity', season.diffs.length === 0, season.diffs.slice(0, 5).join(', '));
-  chk(`season: statPoints parity over ${season.statChecked} stat lines`, season.statDiffs === 0 && season.statChecked > 500, `${season.statDiffs} diffs`);
+  // floor = 12 squads x 14 players (the leanest pre-season fictional GW) plus
+  // the 40 crafted shape rows — a real mid-season feed pushes it into thousands
+  chk(`season: statPoints parity over ${season.statChecked} stat lines`, season.statDiffs === 0 && season.statChecked >= 200, `${season.statDiffs} diffs`);
   chk('season: xiValid parity', season.xiDiffs === 0);
 
   // ---- waiver resolution parity: engine resolveWaivers vs client processWaivers ----
