@@ -37,3 +37,28 @@ const AD_BOARDS = [
   { t: 'POLAK & LEVY LLP', s: 'no win, no schmear', c: '#b7e4f7', bg: '#0b1a22' },
   { t: 'NICE JEWISH BOY™', s: 'the dating app your mum chose', c: '#f7b7d0', bg: '#20101a' },
 ];
+
+// Per-manager hoardings — commissioned by the group chat, 22 Jul 2026.
+// A manager's home fixtures lead with one of THEIR sponsors; the general
+// boards fill the rest. (Ben vetoed Liverpool sponsors for his own ground.)
+const MANAGER_BOARDS = {
+  2: [ // Chairman Mao — Tussie's nomination
+    { t: 'ALWAYS ULTRA', s: 'official partner of heavy gameweeks', c: '#9fe8c5', bg: '#0a1c14' },
+    { t: 'TAMPAX', s: 'proud sponsors of the Chairman', c: '#f7b7d0', bg: '#20101a' },
+  ],
+  3: [ // Atlético Benfield — London estate agents
+    { t: 'FOXTONS', s: 'we valued your squad. ambitiously.', c: '#b7e4f7', bg: '#0b1a22' },
+    { t: 'WINKWORTH', s: 'chain-free since the Haaland curse', c: '#e8b64c', bg: '#171106' },
+    { t: 'PURPLEBRICKS', s: 'commissie? what commissie?', c: '#d0b3ff', bg: '#160b26' },
+  ],
+  7: [ // Asterick — defunct national treasures, and one national treasure
+    { t: 'WOOLWORTHS', s: 'pick n mix. like his midfield.', c: '#ffd98a', bg: '#26190a' },
+    { t: 'LITTLE CHEF', s: 'olympic breakfast, relegation form', c: '#e88aa0', bg: '#1e0a10' },
+    { t: 'TERI HATCHER', s: 'by popular demand', c: '#ffe0b3', bg: '#211405' },
+  ],
+  9: [ // Mighty 🦆 — the north remembers
+    { t: 'GREGGS', s: 'official sausage roll of the Mighty', c: '#f2c179', bg: '#1d130a' },
+    { t: 'MICHELLE KEEGAN', s: 'appearing in Ewan’s search history', c: '#f7b7d0', bg: '#20101a' },
+    { t: 'BODDINGTONS', s: 'the cream of the gameweek', c: '#fff3a0', bg: '#1c1a05' },
+  ],
+};
