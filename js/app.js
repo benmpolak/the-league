@@ -4098,7 +4098,7 @@ function viewH2H() {
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <div style="overflow-x:auto">
     <table class="pool-table">
-      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
+      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
         <tr class="${i === 7 ? 'playoff-line' : ''}">
@@ -4108,11 +4108,12 @@ function viewH2H() {
           <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
           <td class="num gold">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
+          <td class="num">${i < 4 ? `<span class="gold">+${QF_HANDICAPS[i]}</span>` : i < 8 ? `<span style="color:#e05555">&minus;${QF_HANDICAPS[7 - i]}</span>` : ''}</td>
         </tr>`).join('')}
       </tbody>
     </table>
     </div>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
+    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs. QF = the handicap your position carries into the quarter-final.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
   </div>
   ${pointsGridCard(standings)}
   ${crystalBallCard(standings)}
