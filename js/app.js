@@ -3513,6 +3513,48 @@ function bindTransfers() {
 }
 
 /* ---------------- dashboard ---------------- */
+/* ----- "the app": the site IS the app — home-screen install helpers ----- */
+let a2hsEvent = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  a2hsEvent = e; // Chrome/Edge/Android hand us a one-tap installer; stash it for the card
+  try { if (state && document.querySelector('#main')) render(); } catch { /* fired before boot — card picks it up on first render */ }
+});
+const A2HS_KEY = `${LS_NS}-a2hs-hidden`;
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function installApp() {
+  if (!a2hsEvent) return;
+  const ev = a2hsEvent; a2hsEvent = null;
+  ev.prompt();
+  ev.userChoice.then(c => {
+    if (c.outcome === 'accepted') toast('Installed — The League is on your home screen');
+    else { a2hsEvent = ev; render(); }
+  });
+}
+function installCard(settingsPage = false) {
+  if (isStandalone()) return settingsPage ? `<div class="card"><h2>The app</h2>
+    <p class="muted" style="font-size:12.5px">&#9989; You're running the installed app — its own icon, full screen, same live league. Nothing to update; it always loads the latest build.</p></div>` : '';
+  if (!settingsPage && localStorage.getItem(A2HS_KEY)) return '';
+  const how = a2hsEvent ? ''
+    : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone: open this site in <b>Safari</b>, tap <b>Share</b> (the square with the arrow), then <b>Add to Home Screen</b>. That's it — own icon, full screen, no browser bar.</p>`
+    : `<p class="rules-p" style="font-size:12.5px">In Chrome: open the <b>&#8942; menu</b> and choose <b>Add to Home screen / Install app</b> (on desktop it's the install icon in the address bar).</p>`;
+  return `<div class="card" style="margin-bottom:18px"><h2>Get the app &#128241;</h2>
+    <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
+    ${how}
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${a2hsEvent ? '<button class="btn small" id="a2hsGo">Install the app</button>' : ''}
+      ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsHide">Not now</button>'}
+    </div>
+  </div>`;
+}
+function bindInstall() {
+  const go = $('#a2hsGo');
+  if (go) go.onclick = installApp;
+  const hide = $('#a2hsHide');
+  if (hide) hide.onclick = () => { localStorage.setItem(A2HS_KEY, '1'); toast('Fine — it lives in Settings if you change your mind'); render(); };
+}
+
 function viewDash() {
   const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
   const cur = currentGwIndex();
@@ -3565,6 +3607,7 @@ function viewDash() {
       ${myPos > 4 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
     </div>
   </div>
+  ${installCard()}
   ${vidiCard(true)}
   ${awardsCard()}
   ${lobusCard()}
@@ -3782,6 +3825,7 @@ function committeeMinutes(last) {
   return L.join('\n');
 }
 function bindDash() {
+  bindInstall();
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
   const cm = $('#copyMinutes');
   if (cm) cm.onclick = () => {
@@ -4579,6 +4623,7 @@ function viewSettings() {
       <input type="number" step="1" id="lobusBonus" value="${+state.settings.lobusBonus || 0}" ${ro}></div>
       <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only ${esc(managerName(state.managers[0]?.id))} can change scoring.`}</p>
     </div>
+    ${installCard(true)}
     ${admin ? `
     <div class="card">
       <h2>League admin</h2>
@@ -4619,6 +4664,7 @@ function viewSettings() {
   </div>`;
 }
 function bindSettings() {
+  bindInstall();
   document.querySelectorAll('[data-score]').forEach(inp => inp.onchange = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner changes scoring'); render(); return; }
     if (netOn()) {
