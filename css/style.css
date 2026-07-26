@@ -424,6 +424,9 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
   body { padding-bottom: 66px; }
+  /* demo/sandbox bar must sit ABOVE the fixed bottom nav, not on top of it —
+     z-80 over z-70 was hiding navigation entirely on phones */
+  .demo-bar { bottom: calc(48px + env(safe-area-inset-bottom)); }
   /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
      containing block for position:fixed descendants, pinning the bottom nav
      (and the More menu) to the header instead of the viewport */
