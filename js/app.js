@@ -2461,17 +2461,15 @@ function viewDraft() {
     : `${esc(managerName(mid))} is on the clock${picksUntilMine ? ` &middot; <span style="color:var(--text)">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
   return `
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
-    <div>
-      <div class="who">${whoLine}</div>
-      <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${state.settings.squadSize}${(() => {
-        // every round has a title sponsor (ledger #5) — the hydration break was never in danger
-        const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
-        return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
-      })()}</div>
-      <div class="intercept"><span class="rec"></span>LIVE FROM THE GROUP CHAT &mdash; &ldquo;${esc(interceptFor(n, managerName(mid)))}&rdquo;</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
+    <div class="who">${whoLine}</div>
+    ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
+    <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${state.settings.squadSize}${(() => {
+      // every round has a title sponsor (ledger #5) — the hydration break was never in danger
+      const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
+      return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
+    })()}</div>
+    <div class="intercept" id="interceptQ" title="Tap for the full quote"><span class="rec"></span><span class="int-q">LIVE FROM THE GROUP CHAT &mdash; &ldquo;${esc(interceptFor(n, managerName(mid)))}&rdquo;</span></div>
+    <div class="oc-btns">
       ${state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       <button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>
       ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
@@ -2815,6 +2813,8 @@ function bindDraft() {
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     save(); render();
   };
+  const iq = $('#interceptQ');
+  if (iq) iq.onclick = () => iq.classList.toggle('open');
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
