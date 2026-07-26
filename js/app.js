@@ -4817,6 +4817,44 @@ function recordBookCards() {
     }
     const init = t => esc(t.split(/\s+/).map(w => (w.codePointAt(0) < 128 ? w[0] : '')).join('').slice(0, 3).toUpperCase() || t.slice(0, 3).toUpperCase());
     const rec = (icon, label, text) => `<div class="lrow" style="font-size:12.5px"><span style="width:22px">${icon}</span><b style="min-width:170px">${label}</b><span>${text}</span></div>`;
+
+    // Draft Night board — [round, pick, teamIdx, player, club, pos], snake order preserved by pick number
+    let draftCard = '';
+    if (S.draft && S.draft.length) {
+      const order = S.draft.filter(p => p[0] === 1).sort((a, b) => a[1] - b[1]).map(p => p[2]);
+      const nRounds = Math.max(...S.draft.map(p => p[0]));
+      const cell = {};
+      for (const [r, , t, player, club, pos] of S.draft) cell[r + ':' + t] = { player, club, pos };
+      draftCard = `
+    <div class="card" style="margin-top:14px">
+      <h2>Draft Night — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">the full board, ${S.draft.length} picks, snake order</span></h2>
+      <div style="overflow-x:auto">
+      <table class="pool-table" style="font-size:11px">
+        <thead><tr><th></th>${order.map(t => `<th class="num" title="${esc(rows[t].name)}">${init(rows[t].team)}</th>`).join('')}</tr></thead>
+        <tbody>${Array.from({ length: nRounds }, (_, k) => k + 1).map(r => `<tr>
+          <td class="muted">R${r}</td>
+          ${(r % 2 ? order : [...order].reverse()).map(t => { const p = cell[r + ':' + t]; return p ? `<td style="white-space:nowrap"><span class="pos-badge pos-${p.pos}" style="font-size:9px;padding:1px 4px">${p.pos}</span> ${esc(p.player)} <span class="muted" style="font-size:10px">${esc(p.club)}</span></td>` : '<td class="muted">—</td>'; }).join('')}
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="muted" style="font-size:10.5px;margin-top:6px">Even rounds read right-to-left, as the snake intended. First overall: <b>${esc(S.draft[0][3])}</b> to ${esc(rows[S.draft[0][2]].team)}.</p>
+    </div>`;
+    }
+
+    // The Cup — [gw, round, leg, home, away, hp, ap]
+    let cupCard = '';
+    if (S.cup && S.cup.length) {
+      const maxR = Math.max(...S.cup.map(m => m[1]));
+      const label = m => m[1] === maxR ? `Final${S.cup.filter(x => x[1] === maxR).length > 1 ? `, leg ${m[2]}` : ''}` : 'Semi-final';
+      const agg = {};
+      for (const m of S.cup.filter(x => x[1] === maxR)) { agg[m[3]] = (agg[m[3]] || 0) + m[5]; agg[m[4]] = (agg[m[4]] || 0) + m[6]; }
+      const [wIdx] = Object.entries(agg).sort((a, b) => b[1] - a[1])[0] || [];
+      cupCard = `
+    <div class="card" style="margin-top:14px">
+      <h2>The Cup — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">as recorded by Draft Fantasy</span></h2>
+      ${S.cup.map(m => rec('&#9917;', `${label(m)} &middot; GW${m[0]}`, `<b>${esc(rows[m[3]].team)}</b> ${m[5]}&ndash;${m[6]} <b>${esc(rows[m[4]].team)}</b>`)).join('')}
+      ${wIdx !== undefined ? `<p class="rules-p" style="margin-top:8px">&#127942; Cup winner: <b>${esc(rows[wIdx].team)}</b> (${esc(rows[wIdx].name)}), ${Object.values(agg).sort((a, b) => b - a).join('&ndash;')} on aggregate.</p>` : ''}
+    </div>`;
+    }
     return `
     <div class="card" style="margin-top:18px">
       <h2>The Record Book — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">mined from Draft Fantasy before we turned the lights off</span></h2>
@@ -4836,7 +4874,7 @@ function recordBookCards() {
       ${hi ? rec('&#128293;', 'Highest score', `<b>${esc(rows[hi.idx].team)}</b> — ${hi.pts} points, GW${hi.gw}`) : ''}
       ${lo ? rec('&#128128;', 'Lowest score', `<b>${esc(rows[lo.idx].team)}</b> — ${lo.pts} points, GW${lo.gw}`) : ''}
       ${hiding ? rec('&#128296;', 'Biggest hiding', `<b>${esc(rows[hiding.w].team)}</b> ${hiding.ws}&ndash;${hiding.ls} <b>${esc(rows[hiding.l].team)}</b>, GW${hiding.gw}`) : ''}
-    </div>
+    </div>${draftCard}${cupCard}
     <div class="card" style="margin-top:14px">
       <h2>Head-to-head ledger — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">row's record vs column (W-D-L), grudges included</span></h2>
       <div style="overflow-x:auto">

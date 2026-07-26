@@ -17,3 +17,4 @@ firestore-debug.log
 pubsub-debug.log
 ui-debug.log
 database-debug.log
+data/history/raw/
