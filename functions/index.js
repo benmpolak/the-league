@@ -799,6 +799,19 @@ ACTIONS.blockToggle = async ({ league, a, data, state, eng }) => {
   return { listed: next.includes(pid) };
 };
 
+/* the ready room: pre-draft roll call. Marking yourself ready proves you're
+ * signed in on your draft device; the Chairman can mark anyone (the runbook
+ * override for the mate whose email opened on the wrong phone). Lives only
+ * in setup — reset wipes it with the rest of public. */
+ACTIONS.readySet = async ({ league, a, data, state }) => {
+  const mid = actingManager(a, data);
+  if (state.phase !== 'setup') throw new HttpsError('failed-precondition', 'the ready room closes once the draft starts');
+  if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
+  await db().ref(`${leagueBase(league)}/public/ready/${mid}`)
+    .set(data.ready === false ? null : { t: Date.now(), self: mid === a.managerId });
+  return { ok: true };
+};
+
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
   const idx = state.managers.findIndex(m => m.id === mid);
@@ -1095,7 +1108,7 @@ const IMPORT_ALLOWED = new Set([
   'claims', 'autolists',
 ]);
 // legacy-export debris: silently dropped, never imported
-const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated']);
+const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready']);
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 

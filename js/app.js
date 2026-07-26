@@ -216,7 +216,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -447,6 +447,7 @@ function freshState() {
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
+    ready: {},             // pre-draft roll call {managerId: {t, self}} — cleared by reset
     fixtures: [],
     matchStats: {},        // 'gw{n}' -> { gw, label, date, final, playerStats: {pid:{min,st,sub,g,a,cs,gc,og,ps,pm,yc,rc,sv}} }
     adjustments: {},
@@ -618,6 +619,7 @@ function load() {
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.benchOrders) s.benchOrders = {};
     if (s && !s.lobus) s.lobus = {};
+    if (s && !s.ready) s.ready = {};
     if (s && s.hamCup === undefined) s.hamCup = null;
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
@@ -2010,6 +2012,29 @@ function renderSyncArea() {
   if (sb) sb.onclick = () => syncNow(true);
 }
 
+/* ----- the ready room: pre-draft roll call, one tap per manager ----- */
+function readyRoomCard() {
+  if (!netOn()) return ''; // only means something when everyone is on their own device
+  const r = state.ready || {};
+  const n = state.managers.filter(mg => r[mg.id]).length;
+  const iAmManager = whoami && whoami !== -1;
+  return `<div class="card">
+    <h2>The ready room <span class="tag">${n}/${state.managers.length} ready</span></h2>
+    <p class="muted" style="font-size:12px;margin-bottom:10px">Ready means signed in on your draft device and good to go.${isCommissioner() ? ' The Chairman can vouch for a straggler on the phone.' : ''}</p>
+    ${state.managers.map(mg => {
+      const rd = r[mg.id];
+      const mine = iAmManager && mg.id === whoami;
+      return `<div class="qrow ready-row${rd ? ' is-ready' : ''}" style="font-size:13px">
+        <span class="ready-dot">${rd ? '&#10003;' : '&middot;'}</span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(mg.team || mg.name)}</b> <span class="muted" style="font-size:11px">${esc(mg.name)}</span></span>
+        <span style="margin-left:auto">${mine
+          ? `<button class="btn small${rd ? ' ghost' : ''}" data-ready="${mg.id}:${rd ? 0 : 1}">${rd ? 'Unready' : `I&rsquo;m ready`}</button>`
+          : isCommissioner() ? `<button class="btn ghost small" data-ready="${mg.id}:${rd ? 0 : 1}" title="Chairman&rsquo;s override">${rd ? 'Unmark' : 'Vouch'}</button>` : ''}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 /* ----- setup ----- */
 function viewSetup() {
   const m = state.managers;
@@ -2027,6 +2052,7 @@ function viewSetup() {
         <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
+      ${readyRoomCard()}
       ${installCard(true)}
     </div>`;
   }
@@ -2036,6 +2062,7 @@ function viewSetup() {
       <h2>&#9917; The League &mdash; 2026/27</h2>
       <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
+    ${readyRoomCard()}
     <div class="card">
       <h2>Managers</h2>
       ${m.map((mg, i) => `
@@ -2075,6 +2102,13 @@ function viewSetup() {
 }
 function bindSetup() {
   bindInstall();
+  document.querySelectorAll('[data-ready]').forEach(b => b.onclick = () => {
+    const [mid, val] = b.dataset.ready.split(':').map(Number);
+    if (!netOn()) return;
+    serverAct('readySet', { ready: !!val, ...(mid !== whoami && { asManager: mid }) })
+      .then(() => toast(val ? (mid === whoami ? 'Ready. The Committee notes your promptness.' : `${managerName(mid)} vouched for.`) : 'Unreadied.'))
+      .catch(() => {});
+  });
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
@@ -2110,7 +2144,8 @@ function bindSetup() {
       renderIdentity();
       return;
     }
-    if (!confirm('This starts the REAL draft for all twelve managers. Everyone ready?')) return;
+    const rdyN = netOn() ? state.managers.filter(mg => (state.ready || {})[mg.id]).length : null;
+    if (!confirm(`This starts the REAL draft for all twelve managers.${rdyN != null ? ` Ready room says ${rdyN}/${state.managers.length}.` : ''} Everyone ready?`)) return;
     state.managers.forEach((m, i) => { if (!m.name.trim()) m.name = `Manager ${i + 1}`; });
     if (state.settings.squadSize < 11) { toast('Squads need at least 11 for a starting XI'); return; }
     const { posMin, posMax } = state.settings;

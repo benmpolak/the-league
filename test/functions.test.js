@@ -170,9 +170,24 @@ const SB = 'the-league-sandbox';
   const sbTok2 = await T.idTokenFor((await db.ref(`v2/leagues/${SB}/server/managerUid/2`).get()).val());
   const sbTok3 = await T.idTokenFor((await db.ref(`v2/leagues/${SB}/server/managerUid/3`).get()).val());
   await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1);
+
+  // the ready room: self-mark, Chairman vouch, gating, and the phase gate below
+  chk('manager marks self ready', !(await T.mutate(SB, 'readySet', { ready: true }, sbTok2)).error);
+  chk('ready lands in public with self flag', (await T.rest('GET', `v2/leagues/${SB}/public/ready/2`, { owner: true })).val?.self === true);
+  chk('non-commissioner cannot vouch for another', (await T.mutate(SB, 'readySet', { ready: true, asManager: 3 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  chk('Chairman vouches for a straggler', !(await T.mutate(SB, 'readySet', { ready: true, asManager: 3 }, sbTok1)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/ready/3`, { owner: true })).val?.self === false);
+  chk('unknown manager rejected', (await T.mutate(SB, 'readySet', { ready: true, asManager: 99 }, sbTok1)).error?.status === 'NOT_FOUND');
+  chk('unready clears the mark', !(await T.mutate(SB, 'readySet', { ready: false }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/ready/2`, { owner: true })).val == null);
+  chk('import drops the ready key silently', !(await T.mutate(SB, 'importState', { state: { ...sbSeed, ready: { 2: { t: 1, self: true } } } }, sbTok1)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/ready`, { owner: true })).val == null);
+  await T.mutate(SB, 'readySet', { ready: true }, sbTok2); // re-mark, proves import wiped then re-set works
+
   chk('draft start is Chairman-gated', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   chk('bad order rejected', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2] }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('Chairman starts the draft', !(await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok1)).error);
+  chk('ready room closes once the draft starts', (await T.mutate(SB, 'readySet', { ready: true }, sbTok3)).error?.status === 'FAILED_PRECONDITION');
   chk('out-of-turn pick rejected', (await T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   const [p1, p2] = await Promise.all([
     T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok1),

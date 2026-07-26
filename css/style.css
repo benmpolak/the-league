@@ -279,6 +279,9 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .queue-fab { display: none; }
 .warn-tag { background: rgba(212,160,23,.18); color: #ffd76e; border: none; }
 .qrow { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; padding: 5px 0; min-width: 0; }
+.ready-row { border-bottom: 1px solid rgba(38,50,80,.5); padding: 8px 0; }
+.ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
+.ready-row.is-ready .ready-dot { background: var(--accent); color: #07120e; border-color: var(--accent); }
 .qrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .warn-tag { flex: none; }
 @media (max-width: 980px) {
