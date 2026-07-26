@@ -1624,7 +1624,7 @@ function vidiCard(compact = false) {
 async function syncNow(manual = false) {
   if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Tapping…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Tapping…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
     const [statsRes, fxRes] = await Promise.all([
@@ -1662,7 +1662,7 @@ async function syncNow(manual = false) {
     if (manual) toast('Sync failed — check connection');
   }
   const b2 = $('#syncBtn');
-  if (b2) { b2.disabled = false; b2.textContent = '📞 Tap the lines'; }
+  if (b2) { b2.disabled = false; b2.innerHTML = '📞<span class="sync-txt"> Tap the lines</span>'; }
   // keep tapping while matches are in play (the Action refreshes every 15 min)
   clearTimeout(liveTimer);
   if (anyMatchLive()) liveTimer = setTimeout(() => syncNow(false), 5 * 60 * 1000);
@@ -1968,7 +1968,7 @@ function renderSyncArea() {
   }
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<span class="sync-updated" title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#128222; Tap the lines</button>`);
+    bits.push(`<span class="sync-updated" title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#128222;<span class="sync-txt"> Tap the lines</span></button>`);
   }
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
@@ -2919,7 +2919,7 @@ function viewTeam() {
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
   </div>
   <div class="card" style="margin-bottom:18px">
-    <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
+    <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted pitch-hint" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
       ${(() => {
         const opp = pairingsFor(gw).find(pr => pr.includes(mid));
         return opp ? `<button class="btn ghost small" id="showOpp" style="margin-left:auto">${teamView.showOpp ? 'Hide' : 'Show'} opponent</button>` : '';
@@ -3801,11 +3801,11 @@ function pointsGridCard(standings) {
     <h2>Points, week by week <span class="muted" style="font-weight:400;font-size:12px">gold = top score of the week</span></h2>
     <div style="overflow-x:auto">
     <table class="pool-table" style="font-size:12px">
-      <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num">Total</th></tr></thead>
+      <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num act">Total</th></tr></thead>
       <tbody>${standings.map(r => `<tr>
         <td style="white-space:nowrap"><b>${esc(r.team || r.name)}</b></td>
         ${gws.map((i, k) => `<td class="num ${scores[r.id][k] === hi[k] && hi[k] > 0 ? 'gold' : 'muted'}">${scores[r.id][k]}</td>`).join('')}
-        <td class="num" style="font-weight:700">${scores[r.id].reduce((t, x) => t + x, 0)}</td>
+        <td class="num act" style="font-weight:700">${scores[r.id].reduce((t, x) => t + x, 0)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>`;
@@ -4311,7 +4311,7 @@ function viewH2H() {
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <div style="overflow-x:auto">
     <table class="pool-table">
-      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr></thead>
+      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num">Overall</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
         <tr class="${i === 7 ? 'playoff-line' : ''}">
@@ -4319,7 +4319,7 @@ function viewH2H() {
           <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
           <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
-          <td class="num gold">${r.pts}</td>
+          <td class="num gold act">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
           <td class="num">${i < 4 ? `<span class="gold">+${QF_HANDICAPS[i]}</span>` : i < 8 ? `<span style="color:#e05555">&minus;${QF_HANDICAPS[7 - i]}</span>` : ''}</td>
         </tr>`).join('')}
