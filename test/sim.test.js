@@ -24,6 +24,7 @@ const check = (label, ok, detail = '') => {
 
   // ---------- 0. hermetic setup: no background syncs, clean clock ----------
   await p.evaluate(() => {
+    window.__autoConfirm = true; // sail through the confirm sheet
     syncNow = async () => {};
     state.matchStats = {};
     state.fixtures = [];

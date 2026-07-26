@@ -142,6 +142,7 @@ async function newClient(browser, whoami) {
     // buttons are no longer disabled (mobile can't tap-explain a disabled
     // button); clicking one when it's not your turn must toast and NOT pick
     window.confirm = () => true; // if a confirm somehow fires, accept it
+    window.__autoConfirm = true; // and sail through the confirm sheet
     const btn = document.querySelector('[data-pick]');
     if (btn) btn.click();
     return { skip: false, before, after: state.draft.picks.length };

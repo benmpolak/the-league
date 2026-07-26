@@ -260,6 +260,14 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   overflow-y: auto; padding: 16px; /* tall cards (12-manager sign-in) must scroll, not clip */
 }
 .overlay > .card { max-height: 92vh; overflow-y: auto; }
+
+/* the confirm sheet: one last look before a deal commits */
+.deal { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.deal-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 14px; background: var(--card2); }
+.deal-row + .deal-row { border-top: 1px solid var(--line); }
+.deal-tag { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; padding: 2px 8px; border-radius: 999px; }
+.deal-tag.out { background: rgba(239, 100, 97, .16); color: var(--red); }
+.deal-tag.in { background: rgba(45, 212, 167, .16); color: var(--accent); }
 .conn { color: var(--red); font-size: 13px; transition: color .3s; }
 .conn.up { color: var(--accent); }
 

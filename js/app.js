@@ -1708,6 +1708,42 @@ window.addEventListener('popstate', () => {
   }
 });
 
+/* ---------------- the confirm sheet ----------------
+   DF-style final look at a deal before it commits. Every squad-moving
+   decision routes through here — a mis-tap must never move a player.
+   Back button / backdrop tap = cancel. Test harnesses set
+   window.__autoConfirm to sail straight through. */
+function confirmSheet({ title, body = '', yes = 'Confirm', note = '' }) {
+  if (window.__autoConfirm) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.id = 'confirmSheet';
+    ov.innerHTML = `<div class="card" style="max-width:420px;width:94%">
+      <h2 style="margin-bottom:12px">${title}</h2>
+      ${body}
+      ${note ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">${note}</p>` : ''}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn ghost" id="cfNo" style="flex:1">Cancel</button>
+        <button class="btn" id="cfYes" style="flex:1">${yes}</button>
+      </div>
+    </div>`;
+    // any external close (back button, popstate overlay sweep) = cancel —
+    // the promise must never hang
+    const origRemove = ov.remove.bind(ov);
+    ov.remove = () => { origRemove(); resolve(false); };
+    document.body.appendChild(ov);
+    pushOvState();
+    ov.querySelector('#cfYes').onclick = () => { resolve(true); closeOv(ov); };
+    ov.querySelector('#cfNo').onclick = () => closeOv(ov);
+    ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  });
+}
+const dealLine = p => p ? `<b>${esc(p.name)}</b> <span class="muted">${esc(p.club)} ${p.pos}</span>` : '<b>?</b>';
+const dealRows = (outs, ins) => `<div class="deal">${
+  outs.map(p => `<div class="deal-row"><span class="deal-tag out">OUT</span>${dealLine(p)}</div>`).join('')}${
+  ins.map(p => `<div class="deal-row"><span class="deal-tag in">IN</span>${dealLine(p)}</div>`).join('')}</div>`;
+
 /* ---------------- views ---------------- */
 const NAV_ITEMS = [
   ['dash', 'Dashboard'],
@@ -2801,7 +2837,7 @@ function refreshPool() {
   q.setSelectionRange(q.value.length, q.value.length);
 }
 function bindPoolTable() {
-  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
     const pid = +b.dataset.pick, mid = currentManagerId(), p = PLAYER_BY_ID[pid];
     // explain, don't dead-tap: a disabled-looking button now says why (tooltips
     // don't exist on touch — the #1 "it's broken" generator on phones)
@@ -2809,7 +2845,12 @@ function bindPoolTable() {
     if (!canPick(mid, p)) { toast(`Can't fit another ${p.pos} — your squad's full at that position.`); return; }
     // one confirm before an instant, commissioner-only-undo pick (rows shift as
     // other picks land, so a mis-tap is easy)
-    if (!confirm(`Draft ${p.name} (${p.club} ${p.pos}) — pick #${pickNo() + 1}?`)) return;
+    if (!await confirmSheet({
+      title: `Pick #${pickNo() + 1}`,
+      body: dealRows([], [p]),
+      yes: `Draft ${esc(p.name)}`,
+      note: 'Instant — and only the Chairman can undo it.',
+    })) return;
     makePick(pid);
   });
   document.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => {
@@ -3312,7 +3353,7 @@ function bindTransfers() {
     toast(`${managerName(wdActor())} passes.`);
     wdAdvance(true);
   };
-  document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = async () => {
     const actor = wdActor();
     if (!actGuard(actor, 'window draft')) return;
     const outId = +($('#wdOut')?.value || 0);
@@ -3320,6 +3361,12 @@ function bindTransfers() {
     const inP = PLAYER_BY_ID[+b.dataset.wdin];
     const tgw = transferGw();
     if (!squadShapeOk([...squadAt(actor, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+    if (!await confirmSheet({
+      title: 'Window Draft signing',
+      body: dealRows([PLAYER_BY_ID[outId]], [inP]),
+      yes: `Sign ${esc(inP.name)}`,
+      note: 'Done the moment you confirm — and your turn is used.',
+    })) return;
     if (netOn()) {
       serverAct('windowDraft', { op: 'pick', inId: inP.id, outId, expectedTurn: state.windowDraft?.turn || 0 })
         .then(() => toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`))
@@ -3434,11 +3481,17 @@ function bindTransfers() {
       if (more) more.onclick = () => { transfersView.limit += 50; renderTrResults(); };
       const showAll = results.querySelector('#trAll');
       if (showAll) showAll.onclick = () => { transfersView.limit = 9999; renderTrResults(); };
-      results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
+      results.querySelectorAll('[data-trin]').forEach(b => b.onclick = async () => {
         if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = transfersView.out;
-        const inP = PLAYER_BY_ID[inId];
+        const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
         if (b.dataset.waiv === '1') {
+          if (!await confirmSheet({
+            title: 'Lodge this claim?',
+            body: dealRows([outP], [inP]),
+            yes: 'Lodge claim',
+            note: 'Resolves when waivers run. You can withdraw or reorder it from your claims list until then.',
+          })) return;
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           toast(`Claim lodged: ${inP.name}. Resolves when waivers run.`);
@@ -3446,6 +3499,12 @@ function bindTransfers() {
         }
         const tgw = transferGw();
         if (!squadShapeOk([...squadAt(mid, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+        if (!await confirmSheet({
+          title: 'Do the deal?',
+          body: dealRows([outP], [inP]),
+          yes: `Sign ${esc(inP.name)}`,
+          note: `First come, first served — the deal is done the moment you confirm${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. ${esc(outP?.name || 'Your man')} goes to waivers.`,
+        })) return;
         if (netOn()) {
           // first come, first served — settled by a server transaction
           serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) })
@@ -3482,10 +3541,17 @@ function bindTransfers() {
     } else renderTrResults();
   }
   // --- trade desk: propose / accept / reject / withdraw ---
-  document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = async () => {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.tracc);
     if (!tr) return;
     if (!actGuard(tr.to, 'trade')) return;
+    if (!await confirmSheet({
+      title: 'Accept this trade?',
+      body: dealRows(tGet(tr).map(id => PLAYER_BY_ID[id]), tGive(tr).map(id => PLAYER_BY_ID[id]))
+        + (tr.terms ? `<p style="font-size:13px;margin:8px 0 0">Side-terms: <i>${esc(tr.terms)}</i></p>` : ''),
+      yes: 'Accept &amp; execute',
+      note: 'Executes instantly — both squads swap on confirm. No takebacks.',
+    })) return;
     respondTrade(tr.id, true);
   });
   document.querySelectorAll('[data-trrej]').forEach(b => b.onclick = () => {
@@ -3551,7 +3617,7 @@ function bindTransfers() {
         <button class="btn small" id="tradeGo">Propose trade</button>`;
       const tradeGo = pickers.querySelector('#tradeGo');
       if (!tradeGo) return;
-      tradeGo.onclick = () => {
+      tradeGo.onclick = async () => {
         if (!actGuard(mid, 'trade')) return;
         const give = [...pickers.querySelectorAll('[data-trside="mine"]:checked')].map(x => +x.value);
         const get = [...pickers.querySelectorAll('[data-trside="theirs"]:checked')].map(x => +x.value);
@@ -3561,7 +3627,15 @@ function bindTransfers() {
         const meAfter = [...squadAt(mid, cur).filter(p => !giveSet.has(p.id)), ...get.map(pid => PLAYER_BY_ID[pid])];
         const themAfter = [...squadAt(other, cur).filter(p => !getSet.has(p.id)), ...give.map(pid => PLAYER_BY_ID[pid])];
         if (!squadShapeOk(meAfter) || !squadShapeOk(themAfter)) { toast('That combination breaks a squad’s position limits'); return; }
-        proposeTrade(mid, other, give, get, $('#tradeTerms').value.trim());
+        const terms = $('#tradeTerms').value.trim();
+        if (!await confirmSheet({
+          title: `Propose to ${esc(managerName(other))}?`,
+          body: dealRows(give.map(pid => PLAYER_BY_ID[pid]), get.map(pid => PLAYER_BY_ID[pid]))
+            + (terms ? `<p style="font-size:13px;margin:8px 0 0">Side-terms: <i>${esc(terms)}</i></p>` : ''),
+          yes: 'Send offer',
+          note: 'They accept or reject. You can withdraw the offer any time before they answer.',
+        })) return;
+        proposeTrade(mid, other, give, get, terms);
       };
     };
   }
@@ -4058,6 +4132,15 @@ function bindH2H() {
   const prev = $('#gwPrev'), next = $('#gwNext');
   if (prev) prev.onclick = () => { h2hView.gw = Math.max(0, h2hView.gw - 1); render(); };
   if (next) next.onclick = () => { h2hView.gw = Math.min(REGULAR_GWS - 1, h2hView.gw + 1); render(); };
+  const cp = $('#copyPreview');
+  if (cp) cp.onclick = e => {
+    e.stopPropagation();
+    const txt = gwPreviewText(currentGwIndex());
+    if (!txt) return;
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
+      () => toast('Preview copied — paste straight into the chat'),
+      () => { window.prompt('Copy the Preview:', txt); });
+  };
 }
 
 /* ----- the weekly preview ----- */
@@ -4119,10 +4202,10 @@ function chantFor(a, b, i) {
     .replaceAll('{stadium}', stadium(a));
 }
 
-function gwPreviewCard(i) {
-  if (i >= REGULAR_GWS || gwStatus(i) === 'final' || !state.draft.picks.length) return '';
+function gwPreviewData(i) {
+  if (i >= REGULAR_GWS || gwStatus(i) === 'final' || !state.draft.picks.length) return null;
   const pairs = pairingsFor(i);
-  if (!pairs.length) return '';
+  if (!pairs.length) return null;
   const table = h2hStandings();
   const posOf = Object.fromEntries(table.map((r, k) => [r.id, k + 1]));
   const anyPlayed = table.some(r => r.p > 0);
@@ -4158,9 +4241,38 @@ function gwPreviewCard(i) {
     return out.slice(0, 2);
   };
   const recent = state.transfers.filter(t => t.gw === i || t.gw === i - 1).slice(-6);
+  return { rows, motw, notes, recent };
+}
+/* ----- the GW preview, WhatsApp-ready: the Minutes' pre-match twin ----- */
+function gwPreviewText(i) {
+  const d = gwPreviewData(i);
+  if (!d) return '';
+  const L = [`\u{1F52E} THE LEAGUE — GW${GAMEWEEKS[i].n} PREVIEW`, ''];
+  const line = r => {
+    const pct = Math.round(r.p * 100);
+    const fav = pct >= 50 ? r.a : r.b;
+    const name = id => id === fav ? `*${teamName(id)}*` : teamName(id);
+    return `${name(r.a)} ${r.sa}–${r.sb} ${name(r.b)} (${Math.max(pct, 100 - pct)}%)`;
+  };
+  L.push('⭐ Matchup of the Week');
+  L.push(line(d.motw));
+  for (const n of d.notes(d.motw)) L.push(`_${n}_`);
+  L.push(`_${chantFor(d.motw.a, d.motw.b, i)}_`);
+  L.push('', '*The rest*');
+  for (const r of d.rows.filter(r => r !== d.motw)) L.push(line(r));
+  if (d.recent.length) L.push('', `\u{1F416} Trough watch: ${d.recent.map(t => `${managerName(t.managerId)} ${t.trade ? 'traded for' : 'signed'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(' · ')}`);
+  L.push('', 'Projections from FPL expected points. The Committee accepts no liability.');
+  L.push('https://benmpolak.github.io/the-league/');
+  return L.join('\n');
+}
+function gwPreviewCard(i) {
+  const d = gwPreviewData(i);
+  if (!d) return '';
+  const { rows, motw, notes, recent } = d;
   const trough = recent.length ? `<p class="muted" style="font-size:12px;margin-top:10px"><b>Trough watch:</b> ${recent.map(t => `${esc(managerName(t.managerId))} ${t.trade ? 'traded for' : 'signed'} ${esc(PLAYER_BY_ID[t.inId]?.name || '?')}`).join(' · ')}</p>` : '';
   return `<div class="card" style="margin-bottom:18px">
-    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span></h2>
+    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span>
+      <button class="btn ghost small" id="copyPreview" style="margin-left:auto" title="WhatsApp-ready preview">&#128203; Copy the Preview</button></h2>
     ${[motw, ...rows.filter(r => r !== motw)].map(r => {
       const pct = Math.round(r.p * 100);
       return `<div class="preview-fx${r === motw ? ' motw' : ''}">
@@ -4870,7 +4982,16 @@ function showPlayerCard(pid) {
   const iAmManager = whoami && whoami !== -1;
   if (state.phase === 'draft' && !draftedIds().has(pid)) {
     const myTurn = currentManagerId() != null && canActFor(currentManagerId()) && canPick(currentManagerId(), p);
-    if (myTurn) btn('Draft him', () => { ov.remove(); makePick(pid); });
+    if (myTurn) btn('Draft him', async () => {
+      // same confirm the pool table gets — this path had none at all
+      if (!await confirmSheet({
+        title: `Pick #${pickNo() + 1}`,
+        body: dealRows([], [p]),
+        yes: `Draft ${esc(p.name)}`,
+        note: 'Instant — and only the Chairman can undo it.',
+      })) return;
+      ov.remove(); makePick(pid);
+    });
     if (iAmManager && !toArr(state.autolists?.[whoami]).includes(pid)) {
       btn('&#9734; Add to autopick list', () => { setAutolist(whoami, [...toArr(state.autolists?.[whoami]), pid]); ov.remove(); toast(`${p.name} added to your list`); }, true);
     }
