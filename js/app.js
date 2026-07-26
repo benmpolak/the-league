@@ -2514,16 +2514,7 @@ function viewDraft() {
       ${whoami && whoami !== -1 ? `<div class="card">
         <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Star players in the pool to add them.</p>
-        ${toArr(state.autolists?.[whoami]).map((pid, k) => {
-          const p = PLAYER_BY_ID[pid];
-          const gone = draftedIds().has(pid);
-          return p ? `<div class="lrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
-            <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
-            <span style="margin-left:auto;display:flex;gap:4px">
-              ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
-              <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
-            </span></div>` : '';
-        }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>'}
+        ${autolistRows()}
       </div>` : ''}
       <div class="card side-squad">
         <h2>${esc(managerName(mid))}'s squad</h2>
@@ -2543,7 +2534,33 @@ function viewDraft() {
         </div>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${whoami && whoami !== -1 ? `
+  <button class="btn queue-fab" id="queueFab">&#9733; Queue <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></button>
+  <div class="queue-drawer${window._queueOpen ? ' open' : ''}" id="queueDrawer">
+    <h2 style="display:flex;align-items:center">My autopick queue <span class="tag" style="margin-left:8px">${toArr(state.autolists?.[whoami]).length}</span>
+      <button class="btn ghost small" id="queueClose" style="margin-left:auto">&#10005;</button></h2>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist — the clock takes the top available name. Star players in the pool to add them.</p>
+    ${autolistRows()}
+  </div>` : ''}`;
+}
+
+/* one ranked queue, rendered in the sidebar and the phone drawer alike —
+   with a warning where autopick would have to skip a name */
+function autolistRows() {
+  return toArr(state.autolists?.[whoami]).map((pid, k) => {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) return '';
+    const gone = draftedIds().has(pid);
+    const wontFit = !gone && !canPick(whoami, p);
+    return `<div class="lrow qrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
+      <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
+      ${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
+      <span style="margin-left:auto;display:flex;gap:4px">
+        ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
+        <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
+      </span></div>`;
+  }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
 }
 
 function draftOrderStrip() {
@@ -2625,10 +2642,13 @@ const ALL_STAT_COLS = live => [
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
   : ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts'];
+// phones default to the essentials — tap any player for the full story, or
+// add columns back via the Columns toggle (a saved preference wins everywhere)
+const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'pts'] : ['vs', 'ppg', 'pts'];
 let _colPrefs;
 function visibleColKeys(live) {
   if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem('tl2627-cols')); } catch { _colPrefs = null; } }
-  return _colPrefs || DEFAULT_COL_KEYS(live);
+  return _colPrefs || (matchMedia('(max-width: 700px)').matches ? MOBILE_COL_KEYS(live) : DEFAULT_COL_KEYS(live));
 }
 const STAT_COLS = live => ALL_STAT_COLS(live).filter(c => visibleColKeys(live).includes(c.k));
 window._colsOpen = false;
@@ -2831,6 +2851,10 @@ function bindDraft() {
   };
   const iq = $('#interceptQ');
   if (iq) iq.onclick = () => iq.classList.toggle('open');
+  const qf = $('#queueFab'), qd = $('#queueDrawer');
+  if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };
+  const qc = $('#queueClose');
+  if (qc) qc.onclick = () => { window._queueOpen = false; qd?.classList.remove('open'); };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
