@@ -275,6 +275,14 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .conn { color: var(--red); font-size: 13px; transition: color .3s; }
 .conn.up { color: var(--accent); }
 
+/* stale-save recovery bar */
+.stale-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 75;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  background: #3a2e14; border-bottom: 1px solid #d4a017; color: #ffd76e;
+  font-size: 13px; font-weight: 600; padding: 9px 14px;
+}
+
 /* ---------- demo / rules ---------- */
 .demo-bar {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 80;

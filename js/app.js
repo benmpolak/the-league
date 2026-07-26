@@ -9,6 +9,21 @@ const LS_KEY = `${LS_NS}-league`;
 
 const TEAM_BY_NAME = Object.fromEntries(TEAMS.map(t => [t.name, t]));
 const PLAYER_BY_ID = Object.fromEntries(PLAYERS.map(p => [p.id, p]));
+/* stale-save guard: a saved game can outlive the player feed it was built on
+   (FPL re-keys, half-written save). Unknown ids get a visible stub so every
+   view still renders, and boot offers a reload instead of a blank screen. */
+let staleSave = false;
+function stubMissingPlayers(s) {
+  if (!s) return false;
+  const need = new Set();
+  const arr = x => Array.isArray(x) ? x : x ? Object.values(x) : [];
+  for (const pk of arr(s.draft?.picks)) if (pk?.playerId && !PLAYER_BY_ID[pk.playerId]) need.add(pk.playerId);
+  for (const t of arr(s.transfers)) for (const id of [t?.inId, t?.outId]) if (id && !PLAYER_BY_ID[id]) need.add(id);
+  for (const id of need) {
+    PLAYER_BY_ID[id] = { id, code: 0, name: `#${id} (unknown)`, full: 'Unknown player — feed changed', team: '', club: '???', pos: 'MF', status: 'a', news: '', newsAdded: '', chance: null, price: 0, pts: 0, rating: 0, xp: 0, ppg: 0, mp: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0 };
+  }
+  return need.size > 0;
+}
 
 /* ---- last season's archive (js/history25.js) ----
    The FPL API zeroes every aggregate when it flips to 26/27 in July. The
@@ -607,6 +622,7 @@ function load() {
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
     if (s && !s.settings.posMax) s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
+    staleSave = stubMissingPlayers(s);
     return s;
   } catch { return null; }
 }
@@ -5087,6 +5103,25 @@ document.addEventListener('visibilitychange', () => {
 }
 render();
 manageWakeLock();
+// stale save detected at load: offer recovery rather than a subtly-broken game
+if (staleSave) {
+  const bar = document.createElement('div');
+  bar.className = 'stale-bar';
+  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
+    <button class="btn small" id="staleReload">Reload latest draft</button>
+    <button class="btn ghost small" id="staleDismiss">&#10005;</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
+  bar.querySelector('#staleReload').onclick = async () => {
+    if (!await confirmSheet({
+      title: 'Reload the latest draft?',
+      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
+      yes: 'Reload',
+    })) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  };
+}
 // local mode: a refresh mid-ceremony replays the pomp, exactly like the online
 // snapshot path — otherwise the reload skips straight to a live clock (sol r5)
 if (!netOn() && state.phase === 'draft') {
