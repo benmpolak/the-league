@@ -2628,7 +2628,7 @@ function poolTable() {
     <thead><tr>
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
-      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
+      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
     </tr></thead>
     <tbody>
       ${rows.map(p => `
@@ -2638,7 +2638,7 @@ function poolTable() {
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -3386,7 +3386,7 @@ function bindTransfers() {
       <table class="pool-table">
         <thead><tr>
           <th data-trsort="name">Player</th><th></th>
-          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
+          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
         </tr></thead>
         <tbody>${shown.map(p => {
           const ownerMid = ownedBy[p.id];
@@ -3403,7 +3403,7 @@ function bindTransfers() {
             <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
-            <td>${action}</td>
+            <td class="act">${action}</td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>

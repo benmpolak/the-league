@@ -168,6 +168,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pool-table th:hover { color: var(--text); }
 .pool-table td { padding: 8px 10px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 14px; }
 .pool-table tr:hover td { background: rgba(45,212,167,.05); }
+/* action column pinned to the right edge so Sign/Claim/Draft never scrolls out of view on phones */
+.pool-table th.act, .pool-table td.act {
+  position: sticky; right: 0; z-index: 1;
+  background: var(--card);
+  box-shadow: -10px 0 10px -8px rgba(0,0,0,.55);
+}
+.pool-table tr:hover td.act { background: var(--card2); }
 .pcell { display: flex; align-items: center; gap: 10px; }
 .pcell .pname { font-weight: 600; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
