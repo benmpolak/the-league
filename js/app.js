@@ -3184,7 +3184,7 @@ function viewTransfers() {
       </div>`).join('');
     return `${head}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Two taps: choose your <b>player out</b> below, then hit <b>Sign</b> next to the one you want — instant if they&rsquo;re free, a ranked blind claim if they&rsquo;re on waivers (resolved in reverse table order; win one, go to the back). Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
       <select id="trOut" style="width:100%;margin:8px 0;max-width:420px">
@@ -3215,7 +3215,7 @@ function viewTransfers() {
     </div>
     <div class="card">
       <h2>Trade desk</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap; it executes the instant the other manager accepts.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap with another <b>manager</b>; it executes the instant they accept. After a free agent instead? That&rsquo;s not a trade — that&rsquo;s <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>: pick who goes out, sign who comes in.</p>
       ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
         <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
           <span><b>${esc(managerName(t.from))}</b> gives <b>${esc(tradeNames(tGive(t)))}</b> for <b>${esc(tradeNames(tGet(t)))}</b>${t.terms ? `<br><span class="muted" style="font-size:11px">&#128220; ${esc(t.terms)}</span>` : ''}</span>
