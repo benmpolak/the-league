@@ -381,7 +381,8 @@ const SB = 'the-league-sandbox';
   chk('replacement-claim lodged', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [rc] }, tok2)).error);
   const fpR = await T.mutate(LG, 'waiverRunNow', { runId: 'fpR', __failpoint: 'waivers:afterPlan' }, tok1);
   chk('replacement scenario: run crashes after planning', !!fpR.error);
-  await new Promise(r => setTimeout(r, 5)); // distinct lodging stamp
+  // no artificial delay: lodging stamps carry a random fraction, so even a
+  // same-millisecond re-save is a distinct identity (sol r6)
   chk('identical claim re-saved during the crash window', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [rc] }, tok2)).error);
   const fpRr = await T.mutate(LG, 'waiverRunNow', { runId: 'fpR' }, tok1);
   chk('replay completes (replacement scenario)', !fpRr.error, JSON.stringify(fpRr.error));
@@ -437,6 +438,25 @@ const SB = 'the-league-sandbox';
   const rejDone = await T.mutate(LG, 'tradeRespond', { tradeId: hId, action: 'reject' }, tok3);
   chk('reject of a done trade reports done+unchanged, never "rejected"',
     !rejDone.error && rejDone.result?.status === 'done' && rejDone.result?.unchanged === true, JSON.stringify(rejDone));
+  // sol r6: a forged MALFORMED trade (repeated player) WITH ledger records must
+  // refuse as surgery — never auto-heal to done, never auto-withdraw
+  const fmA = byPos(await squadOf(2), 'MF')[0], fmB = byPos(await squadOf(3), 'MF')[0], fmC = byPos(await squadOf(3), 'MF')[1];
+  const tradesRef = db.ref(`v2/leagues/${LG}/public/trades`);
+  const tArr = Object.values((await tradesRef.get()).val() || {});
+  tArr.push({ id: 'forged-dupe-1', from: 2, to: 3, give: [fmA, fmA], get: [fmB, fmC], status: 'pending', t: Date.now() });
+  await tradesRef.set(tArr);
+  const fCur = Object.values((await trRef.get()).val() || {});
+  fCur.push({ managerId: 2, outId: fmA, inId: fmB, gw: curGw, t: Date.now(), trade: 'forged-dupe-1', n: fCur.length + 1 });
+  await trRef.set(fCur);
+  const fAccept = await T.mutate(LG, 'tradeRespond', { tradeId: 'forged-dupe-1', action: 'accept' }, tok3);
+  const fStatus = Object.values((await tradesRef.get()).val() || {}).find(t => t.id === 'forged-dupe-1')?.status;
+  chk('malformed trade WITH ledger refuses as surgery, status untouched (sol r6)',
+    fAccept.error?.status === 'FAILED_PRECONDITION' && /surgery/.test(fAccept.error?.message || '') && fStatus === 'pending', JSON.stringify({ e: fAccept.error, fStatus }));
+  await trRef.set(Object.values((await trRef.get()).val() || {}).filter(t => t.trade !== 'forged-dupe-1'));
+  await tradesRef.set(Object.values((await tradesRef.get()).val() || {}).filter(t => t.id !== 'forged-dupe-1'));
+  // sol r6: Ham Cup entries MUST pin their gameweek
+  chk('hamEnter without a gw pin is refused',
+    (await T.mutate(LG, 'hamEnter', { xi: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }, tok2)).error?.status === 'INVALID_ARGUMENT');
   // sol r4: REJECTING a fully-landed trade must heal to done, never mark rejected
   const rGive = byPos(await squadOf(2), 'FW')[0], rGet = byPos(await squadOf(3), 'FW')[0];
   const rProp = await T.mutate(LG, 'tradePropose', { to: 3, give: [rGive], get: [rGet] }, tok2);
@@ -535,6 +555,32 @@ const SB = 'the-league-sandbox';
   chk('re-heal on the genuinely full board seals again',
     !reHeal.error && reHeal.result?.healed === true
     && (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season', JSON.stringify(reHeal));
+
+  /* sol r6 P0: seal and undo fired CONCURRENTLY, repeatedly — the invariant
+     "never season with a short board" must hold in every interleaving (undo's
+     pop + phase repair are now one public-node txn, serialised with the seal) */
+  let raceBad = 0, raceRounds = 0;
+  for (let round = 0; round < 10; round++) {
+    await db.ref(`v2/leagues/${LG}/public/phase`).set('draft'); // the wedge
+    await Promise.all([
+      T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2),
+      T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 42 }, tok1),
+    ]);
+    const ph = (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val();
+    const nPicks = Object.values((await db.ref(`v2/leagues/${LG}/public/draft/picks`).get()).val() || {}).length;
+    if (ph === 'season' && nPicks < 42) { raceBad++; break; }
+    raceRounds++;
+    if (nPicks < 42) { // undo won this round — refill the board for the next
+      if (ph !== 'draft') break; // would mean the invariant broke differently
+      const refill = await T.mutate(LG, 'draftAutopick', {}, tok1);
+      if (refill.error) break;
+    }
+  }
+  chk('seal/undo raced 10x concurrently: never season-with-short-board (sol r6 P0)',
+    raceBad === 0 && raceRounds === 10, `bad=${raceBad} rounds=${raceRounds}`);
+  // leave the league sealed for anything after
+  await T.mutate(LG, 'draftAutopick', {}, tok1).catch(() => {});
+  await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
 
   server.close();
   run.done();

@@ -83,10 +83,11 @@ const db = admin.database();
     const val = snap.val() || {};
     for (const uid of Object.keys(val)) {
       if (!keep.has(uid)) {
-        await db.ref(`v2/leagues/${lg}/server/membership/${uid}`).remove();
-        // purge their private game state too: a dormant claim would resurrect
-        // and fire at the next waiver run if membership ever came back (sol r5)
+        // private FIRST: if this run dies between the two removes, the member
+        // is still in membership and the next run re-prunes both. The reverse
+        // order strands dormant claims forever (sol r6).
         await db.ref(`v2/leagues/${lg}/private/${uid}`).remove();
+        await db.ref(`v2/leagues/${lg}/server/membership/${uid}`).remove();
         prunedUids.add(uid);
         report.push({ pruned: uid, league: lg });
       }
