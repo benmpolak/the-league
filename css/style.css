@@ -470,6 +470,14 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
   body { padding-bottom: 66px; }
+  /* the pitch must read as a formation: rows NEVER wrap — a back four
+     spilling onto two lines made every shape look illegal. Five across
+     fits a 390px screen with slimmer chips and smaller shirts. */
+  .pitch-row { flex-wrap: nowrap; gap: 2px; }
+  .pitch-row .pitch-chip { min-width: 0; flex: 1 1 0; max-width: 76px; padding: 6px 2px; }
+  .pitch-row .pitch-chip .kit { width: 36px; height: 46px; }
+  .pitch-row .pitch-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+  .pitch { min-height: 420px; padding: 18px 6px; }
   /* compact header: one line of brand, icon-only refresh — content starts a
      full card sooner */
   /* on the clock, rebuilt for thumbs: manager, then a big timer, then the

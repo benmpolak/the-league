@@ -555,6 +555,8 @@ async function enterDemo() {
   demoMode = true;
   demoGwOverride = 0;
   state = buildDemoState();
+  const hv = location.hash.slice(1);
+  state.view = NAV_ITEMS.some(([k]) => k === hv) ? hv : 'dash'; // demo opens at home too
   teamView.gw = 0;
   fxView.gw = GAMEWEEKS[0]?.n || 1;
   // a live-looking Vidiprinter tape from real drafted names (memory only —
@@ -1689,7 +1691,7 @@ async function syncNow(manual = false) {
     if (manual) toast('Sync failed — check connection');
   }
   const b2 = $('#syncBtn');
-  if (b2) { b2.disabled = false; b2.innerHTML = '&#8635;<span class="sync-txt"> Refresh</span>'; }
+  if (b2) { b2.disabled = false; renderSyncArea(); } // rebuild the stamp whatever happened
   // keep tapping while matches are in play (the Action refreshes every 15 min)
   clearTimeout(liveTimer);
   if (anyMatchLive()) liveTimer = setTimeout(() => syncNow(false), 5 * 60 * 1000);
@@ -2006,7 +2008,8 @@ function renderSyncArea() {
   }
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<span class="sync-updated" title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#8635;<span class="sync-txt"> Refresh</span></button>`);
+    bits.push(`<button class="tag" id="syncBtn" title="Scores auto-refresh every ~15 min on matchdays — tap to refresh now">&#8635;<span class="sync-txt"> ${last}</span></button>`);
+    bits.push(`<button id="homeBtn" class="btn small" title="Back to the Dashboard"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
   }
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
@@ -2030,6 +2033,8 @@ function renderSyncArea() {
   };
   const sb = $('#syncBtn');
   if (sb) sb.onclick = () => syncNow(true);
+  const hb = $('#homeBtn');
+  if (hb) hb.onclick = () => { state.view = 'dash'; save(); render(); };
   const dc = $('#demoChip');
   if (dc) dc.onclick = () => confirmSheet({
     title: 'Demo mode',
@@ -5260,10 +5265,12 @@ document.addEventListener('visibilitychange', () => {
   if (_snapSeen && netOn() && !demoMode) applySharedSnapshot(_snapLatest);
 });
 
-// a #hash deep-link (or a restored tab) opens straight onto that page
+// a #hash deep-link opens straight onto that page; otherwise the app always
+// opens at home — the Dashboard — not wherever it was left last time
 {
   const v0 = location.hash.slice(1);
   if (state.phase !== 'setup' && NAV_ITEMS.some(([k]) => k === v0)) state.view = v0;
+  else if (state.phase === 'season') state.view = 'dash';
 }
 render();
 manageWakeLock();
