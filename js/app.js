@@ -3592,7 +3592,7 @@ function viewTeam() {
       if (!pair) return '';
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
-      return `${winProbBar(pair[0], pair[1], gw)}<div class="duel-grid"><div class="duel-side">
+      return `${winProbBar(oppMid, mid, gw)}<div class="duel-grid"><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
