@@ -73,6 +73,15 @@ const AD_BOARDS = [
   { t: 'HYMAN’S DELI', s: 'salt beef for the semi-finals', c: '#ffd6a8', bg: '#221204' },
   { t: 'STATE FAYRE', s: 'bagels since time immemorial', c: '#f2e2b8', bg: '#1c1608' },
   { t: 'INTERLINK RECRUITMENT', s: 'a young graduate in need of opportunity? call us', c: '#c9b8f0', bg: '#140f24' },
+  { t: 'SLATTERY', s: 'patissier to the playoffs', c: '#e8c9b0', bg: '#1f130a' },
+  // Jewish Manchester, past and present — commissioned 27 Jul, for the lads
+  { t: 'TITANICS', s: 'unsinkable since 1912', c: '#b8d4f0', bg: '#0a1420' },
+  { t: 'SWERSKY’S', s: 'the bagel benchmark, Prestwich', c: '#f0dcb0', bg: '#1e1706' },
+  { t: 'DELI KING', s: 'royalty. Prestwich royalty.', c: '#ffd98a', bg: '#221604' },
+  { t: 'M&S PENNY BAZAAR', s: 'don’t ask the price, it’s a penny', c: '#a8e0c9', bg: '#062016' },
+  { t: 'GT UNIVERSAL STORES', s: 'everything, by catalogue, from Manchester', c: '#d4c4f0', bg: '#130f22' },
+  { t: 'RAKUSEN’S', s: 'official matzo of the title run-in', c: '#f2e8d0', bg: '#1a1608' },
+  { t: 'GATLEY TANDOORI', s: 'the post-match curry of champions', c: '#ffb88a', bg: '#241004' },
 ];
 
 // Per-manager hoardings — commissioned by the group chat, 22 Jul 2026.
