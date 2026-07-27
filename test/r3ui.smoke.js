@@ -186,15 +186,28 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       .map(s => s.textContent).filter(t => /proj/.test(t)).map(t => +t.replace(/\D/g, ''));
     const leftHead = ov.querySelector('.mu-side h3')?.textContent || '';
     const fill = wrap.querySelector('.prob-bar span')?.style.width;
+    const scoreline = ov.querySelector('.mu-scoreline');
+    const scoreNums = (scoreline?.querySelector('.fx-score')?.textContent.match(/\d+/g) || []).map(Number);
+    const scoreText = scoreline?.textContent || '';
     ov.remove();
     return {
-      projs, leftHead, fill,
+      projs, leftHead, fill, scoreNums, scoreText,
       exp0: Math.round(teamOutlook(pair[0], 0).exp),
       exp1: Math.round(teamOutlook(pair[1], 0).exp),
+      proj0: projectedGwScore(pair[0], 0),
+      proj1: projectedGwScore(pair[1], 0),
       pct0: Math.round(liveWinProb(pair[0], pair[1], 0) * 100),
       name0: teamName(pair[0]),
+      name1: teamName(pair[1]),
     };
   });
+  chk('matchup modal: scoreboard at the top names both teams, a-side left',
+    muChk.scoreText.indexOf(muChk.name0) !== -1 && muChk.scoreText.indexOf(muChk.name1) !== -1
+      && muChk.scoreText.indexOf(muChk.name0) < muChk.scoreText.indexOf(muChk.name1),
+    muChk.scoreText.slice(0, 80));
+  chk('matchup modal: scoreboard numbers match the side projections, a first',
+    muChk.scoreNums.length === 2 && muChk.scoreNums[0] === muChk.proj0 && muChk.scoreNums[1] === muChk.proj1,
+    JSON.stringify({ scoreNums: muChk.scoreNums, proj0: muChk.proj0, proj1: muChk.proj1 }));
   chk('matchup modal: a-side named LEFT and bar left proj is a\'s',
     muChk.leftHead.includes(muChk.name0) && muChk.projs.length === 2
       && muChk.projs[0] === muChk.exp0 && muChk.projs[1] === muChk.exp1,
