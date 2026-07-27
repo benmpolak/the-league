@@ -72,6 +72,7 @@ const AD_BOARDS = [
   { t: 'VICTORIA PLUMBING', s: 'taps for the treble winners', c: '#b8e0f7', bg: '#081722' },
   { t: 'HYMAN’S DELI', s: 'salt beef for the semi-finals', c: '#ffd6a8', bg: '#221204' },
   { t: 'STATE FAYRE', s: 'bagels since time immemorial', c: '#f2e2b8', bg: '#1c1608' },
+  { t: 'INTERLINK RECRUITMENT', s: 'a young graduate in need of opportunity? call us', c: '#c9b8f0', bg: '#140f24' },
 ];
 
 // Per-manager hoardings — commissioned by the group chat, 22 Jul 2026.

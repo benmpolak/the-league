@@ -873,7 +873,7 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
     else {
       const b = Array.isArray(data.boards) ? [...new Set(data.boards)] : null;
       // bound tracks AD_BOARDS growth loosely — a stale index just renders nothing
-      if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i > 31)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
+      if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i > 63)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
       up[`managers/${idx}/boards`] = b.length ? b : null;
     }
   }
