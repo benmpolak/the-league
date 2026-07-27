@@ -5743,7 +5743,7 @@ function showPlayerCard(pid) {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card pcard">
     <div class="pcard-head">
-      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="">
+      <img class="pcard-photo" data-code="${p.code}" src="${PHOTO_NEW(p.code)}" alt="">
       <div>
         <h2 style="margin-bottom:2px">${esc(p.name)} <span class="pos-badge pos-${p.pos}">${p.pos}</span></h2>
         <p class="muted" style="font-size:12px">${esc(p.full)}</p>
