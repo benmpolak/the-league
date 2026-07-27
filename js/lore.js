@@ -55,6 +55,21 @@ const AD_BOARDS = [
   { t: 'SHABBAT ENERGY', s: 'we’re off saturdays', c: '#fff3a0', bg: '#1c1a05' },
   { t: 'POLAK & LEVY LLP', s: 'no win, no schmear', c: '#b7e4f7', bg: '#0b1a22' },
   { t: 'NICE JEWISH BOY™', s: 'the dating app your mum chose', c: '#f7b7d0', bg: '#20101a' },
+  // commissioned by the group chat, 27 Jul 2026
+  { t: 'VODAFONE NEWBURY', s: 'signal not guaranteed', c: '#ff8a8a', bg: '#260808' },
+  { t: 'BRANDSMITHS', s: 'see you in court', c: '#e8e8e8', bg: '#141414' },
+  { t: 'HOME REIT', s: 'residential property, broadly', c: '#d9c9a3', bg: '#1c150a' },
+  { t: 'REVOLUT', s: 'sorry about the Monzo Cup, Geller', c: '#9fc4ff', bg: '#0a1226' },
+  { t: 'NECK OIL', s: 'the official pre-waiver pint', c: '#7de8d8', bg: '#0a1f1c' },
+  { t: 'BEER52', s: 'cancel anytime. you won’t.', c: '#ffb36b', bg: '#241204' },
+  { t: 'SWIZZELS', s: 'love hearts & drumsticks since 1928', c: '#ffc2dd', bg: '#220e18' },
+  { t: 'CLAUDE', s: 'built the site. supports all twelve equally.', c: '#f0b8a4', bg: '#211008' },
+  { t: 'PADDY POWER', s: 'odds on a one-sided derby', c: '#a8e8a0', bg: '#0a1f0c' },
+  { t: 'KIA', s: 'official car of the school run', c: '#dedede', bg: '#101418' },
+  { t: 'ARAMCO', s: 'proud partners of a 12-man league', c: '#8ee8c9', bg: '#062018' },
+  { t: 'HIGH PERFORMANCE PODCAST', s: 'what does defeat mean to YOU?', c: '#ffd98a', bg: '#1f1502' },
+  { t: 'MGS', s: 'sapere aude, lads', c: '#a9c4e8', bg: '#0a1220' },
+  { t: 'VICTORIA PLUMBING', s: 'taps for the treble winners', c: '#b8e0f7', bg: '#081722' },
 ];
 
 // Per-manager hoardings — commissioned by the group chat, 22 Jul 2026.
