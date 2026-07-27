@@ -184,6 +184,26 @@ const SB = 'the-league-sandbox';
     && (await T.rest('GET', `v2/leagues/${SB}/public/ready`, { owner: true })).val == null);
   await T.mutate(SB, 'readySet', { ready: true }, sbTok2); // re-mark, proves import wiped then re-set works
 
+  // the club office: rename, kit, sponsor, rival — cosmetics with teeth
+  chk('clubSet renames own team', !(await T.mutate(SB, 'clubSet', { team: 'Chairman Mao Ultras' }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/team`, { owner: true })).val === 'Chairman Mao Ultras');
+  chk('clubSet kit + sponsor + rival land (hex lowercased)', !(await T.mutate(SB, 'clubSet', { kit: { pattern: 'stripes', c1: '#C81919', c2: '#FFFFFF' }, sponsor: 'WAX ON', rival: 1 }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/kit/c1`, { owner: true })).val === '#c81919'
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/sponsor`, { owner: true })).val === 'WAX ON'
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/rival`, { owner: true })).val === 1);
+  chk('junk kit pattern rejected', (await T.mutate(SB, 'clubSet', { kit: { pattern: 'tartan', c1: '#123456', c2: '#abcdef' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('one-character name rejected', (await T.mutate(SB, 'clubSet', { team: 'X' }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('self-rivalry rejected', (await T.mutate(SB, 'clubSet', { rival: 2 }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('empty clubSet rejected', (await T.mutate(SB, 'clubSet', {}, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('non-commissioner cannot restyle another club', (await T.mutate(SB, 'clubSet', { team: 'Hijacked FC', asManager: 3 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  chk('sponsor clears to null', !(await T.mutate(SB, 'clubSet', { sponsor: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/sponsor`, { owner: true })).val == null);
+  chk('stadium + hoardings land via the club office', !(await T.mutate(SB, 'clubSet', { stadium: 'The Rec', boards: [0, 5, 2] }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/stadium`, { owner: true })).val === 'The Rec'
+    && JSON.stringify((await T.rest('GET', `v2/leagues/${SB}/public/managers/1/boards`, { owner: true })).val) === '[0,5,2]');
+  chk('four hoardings rejected', (await T.mutate(SB, 'clubSet', { boards: [0, 1, 2, 3] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('junk hoarding number rejected', (await T.mutate(SB, 'clubSet', { boards: [99] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+
   chk('draft start is Chairman-gated', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   chk('bad order rejected', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2] }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('Chairman starts the draft', !(await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok1)).error);

@@ -820,6 +820,58 @@ ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   return { ok: true };
 };
 
+// club identity — name, kit, sponsor. The founding of a club is a sacred act;
+// the validation is not.
+const KIT_PATTERNS = ['plain', 'stripes', 'hoops', 'sash', 'halves'];
+const hexOk = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+ACTIONS.clubSet = async ({ league, a, data, state }) => {
+  const mid = actingManager(a, data);
+  const idx = state.managers.findIndex(m => m.id === mid);
+  if (idx < 0) throw new HttpsError('not-found', 'no such manager');
+  const up = {};
+  if (data.team !== undefined) {
+    const t = cleanText(data.team, 30).trim();
+    if (t.length < 2) throw new HttpsError('invalid-argument', 'team name needs 2+ characters');
+    up[`managers/${idx}/team`] = t;
+  }
+  if (data.kit !== undefined) {
+    if (data.kit === null) up[`managers/${idx}/kit`] = null;
+    else {
+      const k = data.kit;
+      if (!KIT_PATTERNS.includes(k?.pattern) || !hexOk(k?.c1) || !hexOk(k?.c2)) throw new HttpsError('invalid-argument', 'kit is a pattern + two hex colours');
+      up[`managers/${idx}/kit`] = { pattern: k.pattern, c1: k.c1.toLowerCase(), c2: k.c2.toLowerCase() };
+    }
+  }
+  if (data.sponsor !== undefined) {
+    // a name off the league's hoardings, or one they made up themselves
+    const s = data.sponsor === null ? '' : cleanText(data.sponsor, 20).trim();
+    if (data.sponsor !== null && typeof data.sponsor !== 'string') throw new HttpsError('invalid-argument', 'sponsor is text');
+    up[`managers/${idx}/sponsor`] = s || null;
+  }
+  if (data.rival !== undefined) {
+    // declared rivalry — your derby. Mutuality is not required; that's the joke.
+    if (data.rival !== null && (!state.managers.some(x => x.id === data.rival) || data.rival === mid)) throw new HttpsError('invalid-argument', 'a rival must be another of the twelve');
+    up[`managers/${idx}/rival`] = data.rival;
+  }
+  if (data.stadium !== undefined) {
+    const st = cleanText(data.stadium, 40).trim();
+    if (!st) throw new HttpsError('invalid-argument', 'a ground needs a name');
+    up[`managers/${idx}/stadium`] = st;
+  }
+  if (data.boards !== undefined) {
+    // up to three hoardings off the league's stable to line the home ground
+    if (data.boards === null) up[`managers/${idx}/boards`] = null;
+    else {
+      const b = Array.isArray(data.boards) ? [...new Set(data.boards)] : null;
+      if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i > 19)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
+      up[`managers/${idx}/boards`] = b.length ? b : null;
+    }
+  }
+  if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
+  await db().ref(`${leagueBase(league)}/public`).update(up);
+  return { ok: true };
+};
+
 ACTIONS.shirtNumSet = async ({ league, a, data, state, eng }) => {
   const mid = actingManager(a, data);
   const pid = Number(data.pid), num = data.num == null ? null : Number(data.num);

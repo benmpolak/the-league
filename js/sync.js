@@ -54,15 +54,18 @@ window.WCSync = {
       localStorage.setItem(EMAIL_KEY, email);
     },
     // completes a magic-link visit; returns true if this page load was one
-    async completeLink() {
-      if (!isSignInWithEmailLink(auth, location.href)) return false;
+    async completeLink(href = location.href) {
+      if (!isSignInWithEmailLink(auth, href)) {
+        if (href !== location.href) throw new Error('That doesn’t look like a sign-in link — paste the whole link from the email.');
+        return false;
+      }
       let email = localStorage.getItem(EMAIL_KEY);
       if (!email) email = prompt('Confirm your email to finish signing in:');
       if (!email) return false;
-      await signInWithEmailLink(auth, email, location.href);
+      await signInWithEmailLink(auth, email.trim(), href);
       localStorage.removeItem(EMAIL_KEY);
       // scrub the one-time code from the address bar
-      history.replaceState(null, '', location.pathname + (LEAGUE.endsWith('sandbox') ? '?sandbox' : '') + location.hash);
+      if (href === location.href) history.replaceState(null, '', location.pathname + (LEAGUE.endsWith('sandbox') ? '?sandbox' : '') + location.hash);
       return true;
     },
     signOut: () => signOut(auth),
@@ -93,5 +96,8 @@ onAuthStateChanged(auth, user => {
   window.onAuthChanged?.(user ? { uid: user.uid, email: user.email } : null);
 });
 
-// finish a magic-link sign-in if this load is one
-WCSync.auth.completeLink().catch(e => console.warn('[auth] link', e));
+// finish a magic-link sign-in if this load is one — and if it goes wrong,
+// SAY so; a silent console.warn left people signed out and none the wiser
+WCSync.auth.completeLink()
+  .then(ok => { if (ok) window.onAuthLinkResult?.(true); })
+  .catch(e => { console.warn('[auth] link', e); window.onAuthLinkResult?.(false, e); });

@@ -407,6 +407,15 @@ window.onAuthChanged = u => {
   syncIdentity();
   render();
 };
+// magic-link completion: success and failure both get said OUT LOUD —
+// a silently-failed link leaves someone signed out without knowing it
+window.onAuthLinkResult = (ok, err) => {
+  if (ok) { toast('Signed in. Welcome to the league.'); return; }
+  const code = String(err?.code || err?.message || '');
+  toast(code.includes('invalid-action-code') ? 'That sign-in link has been used or expired — request a fresh one.'
+    : code.includes('invalid-email') || code.includes('does not match') ? 'That email doesn’t match the link — type the address the link was sent to.'
+    : 'Sign-in didn’t complete — request a fresh link.');
+};
 
 function freshState() {
   return {
@@ -747,6 +756,163 @@ function normName(s) {
 }
 function managerName(mid) { return state.managers.find(m => m.id === mid)?.name || `Manager ${mid}`; }
 function teamName(mid) { const m = state.managers.find(m => m.id === mid); return m?.team || m?.name || `Manager ${mid}`; }
+
+/* ----- club kits: every team gets a shirt, everywhere its name appears ----- */
+const KIT_PATTERNS = ['plain', 'stripes', 'hoops', 'sash', 'halves'];
+// pre-customisation defaults: a deterministic two-colour kit per manager
+const KIT_DEFAULTS = [
+  ['#2dd4a7', '#0b3b2e'], ['#e05555', '#ffffff'], ['#4f8ce8', '#ffffff'], ['#e8b64c', '#101010'],
+  ['#9b59d0', '#ffffff'], ['#ffffff', '#101010'], ['#f08030', '#0b1a3a'], ['#3fb96d', '#ffffff'],
+  ['#101010', '#e8b64c'], ['#b7e4f7', '#0b1a3a'], ['#e88aa0', '#101010'], ['#f4f4f4', '#5a1414'],
+];
+function kitFor(mid) {
+  const m = state.managers.find(x => x.id === mid);
+  if (m?.kit?.pattern) return m.kit;
+  const [c1, c2] = KIT_DEFAULTS[(mid - 1 + KIT_DEFAULTS.length) % KIT_DEFAULTS.length];
+  return { pattern: 'plain', c1, c2 };
+}
+function sponsorFor(mid) { return state.managers.find(x => x.id === mid)?.sponsor || ''; }
+// a wearable SVG shirt: pattern clipped to the jersey, sponsor across the chest
+function kitSvg(mid, size = 18, showSponsor = false) {
+  return kitSvgRaw(kitFor(mid), showSponsor ? sponsorFor(mid) : '', size, `kc${mid}-${size}${showSponsor ? 's' : ''}`);
+}
+function kitSvgRaw(k, sponsor, size, uid) {
+  const body = 'M10 4 L15 1 Q20 5 25 1 L30 4 L36 10 L31 16 L29 14 L29 39 L11 39 L11 14 L9 16 L4 10 Z';
+  const pat = k.pattern === 'stripes' ? `<rect x="13" y="0" width="4" height="40"/><rect x="21" y="0" width="4" height="40"/><rect x="29" y="0" width="4" height="40"/>`
+    : k.pattern === 'hoops' ? `<rect x="0" y="10" width="40" height="5"/><rect x="0" y="20" width="40" height="5"/><rect x="0" y="30" width="40" height="5"/>`
+    : k.pattern === 'sash' ? `<rect x="14" y="-12" width="7" height="64" transform="rotate(30 20 20)"/>`
+    : k.pattern === 'halves' ? `<rect x="20" y="0" width="20" height="40"/>`
+    : '';
+  const sp = sponsor
+    ? `<text x="20" y="26" text-anchor="middle" font-size="4.6" font-weight="800" font-family="inherit" fill="${k.pattern === 'halves' ? k.c1 : k.c2}" stroke="${k.pattern === 'halves' ? k.c2 : k.c1}" stroke-width="1.1" paint-order="stroke" letter-spacing=".2">${esc(String(sponsor).slice(0, 14))}</text>`
+    : '';
+  return `<svg class="club-kit" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="${uid}"><path d="${body}"/></clipPath></defs><path d="${body}" fill="${k.c1}"/><g clip-path="url(#${uid})" fill="${k.c2}">${pat}</g><path d="M15 1 Q20 5 25 1 L23 3 Q20 6 17 3 Z" fill="${k.c2}"/><path d="${body}" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/>${sp}</svg>`;
+}
+// name + shirt, for everywhere a team is written down
+function teamTag(mid) { return `${kitSvg(mid)} ${esc(teamName(mid))}`; }
+// declared rivalries: mutual = a clásico, one-sided = a derby only one of them
+// believes in (which is funnier)
+function rivalOf(mid) { return state.managers.find(x => x.id === mid)?.rival || null; }
+function derbyTag(a, b) {
+  const ab = rivalOf(a) === b, ba = rivalOf(b) === a;
+  if (ab && ba) return '<span class="tag derby-tag">&#128293; EL CL&Aacute;SICO</span>';
+  if (ab || ba) return `<span class="tag derby-tag" title="Declared by ${esc(teamName(ab ? a : b))}. ${esc(teamName(ab ? b : a))} remains unaware.">&#128293; derby (one&#8209;sided)</span>`;
+  return '';
+}
+
+/* ----- the club office: name, kit, sponsor — first-login ceremony and
+   forever after. Changes go through the server like everything else. ----- */
+function clubEditor(mid) {
+  if (!actGuard(mid, 'club')) return;
+  const m = state.managers.find(x => x.id === mid);
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: [...(m?.boards || [])] };
+  const stock = AD_BOARDS.map(b => b.t);
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  const paint = () => {
+    const prev = ov.querySelector('#kitPreview');
+    if (prev) prev.innerHTML = kitSvgRaw(draft.kit, draft.sponsor, 120, 'kprev');
+    ov.querySelectorAll('[data-pat]').forEach(b => b.classList.toggle('active', b.dataset.pat === draft.kit.pattern));
+    ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
+  };
+  ov.innerHTML = `<div class="card" style="max-width:460px;width:94%">
+    <h2>The club office</h2>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
+      <div id="kitPreview" style="flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <label class="muted" style="font-size:11px">TEAM NAME</label>
+        <input id="clubName" maxlength="30" value="${esc(draft.team)}" style="width:100%" />
+        <label class="muted" style="font-size:11px;margin-top:8px;display:block">SPONSOR — off the hoardings, or make one up</label>
+        <select id="clubSpSel" style="width:100%">
+          <option value="">No sponsor</option>
+          ${stock.map(t => `<option value="${esc(t)}"${draft.sponsor === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          <option value="__own"${draft.sponsor && !stock.includes(draft.sponsor) ? ' selected' : ''}>Make one up…</option>
+        </select>
+        <input id="clubSpOwn" maxlength="20" placeholder="Your sponsor (20 chars)" value="${draft.sponsor && !stock.includes(draft.sponsor) ? esc(draft.sponsor) : ''}" style="width:100%;margin-top:6px;display:${draft.sponsor && !stock.includes(draft.sponsor) ? 'block' : 'none'}" />
+      </div>
+    </div>
+    <label class="muted" style="font-size:11px">KIT PATTERN</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px">
+      ${KIT_PATTERNS.map(p => `<button class="btn ghost small" data-pat="${p}">${p}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+      <label class="muted" style="font-size:11px">SHIRT <input type="color" id="clubC1" value="${draft.kit.c1}"></label>
+      <label class="muted" style="font-size:11px">TRIM <input type="color" id="clubC2" value="${draft.kit.c2}"></label>
+    </div>
+    <label class="muted" style="font-size:11px">YOUR GROUND</label>
+    <input id="clubStadium" maxlength="40" value="${esc(draft.stadium)}" style="width:100%;margin:4px 0 10px" />
+    <label class="muted" style="font-size:11px">PITCH-SIDE HOARDINGS — pick up to three for home games</label>
+    <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
+      ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
+    </div>
+    <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
+    <select id="clubRival" style="width:100%;margin:4px 0 14px">
+      <option value="">No declared rival (coward)</option>
+      ${state.managers.filter(x => x.id !== mid).map(x => `<option value="${x.id}"${draft.rival === x.id ? ' selected' : ''}>${esc(x.team || x.name)} — ${esc(x.name)}</option>`).join('')}
+    </select>
+    <div style="display:flex;gap:8px">
+      <button class="btn ghost" id="clubCancel" style="flex:1">Cancel</button>
+      <button class="btn" id="clubSave" style="flex:1">Save the lot</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  paint();
+  ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
+  ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { draft.kit.pattern = b.dataset.pat; paint(); });
+  ov.querySelector('#clubC1').oninput = e => { draft.kit.c1 = e.target.value; paint(); };
+  ov.querySelector('#clubC2').oninput = e => { draft.kit.c2 = e.target.value; paint(); };
+  const spSel = ov.querySelector('#clubSpSel'), spOwn = ov.querySelector('#clubSpOwn');
+  spSel.onchange = () => {
+    spOwn.style.display = spSel.value === '__own' ? 'block' : 'none';
+    draft.sponsor = spSel.value === '__own' ? spOwn.value.trim() : spSel.value;
+    paint();
+  };
+  spOwn.oninput = () => { draft.sponsor = spOwn.value.trim(); paint(); };
+  ov.querySelector('#clubRival').onchange = e => { draft.rival = e.target.value ? +e.target.value : null; };
+  ov.querySelector('#clubStadium').oninput = e => { draft.stadium = e.target.value; };
+  ov.querySelectorAll('[data-board]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.board;
+    if (draft.boards.includes(i)) draft.boards = draft.boards.filter(x => x !== i);
+    else if (draft.boards.length >= 3) { toast('Three hoardings max — this is a tidy ground'); return; }
+    else draft.boards.push(i);
+    paint();
+  });
+  ov.querySelector('#clubCancel').onclick = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#clubSave').onclick = () => {
+    const team = draft.team.trim();
+    if (team.length < 2) { toast('A club needs a name — 2 characters minimum'); return; }
+    localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
+    const stadiumName = draft.stadium.trim();
+    if (!stadiumName) { toast('A ground needs a name'); return; }
+    if (netOn()) {
+      serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, ...(mid !== whoami && { asManager: mid }) })
+        .then(() => toast('The club is founded. Wear it well.')).catch(() => {});
+      closeOv(ov);
+      return;
+    }
+    const idx = state.managers.findIndex(x => x.id === mid);
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null };
+    save(); render();
+    closeOv(ov);
+    toast('The club is founded. Wear it well.');
+  };
+}
+// the founding card: shown on the Dashboard until the club has been to the office
+function foundingCard() {
+  if (!whoami || whoami === -1) return '';
+  const m = state.managers.find(x => x.id === whoami);
+  if (!m || m.kit || localStorage.getItem(`${LS_NS}-founded-${whoami}`)) return '';
+  return `<div class="card" style="border-color:var(--accent)">
+    <h2>Found your club ${kitSvg(whoami, 22)}</h2>
+    <p class="rules-p">You've inherited <b>${esc(teamName(whoami))}</b>. Keep the name or take a new one —
+    then cut your kit, sign a shirt sponsor, name your ground, line it with hoardings and declare your
+    biggest rival. It all goes on show across the league.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" id="foundBtn">Open the club office</button>
+      <button class="btn ghost small" id="foundLater">Maybe later</button>
+    </div></div>`;
+}
 // default grounds, until the owner sells the naming rights (tap the stadium name on My Team)
 const DEFAULT_STADIA = {
   1: 'The Kennel',                                // The Dog's Polaks
@@ -769,10 +935,17 @@ function adStrip(seed, n = 3, homeMid = null) {
   if (typeof AD_BOARDS === 'undefined' || !AD_BOARDS.length) return '';
   let s = (seed * 2654435761) % 2147483648;
   const boards = [];
-  const own = (typeof MANAGER_BOARDS !== 'undefined' && homeMid != null) ? MANAGER_BOARDS[homeMid] : null;
-  if (own && own.length) {
-    s = (s * 1103515245 + 12345) % 2147483648;
-    boards.push(own[s % own.length]);
+  // a manager who picked their own hoardings in the club office fills the home
+  // strip with them; the group chat's commissioned boards are the fallback
+  const picked = homeMid != null ? (state.managers.find(x => x.id === homeMid)?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean) : [];
+  if (picked.length) {
+    boards.push(...picked.slice(0, n));
+  } else {
+    const own = (typeof MANAGER_BOARDS !== 'undefined' && homeMid != null) ? MANAGER_BOARDS[homeMid] : null;
+    if (own && own.length) {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      boards.push(own[s % own.length]);
+    }
   }
   const pool = AD_BOARDS.map((_, i) => i);
   while (boards.length < n && pool.length) {
@@ -1883,6 +2056,11 @@ function renderIdentity() {
       <h2>Sign in</h2>
       ${linkSentTo
         ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>
+           <p class="muted" style="font-size:12px;margin-bottom:6px">Link opened somewhere else (or you're in the installed app)? Copy it from the email and paste it here:</p>
+           <form id="whoPasteForm" style="display:flex;gap:8px;margin-bottom:10px">
+             <input id="whoPaste" placeholder="Paste the sign-in link" style="flex:1;min-width:0">
+             <button class="btn small" type="submit">Finish sign-in</button>
+           </form>
            <button class="btn ghost small" id="whoResend">Different email</button>`
         : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
            <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
@@ -1930,6 +2108,17 @@ function renderIdentity() {
     window.WCSync.auth.sendLink(email)
       .then(() => { linkSentTo = email; renderIdentity(); })
       .catch(err => toast(err.message || 'Could not send the link — check the address.'));
+  };
+  // installed-app / wrong-browser rescue: the link itself, pasted by hand
+  const pf = ov.querySelector('#whoPasteForm');
+  if (pf) pf.onsubmit = e => {
+    e.preventDefault();
+    const url = ov.querySelector('#whoPaste').value.trim();
+    if (!url) return;
+    if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
+    window.WCSync.auth.completeLink(url)
+      .then(ok => { if (ok) { forceIdentity = false; toast('Signed in. Welcome back.'); } })
+      .catch(err => toast(err.message || 'That link didn’t work — request a fresh one.'));
   };
   ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
     const mid = +b.dataset.who;
@@ -3029,6 +3218,7 @@ function viewTeam() {
     <span class="tag">GW points: <b class="gold">&nbsp;${gwManagerPoints(mid, gw)}</b></span>
     <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
+    <button class="tag" id="clubBtn" style="cursor:pointer" title="Name, kit, sponsor, rival — the club office">${kitSvg(mid, 14)} Club office</button>
   </div>
   <div class="card" style="margin-bottom:18px">
     <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted pitch-hint" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
@@ -3167,6 +3357,8 @@ function bindTeam() {
   const so = $('#showOpp');
   if (so) so.onclick = () => { teamView.showOpp = !teamView.showOpp; render(); };
   // --- stadium naming ---
+  const cb = $('#clubBtn');
+  if (cb) cb.onclick = () => clubEditor(mid);
   const sb2 = $('#stadiumBtn');
   if (sb2) sb2.onclick = () => {
     if (!actGuard(mid, 'stadium')) return;
@@ -3799,7 +3991,11 @@ function bindInstall() {
 }
 
 function viewDash() {
-  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  // a signed-out visitor must never be shown manager #1's world as "yours" —
+  // Toby got a dashboard of Ben's team and reasonably concluded the app
+  // thought he WAS Ben
+  const identified = (whoami && whoami !== -1) || demoMode || !netOn();
+  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : state.managers[0].id;
   const cur = currentGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
@@ -3816,16 +4012,23 @@ function viewDash() {
   const myPos = table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   return `
+  ${foundingCard()}
   <div class="settings-grid">
+    ${!identified ? `
+    <div class="card" style="border-color:var(--accent)">
+      <h2>Who goes there?</h2>
+      <p class="rules-p">You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.</p>
+      <button class="btn" id="dashSignIn">Sign in</button>
+    </div>` : `
     <div class="card">
       <h2>GW${GAMEWEEKS[cur].n} — your matchup</h2>
       ${pair ? `
       <div class="h2h-fx" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
-        <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))}</b></span>
+        <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))} ${kitSvg(pair[0])}</b></span>
         <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
-        <span style="flex:1"><b>${esc(teamName(pair[1]))}</b></span>
+        <span style="flex:1"><b>${kitSvg(pair[1])} ${esc(teamName(pair[1]))}</b></span>
       </div>
-      <div class="venue-line">at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
+      <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
       <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -3840,7 +4043,7 @@ function viewDash() {
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
-    </div>
+    </div>`}
     <div class="card">
       <h2>Around the league</h2>
       ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
@@ -4069,6 +4272,12 @@ function committeeMinutes(last) {
 }
 function bindDash() {
   bindInstall();
+  const fb = $('#foundBtn');
+  if (fb) fb.onclick = () => clubEditor(whoami);
+  const fl = $('#foundLater');
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${whoami}`, '1'); render(); };
+  const ds = $('#dashSignIn');
+  if (ds) ds.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
   const cm = $('#copyMinutes');
   if (cm) cm.onclick = () => {
@@ -4209,7 +4418,7 @@ function showMatchup(a, b, i) {
     .map(p => `<div class="lrow" style="font-size:12px"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="sp-pts ${started && gwPlayerPoints(p.id, i) > 0 ? 'gold' : 'muted'}" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : playerXp(p).toFixed(1)}</span></div>`).join('')}
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
-    <h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
     <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
   </div>`;
@@ -4466,11 +4675,11 @@ function viewH2H() {
         const pb = st === 'upcoming' ? '–' : gwManagerPoints(b, i);
         const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
         return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-          <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} <span class="muted" style="font-size:10px">(H)</span></span>
+          <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)} <span class="muted" style="font-size:10px">(H)</span></span>
           <span class="fx-score">${pa} &ndash; ${pb}</span>
-          <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${esc(teamName(b))}</span>
+          <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
         </div>
-        <div class="venue-line">${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
+        <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
           const w = Math.round(liveWinProb(a, b, i) * 100);
           const ta = teamOutlook(a, i), tb = teamOutlook(b, i);
           return ` &middot; win chance ${w}% – ${100 - w}% &middot; ${ta.toPlay} v ${tb.toPlay} still to play`;
@@ -4670,10 +4879,10 @@ function tableGwCard() {
       const pb = st === 'upcoming' ? '&ndash;' : gwManagerPoints(b, i);
       const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
       return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-        <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))}</span>
+        <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)}</span>
         <span class="fx-score">${pa} &ndash; ${pb}</span>
-        <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${esc(teamName(b))}</span>
-      </div>`;
+        <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
+      </div>${derbyTag(a, b) ? `<div class="venue-line">${derbyTag(a, b)}</div>` : ''}`;
     }).join('')}
     ${st === 'upcoming' ? `<p class="muted" style="font-size:12px;margin-top:8px">Lineups lock ${new Date(gwFrom(i)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</p>` : ''}
   </div>`;
@@ -4699,7 +4908,7 @@ function viewTable() {
       return `
       <div class="league-row ${i === 0 && m.pts > 0 ? 'leader' : ''}" data-mgr-row="${m.id}" style="cursor:pointer">
         <span class="rank">${i + 1}</span>
-        <span class="lname">${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
+        <span class="lname">${kitSvg(m.id)} ${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
         <span class="lpts">${m.pts}</span>
       </div>
       <div class="breakdown" id="bd-${m.id}" style="display:none">
