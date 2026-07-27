@@ -1790,7 +1790,8 @@ const NAV_ICONS = {
   settings: navSvg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
   more: navSvg('<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),
 };
-const SEASON_PRIMARY_NAV = new Set(['dash', 'team', 'transfers', 'table']);
+// the four daily-use tabs, in Ben's order — everything else lives under More
+const SEASON_PRIMARY_NAV = ['team', 'h2h', 'table', 'transfers'];
 const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
 
 let lastRenderedView = null;
@@ -1951,9 +1952,10 @@ function renderNav() {
   }
   const allowed = state.phase === 'draft' ? DRAFT_NAV : new Set(NAV_ITEMS.map(([id]) => id));
   const available = NAV_ITEMS.filter(([id]) => allowed.has(id));
-  const primarySet = state.phase === 'draft' ? new Set(['draft']) : SEASON_PRIMARY_NAV;
-  const primary = available.filter(([id]) => primarySet.has(id));
-  const more = available.filter(([id]) => !primarySet.has(id));
+  const primaryIds = state.phase === 'draft' ? ['draft'] : SEASON_PRIMARY_NAV;
+  // bar order follows primaryIds, not NAV_ITEMS order
+  const primary = primaryIds.map(id => available.find(([k]) => k === id)).filter(Boolean);
+  const more = available.filter(([id]) => !primaryIds.includes(id));
   const button = ([id, label, short]) =>
     `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}"${state.view === id ? ' aria-current="page"' : ''}>${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span>${dots[id] ? `<span class="nav-dot" title="Needs your attention" aria-label="${dots[id]} item${dots[id] === 1 ? '' : 's'} need attention">${dots[id]}</span>` : ''}</button>`;
   const moreActive = more.some(([id]) => id === state.view);
