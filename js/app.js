@@ -2602,7 +2602,8 @@ function viewSetup() {
   if (netOn() && !isCommissioner()) {
     return `<div class="setup-wrap">
       <div class="setup-hero">
-        <h2>&#9917; The League &mdash; 2026/27</h2>
+        <img src="icons/icon-192.png" alt="" style="width:72px;height:72px;border-radius:16px;display:block;margin:0 auto 10px;box-shadow:0 0 24px rgba(233,196,106,.25)">
+        <h2>The League &mdash; 2026/27</h2>
         <p>You're in. The draft hasn't started yet.</p>
       </div>
       <div class="card" style="text-align:center">
@@ -2618,7 +2619,8 @@ function viewSetup() {
   return `
   <div class="setup-wrap">
     <div class="setup-hero">
-      <h2>&#9917; The League &mdash; 2026/27</h2>
+      <img src="icons/icon-192.png" alt="" style="width:72px;height:72px;border-radius:16px;display:block;margin:0 auto 10px;box-shadow:0 0 24px rgba(233,196,106,.25)">
+        <h2>The League &mdash; 2026/27</h2>
       <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
     ${foundingCard()}
