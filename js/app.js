@@ -870,6 +870,32 @@ function derbyTag(a, b) {
   return '';
 }
 
+/* ----- the recruitment department: raw material for "Surprise me" ----- */
+// distinct shirt colours with real coverage of the wheel — pairs are picked
+// with a contrast floor so no one leaves the office in beige-on-beige
+const SURPRISE_KIT_COLOURS = [
+  '#ffffff', '#101010', '#e05555', '#4f8ce8', '#e8b64c', '#2dd4a7', '#9b59d0',
+  '#f08030', '#3fb96d', '#b7e4f7', '#e88aa0', '#0b1a3a', '#5a1414', '#0b3b2e',
+  '#f4f4f4', '#7a4a12',
+];
+// perceived luminance, enough precision for shirt-vs-trim
+function kitLum(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * ch(n >> 16 & 255) + 0.7152 * ch(n >> 8 & 255) + 0.0722 * ch(n & 255);
+}
+function kitContrast(a, b) {
+  const la = kitLum(a), lb = kitLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+// grounds the recruitment department has scouted, for owners who never named one
+const SURPRISE_STADIA = [
+  'The Theatre of Broken Dreams', 'Fortress Allotment', 'The Bovril Bowl',
+  'Three Points Lane', 'The Maracanã of the North', 'The Big Ikea',
+  'Substandard Liège Arena', 'The Crab Bank', 'Pylon View',
+  'The Retractable Roofless', 'Gazebo Park', 'The San Cissé',
+];
+
 /* ----- the club office: name, kit, sponsor — first-login ceremony and
    forever after. Changes go through the server like everything else. ----- */
 function clubEditor(mid) {
@@ -908,6 +934,10 @@ function clubEditor(mid) {
         </select>
         <input id="clubSpOwn" maxlength="20" placeholder="Your sponsor (20 chars)" value="${draft.sponsor && !stock.includes(draft.sponsor) ? esc(draft.sponsor) : ''}" style="width:100%;margin-top:6px;display:${draft.sponsor && !stock.includes(draft.sponsor) ? 'block' : 'none'}" />
       </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn ghost small" id="clubLuck" title="Fill anything you haven't decided — never touches what you have">&#127922; Surprise me</button>
+      <span class="muted" id="luckLine" role="status" aria-live="polite" style="font-size:11px"></span>
     </div>
     <label class="muted" style="font-size:11px">KIT PATTERN</label>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px">
@@ -954,36 +984,94 @@ function clubEditor(mid) {
   const origRemove = ov.remove.bind(ov);
   ov.remove = () => { origRemove(); if (prevFocus && document.contains(prevFocus)) try { prevFocus.focus(); } catch { /* gone */ } };
   ov.querySelector('#clubName').focus();
+  // "Surprise me" session ledger: which fields arrived saved-custom, which the
+  // manager has touched by hand this session. Editor-local only — nothing here
+  // persists or travels; the draft object stays the single source of truth.
+  const savedCustom = {
+    kit: !!m?.kit, sponsor: !!m?.sponsor, boards: savedBoards.length > 0,
+    gaffer: savedGaffer != null, stadium: !!m?.stadium,
+  };
+  const touched = new Set();
+  const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'stadium'].filter(f => !savedCustom[f] && !touched.has(f));
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
-  ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { draft.kit.pattern = b.dataset.pat; paint(); });
-  ov.querySelector('#clubC1').oninput = e => { draft.kit.c1 = e.target.value; paint(); };
-  ov.querySelector('#clubC2').oninput = e => { draft.kit.c2 = e.target.value; paint(); };
+  ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { touched.add('kit'); draft.kit.pattern = b.dataset.pat; paint(); });
+  ov.querySelector('#clubC1').oninput = e => { touched.add('kit'); draft.kit.c1 = e.target.value; paint(); };
+  ov.querySelector('#clubC2').oninput = e => { touched.add('kit'); draft.kit.c2 = e.target.value; paint(); };
   const spSel = ov.querySelector('#clubSpSel'), spOwn = ov.querySelector('#clubSpOwn');
   spSel.onchange = () => {
+    touched.add('sponsor');
     spOwn.style.display = spSel.value === '__own' ? 'block' : 'none';
     draft.sponsor = spSel.value === '__own' ? spOwn.value.trim() : spSel.value;
     paint();
   };
-  spOwn.oninput = () => { draft.sponsor = spOwn.value.trim(); paint(); };
+  spOwn.oninput = () => { touched.add('sponsor'); draft.sponsor = spOwn.value.trim(); paint(); };
   ov.querySelector('#clubRival').onchange = e => { draft.rival = e.target.value ? +e.target.value : null; };
-  ov.querySelector('#clubStadium').oninput = e => { draft.stadium = e.target.value; };
-  ov.querySelectorAll('[data-gaffer]').forEach(b => b.onclick = () => { draft.gaffer = +b.dataset.gaffer; paint(); });
-  ov.querySelector('#gafferNone').onclick = () => { draft.gaffer = null; paint(); toast('The dugout stands empty.'); };
+  ov.querySelector('#clubStadium').oninput = e => { touched.add('stadium'); draft.stadium = e.target.value; };
+  ov.querySelectorAll('[data-gaffer]').forEach(b => b.onclick = () => { touched.add('gaffer'); draft.gaffer = +b.dataset.gaffer; paint(); });
+  ov.querySelector('#gafferNone').onclick = () => { touched.add('gaffer'); draft.gaffer = null; paint(); toast('The dugout stands empty.'); };
   ov.querySelector('#gafferOwn').onclick = () => {
     const t = prompt('Your gaffer (30 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.t : '');
     if (!t || t.trim().length < 2) return;
+    touched.add('gaffer');
     const bio = prompt('One-line bio (60 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.bio || '' : '') || '';
     draft.gaffer = { t: t.trim().slice(0, 30), bio: bio.trim().slice(0, 60) };
     paint();
     toast(`${draft.gaffer.t} — appointed.`);
   };
   ov.querySelectorAll('[data-board]').forEach(b => b.onclick = () => {
+    touched.add('boards');
     const i = +b.dataset.board;
     if (draft.boards.includes(i)) draft.boards = draft.boards.filter(x => x !== i);
     else if (draft.boards.length >= 3) { toast('Three hoardings max — this is a tidy ground'); return; }
     else draft.boards.push(i);
     paint();
   });
+  // the recruitment department: fills only what the manager has neither saved
+  // nor touched this session. Rerolls hit the same set — a manual edit takes a
+  // field off the table for good. Draft-only; Save decides, like everything.
+  ov.querySelector('#clubLuck').onclick = () => {
+    const R = () => (window.__surpriseRand || Math.random)();
+    const pick = arr => arr[Math.floor(R() * arr.length) % arr.length];
+    const fields = luckEligible();
+    const line = ov.querySelector('#luckLine');
+    if (!fields.length) {
+      line.textContent = 'Nothing to improvise — every inch of this club is already yours.';
+      return;
+    }
+    for (const f of fields) {
+      if (f === 'kit') {
+        draft.kit.pattern = pick(KIT_PATTERNS);
+        const c1 = pick(SURPRISE_KIT_COLOURS);
+        // scan from a random offset for a partner with real contrast — the
+        // palette contains white and near-black, so one always exists
+        const start = Math.floor(R() * SURPRISE_KIT_COLOURS.length);
+        let c2 = c1;
+        for (let k = 0; k < SURPRISE_KIT_COLOURS.length; k++) {
+          const cand = SURPRISE_KIT_COLOURS[(start + k) % SURPRISE_KIT_COLOURS.length];
+          if (cand !== c1 && kitContrast(c1, cand) >= 2) { c2 = cand; break; }
+        }
+        draft.kit.c1 = c1; draft.kit.c2 = c2;
+        ov.querySelector('#clubC1').value = c1;
+        ov.querySelector('#clubC2').value = c2;
+      } else if (f === 'sponsor') {
+        draft.sponsor = pick(AD_BOARDS).t;
+        spSel.value = draft.sponsor;
+        spOwn.style.display = 'none';
+      } else if (f === 'boards') {
+        const pool = AD_BOARDS.map((_, i) => i);
+        const n = 1 + Math.floor(R() * 3) % 3;
+        draft.boards = [];
+        for (let k = 0; k < n && pool.length; k++) draft.boards.push(pool.splice(Math.floor(R() * pool.length) % pool.length, 1)[0]);
+      } else if (f === 'gaffer') {
+        draft.gaffer = Math.floor(R() * GAFFERS.length) % GAFFERS.length;
+      } else if (f === 'stadium') {
+        draft.stadium = pick(SURPRISE_STADIA);
+        ov.querySelector('#clubStadium').value = draft.stadium;
+      }
+    }
+    paint();
+    line.textContent = 'The recruitment department has improvised.';
+  };
   // once a save is dispatched it cannot be un-sent — Cancel and the backdrop
   // go dead until the server answers, so a mid-flight dismiss can't pretend
   // the save didn't happen
@@ -1141,15 +1229,9 @@ function supportersMood(mid) {
   return { t: m[1], line: m[2] };
 }
 
-/* ----- My Club: the identity on permanent display, changeable whenever ----- */
-function viewClub() {
-  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
-  if (!mid) {
-    return `<div class="card" style="text-align:center;padding:40px">
-      <h2>Whose club?</h2>
-      <p class="rules-p">Sign in and this page becomes your club — kit, gaffer, ground, rivals, the lot.</p>
-      <button class="btn" id="clubSignIn">Sign in</button></div>`;
-  }
+/* ----- the club profile: one renderer for My Club AND the public directory.
+   editable=true adds the office button — public profiles NEVER get it. ----- */
+function clubProfileHtml(mid, { editable = false } = {}) {
   const m = state.managers.find(x => x.id === mid);
   const g = gafferFor(mid);
   const myRival = rivalOf(mid);
@@ -1159,13 +1241,13 @@ function viewClub() {
   const recRows = clubRecordsHtml(mid);
   return `
   <div class="card" style="text-align:center">
-    <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, 'clubpage')}</div>
+    <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, `clubpage${mid}${editable ? '' : 'p'}`)}</div>
     <h2 style="margin-bottom:2px">${esc(teamName(mid))}</h2>
     <p class="muted" style="font-size:12px">${esc(managerName(mid))} &middot; est. 2015 &middot; ${esc(stadium(mid))}</p>
     ${sponsorFor(mid) ? `<p class="muted" style="font-size:11.5px">Principal partner: <b>${esc(sponsorFor(mid))}</b></p>` : ''}
     <p style="margin-top:10px"><span class="tag" style="font-size:12px">&#128227; Supporters&rsquo; mood: <b>${esc(mood.t)}</b></span></p>
     <p class="muted" style="font-size:11.5px;margin-top:4px">${esc(mood.line)}</p>
-    <button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>
+    ${editable ? '<button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>' : ''}
   </div>
   <div class="card" style="margin-top:14px">
     <h2>Club records <span class="muted" style="font-weight:400;font-size:12px">what the ultras chant</span></h2>
@@ -1186,11 +1268,84 @@ function viewClub() {
   </div>
   ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
 }
+
+/* ----- My Club: the identity on permanent display, changeable whenever ----- */
+function viewClub() {
+  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
+  if (!mid) {
+    return `<div class="card" style="text-align:center;padding:40px">
+      <h2>Whose club?</h2>
+      <p class="rules-p">Sign in and this page becomes your club — kit, gaffer, ground, rivals, the lot.</p>
+      <button class="btn" id="clubSignIn">Sign in</button></div>`;
+  }
+  return clubProfileHtml(mid, { editable: true });
+}
 function bindClub() {
   const ce = $('#clubEdit');
   if (ce) ce.onclick = () => clubEditor((whoami && whoami !== -1) ? whoami : state.managers[0].id);
   const cs = $('#clubSignIn');
   if (cs) cs.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
+}
+
+/* ----- the club directory: all twelve clubs on public display ----- */
+// whose club page would this device see as "mine" — the one profile allowed
+// an office button. Public profiles never get one.
+function ownClubMid() { return (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null); }
+function directoryOrder() {
+  // constitutional order until a result exists; league position after — with
+  // the constitution as the stable tiebreak (h2hStandings keys rows by id, so
+  // equal records fall back to manager order by construction)
+  const rows = h2hStandings(false);
+  return rows.some(r => r.p > 0) ? rows.map(r => r.id) : state.managers.map(m => m.id);
+}
+function viewDirectory() {
+  const cards = directoryOrder().map(mid => {
+    const m = state.managers.find(x => x.id === mid);
+    const mood = supportersMood(mid);
+    const myRival = rivalOf(mid);
+    const opened = !!m?.kit; // server-backed: clubSet always saves a kit
+    return `<button type="button" class="dir-card" data-dirmid="${mid}" aria-label="${esc(teamName(mid))} — club profile">
+      <div class="dir-kit">${kitSvg(mid, 44, true)}</div>
+      <div class="dir-body">
+        <b class="dir-team">${esc(teamName(mid))}</b>
+        <span class="muted dir-line">${esc(managerName(mid))} &middot; ${esc(stadium(mid))}</span>
+        ${sponsorFor(mid) ? `<span class="muted dir-line">Principal partner: ${esc(sponsorFor(mid))}</span>` : ''}
+        ${gafferFor(mid) ? `<span class="dir-line">${gafferChip(mid)}</span>` : ''}
+        <span class="dir-line"><span class="tag" style="font-size:10.5px">&#128227; ${esc(mood.t)}</span></span>
+        ${myRival ? `<span class="dir-line" style="font-size:11px">Rival: ${teamTag(myRival)} ${derbyTag(mid, myRival)}</span>` : ''}
+        ${opened ? '' : '<span class="muted dir-line" style="font-style:italic">Office unopened</span>'}
+      </div>
+    </button>`;
+  });
+  return `<div class="card">
+    <h2>The club directory <span class="muted" style="font-weight:400;font-size:12px">every club, on the record</span></h2>
+    <div class="dir-grid">${cards.join('')}</div>
+  </div>`;
+}
+function bindDirectory() {
+  document.querySelectorAll('[data-dirmid]').forEach(b => b.onclick = () => showClubProfile(+b.dataset.dirmid));
+}
+// the read-only profile pop-over: same renderer as My Club, office button only
+// on your own club. Back (or ✕) returns to the directory where you left it.
+function showClubProfile(mid) {
+  $('#clubProfileOverlay')?.remove();
+  const editable = ownClubMid() === mid;
+  const ov = document.createElement('div');
+  ov.id = 'clubProfileOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card club-profile-ov" role="dialog" aria-modal="true" aria-label="${esc(teamName(mid))} — club profile">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:-6px"><button class="btn ghost small" id="profClose" aria-label="Close profile">&#10005;</button></div>
+    ${clubProfileHtml(mid, { editable })}
+  </div>`;
+  ov.onclick = e => { if (e.target === ov || e.target.id === 'profClose') closeOv(ov); };
+  document.body.appendChild(ov);
+  pushOvState();
+  const prevFocus = document.activeElement;
+  const origRemove = ov.remove.bind(ov);
+  ov.remove = () => { origRemove(); if (prevFocus && document.contains(prevFocus)) try { prevFocus.focus(); } catch { /* gone */ } };
+  ov.querySelector('#profClose').focus();
+  const ce = ov.querySelector('#clubEdit');
+  if (ce) ce.onclick = () => { closeOv(ov); clubEditor(mid); };
 }
 // default grounds, until the owner sells the naming rights (tap the stadium name on My Team)
 const DEFAULT_STADIA = {
@@ -2250,6 +2405,7 @@ const NAV_ITEMS = [
   ['draft', 'The Console', 'Console'],
   ['team', 'My Team', 'My Team'],
   ['club', 'My Club', 'Club'],
+  ['directory', 'Club directory', 'Clubs'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Head-to-Head', 'H2H'],
   ['cup', 'The Monzo Cup', 'Cup'],
@@ -2265,6 +2421,7 @@ const NAV_ICONS = {
   draft: navSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>'),
   team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
   club: navSvg('<path d="M12 3 5 5.5v6c0 4.5 3 7.5 7 9.5 4-2 7-5 7-9.5v-6Z"/><path d="M12 8v5M9.5 10.5h5"/>'),
+  directory: navSvg('<rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
@@ -2311,6 +2468,7 @@ function render() {
     case 'draft': main.innerHTML = viewDraft(); bindDraft(); break;
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
     case 'club': main.innerHTML = viewClub(); bindClub(); break;
+    case 'directory': main.innerHTML = viewDirectory(); bindDirectory(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
     case 'dash': main.innerHTML = viewDash(); bindDash(); break;
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
@@ -2528,8 +2686,11 @@ function renderSyncArea() {
     // Home: the Dashboard in season, the waiting room pre-draft
     bits.push(`<button id="homeBtn" class="btn small" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
   }
+  bits.push(`<button class="tag" id="gSearchBtn" style="cursor:pointer" aria-label="Search players" title="Search every player (Ctrl+K or /)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-1px"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>`);
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
+  const gsb = $('#gSearchBtn');
+  if (gsb) gsb.onclick = () => openPlayerSearch();
   const mb = $('#muteBtn');
   if (mb) mb.onclick = () => {
     localStorage.setItem('tl2627-mute', soundOn() ? '1' : '0');
@@ -5786,13 +5947,16 @@ function showPlayerCard(pid) {
   ov.onclick = e => { if (e.target === ov || e.target.id === 'pcardClose') closeOv(ov); };
   document.body.appendChild(ov);
   pushOvState(); // phone back button closes the card, not the site
+  recordRecentPcard(pid); // feeds the search palette's "recently viewed"
   // context actions — the card is a place to DO things, not just read them
   const acts = ov.querySelector('#pcardActions');
   const btn = (label, fn, ghost = false) => {
     const b = document.createElement('button');
     b.className = `btn small${ghost ? ' ghost' : ''}`;
     b.innerHTML = label;
-    b.onclick = e => { e.stopPropagation(); fn(); };
+    // a card action that navigates must also clear the search palette the card
+    // may be stacked on — otherwise it floats over the destination view
+    b.onclick = e => { e.stopPropagation(); document.getElementById('searchOverlay')?.remove(); fn(); };
     acts.appendChild(b);
   };
   const iAmManager = whoami && whoami !== -1;
@@ -5865,12 +6029,180 @@ function showPlayerCard(pid) {
 document.addEventListener('click', e => {
   const t = e.target.closest?.('[data-pcard]');
   if (!t) return;
+  // search-result action buttons sit inside a data-pcard row — their click is
+  // a navigation, not a card-open; let the palette's own handler take it
+  if (e.target.closest?.('[data-gsact]')) return;
   // mid-swap on your own pitch: the tap completes the swap instead of opening the card
   if (state.view === 'team' && teamView.pitchSel != null && e.target.closest?.('[data-pitch]')) return;
   e.preventDefault();
   e.stopPropagation();
   showPlayerCard(+t.dataset.pcard);
 }, true);
+
+/* ---------------- global player search ----------------
+   One box, every player, from anywhere: header 🔍, Cmd/Ctrl+K, or "/".
+   Read-only by design — it deep-links into the views where things happen;
+   nothing here signs, claims or trades anyone. */
+const RECENT_PCARD_KEY = `${LS_NS}-recent-pcards`;
+function recentPcards() {
+  try { return (JSON.parse(localStorage.getItem(RECENT_PCARD_KEY)) || []).filter(id => PLAYER_BY_ID[id]); } catch { return []; }
+}
+function recordRecentPcard(pid) {
+  try {
+    localStorage.setItem(RECENT_PCARD_KEY, JSON.stringify([pid, ...recentPcards().filter(x => x !== pid)].slice(0, 8)));
+  } catch { /* storage full — the search just gets less nostalgic */ }
+}
+let _gsIndex = null;
+function gsIndex() {
+  if (!_gsIndex) _gsIndex = PLAYERS.map(p => ({
+    p,
+    name: normName(p.name),
+    full: normName(p.full || ''),
+    hay: [p.name, p.full || '', p.club, p.team, TEAM_BY_NAME[p.team]?.short || '', p.pos, natOf(p)?.[0] || ''].map(normName).join(' '),
+  }));
+  return _gsIndex;
+}
+// exact name first, then name-prefix, then anything that mentions every word
+function gsMatches(query) {
+  const q = normName(query);
+  if (!q) return [];
+  const toks = q.split(' ');
+  const ranked = [];
+  for (const e of gsIndex()) {
+    const rank = (e.name === q || e.full === q) ? 0
+      : (e.name.startsWith(q) || e.full.startsWith(q)) ? 1
+      : toks.every(t => e.hay.includes(t)) ? 2 : -1;
+    if (rank >= 0) ranked.push({ e, rank });
+  }
+  return ranked
+    .sort((a, b) => a.rank - b.rank || metricsFor(b.e.p).pts - metricsFor(a.e.p).pts)
+    .slice(0, 12).map(r => r.e.p);
+}
+function gsRowsHtml(players, ownerOf) {
+  const cur = currentGwIndex();
+  const iAm = whoami && whoami !== -1;
+  return players.map(p => {
+    const ownerMid = ownerOf[p.id];
+    const ownLabel = ownerMid
+      ? `Owned by <b>${esc(teamName(ownerMid))}</b>`
+      : isArrival(p) ? '<span class="muted">&#128274; new arrival — locked until the Window Draft</span>'
+      : state.phase === 'season' && onWaivers(p) ? '<span class="muted">on waivers</span>'
+      : '<span class="muted">free agent</span>';
+    const act = ownerMid && iAm && ownerMid === whoami
+      ? `<button class="btn small ghost" data-gsact="team" data-gsp="${p.id}">View in My Team</button>`
+      : ownerMid
+        ? `<button class="btn small ghost" data-gsact="owner" data-gsp="${p.id}" data-gsmid="${ownerMid}">View owner</button>${state.phase === 'season' && iAm ? `<button class="btn small ghost" data-gsact="trade" data-gsp="${p.id}" data-gsmid="${ownerMid}">Trade desk</button>` : ''}`
+        : state.phase === 'season' ? `<button class="btn small ghost" data-gsact="trough" data-gsp="${p.id}">Open in Transfers</button>` : '';
+    return `<div class="gs-row" data-pcard="${p.id}" role="button" tabindex="0">
+      ${photoImg(p)}
+      <div class="gs-main">
+        <span class="gs-name">${esc(p.name)} ${natFlag(p)} ${statusChip(p)}</span>
+        <span class="gs-sub muted">${esc(p.club)} &middot; <span class="pos-badge pos-${p.pos}">${p.pos}</span></span>
+        <span class="gs-sub">${ownLabel}</span>
+      </div>
+      <div class="gs-stats">
+        <span><b class="gold">${metricsFor(p).pts}</b> <span class="muted">pts</span></span>
+        <span class="muted" title="FPL expected points, next gameweek">x${playerXp(p).toFixed(1)}</span>
+        <span>${nextOppHtml(p.team, GAMEWEEKS[cur]?.n)}</span>
+      </div>
+      ${act ? `<div class="gs-act">${act}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+function openPlayerSearch() {
+  if (document.getElementById('searchOverlay')) return;
+  const ov = document.createElement('div');
+  ov.id = 'searchOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card search-pal" role="dialog" aria-modal="true" aria-label="Player search">
+    <div class="gs-head">
+      <input type="text" id="gsq" placeholder="Search ${PLAYERS.length} players — name, club, position…" aria-label="Search players" autocomplete="off">
+      <button class="btn ghost small" id="gsClear" aria-label="Clear search">Clear</button>
+      <button class="btn ghost small" id="gsClose" aria-label="Close search">&#10005;</button>
+    </div>
+    <div id="gsResults"></div>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const prevFocus = document.activeElement;
+  const origRemove = ov.remove.bind(ov);
+  ov.remove = () => { origRemove(); if (prevFocus && document.contains(prevFocus)) try { prevFocus.focus(); } catch { /* gone */ } };
+  const q = ov.querySelector('#gsq'), results = ov.querySelector('#gsResults');
+  const ownerOf = {};
+  for (const mg of state.managers) for (const sp of managerSquad(mg.id)) ownerOf[sp.id] = mg.id;
+  const paint = () => {
+    const query = q.value.trim();
+    if (!query) {
+      const recents = recentPcards();
+      results.innerHTML = recents.length
+        ? `<p class="gs-hint muted">Recently viewed</p>${gsRowsHtml(recents.map(id => PLAYER_BY_ID[id]), ownerOf)}`
+        : '<p class="gs-hint muted">Type a player, club or position — accents and dots optional. The whole league is in here.</p>';
+      return;
+    }
+    const hits = gsMatches(query);
+    results.innerHTML = hits.length
+      ? gsRowsHtml(hits, ownerOf)
+      : '<p class="gs-hint muted">No one matches. Try a surname, a club, or a position (GK/DF/MF/FW).</p>';
+  };
+  q.oninput = paint;
+  paint();
+  q.focus();
+  ov.querySelector('#gsClear').onclick = () => { q.value = ''; paint(); q.focus(); };
+  ov.querySelector('#gsClose').onclick = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  // context actions deep-link and get out of the way — actual signings,
+  // claims and trades stay behind their own confirms in their own views
+  results.addEventListener('click', e => {
+    const b = e.target.closest('[data-gsact]');
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pid = +b.dataset.gsp;
+    const goto = (view, fn) => { closeOv(ov); fn?.(); state.view = view; save(); render(); };
+    if (b.dataset.gsact === 'team') goto('team', () => { teamView.mid = whoami; });
+    else if (b.dataset.gsact === 'owner') goto('team', () => { teamView.mid = +b.dataset.gsmid; });
+    else if (b.dataset.gsact === 'trough') goto('transfers', () => { window._troughFocus = PLAYER_BY_ID[pid].name; transfersView.tab = 'trough'; });
+    else if (b.dataset.gsact === 'trade') goto('transfers', () => { window._tradeFocus = { other: +b.dataset.gsmid, get: pid }; transfersView.tab = 'trades'; });
+  }, true);
+  // rows are keyboard-real: Enter/Space opens the card like a tap would
+  results.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.gs-row');
+    if (row) { e.preventDefault(); showPlayerCard(+row.dataset.pcard); }
+  });
+  // focus stays inside the palette while it's the top layer
+  ov.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || document.getElementById('pcardOverlay')) return;
+    const focusables = [...ov.querySelectorAll('input, button, [tabindex="0"]')].filter(el => el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0], last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+}
+// the shortcuts: Cmd/Ctrl+K toggles, "/" opens (never from inside a field),
+// Escape peels the top layer — card first, then the palette
+document.addEventListener('keydown', e => {
+  if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    const ov = document.getElementById('searchOverlay');
+    ov ? closeOv(ov) : openPlayerSearch();
+    return;
+  }
+  const t = e.target;
+  const inField = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+  if (e.key === '/' && !inField && !document.getElementById('searchOverlay')) {
+    e.preventDefault();
+    openPlayerSearch();
+    return;
+  }
+  if (e.key === 'Escape') {
+    const ov = document.getElementById('searchOverlay');
+    if (!ov) return;
+    e.preventDefault();
+    closeOv(document.getElementById('pcardOverlay') || ov);
+  }
+});
 
 /* ---------------- boot ---------------- */
 // keep the commissioner's screen awake through the draft so the deadline

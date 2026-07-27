@@ -249,7 +249,9 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .fx .fx-time { font-size: 11px; color: var(--muted); white-space: nowrap; }
 
 /* ---------- settings ---------- */
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; align-items: start; }
+/* min(320px, 100%): a 320px phone (272px content box) must collapse the column, not overflow it */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 18px; align-items: start; }
+.settings-grid > * { min-width: 0; }
 .score-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13.5px; border-bottom: 1px solid rgba(38,50,80,.4); }
 .score-row input { width: 70px; text-align: right; }
 .unmatched-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 13px; flex-wrap: wrap; }
@@ -687,3 +689,43 @@ tr.st-red .pname { color: #ff9c9c; }
 }
 .pitch-info:hover { color: var(--text); background: rgba(255,255,255,.08); }
 .pitch-chip.sel { border-color: var(--accent); background: rgba(45,212,167,.12); }
+
+/* ----- club directory ----- */
+.dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 8px; }
+.dir-card {
+  display: flex; gap: 10px; align-items: flex-start; text-align: left;
+  padding: 12px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card2); color: var(--text); cursor: pointer; font: inherit;
+  min-width: 0;
+}
+.dir-card:hover { border-color: var(--accent); }
+.dir-kit { flex-shrink: 0; }
+.dir-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dir-team { font-size: 13.5px; }
+.dir-line { font-size: 11px; overflow-wrap: anywhere; }
+.club-profile-ov { max-width: 560px; width: 94%; max-height: 92vh; overflow-y: auto; }
+@media (max-width: 480px) { .dir-grid { grid-template-columns: 1fr; } }
+
+/* ----- global player search ----- */
+.search-pal { max-width: 520px; width: 94%; max-height: 86vh; display: flex; flex-direction: column; }
+.gs-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.gs-head input { flex: 1; min-width: 0; font-size: 15px; }
+#gsResults { overflow-y: auto; min-height: 120px; }
+.gs-row {
+  display: flex; gap: 10px; align-items: center; width: 100%; text-align: left;
+  padding: 8px 6px; border: none; border-bottom: 1px solid rgba(38,50,80,.4);
+  background: none; color: var(--text); cursor: pointer; font: inherit; min-width: 0;
+}
+.gs-row:hover, .gs-row:focus-visible { background: rgba(255,255,255,.05); }
+.gs-row .headshot { width: 34px; height: 44px; flex-shrink: 0; object-fit: cover; }
+.gs-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.gs-name { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-sub { font-size: 11px; }
+.gs-stats { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; flex-shrink: 0; font-size: 11px; }
+.gs-act { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+.gs-act .btn.small { font-size: 10.5px; padding: 5px 8px; }
+.gs-hint { font-size: 12px; padding: 14px 4px; }
+@media (max-width: 480px) {
+  .gs-row { flex-wrap: wrap; }
+  .gs-act { flex-direction: row; width: 100%; }
+}
