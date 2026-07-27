@@ -77,3 +77,8 @@ GO or NO-GO.
   now the FIRST card; breakdown rows are hidden <tr>s toggled by row tap;
   fixtures + investigation moved below. sim's kit check re-pinned to the new
   selector — audit that re-pin for honesty.
+- **The Opta bar** (Conway via Lee): winProbBar() — liveWinProb + teamOutlook
+  rendered as a win-chance bar with projected points, on the dashboard
+  matchup, the matchup modal and the Show Opponent view. Hidden at full time.
+  Check: division/NaN edge when a side has an empty XI; playoff/cup GWs with
+  no pairing; the 1–99% clamp still holds on the rendered numbers.

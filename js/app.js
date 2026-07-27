@@ -766,6 +766,22 @@ function liveWinProb(a, b, i) {
   if (A.toPlay + B.toPlay > 0) p = Math.min(0.99, Math.max(0.01, p));
   return p;
 }
+/* the Opta bar (Conway's ask, Lee-approved): live win chance + projected
+   points for a matchup, recomputed every render as minutes tick down — you
+   can go into Sunday 20:80 down and watch it swing. Hidden at full time;
+   pre-kickoff it's the pure squad-vs-squad projection. */
+function winProbBar(a, b, i) {
+  if (gwStatus(i) === 'final') return '';
+  const w = Math.round(liveWinProb(a, b, i) * 100);
+  const A = teamOutlook(a, i), B = teamOutlook(b, i);
+  const live = gwHasStarted(i);
+  return `<div class="prob-wrap" title="Win chance from each XI's expected points, ${live ? 'updating as the gameweek plays out' : 'squad vs squad before kickoff'}">
+    <div class="prob-row"><span><b>${w}%</b> ${kitSvg(a)}</span><span class="prob-mid">${live ? '<span class="rec"></span> LIVE WIN CHANCE' : 'WIN CHANCE'}</span><span>${kitSvg(b)} <b>${100 - w}%</b></span></div>
+    <div class="prob-bar"><span style="width:${w}%"></span></div>
+    <div class="prob-row prob-sub"><span>proj ${Math.round(A.exp)}</span><span class="prob-mid">${live ? `${A.toPlay} v ${B.toPlay} still to play` : 'projected points'}</span><span>proj ${Math.round(B.exp)}</span></div>
+  </div>`;
+}
+
 // injury/availability chip from the FPL status flag
 const STATUS_ICON = { d: '⚠️', i: '🏥', s: '🟥', u: '🚫', n: '🚫' };
 const statusChip = p => STATUS_ICON[p.status]
@@ -3451,7 +3467,7 @@ function viewTeam() {
       if (!pair) return '';
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
-      return `<div class="duel-grid"><div class="duel-side">
+      return `${winProbBar(pair[0], pair[1], gw)}<div class="duel-grid"><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
@@ -4266,7 +4282,8 @@ function viewDash() {
         <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
         <span style="flex:1"><b>${kitSvg(pair[1])} ${esc(teamName(pair[1]))}</b></span>
       </div>
-      <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
+      <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
+      ${winProbBar(pair[0], pair[1], cur)}
       <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -4669,9 +4686,10 @@ function showMatchup(a, b, i) {
         <button class="btn small ${muView === 'pitch' ? '' : 'ghost'}" id="muPitch">Pitch</button>
         <button class="btn small ${muView === 'table' ? '' : 'ghost'}" id="muTable">Table</button>
       </div>
-      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; Att ${attendance(a, b, i).toLocaleString()} &middot; ${gwStatus(i) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; ${Math.round(liveWinProb(a, b, i) * 100)}% – ${100 - Math.round(liveWinProb(a, b, i) * 100)}%`}</p>
+      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; Att ${attendance(a, b, i).toLocaleString()}${gwStatus(i) === 'final' ? ' &middot; full time' : ''}</p>
       <button class="btn ghost small" id="muClose">&#10005;</button>
     </div>
+    ${winProbBar(a, b, i)}
     ${adStrip(a * 1009 + b * 31 + i, 4, a)}
     <div class="mu-grid">${side(a)}${side(b)}</div>
     <p class="venue-line" style="margin-top:8px">${esc(chantFor(a, b, i))}</p>

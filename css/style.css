@@ -605,6 +605,16 @@ tr.st-red .pname { color: #ff9c9c; }
   .pitch:not(.mu-pitch) { min-height: 580px; }
 }
 
+/* the Opta bar: live win chance, swinging as the gameweek plays out */
+.prob-wrap { margin: 10px auto; max-width: 560px; }
+.prob-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; }
+.prob-mid { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: var(--muted); }
+.prob-mid .rec { display: inline-block; }
+.prob-sub { font-size: 11px; color: var(--muted); }
+.prob-sub .prob-mid { font-weight: 400; letter-spacing: 0; text-transform: none; }
+.prob-bar { height: 9px; border-radius: 5px; background: #5a2530; overflow: hidden; margin: 5px 0 3px; border: 1px solid rgba(255,255,255,.08); }
+.prob-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); transition: width .8s ease; }
+
 /* Show Opponent: two pitches side by side at the SAME scale (Lee) —
    stacks on narrow screens, never a mini pitch in a corner */
 .duel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
