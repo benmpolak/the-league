@@ -76,6 +76,8 @@ def main():
             'cs': e.get('clean_sheets') or 0,
             'xg': float(e.get('expected_goals') or 0),
             'xa': float(e.get('expected_assists') or 0),
+            # PL country id — the app maps it to a flag (academy kids ship null)
+            'nat': e.get('region'),
         })
 
     events = boot['events']
