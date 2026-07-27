@@ -650,13 +650,25 @@ const flagImg = (team, big = false) => {
 };
 // official PL headshot, falling back to the league's own "Photo Missing" card.
 // data-pcard makes every photo a button that opens the player's stats card.
+/* Player photos, a two-library story (Lee was right, the PL went deeper):
+ * the CURRENT headshots live in the premierleague25 library (no 'p' prefix,
+ * Xhaka in Sunderland red since Aug 2025) but it doesn't cover everyone, so
+ * misses fall back to the legacy library (p-prefixed, some photos years
+ * old), and only then to the silhouette. */
+const PHOTO_NEW = code => `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`;
+const PHOTO_OLD = code => `https://resources.premierleague.com/premierleague/photos/players/110x140/p${code}.png`;
 const PHOTO_MISSING = 'https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png';
-const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
-// the CSP kills inline onerror= handlers, so broken photos fall back centrally
+const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" data-code="${p.code}" src="${PHOTO_NEW(p.code)}" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+// the CSP kills inline onerror= handlers, so broken photos fall back centrally:
+// new library → legacy library → silhouette
 document.addEventListener('error', e => {
   const img = e.target;
-  if (img && img.tagName === 'IMG' && !img.dataset.fbk && (img.classList.contains('headshot') || img.classList.contains('pcard-photo'))) {
+  if (!img || img.tagName !== 'IMG' || !(img.classList.contains('headshot') || img.classList.contains('pcard-photo'))) return;
+  if (!img.dataset.fbk && img.dataset.code) {
     img.dataset.fbk = '1';
+    img.src = PHOTO_OLD(img.dataset.code);
+  } else if (img.dataset.fbk !== '2') {
+    img.dataset.fbk = '2';
     img.src = PHOTO_MISSING;
   }
 }, true);
@@ -1026,6 +1038,109 @@ function foundingCard() {
     </div></div>`;
 }
 
+/* ----- club records: the numbers the fans actually chant about ----- */
+function clubRecords(mid) {
+  const cur = currentGwIndex();
+  const myPicks = state.draft.picks.filter(pk => pk.managerId === mid);
+  const everIds = new Set(myPicks.map(pk => pk.playerId));
+  for (const t of state.transfers) if (t.managerId === mid) everIds.add(t.inId);
+  let scorer = null;
+  for (const pid of everIds) {
+    const c = contributedPoints(mid, pid);
+    if (c > 0 && (!scorer || c > scorer.c)) scorer = { p: PLAYER_BY_ID[pid], c };
+  }
+  // longest-serving: current squad member with the earliest arrival —
+  // draft-night originals outrank any signing
+  const draftees = new Set(myPicks.map(pk => pk.playerId));
+  const arrivals = {};
+  for (const t of state.transfers) if (t.managerId === mid) arrivals[t.inId] = t.gw ?? 0;
+  let served = null;
+  for (const p of managerSquad(mid)) {
+    const original = draftees.has(p.id) && arrivals[p.id] === undefined;
+    const gwIn = original ? -1 : (arrivals[p.id] ?? -1);
+    if (!served || gwIn < served.gwIn) served = { p, gwIn, original };
+  }
+  let bestPick = null;
+  for (const pk of myPicks) {
+    const c = contributedPoints(mid, pk.playerId);
+    if (c > 0 && (!bestPick || c > bestPick.c)) bestPick = { p: PLAYER_BY_ID[pk.playerId], c, n: pk.n };
+  }
+  // worst transfer: signed, given time, delivered the least
+  let worst = null;
+  for (const t of state.transfers) {
+    if (t.managerId !== mid || t.trade) continue;
+    if ((t.gw ?? 0) >= cur) continue; // hasn't had a chance yet
+    const p = PLAYER_BY_ID[t.inId];
+    if (!p) continue;
+    const c = contributedPoints(mid, t.inId);
+    if (!worst || c < worst.c) worst = { p, c, gw: t.gw };
+  }
+  let win = null, high = null;
+  for (let i = 0; i < REGULAR_GWS; i++) {
+    if (gwStatus(i) !== 'final') continue;
+    const mine = gwManagerPoints(mid, i);
+    if (!high || mine > high.pts) high = { pts: mine, gw: i };
+    const pr = pairingsFor(i).find(x => x.includes(mid));
+    if (pr) {
+      const opp = pr[0] === mid ? pr[1] : pr[0];
+      const theirs = gwManagerPoints(opp, i);
+      if (mine > theirs && (!win || mine - theirs > win.margin)) win = { margin: mine - theirs, opp, gw: i, mine, theirs };
+    }
+  }
+  return { scorer, served, bestPick, worst, win, high };
+}
+
+// the records as one-line rows — My Club card and the table's tap-a-club
+// breakdown share this, so the public view costs no extra page furniture
+function clubRecordsHtml(mid) {
+  const rec = clubRecords(mid);
+  const gwN = i => GAMEWEEKS[i]?.n ?? '?';
+  const recRow = (label, val, sub) => `<div class="lrow" style="font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap"><span class="muted">${label}</span><span style="margin-left:auto;text-align:right"><b>${val}</b>${sub ? ` <span class="muted" style="font-size:11px">${sub}</span>` : ''}</span></div>`;
+  return [
+    rec.scorer ? recRow('Record points scorer', `${esc(rec.scorer.p.name)}`, `${rec.scorer.c} pts`) : '',
+    rec.served ? recRow('Longest-serving player', esc(rec.served.p.name), rec.served.original ? 'ever-present since draft night' : `signed GW${gwN(rec.served.gwIn)}`) : '',
+    rec.bestPick ? recRow('Best draft pick', esc(rec.bestPick.p.name), `pick #${rec.bestPick.n} · ${rec.bestPick.c} pts`) : '',
+    rec.worst ? recRow('Worst transfer', esc(rec.worst.p.name), `${rec.worst.c} pt${rec.worst.c === 1 ? '' : 's'} since GW${gwN(rec.worst.gw)}`) : '',
+    rec.win ? recRow('Biggest win', `${rec.win.mine}&ndash;${rec.win.theirs} v ${esc(teamName(rec.win.opp))}`, `GW${gwN(rec.win.gw)}`) : '',
+    rec.high ? recRow('Highest GW score', `${rec.high.pts} pts`, `GW${gwN(rec.high.gw)}`) : '',
+  ].filter(Boolean);
+}
+
+/* ----- supporters' mood: results-driven, board-approved, entirely unfair -----
+   Last three results + league position → one of six moods. Pre-season is
+   its own mood: everyone is unbeaten in August. */
+function supportersMood(mid) {
+  const finals = [];
+  for (let i = 0; i < REGULAR_GWS; i++) {
+    if (gwStatus(i) !== 'final') continue;
+    const pr = pairingsFor(i).find(x => x.includes(mid));
+    if (!pr) continue;
+    const opp = pr[0] === mid ? pr[1] : pr[0];
+    const mine = gwManagerPoints(mid, i), theirs = gwManagerPoints(opp, i);
+    finals.push(mine > theirs ? 3 : mine === theirs ? 1 : 0);
+  }
+  const g = gafferFor(mid);
+  const gaffer = g ? g.t : 'the gaffer';
+  if (!finals.length) return { t: 'Pre-season optimism', line: 'Everyone is unbeaten in August. Scarves selling briskly.' };
+  // averaged over the games actually played, then scaled to a 3-game window —
+  // a club that has won its only match is in dreamland, not the concourse
+  const last3 = finals.slice(-3);
+  const form = Math.round(last3.reduce((a, b) => a + b, 0) / last3.length * 3); // 0–9
+  const pos = h2hStandings(false).findIndex(r => r.id === mid) + 1;
+  const n = state.managers.length;
+  const score = form + (pos <= 2 ? 3 : pos <= 4 ? 2 : pos <= 8 ? 1 : pos >= n - 1 ? -2 : 0);
+  const MOODS = [
+    [11, 'DREAMLAND', `Songs about ${gaffer} to the tune of Sloop John B. Open-top bus routes being sketched.`],
+    [8, 'Cautious optimism', 'Programmes selling well. Nobody wants to say it out loud.'],
+    [6, 'Quietly concerned', 'Polite applause at full time. The fanzine ran a worried editorial.'],
+    [4, 'Grumbling in the concourse', 'The pies are getting blamed for things pies cannot control.'],
+    [2, 'Board meeting scheduled', `${gaffer} retains the board's full confidence, which historically means nothing.`],
+    [-99, 'PROTEST MARCH PLANNED', 'A plane banner is being costed. The Committee has been made aware.'],
+  ];
+  const m = MOODS.find(([min]) => score >= min);
+  return { t: m[1], line: m[2] };
+}
+
 /* ----- My Club: the identity on permanent display, changeable whenever ----- */
 function viewClub() {
   const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
@@ -1040,13 +1155,21 @@ function viewClub() {
   const myRival = rivalOf(mid);
   const enemies = state.managers.filter(x => x.rival === mid && x.id !== mid);
   const boards = (m?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean);
+  const mood = supportersMood(mid);
+  const recRows = clubRecordsHtml(mid);
   return `
   <div class="card" style="text-align:center">
     <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, 'clubpage')}</div>
     <h2 style="margin-bottom:2px">${esc(teamName(mid))}</h2>
     <p class="muted" style="font-size:12px">${esc(managerName(mid))} &middot; est. 2015 &middot; ${esc(stadium(mid))}</p>
     ${sponsorFor(mid) ? `<p class="muted" style="font-size:11.5px">Principal partner: <b>${esc(sponsorFor(mid))}</b></p>` : ''}
+    <p style="margin-top:10px"><span class="tag" style="font-size:12px">&#128227; Supporters&rsquo; mood: <b>${esc(mood.t)}</b></span></p>
+    <p class="muted" style="font-size:11.5px;margin-top:4px">${esc(mood.line)}</p>
     <button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>Club records <span class="muted" style="font-weight:400;font-size:12px">what the ultras chant</span></h2>
+    ${recRows.length ? recRows.join('') : '<p class="muted" style="font-size:12.5px">The record books open at GW1. Every one of these is currently yours for the taking.</p>'}
   </div>
   <div class="card" style="margin-top:14px">
     <h2>The dugout</h2>
@@ -5182,6 +5305,8 @@ function viewTable() {
             <td class="num gold act"><b>${m.pts}</b></td>
           </tr>
           <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="4">
+            ${(() => { const md = supportersMood(m.id); return `<p style="font-size:12.5px;margin-bottom:2px">&#128227; <b>${esc(md.t)}</b> <span class="muted" style="font-size:11.5px">${esc(md.line)}</span></p>`; })()}
+            ${(() => { const rr = clubRecordsHtml(m.id); return rr.length ? `<div style="margin-bottom:8px">${rr.join('')}</div>` : ''; })()}
             ${managerSquad(m.id).map(p => ({ p, c: contributedPoints(m.id, p.id), r: playerPoints(p.id) }))
               .sort((a, b) => b.c - a.c)
               .map(({ p, c, r }) => `<div class="squad-row" title="Season: ${esc(r.lines.join(' · ') || 'nothing yet')}"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${esc(p.name)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(r.lines.join(' · '))}</span><span class="sp-pts">${c}</span></div>`).join('') || '<span class="muted">Empty squad</span>'}
