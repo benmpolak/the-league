@@ -41,9 +41,10 @@ const MODES = {
     rules: 'database.rules.staging.json',
     only: 'database',
     confirm: 'STAGE',
-    warning: 'PRE-CUTOVER staging: legacy rules stay exactly as they are (nothing freezes,\n'
-      + 'old client unaffected) and the v2 subtree becomes readable per the final model,\n'
-      + 'so the authenticated client can be rehearsed against the live project.',
+    warning: 'PRE-CUTOVER staging: existing legacy leagues keep working (old client\n'
+      + 'unaffected) but NEW legacy leagues can no longer be created anonymously, and\n'
+      + 'the v2 subtree becomes readable per the final model, so the authenticated\n'
+      + 'client can be rehearsed against the live project.',
   },
   functions: {
     config: 'firebase.json',
