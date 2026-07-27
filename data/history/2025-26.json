@@ -1,0 +1,3578 @@
+{
+ "season": "2025/26",
+ "competition": "Premier League 25/26 (Draft Fantasy)",
+ "leagueId": "cmdgga0kd00aejs04ev1880sg",
+ "leagueName": "The League",
+ "source": "api.draftfantasy.com/epl25 public routes, fetched 2026-07-26",
+ "format": {
+  "tableType": "HEAD_TO_HEAD",
+  "teams": 12,
+  "gameweeks": 38,
+  "draftType": "SNAKE",
+  "waiverFormat": "WEEKLY_RESET",
+  "tradesEnabled": true
+ },
+ "honours": {
+  "champion": {
+   "team": "Interjacksonale*",
+   "name": "Adam Jackson",
+   "note": "won the playoffs — the real title"
+  },
+  "regularSeason": {
+   "team": "WA Wanderers",
+   "name": "Wilko Wilkowski",
+   "note": "topped the H2H table (73pts) but lost the playoffs"
+  },
+  "caveat": "The league title = playoffs, NOT the table. DF ran the league without playoff support (playoffEnabled false); the playoffs were settled offline."
+ },
+ "managers": [
+  {
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "draftOrder": 0,
+   "points": 1294,
+   "headToHeadPoints": 42
+  },
+  {
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "draftOrder": 1,
+   "points": 1344,
+   "headToHeadPoints": 67
+  },
+  {
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "draftOrder": 2,
+   "points": 1350,
+   "headToHeadPoints": 64
+  },
+  {
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "draftOrder": 3,
+   "points": 1381,
+   "headToHeadPoints": 66
+  },
+  {
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "draftOrder": 4,
+   "points": 1243,
+   "headToHeadPoints": 48
+  },
+  {
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "draftOrder": 5,
+   "points": 1291,
+   "headToHeadPoints": 54
+  },
+  {
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "draftOrder": 6,
+   "points": 1250,
+   "headToHeadPoints": 58
+  },
+  {
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "draftOrder": 7,
+   "points": 1127,
+   "headToHeadPoints": 45
+  },
+  {
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "draftOrder": 8,
+   "points": 1286,
+   "headToHeadPoints": 62
+  },
+  {
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "draftOrder": 9,
+   "points": 1254,
+   "headToHeadPoints": 50
+  },
+  {
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "draftOrder": 10,
+   "points": 1114,
+   "headToHeadPoints": 46
+  },
+  {
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "draftOrder": 11,
+   "points": 1413,
+   "headToHeadPoints": 73
+  }
+ ],
+ "finalTable": [
+  {
+   "team": "WA Wanderers",
+   "h2hPoints": 73,
+   "pos": 1,
+   "manager": "Wilko Wilkowski",
+   "totalPoints": 1413,
+   "w": 23,
+   "d": 4,
+   "l": 11,
+   "pf": 1413,
+   "pa": 1175
+  },
+  {
+   "team": "Interjacksonale*",
+   "h2hPoints": 67,
+   "pos": 2,
+   "manager": "Adam Jackson",
+   "totalPoints": 1344,
+   "w": 22,
+   "d": 1,
+   "l": 15,
+   "pf": 1344,
+   "pa": 1261
+  },
+  {
+   "team": "Singer's Spartans",
+   "h2hPoints": 66,
+   "pos": 3,
+   "manager": "Alex Singer",
+   "totalPoints": 1381,
+   "w": 22,
+   "d": 0,
+   "l": 16,
+   "pf": 1381,
+   "pa": 1305
+  },
+  {
+   "team": "Champagne Khusanova FC",
+   "h2hPoints": 64,
+   "pos": 4,
+   "manager": "Ian Tussie",
+   "totalPoints": 1350,
+   "w": 21,
+   "d": 1,
+   "l": 16,
+   "pf": 1350,
+   "pa": 1287
+  },
+  {
+   "team": "Celta Leigh-Go",
+   "h2hPoints": 62,
+   "pos": 5,
+   "manager": "Lee Warner",
+   "totalPoints": 1286,
+   "w": 20,
+   "d": 2,
+   "l": 16,
+   "pf": 1286,
+   "pa": 1324
+  },
+  {
+   "team": "101011101",
+   "h2hPoints": 58,
+   "pos": 6,
+   "manager": "Marc Conway",
+   "totalPoints": 1250,
+   "w": 19,
+   "d": 1,
+   "l": 18,
+   "pf": 1250,
+   "pa": 1252
+  },
+  {
+   "team": "Chairman Mao *°",
+   "h2hPoints": 54,
+   "pos": 7,
+   "manager": "Toby  Levy",
+   "totalPoints": 1291,
+   "w": 17,
+   "d": 3,
+   "l": 18,
+   "pf": 1291,
+   "pa": 1309
+  },
+  {
+   "team": "The Dog’s Polaks",
+   "h2hPoints": 50,
+   "pos": 8,
+   "manager": "Ben Polak",
+   "totalPoints": 1254,
+   "w": 16,
+   "d": 2,
+   "l": 20,
+   "pf": 1254,
+   "pa": 1244
+  },
+  {
+   "team": "Asterick",
+   "h2hPoints": 48,
+   "pos": 9,
+   "manager": "Ric Blank",
+   "totalPoints": 1243,
+   "w": 16,
+   "d": 0,
+   "l": 22,
+   "pf": 1243,
+   "pa": 1316
+  },
+  {
+   "team": "Geldog FC",
+   "h2hPoints": 46,
+   "pos": 10,
+   "manager": "Daniel Geller",
+   "totalPoints": 1114,
+   "w": 15,
+   "d": 1,
+   "l": 22,
+   "pf": 1114,
+   "pa": 1253
+  },
+  {
+   "team": "Mighty 🦆 *",
+   "h2hPoints": 45,
+   "pos": 11,
+   "manager": "Alex Duckett",
+   "totalPoints": 1127,
+   "w": 15,
+   "d": 0,
+   "l": 23,
+   "pf": 1127,
+   "pa": 1275
+  },
+  {
+   "team": "Atlético Benfield",
+   "h2hPoints": 42,
+   "pos": 12,
+   "manager": "Ben Levy",
+   "totalPoints": 1294,
+   "w": 13,
+   "d": 3,
+   "l": 22,
+   "pf": 1294,
+   "pa": 1346
+  }
+ ],
+ "draft": [
+  {
+   "pick": 1,
+   "round": 1,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Haaland",
+   "playerFull": "Erling Haaland",
+   "club": "MCI",
+   "pos": "FW"
+  },
+  {
+   "pick": 2,
+   "round": 1,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "M.Salah",
+   "playerFull": "Mohamed Salah",
+   "club": "LIV",
+   "pos": "MF"
+  },
+  {
+   "pick": 3,
+   "round": 1,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Palmer",
+   "playerFull": "Cole Palmer",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 4,
+   "round": 1,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Saka",
+   "playerFull": "Bukayo Saka",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 5,
+   "round": 1,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Gyökeres",
+   "playerFull": "Viktor Gyökeres",
+   "club": "ARS",
+   "pos": "FW"
+  },
+  {
+   "pick": 6,
+   "round": 1,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Watkins",
+   "playerFull": "Ollie Watkins",
+   "club": "AVL",
+   "pos": "FW"
+  },
+  {
+   "pick": 7,
+   "round": 1,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Isak",
+   "playerFull": "Alexander Isak",
+   "club": "LIV",
+   "pos": "FW"
+  },
+  {
+   "pick": 8,
+   "round": 1,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "B.Fernandes",
+   "playerFull": "Bruno Borges Fernandes",
+   "club": "MUN",
+   "pos": "MF"
+  },
+  {
+   "pick": 9,
+   "round": 1,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Wirtz",
+   "playerFull": "Florian Wirtz",
+   "club": "LIV",
+   "pos": "MF"
+  },
+  {
+   "pick": 10,
+   "round": 1,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Bowen",
+   "playerFull": "Jarrod Bowen",
+   "club": "WHU",
+   "pos": "FW"
+  },
+  {
+   "pick": 11,
+   "round": 1,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Ekitiké",
+   "playerFull": "Hugo Ekitiké",
+   "club": "LIV",
+   "pos": "FW"
+  },
+  {
+   "pick": 12,
+   "round": 1,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Mateta",
+   "playerFull": "Jean-Philippe Mateta",
+   "club": "CRY",
+   "pos": "FW"
+  },
+  {
+   "pick": 13,
+   "round": 2,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "João Pedro",
+   "playerFull": "João Pedro Junqueira de Jesus",
+   "club": "CHE",
+   "pos": "FW"
+  },
+  {
+   "pick": 14,
+   "round": 2,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Mbeumo",
+   "playerFull": "Bryan Mbeumo",
+   "club": "MUN",
+   "pos": "MF"
+  },
+  {
+   "pick": 15,
+   "round": 2,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Foden",
+   "playerFull": "Phil Foden",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 16,
+   "round": 2,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Wood",
+   "playerFull": "Chris Wood",
+   "club": "NFO",
+   "pos": "FW"
+  },
+  {
+   "pick": 17,
+   "round": 2,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Šeško",
+   "playerFull": "Benjamin Sesko",
+   "club": "MUN",
+   "pos": "FW"
+  },
+  {
+   "pick": 18,
+   "round": 2,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Ødegaard",
+   "playerFull": "Martin Ødegaard",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 19,
+   "round": 2,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Cunha",
+   "playerFull": "Matheus Santos Carneiro da Cunha",
+   "club": "MUN",
+   "pos": "MF"
+  },
+  {
+   "pick": 20,
+   "round": 2,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Marmoush",
+   "playerFull": "Omar Marmoush",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 21,
+   "round": 2,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Solanke",
+   "playerFull": "Dominic Solanke-Mitchell",
+   "club": "TOT",
+   "pos": "FW"
+  },
+  {
+   "pick": 22,
+   "round": 2,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Rogers",
+   "playerFull": "Morgan Rogers",
+   "club": "AVL",
+   "pos": "MF"
+  },
+  {
+   "pick": 23,
+   "round": 2,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Delap",
+   "playerFull": "Liam Delap",
+   "club": "CHE",
+   "pos": "FW"
+  },
+  {
+   "pick": 24,
+   "round": 2,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Gakpo",
+   "playerFull": "Cody Gakpo",
+   "club": "LIV",
+   "pos": "MF"
+  },
+  {
+   "pick": 25,
+   "round": 3,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Elanga",
+   "playerFull": "Anthony Elanga",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 26,
+   "round": 3,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Kudus",
+   "playerFull": "Mohammed Kudus",
+   "club": "TOT",
+   "pos": "MF"
+  },
+  {
+   "pick": 27,
+   "round": 3,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Evanilson",
+   "playerFull": "Francisco Evanilson de Lima Barbosa",
+   "club": "BOU",
+   "pos": "FW"
+  },
+  {
+   "pick": 28,
+   "round": 3,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Eze",
+   "playerFull": "Eberechi Eze",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 29,
+   "round": 3,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Semenyo",
+   "playerFull": "Antoine Semenyo",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 30,
+   "round": 3,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Mitoma",
+   "playerFull": "Mitoma Kaoru",
+   "club": "BHA",
+   "pos": "MF"
+  },
+  {
+   "pick": 31,
+   "round": 3,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Gibbs-White",
+   "playerFull": "Morgan Gibbs-White",
+   "club": "NFO",
+   "pos": "MF"
+  },
+  {
+   "pick": 32,
+   "round": 3,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Gordon",
+   "playerFull": "Anthony Gordon",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 33,
+   "round": 3,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Strand Larsen",
+   "playerFull": "Jørgen Strand Larsen",
+   "club": "CRY",
+   "pos": "FW"
+  },
+  {
+   "pick": 34,
+   "round": 3,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Cherki",
+   "playerFull": "Rayan Cherki",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 35,
+   "round": 3,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Neto",
+   "playerFull": "Pedro Lomba Neto",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 36,
+   "round": 3,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Ndiaye",
+   "playerFull": "Iliman Ndiaye",
+   "club": "EVE",
+   "pos": "MF"
+  },
+  {
+   "pick": 37,
+   "round": 4,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Sarr",
+   "playerFull": "Ismaïla Sarr",
+   "club": "CRY",
+   "pos": "MF"
+  },
+  {
+   "pick": 38,
+   "round": 4,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Frimpong",
+   "playerFull": "Jeremie Frimpong",
+   "club": "LIV",
+   "pos": "DF"
+  },
+  {
+   "pick": 39,
+   "round": 4,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Wissa",
+   "playerFull": "Yoane Wissa",
+   "club": "NEW",
+   "pos": "FW"
+  },
+  {
+   "pick": 40,
+   "round": 4,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Reijnders",
+   "playerFull": "Tijjani Reijnders",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 41,
+   "round": 4,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Füllkrug",
+   "playerFull": "Niclas Füllkrug",
+   "club": "WHU",
+   "pos": "FW"
+  },
+  {
+   "pick": 42,
+   "round": 4,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Havertz",
+   "playerFull": "Kai Havertz",
+   "club": "ARS",
+   "pos": "FW"
+  },
+  {
+   "pick": 43,
+   "round": 4,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Thiago",
+   "playerFull": "Igor Thiago Nascimento Rodrigues",
+   "club": "BRE",
+   "pos": "FW"
+  },
+  {
+   "pick": 44,
+   "round": 4,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Raya",
+   "playerFull": "David Raya Martín",
+   "club": "ARS",
+   "pos": "GK"
+  },
+  {
+   "pick": 45,
+   "round": 4,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Kluivert",
+   "playerFull": "Justin Kluivert",
+   "club": "BOU",
+   "pos": "MF"
+  },
+  {
+   "pick": 46,
+   "round": 4,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Gabriel",
+   "playerFull": "Gabriel dos Santos Magalhães",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 47,
+   "round": 4,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Broja",
+   "playerFull": "Armando Broja",
+   "club": "BUR",
+   "pos": "FW"
+  },
+  {
+   "pick": 48,
+   "round": 4,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Amad",
+   "playerFull": "Amad Diallo",
+   "club": "MUN",
+   "pos": "MF"
+  },
+  {
+   "pick": 49,
+   "round": 5,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Aït-Nouri",
+   "playerFull": "Rayan Aït-Nouri",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 50,
+   "round": 5,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Gvardiol",
+   "playerFull": "Joško Gvardiol",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 51,
+   "round": 5,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Saliba",
+   "playerFull": "William Saliba",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 52,
+   "round": 5,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Georginio",
+   "playerFull": "Georginio Rutter",
+   "club": "BHA",
+   "pos": "MF"
+  },
+  {
+   "pick": 53,
+   "round": 5,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Martinelli",
+   "playerFull": "Gabriel Martinelli Silva",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 54,
+   "round": 5,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "A.Becker",
+   "playerFull": "Alisson Becker",
+   "club": "LIV",
+   "pos": "GK"
+  },
+  {
+   "pick": 55,
+   "round": 5,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "N.Jackson",
+   "playerFull": "Nicolas Jackson",
+   "club": "CHE",
+   "pos": "FW"
+  },
+  {
+   "pick": 56,
+   "round": 5,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Kerkez",
+   "playerFull": "Milos Kerkez",
+   "club": "LIV",
+   "pos": "DF"
+  },
+  {
+   "pick": 57,
+   "round": 5,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Virgil",
+   "playerFull": "Virgil van Dijk",
+   "club": "LIV",
+   "pos": "DF"
+  },
+  {
+   "pick": 58,
+   "round": 5,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Savinho",
+   "playerFull": "Sávio Moreira de Oliveira",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 59,
+   "round": 5,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Gittens",
+   "playerFull": "Jamie Bynoe-Gittens",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 60,
+   "round": 5,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Hall",
+   "playerFull": "Lewis Hall",
+   "club": "NEW",
+   "pos": "DF"
+  },
+  {
+   "pick": 61,
+   "round": 6,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Pedro Porro",
+   "playerFull": "Pedro Porro Sauceda",
+   "club": "TOT",
+   "pos": "DF"
+  },
+  {
+   "pick": 62,
+   "round": 6,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Cucurella",
+   "playerFull": "Marc Cucurella Saseta",
+   "club": "CHE",
+   "pos": "DF"
+  },
+  {
+   "pick": 63,
+   "round": 6,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Grealish",
+   "playerFull": "Jack Grealish",
+   "club": "EVE",
+   "pos": "MF"
+  },
+  {
+   "pick": 64,
+   "round": 6,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Malen",
+   "playerFull": "Donyell Malen",
+   "club": "AVL",
+   "pos": "MF"
+  },
+  {
+   "pick": 65,
+   "round": 6,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Ndoye",
+   "playerFull": "Dan Ndoye",
+   "club": "NFO",
+   "pos": "MF"
+  },
+  {
+   "pick": 66,
+   "round": 6,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Raúl",
+   "playerFull": "Raúl Jiménez Rodríguez",
+   "club": "FUL",
+   "pos": "FW"
+  },
+  {
+   "pick": 67,
+   "round": 6,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Rúben",
+   "playerFull": "Rúben dos Santos Gato Alves Dias",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 68,
+   "round": 6,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Schade",
+   "playerFull": "Kevin Schade",
+   "club": "BRE",
+   "pos": "MF"
+  },
+  {
+   "pick": 69,
+   "round": 6,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Muñoz",
+   "playerFull": "Daniel Muñoz Mejía",
+   "club": "CRY",
+   "pos": "DF"
+  },
+  {
+   "pick": 70,
+   "round": 6,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "L.Paquetá",
+   "playerFull": "Lucas Tolentino Coelho de Lima",
+   "club": "WHU",
+   "pos": "MF"
+  },
+  {
+   "pick": 71,
+   "round": 6,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Johnson",
+   "playerFull": "Brennan Johnson",
+   "club": "CRY",
+   "pos": "MF"
+  },
+  {
+   "pick": 72,
+   "round": 6,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Welbeck",
+   "playerFull": "Danny Welbeck",
+   "club": "BHA",
+   "pos": "FW"
+  },
+  {
+   "pick": 73,
+   "round": 7,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "J.Timber",
+   "playerFull": "Jurriën Timber",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 74,
+   "round": 7,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Pickford",
+   "playerFull": "Jordan Pickford",
+   "club": "EVE",
+   "pos": "GK"
+  },
+  {
+   "pick": 75,
+   "round": 7,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Lewis-Skelly",
+   "playerFull": "Myles Lewis-Skelly",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 76,
+   "round": 7,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Barry",
+   "playerFull": "Thierno Barry",
+   "club": "EVE",
+   "pos": "FW"
+  },
+  {
+   "pick": 77,
+   "round": 7,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Estêvão",
+   "playerFull": "Estêvão Almeida de Oliveira Gonçalves",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 78,
+   "round": 7,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Rice",
+   "playerFull": "Declan Rice",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 79,
+   "round": 7,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Iwobi",
+   "playerFull": "Alex Iwobi",
+   "club": "FUL",
+   "pos": "MF"
+  },
+  {
+   "pick": 80,
+   "round": 7,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "J.Arias",
+   "playerFull": "Jhon Arias",
+   "club": "WOL",
+   "pos": "MF"
+  },
+  {
+   "pick": 81,
+   "round": 7,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Guéhi",
+   "playerFull": "Marc Guéhi",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 82,
+   "round": 7,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Doku",
+   "playerFull": "Jérémy Doku",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 83,
+   "round": 7,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Wilson",
+   "playerFull": "Callum Wilson",
+   "club": "WHU",
+   "pos": "FW"
+  },
+  {
+   "pick": 84,
+   "round": 7,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Minteh",
+   "playerFull": "Yankuba Minteh",
+   "club": "BHA",
+   "pos": "MF"
+  },
+  {
+   "pick": 85,
+   "round": 8,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Sánchez",
+   "playerFull": "Robert Lynch Sánchez",
+   "club": "CHE",
+   "pos": "GK"
+  },
+  {
+   "pick": 86,
+   "round": 8,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Vicario",
+   "playerFull": "Guglielmo Vicario",
+   "club": "TOT",
+   "pos": "GK"
+  },
+  {
+   "pick": 87,
+   "round": 8,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Bernardo",
+   "playerFull": "Bernardo Mota Veiga de Carvalho e Silva",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 88,
+   "round": 8,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Enzo",
+   "playerFull": "Enzo Fernández",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 89,
+   "round": 8,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "James",
+   "playerFull": "Reece James",
+   "club": "CHE",
+   "pos": "DF"
+  },
+  {
+   "pick": 90,
+   "round": 8,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Damsgaard",
+   "playerFull": "Mikkel Damsgaard",
+   "club": "BRE",
+   "pos": "MF"
+  },
+  {
+   "pick": 91,
+   "round": 8,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Milenković",
+   "playerFull": "Nikola Milenković",
+   "club": "NFO",
+   "pos": "DF"
+  },
+  {
+   "pick": 92,
+   "round": 8,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Piroe",
+   "playerFull": "Joël Piroe",
+   "club": "LEE",
+   "pos": "FW"
+  },
+  {
+   "pick": 93,
+   "round": 8,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Konaté",
+   "playerFull": "Ibrahima Konaté",
+   "club": "LIV",
+   "pos": "DF"
+  },
+  {
+   "pick": 94,
+   "round": 8,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Beto",
+   "playerFull": "Norberto Bercique Gomes Betuncal",
+   "club": "EVE",
+   "pos": "FW"
+  },
+  {
+   "pick": 95,
+   "round": 8,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Bruno G.",
+   "playerFull": "Bruno Guimarães Rodriguez Moura",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 96,
+   "round": 8,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "McNeil",
+   "playerFull": "Dwight McNeil",
+   "club": "EVE",
+   "pos": "MF"
+  },
+  {
+   "pick": 97,
+   "round": 9,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Henderson",
+   "playerFull": "Dean Henderson",
+   "club": "CRY",
+   "pos": "GK"
+  },
+  {
+   "pick": 98,
+   "round": 9,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Madueke",
+   "playerFull": "Noni Madueke",
+   "club": "ARS",
+   "pos": "MF"
+  },
+  {
+   "pick": 99,
+   "round": 9,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Szoboszlai",
+   "playerFull": "Dominik Szoboszlai",
+   "club": "LIV",
+   "pos": "MF"
+  },
+  {
+   "pick": 100,
+   "round": 9,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "McAtee",
+   "playerFull": "James McAtee",
+   "club": "NFO",
+   "pos": "MF"
+  },
+  {
+   "pick": 101,
+   "round": 9,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "J.Murphy",
+   "playerFull": "Jacob Murphy",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 102,
+   "round": 9,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Hudson-Odoi",
+   "playerFull": "Callum Hudson-Odoi",
+   "club": "NFO",
+   "pos": "MF"
+  },
+  {
+   "pick": 103,
+   "round": 9,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Barnes",
+   "playerFull": "Harvey Barnes",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 104,
+   "round": 9,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "De Cuyper",
+   "playerFull": "Maxim De Cuyper",
+   "club": "BHA",
+   "pos": "DF"
+  },
+  {
+   "pick": 105,
+   "round": 9,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "N.Williams",
+   "playerFull": "Neco Williams",
+   "club": "NFO",
+   "pos": "DF"
+  },
+  {
+   "pick": 106,
+   "round": 9,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Ederson M.",
+   "playerFull": "Ederson Santana de Moraes",
+   "club": "MCI",
+   "pos": "GK"
+  },
+  {
+   "pick": 107,
+   "round": 9,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Dorgu",
+   "playerFull": "Patrick Dorgu",
+   "club": "MUN",
+   "pos": "DF"
+  },
+  {
+   "pick": 108,
+   "round": 9,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "White",
+   "playerFull": "Benjamin White",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 109,
+   "round": 10,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Dewsbury-Hall",
+   "playerFull": "Kiernan Dewsbury-Hall",
+   "club": "EVE",
+   "pos": "MF"
+  },
+  {
+   "pick": 110,
+   "round": 10,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Guessand",
+   "playerFull": "Evann Guessand",
+   "club": "CRY",
+   "pos": "MF"
+  },
+  {
+   "pick": 111,
+   "round": 10,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Richarlison",
+   "playerFull": "Richarlison de Andrade",
+   "club": "TOT",
+   "pos": "FW"
+  },
+  {
+   "pick": 112,
+   "round": 10,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Pope",
+   "playerFull": "Nick Pope",
+   "club": "NEW",
+   "pos": "GK"
+  },
+  {
+   "pick": 113,
+   "round": 10,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Sels",
+   "playerFull": "Matz Sels",
+   "club": "NFO",
+   "pos": "GK"
+  },
+  {
+   "pick": 114,
+   "round": 10,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Schär",
+   "playerFull": "Fabian Schär",
+   "club": "NEW",
+   "pos": "DF"
+  },
+  {
+   "pick": 115,
+   "round": 10,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Smith Rowe",
+   "playerFull": "Emile Smith Rowe",
+   "club": "FUL",
+   "pos": "MF"
+  },
+  {
+   "pick": 116,
+   "round": 10,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Mayenda",
+   "playerFull": "Eliezer Mayenda Dossou",
+   "club": "SUN",
+   "pos": "FW"
+  },
+  {
+   "pick": 117,
+   "round": 10,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Murillo",
+   "playerFull": "Murillo Costa dos Santos",
+   "club": "NFO",
+   "pos": "DF"
+  },
+  {
+   "pick": 118,
+   "round": 10,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Livramento",
+   "playerFull": "Tino Livramento",
+   "club": "NEW",
+   "pos": "DF"
+  },
+  {
+   "pick": 119,
+   "round": 10,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Romero",
+   "playerFull": "Cristian Romero",
+   "club": "TOT",
+   "pos": "DF"
+  },
+  {
+   "pick": 120,
+   "round": 10,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Igor Jesus",
+   "playerFull": "Igor Jesus Maciel da Cruz",
+   "club": "NFO",
+   "pos": "FW"
+  },
+  {
+   "pick": 121,
+   "round": 11,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Garnacho",
+   "playerFull": "Alejandro Garnacho Ferreyra",
+   "club": "CHE",
+   "pos": "MF"
+  },
+  {
+   "pick": 122,
+   "round": 11,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Van de Ven",
+   "playerFull": "Micky van de Ven",
+   "club": "TOT",
+   "pos": "DF"
+  },
+  {
+   "pick": 123,
+   "round": 11,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Bobb",
+   "playerFull": "Oscar Bobb",
+   "club": "FUL",
+   "pos": "MF"
+  },
+  {
+   "pick": 124,
+   "round": 11,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Wilson",
+   "playerFull": "Harry Wilson",
+   "club": "FUL",
+   "pos": "MF"
+  },
+  {
+   "pick": 125,
+   "round": 11,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Tarkowski",
+   "playerFull": "James Tarkowski",
+   "club": "EVE",
+   "pos": "DF"
+  },
+  {
+   "pick": 126,
+   "round": 11,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Diouf",
+   "playerFull": "El Hadji Malick Diouf",
+   "club": "WHU",
+   "pos": "DF"
+  },
+  {
+   "pick": 127,
+   "round": 11,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Aina",
+   "playerFull": "Ola Aina",
+   "club": "NFO",
+   "pos": "DF"
+  },
+  {
+   "pick": 128,
+   "round": 11,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Wan-Bissaka",
+   "playerFull": "Aaron Wan-Bissaka",
+   "club": "WHU",
+   "pos": "DF"
+  },
+  {
+   "pick": 129,
+   "round": 11,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Spence",
+   "playerFull": "Djed Spence",
+   "club": "TOT",
+   "pos": "DF"
+  },
+  {
+   "pick": 130,
+   "round": 11,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Matheus N.",
+   "playerFull": "Matheus Nunes",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 131,
+   "round": 11,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Adingra",
+   "playerFull": "Simon Adingra",
+   "club": "SUN",
+   "pos": "MF"
+  },
+  {
+   "pick": 132,
+   "round": 11,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Tavernier",
+   "playerFull": "Marcus Tavernier",
+   "club": "BOU",
+   "pos": "MF"
+  },
+  {
+   "pick": 133,
+   "round": 12,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "J.Ramsey",
+   "playerFull": "Jacob Ramsey",
+   "club": "NEW",
+   "pos": "MF"
+  },
+  {
+   "pick": 134,
+   "round": 12,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Konsa",
+   "playerFull": "Ezri Konsa Ngoyo",
+   "club": "AVL",
+   "pos": "DF"
+  },
+  {
+   "pick": 135,
+   "round": 12,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Møller Wolfe",
+   "playerFull": "David Møller Wolfe",
+   "club": "WOL",
+   "pos": "DF"
+  },
+  {
+   "pick": 136,
+   "round": 12,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Rodrigo",
+   "playerFull": "Rodrigo 'Rodri' Hernandez Cascante",
+   "club": "MCI",
+   "pos": "MF"
+  },
+  {
+   "pick": 137,
+   "round": 12,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "King",
+   "playerFull": "Josh King",
+   "club": "FUL",
+   "pos": "MF"
+  },
+  {
+   "pick": 138,
+   "round": 12,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Chalobah",
+   "playerFull": "Trevoh Chalobah",
+   "club": "CHE",
+   "pos": "DF"
+  },
+  {
+   "pick": 139,
+   "round": 12,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Burn",
+   "playerFull": "Dan Burn",
+   "club": "NEW",
+   "pos": "DF"
+  },
+  {
+   "pick": 140,
+   "round": 12,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Akanji",
+   "playerFull": "Manuel Akanji",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 141,
+   "round": 12,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "O'Brien",
+   "playerFull": "Jake O'Brien",
+   "club": "EVE",
+   "pos": "DF"
+  },
+  {
+   "pick": 142,
+   "round": 12,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Calafiori",
+   "playerFull": "Riccardo Calafiori",
+   "club": "ARS",
+   "pos": "DF"
+  },
+  {
+   "pick": 143,
+   "round": 12,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Thiaw",
+   "playerFull": "Malick Thiaw",
+   "club": "NEW",
+   "pos": "DF"
+  },
+  {
+   "pick": 144,
+   "round": 12,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Mitchell",
+   "playerFull": "Tyrick Mitchell",
+   "club": "CRY",
+   "pos": "DF"
+  },
+  {
+   "pick": 145,
+   "round": 13,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Collins",
+   "playerFull": "Nathan Collins",
+   "club": "BRE",
+   "pos": "DF"
+  },
+  {
+   "pick": 146,
+   "round": 13,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Yoro",
+   "playerFull": "Leny Yoro",
+   "club": "MUN",
+   "pos": "DF"
+  },
+  {
+   "pick": 147,
+   "round": 13,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Onana",
+   "playerFull": "André Onana",
+   "club": "MUN",
+   "pos": "GK"
+  },
+  {
+   "pick": 148,
+   "round": 13,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Lacroix",
+   "playerFull": "Maxence Lacroix",
+   "club": "CRY",
+   "pos": "DF"
+  },
+  {
+   "pick": 149,
+   "round": 13,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Lewis-Potter",
+   "playerFull": "Keane Lewis-Potter",
+   "club": "BRE",
+   "pos": "DF"
+  },
+  {
+   "pick": 150,
+   "round": 13,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "James",
+   "playerFull": "Daniel James",
+   "club": "LEE",
+   "pos": "MF"
+  },
+  {
+   "pick": 151,
+   "round": 13,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Leno",
+   "playerFull": "Bernd Leno",
+   "club": "FUL",
+   "pos": "GK"
+  },
+  {
+   "pick": 152,
+   "round": 13,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Carvalho",
+   "playerFull": "Fábio Freitas Gouveia Carvalho",
+   "club": "BRE",
+   "pos": "MF"
+  },
+  {
+   "pick": 153,
+   "round": 13,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Pau",
+   "playerFull": "Pau Torres",
+   "club": "AVL",
+   "pos": "DF"
+  },
+  {
+   "pick": 154,
+   "round": 13,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Kilman",
+   "playerFull": "Maximilian Kilman",
+   "club": "WHU",
+   "pos": "DF"
+  },
+  {
+   "pick": 155,
+   "round": 13,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Stones",
+   "playerFull": "John Stones",
+   "club": "MCI",
+   "pos": "DF"
+  },
+  {
+   "pick": 156,
+   "round": 13,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Richards",
+   "playerFull": "Chris Richards",
+   "club": "CRY",
+   "pos": "DF"
+  },
+  {
+   "pick": 157,
+   "round": 14,
+   "team": "WA Wanderers",
+   "manager": "Wilko Wilkowski",
+   "player": "Tete",
+   "playerFull": "Kenny Tete",
+   "club": "FUL",
+   "pos": "DF"
+  },
+  {
+   "pick": 158,
+   "round": 14,
+   "team": "Geldog FC",
+   "manager": "Daniel Geller",
+   "player": "Marc Guiu",
+   "playerFull": "Marc Guiu Paz",
+   "club": "CHE",
+   "pos": "FW"
+  },
+  {
+   "pick": 159,
+   "round": 14,
+   "team": "The Dog’s Polaks",
+   "manager": "Ben Polak",
+   "player": "Shaw",
+   "playerFull": "Luke Shaw",
+   "club": "MUN",
+   "pos": "DF"
+  },
+  {
+   "pick": 160,
+   "round": 14,
+   "team": "Celta Leigh-Go",
+   "manager": "Lee Warner",
+   "player": "Tielemans",
+   "playerFull": "Youri Tielemans",
+   "club": "AVL",
+   "pos": "MF"
+  },
+  {
+   "pick": 161,
+   "round": 14,
+   "team": "Mighty 🦆 *",
+   "manager": "Alex Duckett",
+   "player": "Darwin",
+   "playerFull": "Darwin Núñez Ribeiro",
+   "club": "LIV",
+   "pos": "FW"
+  },
+  {
+   "pick": 162,
+   "round": 14,
+   "team": "101011101",
+   "manager": "Marc Conway",
+   "player": "Tosin",
+   "playerFull": "Tosin Adarabioyo",
+   "club": "CHE",
+   "pos": "DF"
+  },
+  {
+   "pick": 163,
+   "round": 14,
+   "team": "Chairman Mao *°",
+   "manager": "Toby  Levy",
+   "player": "Mings",
+   "playerFull": "Tyrone Mings",
+   "club": "AVL",
+   "pos": "DF"
+  },
+  {
+   "pick": 164,
+   "round": 14,
+   "team": "Asterick",
+   "manager": "Ric Blank",
+   "player": "Todibo",
+   "playerFull": "Jean-Clair Todibo",
+   "club": "WHU",
+   "pos": "DF"
+  },
+  {
+   "pick": 165,
+   "round": 14,
+   "team": "Singer's Spartans",
+   "manager": "Alex Singer",
+   "player": "Martinez",
+   "playerFull": "Emiliano Martínez Romero",
+   "club": "AVL",
+   "pos": "GK"
+  },
+  {
+   "pick": 166,
+   "round": 14,
+   "team": "Champagne Khusanova FC",
+   "manager": "Ian Tussie",
+   "player": "Ward-Prowse",
+   "playerFull": "James Ward-Prowse",
+   "club": "BUR",
+   "pos": "MF"
+  },
+  {
+   "pick": 167,
+   "round": 14,
+   "team": "Interjacksonale*",
+   "manager": "Adam Jackson",
+   "player": "Souček",
+   "playerFull": "Tomáš Souček",
+   "club": "WHU",
+   "pos": "MF"
+  },
+  {
+   "pick": 168,
+   "round": 14,
+   "team": "Atlético Benfield",
+   "manager": "Ben Levy",
+   "player": "Mac Allister",
+   "playerFull": "Alexis Mac Allister",
+   "club": "LIV",
+   "pos": "MF"
+  }
+ ],
+ "results": [
+  {
+   "gw": 1,
+   "home": "Champagne Khusanova FC",
+   "away": "Atlético Benfield",
+   "homePts": 35,
+   "awayPts": 40
+  },
+  {
+   "gw": 1,
+   "home": "Singer's Spartans",
+   "away": "Geldog FC",
+   "homePts": 28,
+   "awayPts": 42
+  },
+  {
+   "gw": 1,
+   "home": "The Dog’s Polaks",
+   "away": "Interjacksonale*",
+   "homePts": 39,
+   "awayPts": 45
+  },
+  {
+   "gw": 1,
+   "home": "101011101",
+   "away": "WA Wanderers",
+   "homePts": 32,
+   "awayPts": 35
+  },
+  {
+   "gw": 1,
+   "home": "Asterick",
+   "away": "Chairman Mao *°",
+   "homePts": 33,
+   "awayPts": 37
+  },
+  {
+   "gw": 1,
+   "home": "Celta Leigh-Go",
+   "away": "Mighty 🦆 *",
+   "homePts": 45,
+   "awayPts": 26
+  },
+  {
+   "gw": 2,
+   "home": "Champagne Khusanova FC",
+   "away": "Geldog FC",
+   "homePts": 42,
+   "awayPts": 34
+  },
+  {
+   "gw": 2,
+   "home": "Atlético Benfield",
+   "away": "Interjacksonale*",
+   "homePts": 46,
+   "awayPts": 54
+  },
+  {
+   "gw": 2,
+   "home": "Singer's Spartans",
+   "away": "WA Wanderers",
+   "homePts": 27,
+   "awayPts": 56
+  },
+  {
+   "gw": 2,
+   "home": "The Dog’s Polaks",
+   "away": "Chairman Mao *°",
+   "homePts": 34,
+   "awayPts": 30
+  },
+  {
+   "gw": 2,
+   "home": "101011101",
+   "away": "Mighty 🦆 *",
+   "homePts": 28,
+   "awayPts": 7
+  },
+  {
+   "gw": 2,
+   "home": "Asterick",
+   "away": "Celta Leigh-Go",
+   "homePts": 45,
+   "awayPts": 30
+  },
+  {
+   "gw": 3,
+   "home": "Champagne Khusanova FC",
+   "away": "Interjacksonale*",
+   "homePts": 38,
+   "awayPts": 20
+  },
+  {
+   "gw": 3,
+   "home": "Geldog FC",
+   "away": "WA Wanderers",
+   "homePts": 34,
+   "awayPts": 54
+  },
+  {
+   "gw": 3,
+   "home": "Atlético Benfield",
+   "away": "Chairman Mao *°",
+   "homePts": 35,
+   "awayPts": 33
+  },
+  {
+   "gw": 3,
+   "home": "Singer's Spartans",
+   "away": "Mighty 🦆 *",
+   "homePts": 40,
+   "awayPts": 18
+  },
+  {
+   "gw": 3,
+   "home": "The Dog’s Polaks",
+   "away": "Celta Leigh-Go",
+   "homePts": 24,
+   "awayPts": 47
+  },
+  {
+   "gw": 3,
+   "home": "101011101",
+   "away": "Asterick",
+   "homePts": 29,
+   "awayPts": 30
+  },
+  {
+   "gw": 4,
+   "home": "Champagne Khusanova FC",
+   "away": "WA Wanderers",
+   "homePts": 49,
+   "awayPts": 43
+  },
+  {
+   "gw": 4,
+   "home": "Interjacksonale*",
+   "away": "Chairman Mao *°",
+   "homePts": 54,
+   "awayPts": 37
+  },
+  {
+   "gw": 4,
+   "home": "Geldog FC",
+   "away": "Mighty 🦆 *",
+   "homePts": 29,
+   "awayPts": 18
+  },
+  {
+   "gw": 4,
+   "home": "Atlético Benfield",
+   "away": "Celta Leigh-Go",
+   "homePts": 38,
+   "awayPts": 38
+  },
+  {
+   "gw": 4,
+   "home": "Singer's Spartans",
+   "away": "Asterick",
+   "homePts": 33,
+   "awayPts": 47
+  },
+  {
+   "gw": 4,
+   "home": "The Dog’s Polaks",
+   "away": "101011101",
+   "homePts": 48,
+   "awayPts": 27
+  },
+  {
+   "gw": 5,
+   "home": "Champagne Khusanova FC",
+   "away": "Chairman Mao *°",
+   "homePts": 23,
+   "awayPts": 24
+  },
+  {
+   "gw": 5,
+   "home": "WA Wanderers",
+   "away": "Mighty 🦆 *",
+   "homePts": 36,
+   "awayPts": 21
+  },
+  {
+   "gw": 5,
+   "home": "Interjacksonale*",
+   "away": "Celta Leigh-Go",
+   "homePts": 28,
+   "awayPts": 32
+  },
+  {
+   "gw": 5,
+   "home": "Geldog FC",
+   "away": "Asterick",
+   "homePts": 20,
+   "awayPts": 27
+  },
+  {
+   "gw": 5,
+   "home": "Atlético Benfield",
+   "away": "101011101",
+   "homePts": 25,
+   "awayPts": 52
+  },
+  {
+   "gw": 5,
+   "home": "Singer's Spartans",
+   "away": "The Dog’s Polaks",
+   "homePts": 36,
+   "awayPts": 30
+  },
+  {
+   "gw": 6,
+   "home": "Champagne Khusanova FC",
+   "away": "Mighty 🦆 *",
+   "homePts": 26,
+   "awayPts": 25
+  },
+  {
+   "gw": 6,
+   "home": "Chairman Mao *°",
+   "away": "Celta Leigh-Go",
+   "homePts": 24,
+   "awayPts": 24
+  },
+  {
+   "gw": 6,
+   "home": "WA Wanderers",
+   "away": "Asterick",
+   "homePts": 25,
+   "awayPts": 24
+  },
+  {
+   "gw": 6,
+   "home": "Interjacksonale*",
+   "away": "101011101",
+   "homePts": 20,
+   "awayPts": 19
+  },
+  {
+   "gw": 6,
+   "home": "Geldog FC",
+   "away": "The Dog’s Polaks",
+   "homePts": 17,
+   "awayPts": 35
+  },
+  {
+   "gw": 6,
+   "home": "Atlético Benfield",
+   "away": "Singer's Spartans",
+   "homePts": 34,
+   "awayPts": 10
+  },
+  {
+   "gw": 7,
+   "home": "Champagne Khusanova FC",
+   "away": "Celta Leigh-Go",
+   "homePts": 36,
+   "awayPts": 22
+  },
+  {
+   "gw": 7,
+   "home": "Mighty 🦆 *",
+   "away": "Asterick",
+   "homePts": 28,
+   "awayPts": 46
+  },
+  {
+   "gw": 7,
+   "home": "Chairman Mao *°",
+   "away": "101011101",
+   "homePts": 35,
+   "awayPts": 25
+  },
+  {
+   "gw": 7,
+   "home": "WA Wanderers",
+   "away": "The Dog’s Polaks",
+   "homePts": 41,
+   "awayPts": 30
+  },
+  {
+   "gw": 7,
+   "home": "Interjacksonale*",
+   "away": "Singer's Spartans",
+   "homePts": 41,
+   "awayPts": 39
+  },
+  {
+   "gw": 7,
+   "home": "Geldog FC",
+   "away": "Atlético Benfield",
+   "homePts": 28,
+   "awayPts": 34
+  },
+  {
+   "gw": 8,
+   "home": "Champagne Khusanova FC",
+   "away": "Asterick",
+   "homePts": 45,
+   "awayPts": 42
+  },
+  {
+   "gw": 8,
+   "home": "Celta Leigh-Go",
+   "away": "101011101",
+   "homePts": 21,
+   "awayPts": 20
+  },
+  {
+   "gw": 8,
+   "home": "Mighty 🦆 *",
+   "away": "The Dog’s Polaks",
+   "homePts": 39,
+   "awayPts": 31
+  },
+  {
+   "gw": 8,
+   "home": "Chairman Mao *°",
+   "away": "Singer's Spartans",
+   "homePts": 31,
+   "awayPts": 36
+  },
+  {
+   "gw": 8,
+   "home": "WA Wanderers",
+   "away": "Atlético Benfield",
+   "homePts": 44,
+   "awayPts": 44
+  },
+  {
+   "gw": 8,
+   "home": "Interjacksonale*",
+   "away": "Geldog FC",
+   "homePts": 25,
+   "awayPts": 36
+  },
+  {
+   "gw": 9,
+   "home": "Champagne Khusanova FC",
+   "away": "101011101",
+   "homePts": 31,
+   "awayPts": 32
+  },
+  {
+   "gw": 9,
+   "home": "Asterick",
+   "away": "The Dog’s Polaks",
+   "homePts": 35,
+   "awayPts": 30
+  },
+  {
+   "gw": 9,
+   "home": "Celta Leigh-Go",
+   "away": "Singer's Spartans",
+   "homePts": 38,
+   "awayPts": 25
+  },
+  {
+   "gw": 9,
+   "home": "Mighty 🦆 *",
+   "away": "Atlético Benfield",
+   "homePts": 34,
+   "awayPts": 45
+  },
+  {
+   "gw": 9,
+   "home": "Chairman Mao *°",
+   "away": "Geldog FC",
+   "homePts": 31,
+   "awayPts": 45
+  },
+  {
+   "gw": 9,
+   "home": "WA Wanderers",
+   "away": "Interjacksonale*",
+   "homePts": 28,
+   "awayPts": 58
+  },
+  {
+   "gw": 10,
+   "home": "Champagne Khusanova FC",
+   "away": "The Dog’s Polaks",
+   "homePts": 48,
+   "awayPts": 24
+  },
+  {
+   "gw": 10,
+   "home": "101011101",
+   "away": "Singer's Spartans",
+   "homePts": 34,
+   "awayPts": 45
+  },
+  {
+   "gw": 10,
+   "home": "Asterick",
+   "away": "Atlético Benfield",
+   "homePts": 26,
+   "awayPts": 55
+  },
+  {
+   "gw": 10,
+   "home": "Celta Leigh-Go",
+   "away": "Geldog FC",
+   "homePts": 31,
+   "awayPts": 23
+  },
+  {
+   "gw": 10,
+   "home": "Mighty 🦆 *",
+   "away": "Interjacksonale*",
+   "homePts": 24,
+   "awayPts": 25
+  },
+  {
+   "gw": 10,
+   "home": "Chairman Mao *°",
+   "away": "WA Wanderers",
+   "homePts": 30,
+   "awayPts": 62
+  },
+  {
+   "gw": 11,
+   "home": "Champagne Khusanova FC",
+   "away": "Singer's Spartans",
+   "homePts": 34,
+   "awayPts": 44
+  },
+  {
+   "gw": 11,
+   "home": "The Dog’s Polaks",
+   "away": "Atlético Benfield",
+   "homePts": 47,
+   "awayPts": 41
+  },
+  {
+   "gw": 11,
+   "home": "101011101",
+   "away": "Geldog FC",
+   "homePts": 27,
+   "awayPts": 40
+  },
+  {
+   "gw": 11,
+   "home": "Asterick",
+   "away": "Interjacksonale*",
+   "homePts": 39,
+   "awayPts": 36
+  },
+  {
+   "gw": 11,
+   "home": "Celta Leigh-Go",
+   "away": "WA Wanderers",
+   "homePts": 29,
+   "awayPts": 49
+  },
+  {
+   "gw": 11,
+   "home": "Mighty 🦆 *",
+   "away": "Chairman Mao *°",
+   "homePts": 21,
+   "awayPts": 45
+  },
+  {
+   "gw": 12,
+   "home": "Asterick",
+   "away": "The Dog’s Polaks",
+   "homePts": 12,
+   "awayPts": 35
+  },
+  {
+   "gw": 12,
+   "home": "Geldog FC",
+   "away": "101011101",
+   "homePts": 34,
+   "awayPts": 35
+  },
+  {
+   "gw": 12,
+   "home": "Atlético Benfield",
+   "away": "Mighty 🦆 *",
+   "homePts": 36,
+   "awayPts": 42
+  },
+  {
+   "gw": 12,
+   "home": "Chairman Mao *°",
+   "away": "WA Wanderers",
+   "homePts": 39,
+   "awayPts": 44
+  },
+  {
+   "gw": 12,
+   "home": "Interjacksonale*",
+   "away": "Singer's Spartans",
+   "homePts": 24,
+   "awayPts": 42
+  },
+  {
+   "gw": 12,
+   "home": "Celta Leigh-Go",
+   "away": "Champagne Khusanova FC",
+   "homePts": 45,
+   "awayPts": 32
+  },
+  {
+   "gw": 13,
+   "home": "Asterick",
+   "away": "101011101",
+   "homePts": 25,
+   "awayPts": 31
+  },
+  {
+   "gw": 13,
+   "home": "The Dog’s Polaks",
+   "away": "Mighty 🦆 *",
+   "homePts": 31,
+   "awayPts": 11
+  },
+  {
+   "gw": 13,
+   "home": "Geldog FC",
+   "away": "WA Wanderers",
+   "homePts": 30,
+   "awayPts": 31
+  },
+  {
+   "gw": 13,
+   "home": "Atlético Benfield",
+   "away": "Singer's Spartans",
+   "homePts": 33,
+   "awayPts": 39
+  },
+  {
+   "gw": 13,
+   "home": "Chairman Mao *°",
+   "away": "Champagne Khusanova FC",
+   "homePts": 24,
+   "awayPts": 43
+  },
+  {
+   "gw": 13,
+   "home": "Interjacksonale*",
+   "away": "Celta Leigh-Go",
+   "homePts": 24,
+   "awayPts": 32
+  },
+  {
+   "gw": 14,
+   "home": "Asterick",
+   "away": "Mighty 🦆 *",
+   "homePts": 20,
+   "awayPts": 37
+  },
+  {
+   "gw": 14,
+   "home": "101011101",
+   "away": "WA Wanderers",
+   "homePts": 26,
+   "awayPts": 33
+  },
+  {
+   "gw": 14,
+   "home": "The Dog’s Polaks",
+   "away": "Singer's Spartans",
+   "homePts": 51,
+   "awayPts": 41
+  },
+  {
+   "gw": 14,
+   "home": "Geldog FC",
+   "away": "Champagne Khusanova FC",
+   "homePts": 24,
+   "awayPts": 15
+  },
+  {
+   "gw": 14,
+   "home": "Atlético Benfield",
+   "away": "Celta Leigh-Go",
+   "homePts": 42,
+   "awayPts": 30
+  },
+  {
+   "gw": 14,
+   "home": "Chairman Mao *°",
+   "away": "Interjacksonale*",
+   "homePts": 30,
+   "awayPts": 53
+  },
+  {
+   "gw": 15,
+   "home": "Asterick",
+   "away": "WA Wanderers",
+   "homePts": 33,
+   "awayPts": 44
+  },
+  {
+   "gw": 15,
+   "home": "Mighty 🦆 *",
+   "away": "Singer's Spartans",
+   "homePts": 49,
+   "awayPts": 42
+  },
+  {
+   "gw": 15,
+   "home": "101011101",
+   "away": "Champagne Khusanova FC",
+   "homePts": 33,
+   "awayPts": 29
+  },
+  {
+   "gw": 15,
+   "home": "The Dog’s Polaks",
+   "away": "Celta Leigh-Go",
+   "homePts": 53,
+   "awayPts": 34
+  },
+  {
+   "gw": 15,
+   "home": "Geldog FC",
+   "away": "Interjacksonale*",
+   "homePts": 44,
+   "awayPts": 44
+  },
+  {
+   "gw": 15,
+   "home": "Atlético Benfield",
+   "away": "Chairman Mao *°",
+   "homePts": 30,
+   "awayPts": 39
+  },
+  {
+   "gw": 16,
+   "home": "Asterick",
+   "away": "Singer's Spartans",
+   "homePts": 43,
+   "awayPts": 52
+  },
+  {
+   "gw": 16,
+   "home": "WA Wanderers",
+   "away": "Champagne Khusanova FC",
+   "homePts": 25,
+   "awayPts": 38
+  },
+  {
+   "gw": 16,
+   "home": "Mighty 🦆 *",
+   "away": "Celta Leigh-Go",
+   "homePts": 20,
+   "awayPts": 31
+  },
+  {
+   "gw": 16,
+   "home": "101011101",
+   "away": "Interjacksonale*",
+   "homePts": 32,
+   "awayPts": 20
+  },
+  {
+   "gw": 16,
+   "home": "The Dog’s Polaks",
+   "away": "Chairman Mao *°",
+   "homePts": 46,
+   "awayPts": 56
+  },
+  {
+   "gw": 16,
+   "home": "Geldog FC",
+   "away": "Atlético Benfield",
+   "homePts": 39,
+   "awayPts": 30
+  },
+  {
+   "gw": 17,
+   "home": "Asterick",
+   "away": "Champagne Khusanova FC",
+   "homePts": 35,
+   "awayPts": 40
+  },
+  {
+   "gw": 17,
+   "home": "Singer's Spartans",
+   "away": "Celta Leigh-Go",
+   "homePts": 30,
+   "awayPts": 37
+  },
+  {
+   "gw": 17,
+   "home": "WA Wanderers",
+   "away": "Interjacksonale*",
+   "homePts": 42,
+   "awayPts": 26
+  },
+  {
+   "gw": 17,
+   "home": "Mighty 🦆 *",
+   "away": "Chairman Mao *°",
+   "homePts": 29,
+   "awayPts": 39
+  },
+  {
+   "gw": 17,
+   "home": "101011101",
+   "away": "Atlético Benfield",
+   "homePts": 38,
+   "awayPts": 30
+  },
+  {
+   "gw": 17,
+   "home": "The Dog’s Polaks",
+   "away": "Geldog FC",
+   "homePts": 25,
+   "awayPts": 21
+  },
+  {
+   "gw": 18,
+   "home": "Asterick",
+   "away": "Celta Leigh-Go",
+   "homePts": 38,
+   "awayPts": 27
+  },
+  {
+   "gw": 18,
+   "home": "Champagne Khusanova FC",
+   "away": "Interjacksonale*",
+   "homePts": 32,
+   "awayPts": 41
+  },
+  {
+   "gw": 18,
+   "home": "Singer's Spartans",
+   "away": "Chairman Mao *°",
+   "homePts": 22,
+   "awayPts": 34
+  },
+  {
+   "gw": 18,
+   "home": "WA Wanderers",
+   "away": "Atlético Benfield",
+   "homePts": 41,
+   "awayPts": 20
+  },
+  {
+   "gw": 18,
+   "home": "Mighty 🦆 *",
+   "away": "Geldog FC",
+   "homePts": 40,
+   "awayPts": 35
+  },
+  {
+   "gw": 18,
+   "home": "101011101",
+   "away": "The Dog’s Polaks",
+   "homePts": 35,
+   "awayPts": 24
+  },
+  {
+   "gw": 19,
+   "home": "Asterick",
+   "away": "Interjacksonale*",
+   "homePts": 24,
+   "awayPts": 31
+  },
+  {
+   "gw": 19,
+   "home": "Celta Leigh-Go",
+   "away": "Chairman Mao *°",
+   "homePts": 45,
+   "awayPts": 38
+  },
+  {
+   "gw": 19,
+   "home": "Champagne Khusanova FC",
+   "away": "Atlético Benfield",
+   "homePts": 46,
+   "awayPts": 27
+  },
+  {
+   "gw": 19,
+   "home": "Singer's Spartans",
+   "away": "Geldog FC",
+   "homePts": 44,
+   "awayPts": 25
+  },
+  {
+   "gw": 19,
+   "home": "WA Wanderers",
+   "away": "The Dog’s Polaks",
+   "homePts": 32,
+   "awayPts": 32
+  },
+  {
+   "gw": 19,
+   "home": "Mighty 🦆 *",
+   "away": "101011101",
+   "homePts": 31,
+   "awayPts": 22
+  },
+  {
+   "gw": 20,
+   "home": "Asterick",
+   "away": "Chairman Mao *°",
+   "homePts": 21,
+   "awayPts": 55
+  },
+  {
+   "gw": 20,
+   "home": "Interjacksonale*",
+   "away": "Atlético Benfield",
+   "homePts": 36,
+   "awayPts": 26
+  },
+  {
+   "gw": 20,
+   "home": "Celta Leigh-Go",
+   "away": "Geldog FC",
+   "homePts": 42,
+   "awayPts": 15
+  },
+  {
+   "gw": 20,
+   "home": "Champagne Khusanova FC",
+   "away": "The Dog’s Polaks",
+   "homePts": 46,
+   "awayPts": 28
+  },
+  {
+   "gw": 20,
+   "home": "Singer's Spartans",
+   "away": "101011101",
+   "homePts": 27,
+   "awayPts": 54
+  },
+  {
+   "gw": 20,
+   "home": "WA Wanderers",
+   "away": "Mighty 🦆 *",
+   "homePts": 20,
+   "awayPts": 32
+  },
+  {
+   "gw": 21,
+   "home": "Asterick",
+   "away": "Atlético Benfield",
+   "homePts": 31,
+   "awayPts": 45
+  },
+  {
+   "gw": 21,
+   "home": "Chairman Mao *°",
+   "away": "Geldog FC",
+   "homePts": 35,
+   "awayPts": 24
+  },
+  {
+   "gw": 21,
+   "home": "Interjacksonale*",
+   "away": "The Dog’s Polaks",
+   "homePts": 40,
+   "awayPts": 21
+  },
+  {
+   "gw": 21,
+   "home": "Celta Leigh-Go",
+   "away": "101011101",
+   "homePts": 41,
+   "awayPts": 35
+  },
+  {
+   "gw": 21,
+   "home": "Champagne Khusanova FC",
+   "away": "Mighty 🦆 *",
+   "homePts": 30,
+   "awayPts": 27
+  },
+  {
+   "gw": 21,
+   "home": "Singer's Spartans",
+   "away": "WA Wanderers",
+   "homePts": 34,
+   "awayPts": 30
+  },
+  {
+   "gw": 22,
+   "home": "Asterick",
+   "away": "Geldog FC",
+   "homePts": 24,
+   "awayPts": 30
+  },
+  {
+   "gw": 22,
+   "home": "Atlético Benfield",
+   "away": "The Dog’s Polaks",
+   "homePts": 23,
+   "awayPts": 27
+  },
+  {
+   "gw": 22,
+   "home": "Chairman Mao *°",
+   "away": "101011101",
+   "homePts": 33,
+   "awayPts": 33
+  },
+  {
+   "gw": 22,
+   "home": "Interjacksonale*",
+   "away": "Mighty 🦆 *",
+   "homePts": 37,
+   "awayPts": 41
+  },
+  {
+   "gw": 22,
+   "home": "Celta Leigh-Go",
+   "away": "WA Wanderers",
+   "homePts": 31,
+   "awayPts": 29
+  },
+  {
+   "gw": 22,
+   "home": "Champagne Khusanova FC",
+   "away": "Singer's Spartans",
+   "homePts": 35,
+   "awayPts": 33
+  },
+  {
+   "gw": 23,
+   "home": "The Dog’s Polaks",
+   "away": "Celta Leigh-Go",
+   "homePts": 48,
+   "awayPts": 30
+  },
+  {
+   "gw": 23,
+   "home": "Champagne Khusanova FC",
+   "away": "Asterick",
+   "homePts": 37,
+   "awayPts": 31
+  },
+  {
+   "gw": 23,
+   "home": "Singer's Spartans",
+   "away": "101011101",
+   "homePts": 47,
+   "awayPts": 31
+  },
+  {
+   "gw": 23,
+   "home": "Mighty 🦆 *",
+   "away": "Geldog FC",
+   "homePts": 24,
+   "awayPts": 35
+  },
+  {
+   "gw": 23,
+   "home": "Chairman Mao *°",
+   "away": "WA Wanderers",
+   "homePts": 25,
+   "awayPts": 25
+  },
+  {
+   "gw": 23,
+   "home": "Atlético Benfield",
+   "away": "Interjacksonale*",
+   "homePts": 24,
+   "awayPts": 41
+  },
+  {
+   "gw": 24,
+   "home": "The Dog’s Polaks",
+   "away": "Asterick",
+   "homePts": 33,
+   "awayPts": 36
+  },
+  {
+   "gw": 24,
+   "home": "Celta Leigh-Go",
+   "away": "101011101",
+   "homePts": 34,
+   "awayPts": 38
+  },
+  {
+   "gw": 24,
+   "home": "Champagne Khusanova FC",
+   "away": "Geldog FC",
+   "homePts": 35,
+   "awayPts": 37
+  },
+  {
+   "gw": 24,
+   "home": "Singer's Spartans",
+   "away": "WA Wanderers",
+   "homePts": 30,
+   "awayPts": 38
+  },
+  {
+   "gw": 24,
+   "home": "Mighty 🦆 *",
+   "away": "Interjacksonale*",
+   "homePts": 31,
+   "awayPts": 42
+  },
+  {
+   "gw": 24,
+   "home": "Chairman Mao *°",
+   "away": "Atlético Benfield",
+   "homePts": 39,
+   "awayPts": 27
+  },
+  {
+   "gw": 25,
+   "home": "The Dog’s Polaks",
+   "away": "101011101",
+   "homePts": 28,
+   "awayPts": 20
+  },
+  {
+   "gw": 25,
+   "home": "Asterick",
+   "away": "Geldog FC",
+   "homePts": 42,
+   "awayPts": 30
+  },
+  {
+   "gw": 25,
+   "home": "Celta Leigh-Go",
+   "away": "WA Wanderers",
+   "homePts": 22,
+   "awayPts": 47
+  },
+  {
+   "gw": 25,
+   "home": "Champagne Khusanova FC",
+   "away": "Interjacksonale*",
+   "homePts": 48,
+   "awayPts": 52
+  },
+  {
+   "gw": 25,
+   "home": "Singer's Spartans",
+   "away": "Atlético Benfield",
+   "homePts": 40,
+   "awayPts": 36
+  },
+  {
+   "gw": 25,
+   "home": "Mighty 🦆 *",
+   "away": "Chairman Mao *°",
+   "homePts": 21,
+   "awayPts": 25
+  },
+  {
+   "gw": 26,
+   "home": "The Dog’s Polaks",
+   "away": "Geldog FC",
+   "homePts": 39,
+   "awayPts": 20
+  },
+  {
+   "gw": 26,
+   "home": "101011101",
+   "away": "WA Wanderers",
+   "homePts": 34,
+   "awayPts": 32
+  },
+  {
+   "gw": 26,
+   "home": "Asterick",
+   "away": "Interjacksonale*",
+   "homePts": 50,
+   "awayPts": 26
+  },
+  {
+   "gw": 26,
+   "home": "Celta Leigh-Go",
+   "away": "Atlético Benfield",
+   "homePts": 45,
+   "awayPts": 27
+  },
+  {
+   "gw": 26,
+   "home": "Champagne Khusanova FC",
+   "away": "Chairman Mao *°",
+   "homePts": 47,
+   "awayPts": 31
+  },
+  {
+   "gw": 26,
+   "home": "Singer's Spartans",
+   "away": "Mighty 🦆 *",
+   "homePts": 44,
+   "awayPts": 22
+  },
+  {
+   "gw": 27,
+   "home": "The Dog’s Polaks",
+   "away": "WA Wanderers",
+   "homePts": 29,
+   "awayPts": 29
+  },
+  {
+   "gw": 27,
+   "home": "Geldog FC",
+   "away": "Interjacksonale*",
+   "homePts": 39,
+   "awayPts": 24
+  },
+  {
+   "gw": 27,
+   "home": "101011101",
+   "away": "Atlético Benfield",
+   "homePts": 40,
+   "awayPts": 56
+  },
+  {
+   "gw": 27,
+   "home": "Asterick",
+   "away": "Chairman Mao *°",
+   "homePts": 49,
+   "awayPts": 26
+  },
+  {
+   "gw": 27,
+   "home": "Celta Leigh-Go",
+   "away": "Mighty 🦆 *",
+   "homePts": 31,
+   "awayPts": 29
+  },
+  {
+   "gw": 27,
+   "home": "Champagne Khusanova FC",
+   "away": "Singer's Spartans",
+   "homePts": 21,
+   "awayPts": 41
+  },
+  {
+   "gw": 28,
+   "home": "The Dog’s Polaks",
+   "away": "Interjacksonale*",
+   "homePts": 17,
+   "awayPts": 25
+  },
+  {
+   "gw": 28,
+   "home": "WA Wanderers",
+   "away": "Atlético Benfield",
+   "homePts": 29,
+   "awayPts": 34
+  },
+  {
+   "gw": 28,
+   "home": "Geldog FC",
+   "away": "Chairman Mao *°",
+   "homePts": 28,
+   "awayPts": 27
+  },
+  {
+   "gw": 28,
+   "home": "101011101",
+   "away": "Mighty 🦆 *",
+   "homePts": 26,
+   "awayPts": 32
+  },
+  {
+   "gw": 28,
+   "home": "Asterick",
+   "away": "Singer's Spartans",
+   "homePts": 33,
+   "awayPts": 39
+  },
+  {
+   "gw": 28,
+   "home": "Celta Leigh-Go",
+   "away": "Champagne Khusanova FC",
+   "homePts": 32,
+   "awayPts": 38
+  },
+  {
+   "gw": 29,
+   "home": "The Dog’s Polaks",
+   "away": "Atlético Benfield",
+   "homePts": 18,
+   "awayPts": 28
+  },
+  {
+   "gw": 29,
+   "home": "Interjacksonale*",
+   "away": "Chairman Mao *°",
+   "homePts": 42,
+   "awayPts": 24
+  },
+  {
+   "gw": 29,
+   "home": "WA Wanderers",
+   "away": "Mighty 🦆 *",
+   "homePts": 47,
+   "awayPts": 37
+  },
+  {
+   "gw": 29,
+   "home": "Geldog FC",
+   "away": "Singer's Spartans",
+   "homePts": 18,
+   "awayPts": 33
+  },
+  {
+   "gw": 29,
+   "home": "101011101",
+   "away": "Champagne Khusanova FC",
+   "homePts": 40,
+   "awayPts": 29
+  },
+  {
+   "gw": 29,
+   "home": "Asterick",
+   "away": "Celta Leigh-Go",
+   "homePts": 30,
+   "awayPts": 39
+  },
+  {
+   "gw": 30,
+   "home": "The Dog’s Polaks",
+   "away": "Chairman Mao *°",
+   "homePts": 24,
+   "awayPts": 38
+  },
+  {
+   "gw": 30,
+   "home": "Atlético Benfield",
+   "away": "Mighty 🦆 *",
+   "homePts": 31,
+   "awayPts": 33
+  },
+  {
+   "gw": 30,
+   "home": "Interjacksonale*",
+   "away": "Singer's Spartans",
+   "homePts": 31,
+   "awayPts": 30
+  },
+  {
+   "gw": 30,
+   "home": "WA Wanderers",
+   "away": "Champagne Khusanova FC",
+   "homePts": 32,
+   "awayPts": 35
+  },
+  {
+   "gw": 30,
+   "home": "Geldog FC",
+   "away": "Celta Leigh-Go",
+   "homePts": 33,
+   "awayPts": 24
+  },
+  {
+   "gw": 30,
+   "home": "101011101",
+   "away": "Asterick",
+   "homePts": 44,
+   "awayPts": 27
+  },
+  {
+   "gw": 31,
+   "home": "The Dog’s Polaks",
+   "away": "Mighty 🦆 *",
+   "homePts": 31,
+   "awayPts": 50
+  },
+  {
+   "gw": 31,
+   "home": "Chairman Mao *°",
+   "away": "Singer's Spartans",
+   "homePts": 26,
+   "awayPts": 29
+  },
+  {
+   "gw": 31,
+   "home": "Atlético Benfield",
+   "away": "Champagne Khusanova FC",
+   "homePts": 30,
+   "awayPts": 30
+  },
+  {
+   "gw": 31,
+   "home": "Interjacksonale*",
+   "away": "Celta Leigh-Go",
+   "homePts": 25,
+   "awayPts": 23
+  },
+  {
+   "gw": 31,
+   "home": "WA Wanderers",
+   "away": "Asterick",
+   "homePts": 29,
+   "awayPts": 23
+  },
+  {
+   "gw": 31,
+   "home": "Geldog FC",
+   "away": "101011101",
+   "homePts": 26,
+   "awayPts": 41
+  },
+  {
+   "gw": 32,
+   "home": "The Dog’s Polaks",
+   "away": "Singer's Spartans",
+   "homePts": 40,
+   "awayPts": 51
+  },
+  {
+   "gw": 32,
+   "home": "Mighty 🦆 *",
+   "away": "Champagne Khusanova FC",
+   "homePts": 45,
+   "awayPts": 34
+  },
+  {
+   "gw": 32,
+   "home": "Chairman Mao *°",
+   "away": "Celta Leigh-Go",
+   "homePts": 38,
+   "awayPts": 50
+  },
+  {
+   "gw": 32,
+   "home": "Atlético Benfield",
+   "away": "Asterick",
+   "homePts": 32,
+   "awayPts": 37
+  },
+  {
+   "gw": 32,
+   "home": "Interjacksonale*",
+   "away": "101011101",
+   "homePts": 46,
+   "awayPts": 21
+  },
+  {
+   "gw": 32,
+   "home": "WA Wanderers",
+   "away": "Geldog FC",
+   "homePts": 27,
+   "awayPts": 9
+  },
+  {
+   "gw": 33,
+   "home": "The Dog’s Polaks",
+   "away": "Champagne Khusanova FC",
+   "homePts": 40,
+   "awayPts": 43
+  },
+  {
+   "gw": 33,
+   "home": "Singer's Spartans",
+   "away": "Celta Leigh-Go",
+   "homePts": 96,
+   "awayPts": 56
+  },
+  {
+   "gw": 33,
+   "home": "Mighty 🦆 *",
+   "away": "Asterick",
+   "homePts": 46,
+   "awayPts": 38
+  },
+  {
+   "gw": 33,
+   "home": "Chairman Mao *°",
+   "away": "101011101",
+   "homePts": 64,
+   "awayPts": 52
+  },
+  {
+   "gw": 33,
+   "home": "Atlético Benfield",
+   "away": "Geldog FC",
+   "homePts": 53,
+   "awayPts": 28
+  },
+  {
+   "gw": 33,
+   "home": "Interjacksonale*",
+   "away": "WA Wanderers",
+   "homePts": 37,
+   "awayPts": 31
+  },
+  {
+   "gw": 34,
+   "home": "Atlético Benfield",
+   "away": "Interjacksonale*",
+   "homePts": 32,
+   "awayPts": 30
+  },
+  {
+   "gw": 34,
+   "home": "The Dog’s Polaks",
+   "away": "Chairman Mao *°",
+   "homePts": 23,
+   "awayPts": 20
+  },
+  {
+   "gw": 34,
+   "home": "Celta Leigh-Go",
+   "away": "WA Wanderers",
+   "homePts": 11,
+   "awayPts": 45
+  },
+  {
+   "gw": 34,
+   "home": "Asterick",
+   "away": "Singer's Spartans",
+   "homePts": 20,
+   "awayPts": 24
+  },
+  {
+   "gw": 34,
+   "home": "101011101",
+   "away": "Champagne Khusanova FC",
+   "homePts": 41,
+   "awayPts": 39
+  },
+  {
+   "gw": 34,
+   "home": "Geldog FC",
+   "away": "Mighty 🦆 *",
+   "homePts": 11,
+   "awayPts": 25
+  },
+  {
+   "gw": 35,
+   "home": "Atlético Benfield",
+   "away": "Chairman Mao *°",
+   "homePts": 30,
+   "awayPts": 31
+  },
+  {
+   "gw": 35,
+   "home": "Interjacksonale*",
+   "away": "WA Wanderers",
+   "homePts": 44,
+   "awayPts": 47
+  },
+  {
+   "gw": 35,
+   "home": "The Dog’s Polaks",
+   "away": "Singer's Spartans",
+   "homePts": 41,
+   "awayPts": 18
+  },
+  {
+   "gw": 35,
+   "home": "Celta Leigh-Go",
+   "away": "Champagne Khusanova FC",
+   "homePts": 29,
+   "awayPts": 31
+  },
+  {
+   "gw": 35,
+   "home": "Asterick",
+   "away": "Mighty 🦆 *",
+   "homePts": 30,
+   "awayPts": 27
+  },
+  {
+   "gw": 35,
+   "home": "101011101",
+   "away": "Geldog FC",
+   "homePts": 42,
+   "awayPts": 34
+  },
+  {
+   "gw": 36,
+   "home": "Atlético Benfield",
+   "away": "WA Wanderers",
+   "homePts": 32,
+   "awayPts": 42
+  },
+  {
+   "gw": 36,
+   "home": "Chairman Mao *°",
+   "away": "Singer's Spartans",
+   "homePts": 32,
+   "awayPts": 19
+  },
+  {
+   "gw": 36,
+   "home": "Interjacksonale*",
+   "away": "Champagne Khusanova FC",
+   "homePts": 48,
+   "awayPts": 41
+  },
+  {
+   "gw": 36,
+   "home": "The Dog’s Polaks",
+   "away": "Mighty 🦆 *",
+   "homePts": 35,
+   "awayPts": 37
+  },
+  {
+   "gw": 36,
+   "home": "Celta Leigh-Go",
+   "away": "Geldog FC",
+   "homePts": 47,
+   "awayPts": 31
+  },
+  {
+   "gw": 36,
+   "home": "Asterick",
+   "away": "101011101",
+   "homePts": 42,
+   "awayPts": 26
+  },
+  {
+   "gw": 37,
+   "home": "Atlético Benfield",
+   "away": "Singer's Spartans",
+   "homePts": 19,
+   "awayPts": 29
+  },
+  {
+   "gw": 37,
+   "home": "WA Wanderers",
+   "away": "Champagne Khusanova FC",
+   "homePts": 42,
+   "awayPts": 24
+  },
+  {
+   "gw": 37,
+   "home": "Chairman Mao *°",
+   "away": "Mighty 🦆 *",
+   "homePts": 34,
+   "awayPts": 27
+  },
+  {
+   "gw": 37,
+   "home": "Interjacksonale*",
+   "away": "Geldog FC",
+   "homePts": 26,
+   "awayPts": 36
+  },
+  {
+   "gw": 37,
+   "home": "The Dog’s Polaks",
+   "away": "101011101",
+   "homePts": 20,
+   "awayPts": 21
+  },
+  {
+   "gw": 37,
+   "home": "Celta Leigh-Go",
+   "away": "Asterick",
+   "homePts": 40,
+   "awayPts": 31
+  },
+  {
+   "gw": 38,
+   "home": "Atlético Benfield",
+   "away": "Champagne Khusanova FC",
+   "homePts": 24,
+   "awayPts": 25
+  },
+  {
+   "gw": 38,
+   "home": "Singer's Spartans",
+   "away": "Mighty 🦆 *",
+   "homePts": 42,
+   "awayPts": 21
+  },
+  {
+   "gw": 38,
+   "home": "WA Wanderers",
+   "away": "Geldog FC",
+   "homePts": 27,
+   "awayPts": 30
+  },
+  {
+   "gw": 38,
+   "home": "Chairman Mao *°",
+   "away": "101011101",
+   "homePts": 32,
+   "awayPts": 34
+  },
+  {
+   "gw": 38,
+   "home": "Interjacksonale*",
+   "away": "Asterick",
+   "homePts": 23,
+   "awayPts": 24
+  },
+  {
+   "gw": 38,
+   "home": "The Dog’s Polaks",
+   "away": "Celta Leigh-Go",
+   "homePts": 43,
+   "awayPts": 21
+  }
+ ],
+ "cupMatches": [
+  {
+   "gw": 34,
+   "round": 1,
+   "leg": 1,
+   "home": "Interjacksonale*",
+   "away": "Singer's Spartans",
+   "homePts": 30,
+   "awayPts": 24
+  },
+  {
+   "gw": 34,
+   "round": 1,
+   "leg": 1,
+   "home": "WA Wanderers",
+   "away": "Champagne Khusanova FC",
+   "homePts": 45,
+   "awayPts": 39
+  },
+  {
+   "gw": 35,
+   "round": 2,
+   "leg": 1,
+   "home": "Interjacksonale*",
+   "away": "WA Wanderers",
+   "homePts": 44,
+   "awayPts": 47
+  },
+  {
+   "gw": 36,
+   "round": 2,
+   "leg": 2,
+   "home": "WA Wanderers",
+   "away": "Interjacksonale*",
+   "homePts": 42,
+   "awayPts": 48
+  }
+ ]
+}

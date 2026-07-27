@@ -104,6 +104,15 @@ def main():
     )
     (ROOT / 'js' / 'data.js').write_text(data_js, encoding='utf-8')
 
+    # pure-JSON mirror of data.js for the server (Cloud Functions parse this as
+    # data — they never execute fetched code)
+    (ROOT / 'data' / 'data.json').write_text(json.dumps({
+        'generated': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'teams': teams,
+        'players': players,
+        'gameweeks': gameweeks,
+    }, ensure_ascii=False), encoding='utf-8')
+
     # fixtures
     fx = get(f'{BASE}/fixtures/')
     fixtures = [{
@@ -140,10 +149,12 @@ def main():
             s = el['stats']
             if s['minutes'] == 0 and not any([s['yellow_cards'], s['red_cards']]):
                 continue
+            # st = number of STARTS in the gameweek (feeds the start-2 / sub-1
+            # appearance rule; can be 2+ in a double gameweek)
             started = s.get('starts', 1 if s['minutes'] >= 60 else 0)
             row = {
                 'min': s['minutes'],
-                'st': 1 if started else 0,
+                'st': int(started),
                 'sub': 1 if (s['minutes'] > 0 and not started) else 0,
                 'g': s['goals_scored'],
                 'a': s['assists'],

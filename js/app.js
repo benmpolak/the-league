@@ -9,6 +9,21 @@ const LS_KEY = `${LS_NS}-league`;
 
 const TEAM_BY_NAME = Object.fromEntries(TEAMS.map(t => [t.name, t]));
 const PLAYER_BY_ID = Object.fromEntries(PLAYERS.map(p => [p.id, p]));
+/* stale-save guard: a saved game can outlive the player feed it was built on
+   (FPL re-keys, half-written save). Unknown ids get a visible stub so every
+   view still renders, and boot offers a reload instead of a blank screen. */
+let staleSave = false;
+function stubMissingPlayers(s) {
+  if (!s) return false;
+  const need = new Set();
+  const arr = x => Array.isArray(x) ? x : x ? Object.values(x) : [];
+  for (const pk of arr(s.draft?.picks)) if (pk?.playerId && !PLAYER_BY_ID[pk.playerId]) need.add(pk.playerId);
+  for (const t of arr(s.transfers)) for (const id of [t?.inId, t?.outId]) if (id && !PLAYER_BY_ID[id]) need.add(id);
+  for (const id of need) {
+    PLAYER_BY_ID[id] = { id, code: 0, name: `#${id} (unknown)`, full: 'Unknown player — feed changed', team: '', club: '???', pos: 'MF', status: 'a', news: '', newsAdded: '', chance: null, price: 0, pts: 0, rating: 0, xp: 0, ppg: 0, mp: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0 };
+  }
+  return need.size > 0;
+}
 
 /* ---- last season's archive (js/history25.js) ----
    The FPL API zeroes every aggregate when it flips to 26/27 in July. The
@@ -27,8 +42,8 @@ const ratingRank = r => PLAYERS.filter(x => (x.rating ?? 0) > r).length;
 // Draft Fantasy's default table (docs.draftfantasy.com), minus bonus points.
 // Yes, a goalkeeper goal really is 10.
 const DEFAULT_SCORING = {
-  appearance: 1,
-  appearance60: 2,
+  appearanceStart: 2,
+  appearanceSub: 1,
   goalGK: 10, goalDF: 6, goalMF: 5, goalFW: 4,
   assist: 3,
   cleanSheet: 4,
@@ -42,8 +57,8 @@ const DEFAULT_SCORING = {
   per2Conceded: -1,
 };
 const SCORING_LABELS = {
-  appearance: 'Appearance (under 60 min)',
-  appearance60: 'Appearance (60+ min)',
+  appearanceStart: 'Appearance — started',
+  appearanceSub: 'Appearance — came on as sub',
   goalGK: 'Goal — GK', goalDF: 'Goal — DF', goalMF: 'Goal — MF', goalFW: 'Goal — FW',
   assist: 'Assist',
   cleanSheet: 'Clean sheet — GK/DF',
@@ -104,10 +119,14 @@ const investigationLine = (L, B) => {
 /* ---------------- gameweeks ---------------- */
 // Generated from the FPL API — a gameweek runs from its deadline to the next one's
 const GAMEWEEKS = GAMEWEEKS_RAW.map(g => ({ n: g.n, label: g.label, from: g.deadline, to: g.to, finished: g.finished }));
-const REGULAR_GWS = 33; // GW33 ends the regular season; GW34–36 are the playoffs
+const REGULAR_GWS = 33; // GW33 ends the regular season; GW34–38 are the playoffs
 const CUP_START = 7;    // the Monzo Cup begins GW8 (index 7)
+let demoGwOverride = null;
 const gwFrom = i => GAMEWEEKS[i].from;
 function currentGwIndex() {
+  // The demo fabricates GW1. Keeping the real calendar here made the demo open
+  // on GW38 with a blank pitch, which looked broken to a first-time visitor.
+  if (demoGwOverride != null) return demoGwOverride;
   const now = Date.now();
   for (let i = 0; i < GAMEWEEKS.length; i++) if (now < new Date(GAMEWEEKS[i].to).getTime()) return i;
   return GAMEWEEKS.length - 1;
@@ -143,13 +162,47 @@ let state = load() || freshState();
 /* ---------------- multiplayer (Firebase sync) ---------------- */
 const SYNC_OFF = new URLSearchParams(location.search).has('nosync');
 const WHO_KEY = `${LS_NS}-whoami`;
+const SPECT_KEY = `${LS_NS}-spectate`;
 let whoami = +localStorage.getItem(WHO_KEY) || null; // manager id, -1 = spectator
 let syncConnected = false;
 let demoMode = false;
 let demoBackup = null;
-const syncOn = () => !SYNC_OFF && !!window.WCSync;
+// sync is a matter of INTENT, not module presence: if sync.js failed to load
+// (cold start on dead network, CDN hiccup) the game must be READ-ONLY —
+// serverAct refuses while disconnected. Treating a load failure like ?nosync
+// would accept local writes that silently vanish on the next real snapshot.
+const syncOn = () => !SYNC_OFF;
 const netOn = () => syncOn() && !demoMode;
-const isCommissioner = () => whoami === state.managers[0]?.id;
+// online identity comes from the server (Firebase sign-in + membership), never
+// from localStorage — an old stored whoami grants nothing once auth is live
+let authUser = null;      // {uid, email} | null
+let membership = null;    // {managerId, role} | null
+let spectating = localStorage.getItem(SPECT_KEY) === '1';
+function syncIdentity() {
+  if (!netOn()) return;
+  whoami = membership ? membership.managerId : (spectating ? -1 : null);
+}
+const isCommissioner = () => netOn() ? membership?.role === 'commissioner' : whoami === state.managers[0]?.id;
+// the one write path when online: a server-side mutation. The authoritative
+// result comes back via the snapshot listener; errors surface as toasts.
+// Callable mutations do NOT queue offline — while disconnected the game is
+// read-only and every attempt fails immediately with a reconnect message.
+// One in-flight request per action: no double submissions from double taps.
+const _actPending = new Set();
+function serverAct(action, data = {}) {
+  const refuse = msg => {
+    toast(msg);
+    const p = Promise.reject(new Error(msg));
+    p.catch(() => {}); // pre-handled: call sites may not attach their own catch
+    return p;
+  };
+  if (netOn() && !syncConnected) return refuse('You’re offline — the league is read-only until you reconnect.');
+  if (_actPending.has(action)) return refuse('Still sending the last one — give it a second.');
+  _actPending.add(action);
+  return window.WCSync.call(action, data)
+    .catch(e => { toast(e.message || 'The Committee refused that one.'); throw e; })
+    .finally(() => _actPending.delete(action));
+}
 const canActFor = mid => demoMode || !syncOn() || whoami === mid || isCommissioner();
 // use for actions: blocks other managers, and makes the commissioner explicitly
 // confirm before touching a team that isn't theirs (no more accidents)
@@ -161,7 +214,9 @@ function actGuard(mid, what = 'team') {
   return true;
 }
 
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup'];
+// pins are gone — identity is real sign-in now. claims/autolists stay in local
+// state but arrive via the OWNER's private node online (blind to everyone else).
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -171,27 +226,17 @@ function sharedSnapshot() {
 let cloudKnown = false;   // have we received the first snapshot (any value)?
 let cloudHasData = false; // does the cloud currently hold a real league?
 function pushShared(path, val) {
-  if (!netOn()) return;
-  // NEVER write before the server has told us what's out there. A device that
-  // was backgrounded for weeks could otherwise blast its stale state over a
-  // live 12-year league on the first tap. Drop the write; the imminent
-  // snapshot re-renders the true state and the user simply acts again.
-  if (!cloudKnown) return;
-  // cloud is genuinely empty (a real reset): only the Chairman may seed it, and
-  // he seeds the WHOLE state so no device ever mistakes a fragment for truth.
-  if (!cloudHasData) { if (isCommissioner()) publishAll(); return; }
-  window.WCSync.set(path, val).catch(e => console.warn('[sync] write failed', e));
+  // clients can no longer write the database — every converted call site goes
+  // through serverAct() when online. Reaching this while netOn is a bug.
+  if (netOn()) console.warn('[v2] dropped direct write', path);
 }
 function publishAll() {
   if (!netOn()) return;
-  cloudKnown = true; cloudHasData = true; // we're about to make the cloud hold a full league
-  // one atomic multi-key update: every device sees a single complete snapshot
-  // (sequential per-key writes let clients glimpse half a league), and keys an
-  // older build doesn't know about are left untouched rather than dropped
-  const o = {};
-  for (const k of SHARED_KEYS) o[k] = state[k] ?? null;
-  const w = window.WCSync.update ? window.WCSync.update(o) : window.WCSync.setRoot(o);
-  w.catch(e => console.warn('[sync] publish failed', e));
+  // full-state publish (empty-cloud restore / file import) is a commissioner
+  // mutation like any other — the server splits private data per owner
+  serverAct('importState', { state: sharedSnapshot() })
+    .then(() => toast('League state published.'))
+    .catch(() => {});
 }
 const toArr = x => Array.isArray(x) ? x : (x ? Object.values(x) : []);
 
@@ -206,14 +251,10 @@ function txnArray(key, fn) {
     if (out) { state[key] = out; save(); render(); }
     return Promise.resolve(!!out);
   }
-  return window.WCSync.txn(key, cur => fn(toArr(cur)) || undefined)
-    .then(res => {
-      if (!res.committed) return false;
-      state[key] = toArr(res.snapshot.val());
-      save(); render();
-      return true;
-    })
-    .catch(e => { console.warn('[sync] txn failed', key, e); return false; });
+  // online, array writes are server-side transactions inside the mutation
+  // functions — a call site still hitting this is unconverted
+  console.warn('[v2] dropped direct txn', key);
+  return Promise.resolve(false);
 }
 // ownership computed from an arbitrary transfers list — for in-transaction checks
 function ownedIdsGiven(transfers, gwIdx) {
@@ -294,7 +335,6 @@ function applySharedSnapshot(data) {
   data.transfers = toArr(data.transfers);
   data.trades = toArr(data.trades);
   data.covenants = toArr(data.covenants);
-  data.pins = data.pins || {};
   data.autolists = data.autolists || {};
   for (const mid of Object.keys(data.autolists)) data.autolists[mid] = toArr(data.autolists[mid]);
   data.lineups = data.lineups || {};
@@ -323,17 +363,59 @@ function applySharedSnapshot(data) {
   // rather than clinging to a stale local copy (that's how a cancelled Ham
   // Cup or cleared trade-block used to linger forever on other devices)
   const defaults = freshState();
-  for (const k of SHARED_KEYS) state[k] = data[k] !== undefined ? data[k] : defaults[k];
+  for (const k of SHARED_KEYS) {
+    // online, claims/autolists never travel in the public snapshot — they are
+    // per-owner private data fed by onPrivateSnapshot. Keep the local copy.
+    if (netOn() && (k === 'claims' || k === 'autolists')) continue;
+    state[k] = data[k] !== undefined ? data[k] : defaults[k];
+  }
   if (!state.settings.posMin) state.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
   if (!state.settings.posMax) state.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
   save(); render();
-  const cerKey = state.draft.order.join('-');
+  const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
   if (fresh && cerKey && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== cerKey) {
-    localStorage.setItem(`${LS_NS}-ceremony-seen`, cerKey);
-    showCeremony();
+    showCeremony(); // stamps "seen" itself, at the END — never at open
   }
 };
 window.onSyncConnection = up => { syncConnected = up; renderSyncArea(); };
+
+/* ----- auth + private data (v2) ----- */
+let _pendingPrivate;
+function applyPrivateNode(node) {
+  const mid = membership?.managerId;
+  if (mid == null) return;
+  state.autolists = { ...state.autolists, [mid]: toArr(node?.autolist) };
+  const claims = {};
+  for (const [g, arr] of Object.entries(node?.claims || {})) claims[g] = { [mid]: toArr(arr) };
+  state.claims = claims;
+  save(); render();
+}
+window.onPrivateSnapshot = node => {
+  if (!netOn()) return;
+  if (!membership) { _pendingPrivate = node; return; } // membership may land second
+  applyPrivateNode(node);
+};
+window.onMembershipSnapshot = m => {
+  membership = m || null;
+  syncIdentity();
+  if (membership && _pendingPrivate !== undefined) { applyPrivateNode(_pendingPrivate); _pendingPrivate = undefined; }
+  render();
+};
+window.onAuthChanged = u => {
+  authUser = u;
+  if (!u) { membership = null; _pendingPrivate = undefined; }
+  syncIdentity();
+  render();
+};
+// magic-link completion: success and failure both get said OUT LOUD —
+// a silently-failed link leaves someone signed out without knowing it
+window.onAuthLinkResult = (ok, err) => {
+  if (ok) { toast('Signed in. Welcome to the league.'); return; }
+  const code = String(err?.code || err?.message || '');
+  toast(code.includes('invalid-action-code') ? 'That sign-in link has been used or expired — request a fresh one.'
+    : code.includes('invalid-email') || code.includes('does not match') ? 'That email doesn’t match the link — type the address the link was sent to.'
+    : 'Sign-in didn’t complete — request a fresh link.');
+};
 
 function freshState() {
   return {
@@ -361,7 +443,6 @@ function freshState() {
     },
     draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0 },
     autolists: {},         // managerId -> [pid] ranked personal autopick list / shortlist
-    pins: {},              // managerId -> salted SHA-256 of their PIN
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
     transfers: [],         // [{managerId, outId, inId, gw, n, t, trade?, waiver?}]
@@ -375,6 +456,7 @@ function freshState() {
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
+    ready: {},             // pre-draft roll call {managerId: {t, self}} — cleared by reset
     fixtures: [],
     matchStats: {},        // 'gw{n}' -> { gw, label, date, final, playerStats: {pid:{min,st,sub,g,a,cs,gc,og,ps,pm,yc,rc,sv}} }
     adjustments: {},
@@ -480,7 +562,12 @@ async function enterDemo() {
   if (demoMode) return;
   demoBackup = state;
   demoMode = true;
+  demoGwOverride = 0;
   state = buildDemoState();
+  const hv = location.hash.slice(1);
+  state.view = NAV_ITEMS.some(([k]) => k === hv) ? hv : 'dash'; // demo opens at home too
+  teamView.gw = 0;
+  fxView.gw = GAMEWEEKS[0]?.n || 1;
   // a live-looking Vidiprinter tape from real drafted names (memory only —
   // the device's real tape is stashed and restored on exit)
   const dsq = mid => state.draft.picks.filter(pk => pk.managerId === mid).map(pk => PLAYER_BY_ID[pk.playerId]);
@@ -517,6 +604,9 @@ async function enterDemo() {
 function exitDemo() {
   state = demoBackup || load() || freshState();
   demoMode = false;
+  demoGwOverride = null;
+  teamView.gw = null;
+  fxView.gw = null;
   demoBackup = null;
   if (vidiStash !== null) { vidiFeed = vidiStash; vidiStash = null; }
   // any league changes that landed while we were in the demo were swallowed —
@@ -531,7 +621,7 @@ function load() {
     if (s && !s.claims) s.claims = {};
     if (s && !s.autolists) s.autolists = {};
     if (s && !s.trades) s.trades = [];
-    if (s && !s.pins) s.pins = {};
+    if (s && s.pins) delete s.pins; // PINs retired — real sign-in now
     if (s && !s.covenants) s.covenants = [];
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
     if (s && !s.shirtNums) s.shirtNums = {};
@@ -540,10 +630,12 @@ function load() {
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.benchOrders) s.benchOrders = {};
     if (s && !s.lobus) s.lobus = {};
+    if (s && !s.ready) s.ready = {};
     if (s && s.hamCup === undefined) s.hamCup = null;
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
     if (s && !s.settings.posMax) s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
+    staleSave = stubMissingPlayers(s);
     return s;
   } catch { return null; }
 }
@@ -558,7 +650,16 @@ const flagImg = (team, big = false) => {
 };
 // official PL headshot, falling back to the league's own "Photo Missing" card.
 // data-pcard makes every photo a button that opens the player's stats card.
-const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+const PHOTO_MISSING = 'https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png';
+const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+// the CSP kills inline onerror= handlers, so broken photos fall back centrally
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (img && img.tagName === 'IMG' && !img.dataset.fbk && (img.classList.contains('headshot') || img.classList.contains('pcard-photo'))) {
+    img.dataset.fbk = '1';
+    img.src = PHOTO_MISSING;
+  }
+}, true);
 // the actual kit artwork FPL uses (GK variant for keepers); pass p to make it clickable too
 const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
@@ -642,6 +743,8 @@ const statusChip = p => STATUS_ICON[p.status]
 const statusClass = p => p.status === 'a' ? '' : p.status === 'd' ? 'st-amber' : 'st-red';
 function toast(msg) {
   const el = $('#toast') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'toast' }));
+  el.setAttribute('role', 'status');
+  el.setAttribute('aria-live', 'polite');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toast._t);
@@ -653,6 +756,241 @@ function normName(s) {
 }
 function managerName(mid) { return state.managers.find(m => m.id === mid)?.name || `Manager ${mid}`; }
 function teamName(mid) { const m = state.managers.find(m => m.id === mid); return m?.team || m?.name || `Manager ${mid}`; }
+
+/* ----- club kits: every team gets a shirt, everywhere its name appears ----- */
+const KIT_PATTERNS = ['plain', 'stripes', 'hoops', 'sash', 'halves'];
+// pre-customisation defaults: a deterministic two-colour kit per manager
+const KIT_DEFAULTS = [
+  ['#2dd4a7', '#0b3b2e'], ['#e05555', '#ffffff'], ['#4f8ce8', '#ffffff'], ['#e8b64c', '#101010'],
+  ['#9b59d0', '#ffffff'], ['#ffffff', '#101010'], ['#f08030', '#0b1a3a'], ['#3fb96d', '#ffffff'],
+  ['#101010', '#e8b64c'], ['#b7e4f7', '#0b1a3a'], ['#e88aa0', '#101010'], ['#f4f4f4', '#5a1414'],
+];
+function kitFor(mid) {
+  const m = state.managers.find(x => x.id === mid);
+  if (m?.kit?.pattern) return m.kit;
+  const [c1, c2] = KIT_DEFAULTS[(mid - 1 + KIT_DEFAULTS.length) % KIT_DEFAULTS.length];
+  return { pattern: 'plain', c1, c2 };
+}
+function sponsorFor(mid) { return state.managers.find(x => x.id === mid)?.sponsor || ''; }
+// the gaffer in the dugout: an archetype off the FM-style stable, or homemade
+function gafferFor(mid) {
+  const g = state.managers.find(x => x.id === mid)?.gaffer;
+  if (g == null) return null;
+  if (typeof g === 'number') return GAFFERS[g] || null;
+  return { t: g.t, e: '🧢', bio: g.bio || '', fm: { badges: 'Unverifiable', playing: 'Undisclosed', media: 'No comment' } };
+}
+function gafferChip(mid) {
+  const g = gafferFor(mid);
+  return g ? `<span class="tag" title="${esc(g.bio)}&#10;Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">${g.e} ${esc(g.t)}</span>` : '';
+}
+// a wearable SVG shirt: pattern clipped to the jersey, sponsor across the chest
+function kitSvg(mid, size = 18, showSponsor = false) {
+  return kitSvgRaw(kitFor(mid), showSponsor ? sponsorFor(mid) : '', size, `kc${mid}-${size}${showSponsor ? 's' : ''}`);
+}
+function kitSvgRaw(k, sponsor, size, uid) {
+  const body = 'M10 4 L15 1 Q20 5 25 1 L30 4 L36 10 L31 16 L29 14 L29 39 L11 39 L11 14 L9 16 L4 10 Z';
+  const pat = k.pattern === 'stripes' ? `<rect x="13" y="0" width="4" height="40"/><rect x="21" y="0" width="4" height="40"/><rect x="29" y="0" width="4" height="40"/>`
+    : k.pattern === 'hoops' ? `<rect x="0" y="10" width="40" height="5"/><rect x="0" y="20" width="40" height="5"/><rect x="0" y="30" width="40" height="5"/>`
+    : k.pattern === 'sash' ? `<rect x="14" y="-12" width="7" height="64" transform="rotate(30 20 20)"/>`
+    : k.pattern === 'halves' ? `<rect x="20" y="0" width="20" height="40"/>`
+    : '';
+  const sp = sponsor
+    ? `<text x="20" y="26" text-anchor="middle" font-size="4.6" font-weight="800" font-family="inherit" fill="${k.pattern === 'halves' ? k.c1 : k.c2}" stroke="${k.pattern === 'halves' ? k.c2 : k.c1}" stroke-width="1.1" paint-order="stroke" letter-spacing=".2">${esc(String(sponsor).slice(0, 14))}</text>`
+    : '';
+  return `<svg class="club-kit" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="${uid}"><path d="${body}"/></clipPath></defs><path d="${body}" fill="${k.c1}"/><g clip-path="url(#${uid})" fill="${k.c2}">${pat}</g><path d="M15 1 Q20 5 25 1 L23 3 Q20 6 17 3 Z" fill="${k.c2}"/><path d="${body}" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/>${sp}</svg>`;
+}
+// name + shirt, for everywhere a team is written down
+function teamTag(mid) { return `${kitSvg(mid)} ${esc(teamName(mid))}`; }
+// declared rivalries: mutual = a clásico, one-sided = a derby only one of them
+// believes in (which is funnier)
+function rivalOf(mid) { return state.managers.find(x => x.id === mid)?.rival || null; }
+function derbyTag(a, b) {
+  const ab = rivalOf(a) === b, ba = rivalOf(b) === a;
+  if (ab && ba) return '<span class="tag derby-tag">&#128293; EL CL&Aacute;SICO</span>';
+  if (ab || ba) return `<span class="tag derby-tag" title="Declared by ${esc(teamName(ab ? a : b))}. ${esc(teamName(ab ? b : a))} remains unaware.">&#128293; derby (one&#8209;sided)</span>`;
+  return '';
+}
+
+/* ----- the club office: name, kit, sponsor — first-login ceremony and
+   forever after. Changes go through the server like everything else. ----- */
+function clubEditor(mid) {
+  if (!actGuard(mid, 'club')) return;
+  const m = state.managers.find(x => x.id === mid);
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: [...(m?.boards || [])], gaffer: m?.gaffer ?? null };
+  const stock = AD_BOARDS.map(b => b.t);
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  const paint = () => {
+    const prev = ov.querySelector('#kitPreview');
+    if (prev) prev.innerHTML = kitSvgRaw(draft.kit, draft.sponsor, 120, 'kprev');
+    ov.querySelectorAll('[data-pat]').forEach(b => b.classList.toggle('active', b.dataset.pat === draft.kit.pattern));
+    ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
+    ov.querySelectorAll('[data-gaffer]').forEach(b => b.classList.toggle('active', draft.gaffer === +b.dataset.gaffer));
+  };
+  ov.innerHTML = `<div class="card" style="max-width:460px;width:94%">
+    <h2>The club office</h2>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
+      <div id="kitPreview" style="flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <label class="muted" style="font-size:11px">TEAM NAME</label>
+        <input id="clubName" maxlength="30" value="${esc(draft.team)}" style="width:100%" />
+        <label class="muted" style="font-size:11px;margin-top:8px;display:block">SPONSOR — off the hoardings, or make one up</label>
+        <select id="clubSpSel" style="width:100%">
+          <option value="">No sponsor</option>
+          ${stock.map(t => `<option value="${esc(t)}"${draft.sponsor === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
+          <option value="__own"${draft.sponsor && !stock.includes(draft.sponsor) ? ' selected' : ''}>Make one up…</option>
+        </select>
+        <input id="clubSpOwn" maxlength="20" placeholder="Your sponsor (20 chars)" value="${draft.sponsor && !stock.includes(draft.sponsor) ? esc(draft.sponsor) : ''}" style="width:100%;margin-top:6px;display:${draft.sponsor && !stock.includes(draft.sponsor) ? 'block' : 'none'}" />
+      </div>
+    </div>
+    <label class="muted" style="font-size:11px">KIT PATTERN</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px">
+      ${KIT_PATTERNS.map(p => `<button class="btn ghost small" data-pat="${p}">${p}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
+      <label class="muted" style="font-size:11px">SHIRT <input type="color" id="clubC1" value="${draft.kit.c1}"></label>
+      <label class="muted" style="font-size:11px">TRIM <input type="color" id="clubC2" value="${draft.kit.c2}"></label>
+    </div>
+    <label class="muted" style="font-size:11px">YOUR GROUND</label>
+    <input id="clubStadium" maxlength="40" value="${esc(draft.stadium)}" style="width:100%;margin:4px 0 10px" />
+    <label class="muted" style="font-size:11px">PITCH-SIDE HOARDINGS — pick up to three for home games</label>
+    <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
+      ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
+    </div>
+    <label class="muted" style="font-size:11px">THE GAFFER — who's in your dugout?</label>
+    <div id="gafferGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:4px 0 6px">
+      ${GAFFERS.map((g, i) => `<button class="btn ghost gaffer-card" data-gaffer="${i}" title="Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">
+        <b>${g.e} ${esc(g.t)}</b><span class="muted">${esc(g.bio)}</span>
+      </button>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn ghost small" id="gafferOwn">Make one up…</button>
+      <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
+    </div>
+    <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
+    <select id="clubRival" style="width:100%;margin:4px 0 14px">
+      <option value="">No declared rival (coward)</option>
+      ${state.managers.filter(x => x.id !== mid).map(x => `<option value="${x.id}"${draft.rival === x.id ? ' selected' : ''}>${esc(x.team || x.name)} — ${esc(x.name)}</option>`).join('')}
+    </select>
+    <div style="display:flex;gap:8px">
+      <button class="btn ghost" id="clubCancel" style="flex:1">Cancel</button>
+      <button class="btn" id="clubSave" style="flex:1">Save the lot</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  paint();
+  ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
+  ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { draft.kit.pattern = b.dataset.pat; paint(); });
+  ov.querySelector('#clubC1').oninput = e => { draft.kit.c1 = e.target.value; paint(); };
+  ov.querySelector('#clubC2').oninput = e => { draft.kit.c2 = e.target.value; paint(); };
+  const spSel = ov.querySelector('#clubSpSel'), spOwn = ov.querySelector('#clubSpOwn');
+  spSel.onchange = () => {
+    spOwn.style.display = spSel.value === '__own' ? 'block' : 'none';
+    draft.sponsor = spSel.value === '__own' ? spOwn.value.trim() : spSel.value;
+    paint();
+  };
+  spOwn.oninput = () => { draft.sponsor = spOwn.value.trim(); paint(); };
+  ov.querySelector('#clubRival').onchange = e => { draft.rival = e.target.value ? +e.target.value : null; };
+  ov.querySelector('#clubStadium').oninput = e => { draft.stadium = e.target.value; };
+  ov.querySelectorAll('[data-gaffer]').forEach(b => b.onclick = () => { draft.gaffer = +b.dataset.gaffer; paint(); });
+  ov.querySelector('#gafferNone').onclick = () => { draft.gaffer = null; paint(); toast('The dugout stands empty.'); };
+  ov.querySelector('#gafferOwn').onclick = () => {
+    const t = prompt('Your gaffer (30 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.t : '');
+    if (!t || t.trim().length < 2) return;
+    const bio = prompt('One-line bio (60 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.bio || '' : '') || '';
+    draft.gaffer = { t: t.trim().slice(0, 30), bio: bio.trim().slice(0, 60) };
+    paint();
+    toast(`${draft.gaffer.t} — appointed.`);
+  };
+  ov.querySelectorAll('[data-board]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.board;
+    if (draft.boards.includes(i)) draft.boards = draft.boards.filter(x => x !== i);
+    else if (draft.boards.length >= 3) { toast('Three hoardings max — this is a tidy ground'); return; }
+    else draft.boards.push(i);
+    paint();
+  });
+  ov.querySelector('#clubCancel').onclick = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#clubSave').onclick = () => {
+    const team = draft.team.trim();
+    if (team.length < 2) { toast('A club needs a name — 2 characters minimum'); return; }
+    localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
+    const stadiumName = draft.stadium.trim();
+    if (!stadiumName) { toast('A ground needs a name'); return; }
+    if (netOn()) {
+      serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) })
+        .then(() => toast('The club is founded. Wear it well.')).catch(() => {});
+      closeOv(ov);
+      return;
+    }
+    const idx = state.managers.findIndex(x => x.id === mid);
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
+    save(); render();
+    closeOv(ov);
+    toast('The club is founded. Wear it well.');
+  };
+}
+// the founding card: shown until the club has been to the office. In the demo
+// it fronts for manager #1 so visitors can see the toy without signing in.
+function foundingCard() {
+  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
+  if (!mid) return '';
+  const m = state.managers.find(x => x.id === mid);
+  if (!m || m.kit || localStorage.getItem(`${LS_NS}-founded-${mid}`)) return '';
+  return `<div class="card" style="border-color:var(--accent)">
+    <h2>Found your club ${kitSvg(mid, 22)}</h2>
+    <p class="rules-p">You've inherited <b>${esc(teamName(mid))}</b>. Keep the name or take a new one —
+    then cut your kit, sign a shirt sponsor, name your ground, line it with hoardings, appoint your
+    gaffer and declare your biggest rival. It all goes on show across the league.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" id="foundBtn" data-mid="${mid}">Open the club office</button>
+      <button class="btn ghost small" id="foundLater" data-mid="${mid}">Maybe later</button>
+    </div></div>`;
+}
+
+/* ----- My Club: the identity on permanent display, changeable whenever ----- */
+function viewClub() {
+  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
+  if (!mid) {
+    return `<div class="card" style="text-align:center;padding:40px">
+      <h2>Whose club?</h2>
+      <p class="rules-p">Sign in and this page becomes your club — kit, gaffer, ground, rivals, the lot.</p>
+      <button class="btn" id="clubSignIn">Sign in</button></div>`;
+  }
+  const m = state.managers.find(x => x.id === mid);
+  const g = gafferFor(mid);
+  const myRival = rivalOf(mid);
+  const enemies = state.managers.filter(x => x.rival === mid && x.id !== mid);
+  const boards = (m?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean);
+  return `
+  <div class="card" style="text-align:center">
+    <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, 'clubpage')}</div>
+    <h2 style="margin-bottom:2px">${esc(teamName(mid))}</h2>
+    <p class="muted" style="font-size:12px">${esc(managerName(mid))} &middot; est. 2015 &middot; ${esc(stadium(mid))}</p>
+    ${sponsorFor(mid) ? `<p class="muted" style="font-size:11.5px">Principal partner: <b>${esc(sponsorFor(mid))}</b></p>` : ''}
+    <button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>The dugout</h2>
+    ${g ? `<p style="font-size:14px"><b>${g.e} ${esc(g.t)}</b></p><p class="muted" style="font-size:12.5px;margin:4px 0 8px">${esc(g.bio)}</p>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Coaching badges</span><b style="margin-left:auto">${esc(g.fm.badges)}</b></div>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Playing career</span><b style="margin-left:auto">${esc(g.fm.playing)}</b></div>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Media handling</span><b style="margin-left:auto">${esc(g.fm.media)}</b></div>`
+      : '<p class="muted">The dugout stands vacant. The board is monitoring the situation.</p>'}
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>Rivalries</h2>
+    ${myRival ? `<p style="font-size:13px">Declared: <b>${teamTag(myRival)}</b> ${derbyTag(mid, myRival)}</p>` : '<p class="muted">No declared rival. The dropdown calls this cowardice.</p>'}
+    ${enemies.map(x => `<p style="font-size:12.5px" class="muted">${teamTag(x.id)} has declared YOU.${myRival === x.id ? '' : ' You remain officially unaware.'}</p>`).join('')}
+  </div>
+  ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
+}
+function bindClub() {
+  const ce = $('#clubEdit');
+  if (ce) ce.onclick = () => clubEditor((whoami && whoami !== -1) ? whoami : state.managers[0].id);
+  const cs = $('#clubSignIn');
+  if (cs) cs.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
+}
 // default grounds, until the owner sells the naming rights (tap the stadium name on My Team)
 const DEFAULT_STADIA = {
   1: 'The Kennel',                                // The Dog's Polaks
@@ -669,20 +1007,32 @@ const DEFAULT_STADIA = {
   12: 'The WACA',                                 // WA Wanderers
 };
 function stadium(mid) { const m = state.managers.find(m => m.id === mid); return m?.stadium || DEFAULT_STADIA[mid] || `${teamName(mid)} Park`; }
-// pitch-side hoardings — the league's proud commercial partners, rotating each week
-function adStrip(seed, n = 3) {
+// pitch-side hoardings — the league's proud commercial partners, rotating each
+// week; a home manager's OWN sponsors (MANAGER_BOARDS) lead their fixtures
+function adStrip(seed, n = 3, homeMid = null) {
   if (typeof AD_BOARDS === 'undefined' || !AD_BOARDS.length) return '';
   let s = (seed * 2654435761) % 2147483648;
-  const pool = AD_BOARDS.map((_, i) => i);
-  const picks = [];
-  for (let k = 0; k < Math.min(n, pool.length); k++) {
-    s = (s * 1103515245 + 12345) % 2147483648;
-    picks.push(pool.splice(s % pool.length, 1)[0]);
+  const boards = [];
+  // a manager who picked their own hoardings in the club office fills the home
+  // strip with them; the group chat's commissioned boards are the fallback
+  const picked = homeMid != null ? (state.managers.find(x => x.id === homeMid)?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean) : [];
+  if (picked.length) {
+    boards.push(...picked.slice(0, n));
+  } else {
+    const own = (typeof MANAGER_BOARDS !== 'undefined' && homeMid != null) ? MANAGER_BOARDS[homeMid] : null;
+    if (own && own.length) {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      boards.push(own[s % own.length]);
+    }
   }
-  return `<div class="ad-strip">${picks.map(i => {
-    const b = AD_BOARDS[i];
-    return `<span class="ad-board" style="color:${b.c};background:${b.bg}"><b>${b.t}</b><i>${b.s}</i></span>`;
-  }).join('')}</div>`;
+  const pool = AD_BOARDS.map((_, i) => i);
+  while (boards.length < n && pool.length) {
+    s = (s * 1103515245 + 12345) % 2147483648;
+    boards.push(AD_BOARDS[pool.splice(s % pool.length, 1)[0]]);
+  }
+  return `<div class="ad-strip">${boards.map(b =>
+    `<span class="ad-board" style="color:${b.c};background:${b.bg}"><b>${b.t}</b><i>${b.s}</i></span>`
+  ).join('')}</div>`;
 }
 // matchday attendance: deterministic per fixture, so every device reports the same crowd
 function attendance(a, b, i) {
@@ -715,6 +1065,8 @@ function ownedIdsAt(gwIdx) {
 // flex squads: any 14 inside per-position min/max bounds. No club cap —
 // Tussie's right to draft the entire City team by GW30 is constitutionally protected.
 function squadShapeOk(squad) {
+  if (squad.length !== state.settings.squadSize) return false; // exact size — swaps can't shrink/grow a squad
+  if (new Set(squad.map(p => p.id)).size !== squad.length) return false; // nobody owns a player twice
   const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
   squad.forEach(p => c[p.pos]++);
   const { posMin, posMax } = state.settings;
@@ -724,36 +1076,72 @@ function shirtNum(mid, pid) {
   return state.shirtNums?.[mid]?.[pid] ?? '–';
 }
 
-/* ---------------- waivers & the Trough (Draft Fantasy mechanics) ----------------
-   Everyone goes on waivers when a gameweek starts; dropped players go on waivers.
-   Claims are ranked and blind. Waivers process Tue & Fri 10:00 UTC (or whenever
-   the Chairman says so); order = reverse standings, winners drop to the back.
-   Whatever clears waivers is free in the Trough — first come, first served. */
+/* ---------------- waivers & the Trough ----------------
+   Committee timing (Toby, Jul 2026), anchored to the fixtures: the post-run at
+   8pm (London) the day AFTER a gameweek's last fixture, the pre-run at 8pm the
+   day BEFORE the next gameweek's first fixture. The Trough closes 90 minutes
+   before a gameweek's first kick-off and reopens once the post-run has
+   executed. Claims are ranked and blind; order = reverse standings, winners
+   drop to the back; dropped players go back on waivers. Mirrors js/engine.js. */
 
-// next scheduled processing after a given time: Tue & Fri 10:00 UTC
+const gwKicks = g => {
+  const ts = state.fixtures.filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
+  return ts.length ? { first: Math.min(...ts), last: Math.max(...ts) } : null;
+};
+function londonOffsetMin(ms) {
+  const s = new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const m = s.match(/(\d+)\/(\d+)\/(\d+),? (\d+):(\d+)/);
+  return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] % 24, +m[5]) - ms) / 60000) : 0;
+}
+function london20(ms, dayOffset) {
+  const wall = new Date(ms + londonOffsetMin(ms) * 60000);
+  const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, 20, 0);
+  return naive - londonOffsetMin(naive) * 60000;
+}
+const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
+const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
 function nextWaiverRun(afterTs) {
-  const d = new Date(afterTs);
-  for (let k = 0; k < 9; k++) {
-    const c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + k, 10, 0, 0));
-    if (c.getTime() > d.getTime() && [2, 5].includes(c.getUTCDay())) return c;
+  const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
+  let best = null;
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    for (const x of [postRunAt(g), preRunAt(g)]) if (x != null && x > t && (best == null || x < best)) best = x;
   }
-  return new Date(d.getTime() + 3 * 864e5);
+  return new Date(best ?? (t + 7 * 864e5));
 }
 const waiverControl = () => state.waiverMeta?.control || 'auto';
 const lastWaiverRun = () => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
 function waiverRunDue() {
   if (state.phase !== 'season' || waiverControl() !== 'auto') return false;
-  const anchor = lastWaiverRun() || new Date(gwFrom(0)).getTime();
-  return Date.now() > nextWaiverRun(anchor).getTime();
+  const t = Date.now(), lr = lastWaiverRun();
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    for (const x of [postRunAt(g), preRunAt(g)]) {
+      if (x != null && x <= t && t - x < 48 * 3600e3 && x > lr) return true;
+    }
+  }
+  return false;
+}
+// Trough state under auto control — closed during play, reopens post-waivers
+function troughWindow() {
+  const t = Date.now();
+  let cur = -1;
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    const k = gwKicks(g);
+    if (k && k.first - 90 * 60000 <= t) cur = g;
+    else if (k && cur >= 0) break;
+  }
+  if (cur < 0) return { open: true };
+  const post = postRunAt(cur);
+  if (post == null) return { open: true };
+  if (t < post) return { open: false, until: post, why: 'the gameweek is underway' };
+  if (lastWaiverRun() < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
+  return { open: true };
 }
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
   const ctl = waiverControl();
   if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  const cur = currentGwIndex();
-  // the gameweek starting locks everyone until the next processing
-  if (gwHasStarted(cur) && lastWaiverRun() < new Date(gwFrom(cur)).getTime()) return true;
+  if (!troughWindow().open) return true;
   // recently dropped players wait for the next processing
   for (const t of state.transfers) {
     if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
@@ -799,11 +1187,7 @@ function wdAdvance(passed, newPick = null) {
     if (state.windowDraft && (state.windowDraft.passes >= toArr(state.windowDraft.order).length || !lockedArrivals().length)) wdFinish();
   };
   if (!netOn()) { state.windowDraft = apply(state.windowDraft); after(); return; }
-  window.WCSync.txn('windowDraft', wd => apply(wd || undefined)).then(res => {
-    const wd = wdMutate(res.snapshot.val());
-    if (wd) state.windowDraft = wd;
-    after();
-  }).catch(e => console.warn('[wd]', e));
+  // online: the pick/pass mutation already advanced the turn server-side
 }
 function wdFinish() {
   if (state.windowDraft?.status === 'done') return;
@@ -816,18 +1200,33 @@ function wdFinish() {
     toast('The window business is done — anyone left is loose in the Trough.');
   };
   if (!netOn()) { done(); return; }
-  window.WCSync.txn('windowDraft', wd => wd ? { ...wd, status: 'done' } : undefined).then(done).catch(e => console.warn('[wd]', e));
+  serverAct('windowDraft', { op: 'end' }).catch(() => {});
 }
 function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); }
 function setClaims(mid, arr) {
   const cur = currentGwIndex();
+  if (netOn()) {
+    serverAct('claimSet', { gwIndex: cur, claims: arr }).catch(() => {});
+    // the private snapshot echoes the authoritative list back
+  }
   (state.claims[cur] = state.claims[cur] || {})[mid] = arr;
-  pushShared(`claims/${cur}/${mid}`, arr);
   save(); render();
 }
 // commissioner-only: resolve all pending claims, then open the Trough
 function processWaivers(manual = false) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman runs waivers'); return; }
+  if (netOn()) {
+    // online, the server resolves waivers (it can see everyone's blind claims;
+    // this device can only see its own)
+    serverAct('waiverRunNow', {}).then(res => {
+      const ex = toArr(res?.executed);
+      if (res?.skipped) { toast(`Waivers skipped — ${res.skipped}.`); return; }
+      toast(ex.length
+        ? `Waivers processed — ${ex.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
+        : 'Waivers processed — no claims landed. The Trough is open.');
+    }).catch(() => {});
+    return;
+  }
   // stamp the run at its START: players dropped DURING the run land after it,
   // so they go back on waivers until the next one — no instant snipes
   const runStart = Date.now() - 1;
@@ -837,7 +1236,7 @@ function processWaivers(manual = false) {
   // sweep EVERY un-run claim bucket up to now (oldest first) so a claim lodged
   // between a Friday run and the Saturday deadline isn't orphaned by the index flip
   const buckets = Object.keys(state.claims || {}).map(Number).filter(g => g <= cur).sort((a, b) => a - b);
-  const queue = waiverOrder(cur); // reverse standings — weekly reset
+  const queue = waiverOrder(); // reverse standings — weekly reset
   const pending = {};
   for (const mid of queue) { pending[mid] = []; for (const g of buckets) pending[mid].push(...toArr(state.claims[g]?.[mid])); }
   const executed = [];
@@ -888,16 +1287,6 @@ function processWaivers(manual = false) {
       return;
     }
     for (const g of buckets) state.claims[g] = {};
-    // clear the swept buckets and stamp the run in ONE atomic snapshot
-    if (netOn() && window.WCSync.update) {
-      const upd = { waiverMeta: stampedMeta };
-      for (const g of buckets) upd[`claims/${g}`] = null;
-      window.WCSync.update(upd).catch(e => console.warn('[waivers] clear failed', e));
-    } else {
-      for (const g of buckets) pushShared(`claims/${g}`, null);
-      pushShared('waiverMeta', stampedMeta);
-    }
-    for (const mid of touchedLineups) pushShared(`lineups/${mid}/${tgw}`, state.lineups[mid][tgw]);
     save(); render();
     toast(executed.length
       ? `Waivers processed — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
@@ -906,12 +1295,11 @@ function processWaivers(manual = false) {
 }
 function setWaiverControl(mode) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
-  state.waiverMeta = { ...state.waiverMeta, control: mode };
-  pushShared('waiverMeta', state.waiverMeta);
-  save(); render();
+  if (netOn()) { serverAct('waiverControl', { mode }).catch(() => {}); }
+  else { state.waiverMeta = { ...state.waiverMeta, control: mode }; save(); render(); }
   toast(mode === 'open' ? 'The Trough is thrown open — everything is free to sign.'
     : mode === 'closed' ? 'The Trough is closed. The Chairman has spoken.'
-    : 'Back on schedule — waivers Tue & Fri, 10:00 UTC.');
+    : 'Back on schedule — waivers follow the fixtures (8pm after the gameweek, 8pm before the next).');
 }
 // standings using ONLY gameweeks final before gwIdx — deterministic, can't reshuffle mid-round
 function standingsBefore(gwIdx) {
@@ -932,8 +1320,10 @@ function standingsBefore(gwIdx) {
   rows.sort((x, y) => y.h2h - x.h2h || y.pts - x.pts || x.id - y.id);
   return { rows, anyFinal };
 }
-function waiverOrder(gwIdx) {
-  const { rows, anyFinal } = standingsBefore(gwIdx);
+function waiverOrder() {
+  // reverse of the CURRENT table — every finished GW counts (passing the
+  // current GW index dropped the round that just finished)
+  const { rows, anyFinal } = standingsBefore(REGULAR_GWS);
   const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
   return [...base].reverse(); // bottom feeds first
 }
@@ -945,6 +1335,11 @@ const tradeNames = ids => ids.map(id => PLAYER_BY_ID[id]?.name || '?').join(' + 
 function proposeTrade(from, to, give, get, terms = '') {
   give = toArr(give); get = toArr(get);
   if (!give.length || give.length !== get.length) { toast('Trades swap the same number of players each way'); return; }
+  if (netOn()) {
+    serverAct('tradePropose', { to, give, get, terms: terms.slice(0, 200), ...(from !== whoami && { asManager: from }) })
+      .then(() => toast(`Trade proposed to ${managerName(to)}. Their move.`)).catch(() => {});
+    return;
+  }
   const offer = { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() };
   txnArray('trades', arr => [...arr, offer])
     .then(ok => toast(ok ? `Trade proposed to ${managerName(to)}. Their move.` : 'Proposal didn’t send — check connection and try again'));
@@ -956,6 +1351,14 @@ const setTradeStatus = (id, status) =>
 function respondTrade(id, accept) {
   const tr = toArr(state.trades).find(x => x.id === id);
   if (!tr || tr.status !== 'pending') return;
+  if (netOn()) {
+    serverAct('tradeRespond', { tradeId: id, action: accept ? 'accept' : 'reject' })
+      .then(() => toast(accept
+        ? `Trade done: ${tradeNames(tGive(tr))} ↔ ${tradeNames(tGet(tr))}. Executed instantly, as is right and proper.`
+        : 'Trade rejected. Nothing personal. (It was personal.)'))
+      .catch(() => {});
+    return;
+  }
   if (!accept) {
     setTradeStatus(id, 'rejected')
       .then(() => toast('Trade rejected. Nothing personal. (It was personal.)'));
@@ -1052,17 +1455,11 @@ function makePick(playerId, force = false) {
     save(); render();
   };
   if (netOn()) {
-    const expected = pickNo();
-    window.WCSync.txn('draft/picks', cur => {
-      const arr = toArr(cur);
-      if (arr.length !== expected) return; // someone got there first — abort
-      arr.push(rec);
-      return arr;
-    }).then(res => {
-      if (!res.committed) { toast('Pick clashed — the board moved on'); return; }
-      state.draft.picks = toArr(res.snapshot.val());
-      finishPick(state.draft.picks.length);
-    }).catch(e => { console.warn(e); toast('Pick failed to send — check connection'); });
+    // the server enforces turn, legality and the pick race; deadline/phase
+    // advance server-side and come back in the snapshot
+    serverAct('draftPick', { playerId, expectedCount: pickNo() })
+      .then(r => { if (r.total >= totalPicks() && whoami === mid) state.view = 'dash'; })
+      .catch(() => {});
   } else {
     state.draft.picks.push(rec);
     finishPick(state.draft.picks.length);
@@ -1071,6 +1468,7 @@ function makePick(playerId, force = false) {
 function autoPick(force = false) {
   const mid = currentManagerId();
   if (mid == null) return;
+  if (netOn()) { serverAct('draftAutopick', {}).catch(() => {}); return; }
   const taken = draftedIds();
   // the manager's own autopick list first, then best available by rating
   let best = toArr(state.autolists?.[mid]).map(id => PLAYER_BY_ID[id])
@@ -1081,7 +1479,7 @@ function autoPick(force = false) {
 }
 function setAutolist(mid, arr) {
   state.autolists[mid] = arr;
-  pushShared(`autolists/${mid}`, arr);
+  if (netOn()) serverAct('autolistSet', { pids: arr }).catch(() => {});
   save(); render();
 }
 
@@ -1116,9 +1514,13 @@ function autoXI(squad) { return legalizeXI([], squad); }
 // times, and an edit after kick-off (a wound-back phone clock) shows in red
 function saveLineup(mid, gw, xi) {
   (state.lineups[mid] = state.lineups[mid] || {})[gw] = xi;
+  if (netOn()) {
+    // server stamps the -t with ITS clock (no wound-back phones) and re-checks
+    // ownership, shape and the deadline
+    serverAct('lineupSave', { gw, xi, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+    return;
+  }
   state.lineups[mid][`${gw}-t`] = Date.now();
-  pushShared(`lineups/${mid}/${gw}`, xi);
-  pushShared(`lineups/${mid}/${gw}-t`, state.lineups[mid][`${gw}-t`]);
 }
 function lineupStamp(mid, gwIdx) {
   const ts = state.lineups?.[mid]?.[`${gwIdx}-t`];
@@ -1152,6 +1554,8 @@ function xiCounts(pids) {
 }
 function xiValid(pids) {
   if (pids.length !== XI_RULES.size) return false;
+  if (new Set(pids).size !== pids.length) return false; // the same player can't start twice
+  if (pids.some(id => !PLAYER_BY_ID[id])) return false;
   const c = xiCounts(pids);
   return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1]);
 }
@@ -1159,16 +1563,25 @@ function xiValid(pids) {
 /* ---------------- scoring ---------------- */
 // raw FPL gameweek stats -> league points, per the editable scoring table.
 // FPL's cs/gc stats already respect the 60-minute / on-pitch rules.
-function statPoints(player, s) {
-  // double gameweek: score each fixture on its own and sum, so appearance
-  // (per match), goals-conceded (per 2 per match) and saves (per 3 per match)
-  // are all right — the GW aggregate would halve appearances and mis-floor the rest
-  if (s && s.fx && s.fx.length > 1) return s.fx.reduce((t, f) => t + statPoints(player, f), 0);
+// Appearance points (Committee ruling, Jul 2026): a START is 2, a sub
+// appearance is 1, no 60-minute threshold. s.st = number of starts in the GW.
+function appearancePts(sc, s, played) {
+  const starts = Math.min(s.st || 0, played);
+  return starts * sc.appearanceStart + (played - starts) * sc.appearanceSub;
+}
+function statPoints(player, s, skipAppearance) {
   const sc = state.settings.scoring;
+  // double gameweek: score each fixture on its own and sum (goals-conceded per
+  // 2 per match, saves per 3 per match); appearance is settled ONCE from the
+  // start count + fixtures actually played — fx rows carry minutes only
+  if (s && s.fx && s.fx.length > 1) {
+    const played = s.fx.filter(f => (f.min || 0) > 0).length;
+    return appearancePts(sc, s, played) + s.fx.reduce((t, f) => t + statPoints(player, f, true), 0);
+  }
   const goalPts = { GK: sc.goalGK, DF: sc.goalDF, MF: sc.goalMF, FW: sc.goalFW }[player.pos] ?? sc.goalFW;
   const min = s.min ?? ((s.st || s.sub) ? 90 : 0);
   let pts = 0;
-  if (min > 0) pts += min >= 60 ? sc.appearance60 : sc.appearance;
+  if (!skipAppearance && min > 0) pts += appearancePts(sc, s, 1);
   pts += (s.g || 0) * goalPts + (s.a || 0) * sc.assist;
   pts += (s.og || 0) * sc.ownGoal + (s.pm || 0) * sc.penMiss;
   pts += (s.yc || 0) * sc.yellow + (s.rc || 0) * sc.red;
@@ -1210,7 +1623,7 @@ function benchFor(mid, gwIdx) {
 function setBenchOrder(mid, gwIdx, pids) {
   (state.benchOrders = state.benchOrders || {})[mid] = state.benchOrders[mid] || {};
   state.benchOrders[mid][gwIdx] = pids;
-  pushShared(`benchOrders/${mid}/${gwIdx}`, pids);
+  if (netOn()) serverAct('benchOrder', { gw: gwIdx, pids, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
 }
 // auto-subs: starters who never played are replaced by bench players who did,
 // best-rated first, keeping the XI shape legal
@@ -1371,7 +1784,7 @@ function playoffOdds(runs = 1000) {
     }
     state.managers.map(m => m.id)
       .sort((x, y) => (pts[y] - pts[x]) || (pf[y] - pf[x]))
-      .slice(0, 4).forEach(id => counts[id]++);
+      .slice(0, 8).forEach(id => counts[id]++);
   }
   return Object.fromEntries(Object.entries(counts).map(([id, c]) => [id, Math.round(100 * c / runs)]));
 }
@@ -1379,12 +1792,13 @@ function playoffOdds(runs = 1000) {
 const blockList = mid => toArr(state.tradeBlock?.[mid]);
 const onBlock = pid => state.managers.some(m => blockList(m.id).includes(pid));
 function toggleBlock(mid, pid) {
+  if (netOn()) {
+    serverAct('blockToggle', { pid, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+    return;
+  }
   const list = blockList(mid);
   const next = list.includes(pid) ? list.filter(x => x !== pid) : [...list, pid];
   state.tradeBlock = { ...(state.tradeBlock || {}), [mid]: next };
-  // write ONLY this manager's list — writing the whole node would revert
-  // another manager who listed a player at the same moment
-  pushShared(`tradeBlock/${mid}`, next);
   save(); render();
 }
 
@@ -1412,7 +1826,10 @@ function h2hStandings(includeLive = false) {
       else { rows[a].d++; rows[b].d++; rows[a].pts++; rows[b].pts++; }
     }
   }
-  return Object.values(rows).sort((x, y) => y.pts - x.pts || managerPoints(y.id) - managerPoints(x.id));
+  // tiebreak on regular-season overall points (pf = points scored across the
+  // GWs counted above) — managerPoints() spans all 38 GWs, so playoff scoring
+  // could reshuffle a settled regular-season table
+  return Object.values(rows).sort((x, y) => y.pts - x.pts || y.pf - x.pf);
 }
 
 /* ---------------- FPL sync ---------------- */
@@ -1487,7 +1904,7 @@ function vidiCard(compact = false) {
 async function syncNow(manual = false) {
   if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Tapping…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
     const [statsRes, fxRes] = await Promise.all([
@@ -1519,13 +1936,13 @@ async function syncNow(manual = false) {
     }
     state.lastSync = new Date().toISOString();
     save(); render();
-    if (manual) toast(fresh ? `Lines tapped — ${fresh} gameweek${fresh > 1 ? 's' : ''} updated` : 'Lines tapped — nothing new');
+    if (manual) toast(fresh ? `Feed refreshed — ${fresh} gameweek${fresh > 1 ? 's' : ''} updated` : 'Feed refreshed — nothing new');
   } catch (err) {
     console.error(err);
     if (manual) toast('Sync failed — check connection');
   }
   const b2 = $('#syncBtn');
-  if (b2) { b2.disabled = false; b2.textContent = '📞 Tap the lines'; }
+  if (b2) { b2.disabled = false; renderSyncArea(); } // rebuild the stamp whatever happened
   // keep tapping while matches are in play (the Action refreshes every 15 min)
   clearTimeout(liveTimer);
   if (anyMatchLive()) liveTimer = setTimeout(() => syncNow(false), 5 * 60 * 1000);
@@ -1571,19 +1988,78 @@ window.addEventListener('popstate', () => {
   }
 });
 
+/* ---------------- the confirm sheet ----------------
+   DF-style final look at a deal before it commits. Every squad-moving
+   decision routes through here — a mis-tap must never move a player.
+   Back button / backdrop tap = cancel. Test harnesses set
+   window.__autoConfirm to sail straight through. */
+function confirmSheet({ title, body = '', yes = 'Confirm', note = '' }) {
+  if (window.__autoConfirm) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.id = 'confirmSheet';
+    ov.innerHTML = `<div class="card" style="max-width:420px;width:94%">
+      <h2 style="margin-bottom:12px">${title}</h2>
+      ${body}
+      ${note ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">${note}</p>` : ''}
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn ghost" id="cfNo" style="flex:1">Cancel</button>
+        <button class="btn" id="cfYes" style="flex:1">${yes}</button>
+      </div>
+    </div>`;
+    // any external close (back button, popstate overlay sweep) = cancel —
+    // the promise must never hang
+    const origRemove = ov.remove.bind(ov);
+    ov.remove = () => { origRemove(); resolve(false); };
+    document.body.appendChild(ov);
+    pushOvState();
+    ov.querySelector('#cfYes').onclick = () => { resolve(true); closeOv(ov); };
+    ov.querySelector('#cfNo').onclick = () => closeOv(ov);
+    ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  });
+}
+const dealLine = p => p ? `<b>${esc(p.name)}</b> <span class="muted">${esc(p.club)} ${p.pos}</span>` : '<b>?</b>';
+const dealRows = (outs, ins) => `<div class="deal">${
+  outs.map(p => `<div class="deal-row"><span class="deal-tag out">OUT</span>${dealLine(p)}</div>`).join('')}${
+  ins.map(p => `<div class="deal-row"><span class="deal-tag in">IN</span>${dealLine(p)}</div>`).join('')}</div>`;
+
 /* ---------------- views ---------------- */
 const NAV_ITEMS = [
-  ['dash', 'Dashboard'],
-  ['draft', 'The Console'],
-  ['team', 'My Team'],
-  ['transfers', 'Transfers'],
-  ['h2h', 'Head-to-Head'],
-  ['cup', 'The Monzo Cup'],
-  ['table', 'League Table'],
-  ['fixtures', 'Fixtures'],
-  ['rules', 'Rules'],
-  ['settings', 'Settings'],
+  ['dash', 'Dashboard', 'Home'],
+  ['draft', 'The Console', 'Console'],
+  ['team', 'My Team', 'My Team'],
+  ['club', 'My Club', 'Club'],
+  ['transfers', 'Transfers', 'Transfers'],
+  ['h2h', 'Head-to-Head', 'H2H'],
+  ['cup', 'The Monzo Cup', 'Cup'],
+  ['table', 'League Table', 'Table'],
+  ['fixtures', 'Fixtures', 'Fixtures'],
+  ['rules', 'Rules', 'Rules'],
+  ['settings', 'Settings', 'Settings'],
 ];
+// phone tab bar icons — inline so the CSP stays 'self'-only
+const navSvg = paths => `<svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const NAV_ICONS = {
+  dash: navSvg('<path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/>'),
+  draft: navSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>'),
+  team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
+  club: navSvg('<path d="M12 3 5 5.5v6c0 4.5 3 7.5 7 9.5 4-2 7-5 7-9.5v-6Z"/><path d="M12 8v5M9.5 10.5h5"/>'),
+  transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
+  h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
+  cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
+  table: navSvg('<path d="M6 20v-8M12 20V5M18 20v-5"/><path d="M4 20h16"/>'),
+  fixtures: navSvg('<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>'),
+  rules: navSvg('<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z"/><path d="M5 17a3 3 0 0 1 3-3h10"/>'),
+  settings: navSvg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
+  more: navSvg('<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),
+};
+// the four daily-use tabs, in Ben's order — everything else lives under More
+const SEASON_PRIMARY_NAV = ['team', 'h2h', 'table', 'transfers'];
+const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
+// pre-draft the app is mostly a waiting room, but the club office, rules and
+// settings are already worth visiting — so those three get a bar
+const SETUP_NAV = new Set(['club', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
@@ -1598,29 +2074,20 @@ function render() {
   if (lastRenderedView !== state.view) { window.scrollTo(0, 0); lastRenderedView = state.view; window.onscroll = null; }
   renderNav();
   renderSyncArea();
-  let bar = $('#demoBar');
-  if (demoMode && !bar) {
-    bar = document.createElement('div');
-    bar.id = 'demoBar';
-    bar.className = 'demo-bar';
-    bar.innerHTML = `<span class="rec"></span> DEMO — fake draft, fictional results. Your real league is untouched. <button class="btn small" id="demoExit">Exit demo</button>`;
-    document.body.appendChild(bar);
-    $('#demoExit').onclick = exitDemo;
-  } else if (!demoMode && bar) {
-    bar.remove();
-  }
-  if (SANDBOX && !$('#sandboxBar')) {
-    const sb = document.createElement('div');
-    sb.id = 'sandboxBar';
-    sb.className = 'demo-bar sandbox-bar';
-    sb.innerHTML = `<span class="rec"></span> SANDBOX — practice league for testing. The real league is untouched. <a class="btn small" href="${location.pathname}">Real site</a>`;
-    document.body.appendChild(sb);
-  }
   const main = $('#main');
-  if (state.phase === 'setup') { main.innerHTML = viewSetup(); bindSetup(); return; }
+  if (state.phase === 'setup' && !SETUP_NAV.has(state.view)) { main.innerHTML = viewSetup(); bindSetup(); return; }
+  if (state.phase === 'setup') {
+    // pre-draft, only the setup-bar views resolve; everything else is the room
+    if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
+    else if (state.view === 'rules') { main.innerHTML = viewRules(); }
+    else { main.innerHTML = viewSettings(); bindSettings(); }
+    renderIdentity();
+    return;
+  }
   switch (state.view) {
     case 'draft': main.innerHTML = viewDraft(); bindDraft(); break;
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
+    case 'club': main.innerHTML = viewClub(); bindClub(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
     case 'dash': main.innerHTML = viewDash(); bindDash(); break;
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
@@ -1644,33 +2111,11 @@ function render() {
   }
 }
 
-async function pinHash(mid, pin) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`tl2627:${mid}:${pin}`));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-// claim an identity: verify the PIN if one is set, offer to set one if not
-async function claimIdentity(mid) {
-  if (mid !== -1 && state.pins?.[mid]) {
-    const pin = prompt(`PIN for ${managerName(mid)}:`);
-    if (pin == null) return false;
-    if (await pinHash(mid, pin.trim()) !== state.pins[mid]) { toast(`Wrong PIN. Forgotten it? Ask ${managerName(state.managers[0]?.id)} to reset it.`); return false; }
-  } else if (mid !== -1 && netOn()) {
-    // never set a PIN before the cloud has loaded — a pre-snapshot device has
-    // empty pins and would treat a returning manager as a first sign-in,
-    // overwriting their real PIN
-    if (!cloudKnown) { toast('Still loading the league — give it a second and tap your team again.'); return false; }
-    if (state.pins?.[mid]) return claimIdentity(mid); // PIN arrived while we waited — take the PIN path
-    // confirm WHO you are before setting a PIN — a mis-tap otherwise locks the
-    // real manager out of their own identity
-    const m = state.managers.find(x => x.id === mid);
-    if (!confirm(`You're claiming ${m.team} — ${m.name}. Is that you? (Wrong team? Cancel and pick again.)`)) return false;
-    const pin = prompt(`First sign-in for ${m.name} — set a PIN (4+ digits). You'll use it on any device.`);
-    if (!pin || pin.trim().length < 4) { toast('A PIN (4+ digits) is required to sign in.'); return false; }
-    (state.pins = state.pins || {})[mid] = await pinHash(mid, pin.trim());
-    pushShared(`pins/${mid}`, state.pins[mid]);
-    save();
-    toast('PIN set. Do not tell Tussie.');
-  }
+// claim an identity — OFFLINE/DEMO ONLY. Online, identity comes from real
+// sign-in (email link) and the server-owned membership map; nothing here can
+// grant it.
+function claimIdentity(mid) {
+  if (netOn() && mid !== -1) return false;
   whoami = mid;
   localStorage.setItem(WHO_KEY, whoami);
   render();
@@ -1679,41 +2124,121 @@ async function claimIdentity(mid) {
 }
 
 let forceIdentity = false; // set when an action needs a signed-in manager first
+let linkSentTo = null;     // email a sign-in link was just sent to
 function renderIdentity() {
   let ov = $('#whoOverlay');
   const needed = (netOn() && state.phase !== 'setup' && !whoami) || forceIdentity;
-  if (!needed) { ov?.remove(); return; }
+  if (!needed) { ov?.remove(); linkSentTo = null; return; }
   ov?.remove();
   ov = document.createElement('div');
   ov.id = 'whoOverlay';
   ov.className = 'overlay';
-  ov.innerHTML = `<div class="card" style="max-width:560px;width:94%">
-    <h2>Sign in</h2>
-    <p class="muted" style="font-size:13px;margin-bottom:14px">Pick your team. First sign-in sets your PIN (4+ digits); after that it's your key on any device. Forgotten PINs go to the Chairman.</p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-bottom:10px">
-    ${state.managers.map((m, i) => `<button class="btn ghost" data-who="${m.id}" style="text-align:left;padding:10px 12px">
-      <b>${esc(m.team || m.name)}</b>${i === 0 ? ' <span class="tag">Chairman</span>' : ''}<br>
-      <span class="muted" style="font-size:11.5px">${esc(m.name)} ${state.pins?.[m.id] ? '&#128274;' : '<span style="color:var(--accent)">· first sign-in</span>'}</span>
-    </button>`).join('')}
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
-      <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
-      ${forceIdentity ? '<button class="btn ghost small" id="whoCancel" style="opacity:.75">&#10005;</button>' : ''}
-    </div>
-  </div>`;
+  if (netOn() && authUser && !membership) {
+    // signed in with an email the league doesn't know
+    ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
+      <h2>Who let you in?</h2>
+      <p class="muted" style="font-size:13px;margin-bottom:14px">${esc(authUser.email || 'This email')} isn't on the Committee's list. If you're one of the twelve, talk to the Chairman.</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost small" id="whoSignOut" style="flex:1">Sign out</button>
+        <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
+      </div>
+    </div>`;
+  } else if (netOn()) {
+    ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
+      <h2>Sign in</h2>
+      ${linkSentTo
+        ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>
+           <p class="muted" style="font-size:12px;margin-bottom:6px">Link opened somewhere else (or you're in the installed app)? Copy it from the email and paste it here:</p>
+           <form id="whoPasteForm" style="display:flex;gap:8px;margin-bottom:10px">
+             <input id="whoPaste" placeholder="Paste the sign-in link" style="flex:1;min-width:0">
+             <button class="btn small" type="submit">Finish sign-in</button>
+           </form>
+           <button class="btn ghost small" id="whoResend">Different email</button>`
+        : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
+           <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
+             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" style="flex:1;min-width:0">
+             <button class="btn" type="submit">Send link</button>
+           </form>`}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
+        <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
+        ${forceIdentity ? '<button class="btn ghost small" id="whoCancel" style="opacity:.75">&#10005;</button>' : ''}
+      </div>
+    </div>`;
+  } else {
+    // offline / local play: the old pick-your-team grid, no PINs
+    ov.innerHTML = `<div class="card" style="max-width:560px;width:94%">
+      <h2>Who are you?</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-bottom:10px">
+      ${state.managers.map((m, i) => `<button class="btn ghost" data-who="${m.id}" style="text-align:left;padding:10px 12px">
+        <b>${esc(m.team || m.name)}</b>${i === 0 ? ' <span class="tag">Chairman</span>' : ''}<br>
+        <span class="muted" style="font-size:11.5px">${esc(m.name)}</span>
+      </button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
+        <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
+        ${forceIdentity ? '<button class="btn ghost small" id="whoCancel" style="opacity:.75">&#10005;</button>' : ''}
+      </div>
+    </div>`;
+  }
   document.body.appendChild(ov);
-  ov.querySelector('#whoDemo').onclick = () => { forceIdentity = false; ov.remove(); enterDemo(); };
+  const wd = ov.querySelector('#whoDemo');
+  if (wd) wd.onclick = () => { forceIdentity = false; ov.remove(); enterDemo(); };
   const wc = ov.querySelector('#whoCancel');
   if (wc) wc.onclick = () => { forceIdentity = false; ov.remove(); };
-  ov.querySelectorAll('[data-who]').forEach(b => b.onclick = async () => {
-    if (await claimIdentity(+b.dataset.who)) { forceIdentity = false; render(); }
+  const so = ov.querySelector('#whoSignOut');
+  if (so) so.onclick = () => window.WCSync ? window.WCSync.auth.signOut() : toast('Can’t reach the league right now — try a refresh');
+  const rs = ov.querySelector('#whoResend');
+  if (rs) rs.onclick = () => { linkSentTo = null; renderIdentity(); };
+  const form = ov.querySelector('#whoEmailForm');
+  if (form) form.onsubmit = e => {
+    e.preventDefault();
+    const email = ov.querySelector('#whoEmail').value.trim();
+    if (!email) return;
+    if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
+    window.WCSync.auth.sendLink(email)
+      .then(() => { linkSentTo = email; renderIdentity(); })
+      .catch(err => toast(err.message || 'Could not send the link — check the address.'));
+  };
+  // installed-app / wrong-browser rescue: the link itself, pasted by hand
+  const pf = ov.querySelector('#whoPasteForm');
+  if (pf) pf.onsubmit = e => {
+    e.preventDefault();
+    const url = ov.querySelector('#whoPaste').value.trim();
+    if (!url) return;
+    if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
+    window.WCSync.auth.completeLink(url)
+      .then(ok => { if (ok) { forceIdentity = false; toast('Signed in. Welcome back.'); } })
+      .catch(err => toast(err.message || 'That link didn’t work — request a fresh one.'));
+  };
+  ov.querySelectorAll('[data-who]').forEach(b => b.onclick = () => {
+    const mid = +b.dataset.who;
+    if (mid === -1 && netOn()) {
+      spectating = true;
+      localStorage.setItem(SPECT_KEY, '1');
+      syncIdentity();
+      forceIdentity = false;
+      render();
+      toast('Spectator mode.');
+      return;
+    }
+    if (claimIdentity(mid)) { forceIdentity = false; render(); }
   });
 }
 
 function renderNav() {
   const nav = $('#nav');
-  if (state.phase === 'setup') { nav.innerHTML = ''; return; }
+  if (state.phase === 'setup') {
+    nav.classList.remove('draft-nav');
+    nav.classList.add('setup-nav');
+    nav.innerHTML = NAV_ITEMS.filter(([id]) => SETUP_NAV.has(id)).map(([id, label, short]) =>
+      `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}">${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span></button>`).join('');
+    nav.querySelectorAll('button[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
+    return;
+  }
+  nav.classList.remove('setup-nav');
+  nav.classList.toggle('draft-nav', state.phase === 'draft');
   // attention dots — the app taps you on the shoulder when it needs you
   const dots = {};
   if (state.phase === 'season' && whoami && whoami !== -1) {
@@ -1725,17 +2250,41 @@ function renderNav() {
       if (crocked) dots.team = crocked;
     }
   }
-  nav.innerHTML = NAV_ITEMS.map(([id, label]) =>
-    `<button data-view="${id}" class="${state.view === id ? 'active' : ''}">${label}${dots[id] ? `<span class="nav-dot" title="Needs your attention">${dots[id]}</span>` : ''}</button>`).join('');
-  nav.querySelectorAll('button').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
-  // phones: the nav is a swipeable strip — keep the active tab in view
-  if (nav.scrollWidth > nav.clientWidth) nav.querySelector('.active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  const allowed = state.phase === 'draft' ? DRAFT_NAV : new Set(NAV_ITEMS.map(([id]) => id));
+  const available = NAV_ITEMS.filter(([id]) => allowed.has(id));
+  const primaryIds = state.phase === 'draft' ? ['draft'] : SEASON_PRIMARY_NAV;
+  // bar order follows primaryIds, not NAV_ITEMS order
+  const primary = primaryIds.map(id => available.find(([k]) => k === id)).filter(Boolean);
+  const more = available.filter(([id]) => !primaryIds.includes(id));
+  const button = ([id, label, short]) =>
+    `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}"${state.view === id ? ' aria-current="page"' : ''}>${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span>${dots[id] ? `<span class="nav-dot" title="Needs your attention" aria-label="${dots[id]} item${dots[id] === 1 ? '' : 's'} need attention">${dots[id]}</span>` : ''}</button>`;
+  const moreActive = more.some(([id]) => id === state.view);
+  const moreDots = more.reduce((n, [id]) => n + (dots[id] || 0), 0);
+  nav.innerHTML = `${primary.map(button).join('')}
+    <details class="nav-more${moreActive ? ' active' : ''}">
+      <summary${moreActive ? ' aria-current="page"' : ''}>${NAV_ICONS.more}<span class="nav-lbl-full">More</span><span class="nav-lbl-short">More</span>${moreDots ? `<span class="nav-dot" aria-label="${moreDots} item${moreDots === 1 ? '' : 's'} need attention">${moreDots}</span>` : ''}</summary>
+      <div class="nav-more-menu">${more.map(button).join('')}</div>
+    </details>`;
+  nav.querySelectorAll('button[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
+  // tapping anywhere else puts the More sheet away
+  if (!window.__navMoreCloser) {
+    window.__navMoreCloser = true;
+    document.addEventListener('click', e => {
+      const open = document.querySelector('.nav-more[open]');
+      if (open && !open.contains(e.target)) open.removeAttribute('open');
+    });
+  }
 }
 
 function renderSyncArea() {
   const el = $('#syncArea');
-  if (!el || state.phase === 'setup') { if (el) el.innerHTML = ''; return; }
+  if (!el) return;
+  // this used to blank itself pre-draft, which hid the sign-in pill and Home
+  // during the exact weeks the lads are arriving to found their clubs
   const bits = [];
+  // demo/sandbox live as small chips up here, not a banner over the app
+  if (demoMode) bits.push('<button class="tag mode-chip demo-chip" id="demoChip"><span class="rec"></span>DEMO</button>');
+  if (SANDBOX && !demoMode) bits.push('<button class="tag mode-chip sandbox-chip" id="sandboxChip"><span class="rec"></span>SANDBOX</button>');
   if (anyMatchLive()) bits.push('<span class="live-pill"><span class="rec"></span>LIVE</span>');
   // the feed going quiet on a matchday should be visible, not discovered
   if (state.feedGenerated && anyMatchLive()) {
@@ -1743,15 +2292,20 @@ function renderSyncArea() {
     if (ageH > 1.5) bits.push(`<span class="tag" style="background:#4a3a10;color:#ffd98a" title="The stats feed normally refreshes every 15 minutes on matchdays. Scores may be lagging.">&#9888; feed ${ageH < 2 ? '90m' : Math.round(ageH) + 'h'} stale</span>`);
   }
   if (syncOn()) {
-    bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" title="${syncConnected ? 'Live sync: connected' : 'Live sync: reconnecting — changes will queue'}">&#9679;</span>`);
-    const who = whoami === -1 ? 'Spectating' : (whoami ? esc(managerName(whoami)) : 'Who are you?');
-    bits.push(`<button class="tag" id="whoBtn" style="cursor:pointer" title="Switch who this device acts as">${who}</button>`);
+    bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Offline — the league is read-only until you reconnect'}" title="${syncConnected ? 'Live sync: connected' : 'Offline — the league is read-only until you reconnect'}">&#9679;</span>`);
+    const who = whoami === -1 ? 'Spectating' : (whoami ? esc(managerName(whoami)) : 'Sign in');
+    const whoTitle = netOn() ? (authUser ? 'Signed in — tap to sign out' : 'Sign in') : 'Switch who this device acts as';
+    bits.push(`<button class="tag" id="whoBtn" style="cursor:pointer" title="${whoTitle}">${who}</button>`);
   }
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<span title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#128222; Tap the lines</button>`);
+    bits.push(`<button class="tag" id="syncBtn" title="Scores auto-refresh every ~15 min on matchdays — tap to refresh now">&#8635;<span class="sync-txt"> ${last}</span></button>`);
   }
-  bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
+  if (state.phase !== 'draft') {
+    // Home: the Dashboard in season, the waiting room pre-draft
+    bits.push(`<button id="homeBtn" class="btn small" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
+  }
+  bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
   const mb = $('#muteBtn');
   if (mb) mb.onclick = () => {
@@ -1760,9 +2314,60 @@ function renderSyncArea() {
     toast(soundOn() ? 'Broadcast sound on. Sorry, Ian.' : 'Broadcast muted. Ian wins this one.');
   };
   const wb = $('#whoBtn');
-  if (wb) wb.onclick = () => { whoami = null; localStorage.removeItem(WHO_KEY); render(); };
+  if (wb) wb.onclick = () => {
+    if (netOn()) {
+      spectating = false;
+      localStorage.removeItem(SPECT_KEY);
+      if (authUser) {
+        if (confirm('Sign out of the league on this device?')) window.WCSync?.auth.signOut();
+      } else {
+        // force the overlay: in the setup phase it doesn't appear on its own,
+        // which left the Sign in button dead before the draft
+        whoami = null; forceIdentity = true; render();
+      }
+      return;
+    }
+    whoami = null; localStorage.removeItem(WHO_KEY); render();
+  };
   const sb = $('#syncBtn');
   if (sb) sb.onclick = () => syncNow(true);
+  const hb = $('#homeBtn');
+  if (hb) hb.onclick = () => { state.view = 'dash'; save(); render(); };
+  const dc = $('#demoChip');
+  if (dc) dc.onclick = () => confirmSheet({
+    title: 'Demo mode',
+    body: '<p class="rules-p">Everything here is a fake draft with fictional results — just a look around. Your real league is untouched.</p>',
+    yes: 'Exit demo',
+  }).then(go => { if (go) exitDemo(); });
+  const sc = $('#sandboxChip');
+  if (sc) sc.onclick = () => confirmSheet({
+    title: 'Sandbox',
+    body: '<p class="rules-p">This is the practice league — sign in, draft, trade, break things. The real league is untouched.</p>',
+    yes: 'Go to the real site',
+  }).then(go => { if (go) location.href = location.pathname; });
+}
+
+/* ----- the ready room: pre-draft roll call, one tap per manager ----- */
+function readyRoomCard() {
+  if (!netOn()) return ''; // only means something when everyone is on their own device
+  const r = state.ready || {};
+  const n = state.managers.filter(mg => r[mg.id]).length;
+  const iAmManager = whoami && whoami !== -1;
+  return `<div class="card">
+    <h2>The ready room <span class="tag">${n}/${state.managers.length} ready</span></h2>
+    <p class="muted" style="font-size:12px;margin-bottom:10px">Ready means signed in on your draft device and good to go.${isCommissioner() ? ' The Chairman can vouch for a straggler on the phone.' : ''}</p>
+    ${state.managers.map(mg => {
+      const rd = r[mg.id];
+      const mine = iAmManager && mg.id === whoami;
+      return `<div class="qrow ready-row${rd ? ' is-ready' : ''}" style="font-size:13px">
+        <span class="ready-dot">${rd ? '&#10003;' : '&middot;'}</span>
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(mg.team || mg.name)}</b> <span class="muted" style="font-size:11px">${esc(mg.name)}</span></span>
+        <span style="margin-left:auto">${mine
+          ? `<button class="btn small${rd ? ' ghost' : ''}" data-ready="${mg.id}:${rd ? 0 : 1}">${rd ? 'Unready' : `I&rsquo;m ready`}</button>`
+          : isCommissioner() ? `<button class="btn ghost small" data-ready="${mg.id}:${rd ? 0 : 1}" title="Chairman&rsquo;s override">${rd ? 'Unmark' : 'Vouch'}</button>` : ''}</span>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 /* ----- setup ----- */
@@ -1782,6 +2387,9 @@ function viewSetup() {
         <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
+      ${foundingCard()}
+      ${readyRoomCard()}
+      ${installCard(true)}
     </div>`;
   }
   return `
@@ -1790,6 +2398,8 @@ function viewSetup() {
       <h2>&#9917; The League &mdash; 2026/27</h2>
       <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
+    ${foundingCard()}
+    ${readyRoomCard()}
     <div class="card">
       <h2>Managers</h2>
       ${m.map((mg, i) => `
@@ -1808,15 +2418,15 @@ function viewSetup() {
         ${['GK', 'DF', 'MF', 'FW'].map(pos => `
           <div><label>${POS_LABEL[pos]} min–max</label>
           <div style="display:flex;gap:6px">
-            <input type="number" min="0" max="11" data-posmin="${pos}" value="${posMin[pos]}">
-            <input type="number" min="0" max="11" data-posmax="${pos}" value="${posMax[pos]}">
+            <input type="number" min="0" max="11" data-posmin="${pos}" aria-label="${POS_LABEL[pos]} minimum" value="${posMin[pos]}">
+            <input type="number" min="0" max="11" data-posmax="${pos}" aria-label="${POS_LABEL[pos]} maximum" value="${posMax[pos]}">
           </div></div>`).join('')}
       </div>
       <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="font-size:12px;color:var(--muted);font-weight:700">SQUAD SIZE</label>
-        <input type="number" min="11" max="20" id="squadSize" value="${state.settings.squadSize}" style="width:60px">
+        <input type="number" min="11" max="20" id="squadSize" aria-label="Squad size" value="${state.settings.squadSize}" style="width:60px">
         <label style="font-size:12px;color:var(--muted);font-weight:700;margin-left:10px">PICK TIMER</label>
-        <select id="pickTimer">
+        <select id="pickTimer" aria-label="Pick timer">
           ${[0, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — autopick at zero' : 'Off'}</option>`).join('')}
         </select>
       </div>
@@ -1828,6 +2438,18 @@ function viewSetup() {
   </div>`;
 }
 function bindSetup() {
+  bindInstall();
+  document.querySelectorAll('[data-ready]').forEach(b => b.onclick = () => {
+    const [mid, val] = b.dataset.ready.split(':').map(Number);
+    if (!netOn()) return;
+    serverAct('readySet', { ready: !!val, ...(mid !== whoami && { asManager: mid }) })
+      .then(() => toast(val ? (mid === whoami ? 'Ready. The Committee notes your promptness.' : `${managerName(mid)} vouched for.`) : 'Unreadied.'))
+      .catch(() => {});
+  });
+  const fb = $('#foundBtn');
+  if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
+  const fl = $('#foundLater');
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
@@ -1857,31 +2479,40 @@ function bindSetup() {
   });
   const startDraft = randomise => {
     // only the Chairman pulls this trigger — sign in first if the device hasn't
-    if (netOn() && whoami !== state.managers[0].id) {
+    if (netOn() && !isCommissioner()) {
       toast('Only the Chairman starts the draft — sign in as him to prove it');
       forceIdentity = true;
       renderIdentity();
       return;
     }
-    if (!confirm('This starts the REAL draft for all twelve managers. Everyone ready?')) return;
+    const rdyN = netOn() ? state.managers.filter(mg => (state.ready || {})[mg.id]).length : null;
+    if (!confirm(`This starts the REAL draft for all twelve managers.${rdyN != null ? ` Ready room says ${rdyN}/${state.managers.length}.` : ''} Everyone ready?`)) return;
     state.managers.forEach((m, i) => { if (!m.name.trim()) m.name = `Manager ${i + 1}`; });
     if (state.settings.squadSize < 11) { toast('Squads need at least 11 for a starting XI'); return; }
     const { posMin, posMax } = state.settings;
     const minSum = posMin.GK + posMin.DF + posMin.MF + posMin.FW;
     const maxSum = posMax.GK + posMax.DF + posMax.MF + posMax.FW;
     if (minSum > state.settings.squadSize || maxSum < state.settings.squadSize) { toast('Position min/max can’t make a legal squad'); return; }
-    state.draft.order = randomise
+    const order = randomise
       ? state.managers.map(m => m.id).sort(() => Math.random() - 0.5)
       : state.managers.map(m => m.id);
-    if (state.settings.pickTimer) state.draft.deadline = Date.now() + 5 * 60 * 1000;
+    if (netOn()) {
+      // seed the setup state first (managers/settings edited on this screen),
+      // then the server flips the phase, stamps the pool and sets the clock
+      serverAct('importState', { state: { ...sharedSnapshot(), draft: { ...state.draft, order } } })
+        .then(() => serverAct('draftAdmin', { op: 'start', order }))
+        .then(() => showCeremony()) // stamps "seen" itself at the end
+        .catch(() => {});
+      return;
+    }
+    state.draft.order = order;
+    state.draft.deadline = null; // armed by armClock() once the ceremony ends
     // draft-night snapshot: anyone who joins a PL club after this is locked until the window shuts
     state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
     state.phase = 'draft';
     state.view = 'draft';
-    publishAll();
     save(); render();
-    localStorage.setItem(`${LS_NS}-ceremony-seen`, state.draft.order.join('-'));
-    showCeremony();
+    showCeremony(); // stamps "seen" itself at the end
   };
   $('#startDraft').onclick = () => startDraft(true);
   $('#startDraftOrdered').onclick = () => startDraft(false);
@@ -1911,10 +2542,15 @@ const FLAG_BEARERS = {
   'West Ham': 'Ray Winstone’s floating head, slightly too big',
   'Wolves': 'a very good sports scientist selling a very good midfielder',
 };
+const ceremonyKey = () => state.draft.order.length ? `${state.draft.order.join('-')}:${state.draftPool?.at || ''}` : '';
 function showCeremony() {
   if ($('#ceremony')) return;
   const order = state.draft.order;
   if (!order.length) return;
+  // "seen" is stamped only when the ceremony ENDS — stamping at open meant a
+  // refresh mid-pomp skipped straight to a live clock (sol r4). The key
+  // includes draftPool.at so a rehearsal/reset with the same order replays it.
+  const cerFinish = () => { localStorage.setItem(`${LS_NS}-ceremony-seen`, ceremonyKey()); };
   const ordinals = ['twelfth', 'eleventh', 'tenth', 'ninth', 'eighth', 'seventh', 'sixth', 'fifth', 'fourth', 'third', 'second', 'FIRST'];
   const steps = [
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
@@ -1925,7 +2561,7 @@ function showCeremony() {
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
-    { h: 'LET THE DRAFT BEGIN', p: `${managerName(order[0])} is on the clock. The phones are not tapped. Allegedly.` },
+    { h: 'LET THE DRAFT BEGIN', p: `${managerName(order[0])} is on the clock. The Committee is watching.` },
   ];
   let i = 0;
   const ov = document.createElement('div');
@@ -1936,7 +2572,7 @@ function showCeremony() {
   let paradeTimer = null;
   const show = () => {
     clearInterval(paradeTimer);
-    if (i >= steps.length) { ov.remove(); return; }
+    if (i >= steps.length) { cerFinish(); ov.remove(); return; }
     const s = steps[i];
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
@@ -1980,7 +2616,7 @@ function showCeremony() {
       $('#cerStage').appendChild(player);
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
+    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
   };
   show();
 }
@@ -2011,14 +2647,9 @@ function maybeDrinksBreak() {
     <button class="btn" id="breakDone" style="margin-top:16px">Back to the Console</button></div>`;
   document.body.appendChild(el);
   $('#breakDone').onclick = () => {
-    // deadline first, then the break flag — same-client writes are ordered, so no
-    // device ever sees the break end while an expired clock is still in force
-    if (state.settings.pickTimer) {
-      state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
-      pushShared('draft/deadline', state.draft.deadline);
-    }
+    if (netOn()) { serverAct('draftAdmin', { op: 'breakDone', round: n }).catch(() => {}); return; }
+    if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     state.draft.breaksDone = [...(state.draft.breaksDone || []), n];
-    pushShared('draft/breaksDone', state.draft.breaksDone);
     save(); render();
   };
 }
@@ -2222,17 +2853,15 @@ function viewDraft() {
     : `${esc(managerName(mid))} is on the clock${picksUntilMine ? ` &middot; <span style="color:var(--text)">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
   return `
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
-    <div>
-      <div class="who">${whoLine}</div>
-      <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${state.settings.squadSize}${(() => {
-        // every round has a title sponsor (ledger #5) — the hydration break was never in danger
-        const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
-        return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
-      })()}</div>
-      <div class="intercept"><span class="rec"></span>LIVE INTERCEPT &mdash; &ldquo;${esc(interceptFor(n, managerName(mid)))}&rdquo;</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
+    <div class="who">${whoLine}</div>
+    ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
+    <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${state.settings.squadSize}${(() => {
+      // every round has a title sponsor (ledger #5) — the hydration break was never in danger
+      const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
+      return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
+    })()}</div>
+    <div class="intercept" id="interceptQ" title="Tap for the full quote"><span class="rec"></span><span class="int-q">LIVE FROM THE GROUP CHAT &mdash; &ldquo;${esc(interceptFor(n, managerName(mid)))}&rdquo;</span></div>
+    <div class="oc-btns">
       ${state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       <button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>
       ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
@@ -2261,16 +2890,7 @@ function viewDraft() {
       ${whoami && whoami !== -1 ? `<div class="card">
         <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Star players in the pool to add them.</p>
-        ${toArr(state.autolists?.[whoami]).map((pid, k) => {
-          const p = PLAYER_BY_ID[pid];
-          const gone = draftedIds().has(pid);
-          return p ? `<div class="lrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
-            <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
-            <span style="margin-left:auto;display:flex;gap:4px">
-              ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
-              <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
-            </span></div>` : '';
-        }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>'}
+        ${autolistRows()}
       </div>` : ''}
       <div class="card side-squad">
         <h2>${esc(managerName(mid))}'s squad</h2>
@@ -2290,7 +2910,33 @@ function viewDraft() {
         </div>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${whoami && whoami !== -1 ? `
+  <button class="btn queue-fab" id="queueFab">&#9733; Queue <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></button>
+  <div class="queue-drawer${window._queueOpen ? ' open' : ''}" id="queueDrawer">
+    <h2 style="display:flex;align-items:center">My autopick queue <span class="tag" style="margin-left:8px">${toArr(state.autolists?.[whoami]).length}</span>
+      <button class="btn ghost small" id="queueClose" style="margin-left:auto">&#10005;</button></h2>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist — the clock takes the top available name. Star players in the pool to add them.</p>
+    ${autolistRows()}
+  </div>` : ''}`;
+}
+
+/* one ranked queue, rendered in the sidebar and the phone drawer alike —
+   with a warning where autopick would have to skip a name */
+function autolistRows() {
+  return toArr(state.autolists?.[whoami]).map((pid, k) => {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) return '';
+    const gone = draftedIds().has(pid);
+    const wontFit = !gone && !canPick(whoami, p);
+    return `<div class="lrow qrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
+      <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
+      ${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
+      <span style="margin-left:auto;display:flex;gap:4px">
+        ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
+        <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
+      </span></div>`;
+  }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
 }
 
 function draftOrderStrip() {
@@ -2372,10 +3018,13 @@ const ALL_STAT_COLS = live => [
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
   : ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts'];
+// phones default to the essentials — tap any player for the full story, or
+// add columns back via the Columns toggle (a saved preference wins everywhere)
+const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'pts'] : ['vs', 'ppg', 'pts'];
 let _colPrefs;
 function visibleColKeys(live) {
   if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem('tl2627-cols')); } catch { _colPrefs = null; } }
-  return _colPrefs || DEFAULT_COL_KEYS(live);
+  return _colPrefs || (matchMedia('(max-width: 700px)').matches ? MOBILE_COL_KEYS(live) : DEFAULT_COL_KEYS(live));
 }
 const STAT_COLS = live => ALL_STAT_COLS(live).filter(c => visibleColKeys(live).includes(c.k));
 window._colsOpen = false;
@@ -2425,7 +3074,7 @@ function poolTable() {
     <thead><tr>
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
-      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
+      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
     </tr></thead>
     <tbody>
       ${rows.map(p => `
@@ -2435,7 +3084,7 @@ function poolTable() {
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -2446,6 +3095,27 @@ function poolTable() {
 
 let clockTimer = null;
 let firedDeadline = 0;
+let clockArming = false;
+function armClock() {
+  if (clockArming || !state.settings.pickTimer) return;
+  if (state.draft.deadline && currentManagerId() != null) return; // armed with someone on the clock — nothing to do
+  clockArming = true;
+  if (netOn()) {
+    // clockStart also HEALS a full board stuck in draft phase server-side
+    serverAct('draftAdmin', { op: 'clockStart' })
+      .catch(() => {})
+      .finally(() => setTimeout(() => { clockArming = false; }, 3000));
+  } else {
+    if (currentManagerId() == null) state.phase = 'season'; // local seal
+    else state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
+    clockArming = false;
+    save(); render();
+  }
+}
+function draftDeadlineTiming(deadline, now = Date.now()) {
+  const rawLeft = Math.round(((deadline || 0) - now) / 1000);
+  return { rawLeft, left: Math.max(0, rawLeft), overBy: Math.max(0, -rawLeft) };
+}
 function bindDraft() {
   clearInterval(clockTimer);
   if (state.phase === 'season') return;
@@ -2464,10 +3134,14 @@ function bindDraft() {
       tw.disabled = used >= 2 || !canActFor(mid);
       tw.onclick = () => {
         if ((state.draft.timewastes?.[mid] || 0) >= 2) { toast('No timewastes left — play on'); return; }
+        if (netOn()) {
+          serverAct('draftAdmin', { op: 'timewaste' })
+            .then(() => toast(`${managerName(mid)} is timewasting. Taking it to the corner flag.`))
+            .catch(() => {});
+          return;
+        }
         (state.draft.timewastes = state.draft.timewastes || {})[mid] = (state.draft.timewastes[mid] || 0) + 1;
         state.draft.deadline = (state.draft.deadline || Date.now()) + 60 * 1000;
-        pushShared('draft/timewastes', state.draft.timewastes);
-        pushShared('draft/deadline', state.draft.deadline);
         save(); render();
         toast(`${managerName(mid)} is timewasting. Taking it to the corner flag.`);
       };
@@ -2480,7 +3154,23 @@ function bindDraft() {
       const breakDue = drinksBreakAt(bn) && !(state.draft.breaksDone || []).includes(bn);
       if (state.draft.paused) { el.textContent = 'PAUSED'; el.classList.remove('urgent'); if (el2) el2.textContent = 'PAUSED'; return; }
       if (breakDue || $('#drinksBreak') || $('#ceremony')) return; // clock politely waits for pomp
-      const left = Math.max(0, Math.round(((state.draft.deadline || 0) - Date.now()) / 1000));
+      if (currentManagerId() == null) {
+        // full board still marked draft: the phase flip was lost — ask the
+        // server to seal it (clockStart heals) instead of counting a dead clock
+        el.textContent = '—'; el.classList.remove('urgent');
+        if (el2) el2.textContent = '—';
+        armClock();
+        return;
+      }
+      if (!state.draft.deadline) {
+        // the start op leaves the deadline null so the ceremony can't eat pick
+        // one's clock — the first device past the pomp arms it (op idempotent)
+        el.textContent = '—'; el.classList.remove('urgent');
+        if (el2) el2.textContent = '—';
+        armClock();
+        return;
+      }
+      const { left, overBy, rawLeft } = draftDeadlineTiming(state.draft.deadline);
       el.textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
       el.classList.toggle('urgent', left <= 10);
       if (el2) { el2.textContent = el.textContent; el2.classList.toggle('urgent', left <= 10); }
@@ -2489,11 +3179,12 @@ function bindDraft() {
         // on-clock manager's OWN device fires after an 8s grace. The pick
         // transaction is idempotent, so a double-fire is harmless — this just
         // guarantees the draft never stalls on one sleeping screen.
-        const overBy = -left; // seconds past the deadline
+        // rawLeft (unclamped) is the overdue test: overBy is floored at 0, so
+        // "overBy >= 0" is true even mid-countdown and must never gate firing.
         const iAmCommish = !netOn() || isCommissioner();
         const iAmOnClock = netOn() && currentManagerId() === whoami;
-        const mayFire = (overBy >= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock);
-        if (overBy >= 0 && mayFire) {
+        const mayFire = (rawLeft <= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock);
+        if (mayFire) {
           firedDeadline = state.draft.deadline;
           toast('Time! Autopick makes the call.');
           autoPick(true);
@@ -2504,17 +3195,19 @@ function bindDraft() {
   const pb = $('#pauseDraft');
   if (pb) pb.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner pauses the draft'); return; }
+    if (netOn()) {
+      serverAct('draftAdmin', { op: state.draft.paused ? 'resume' : 'pause' })
+        .then(() => toast(state.draft.paused ? 'Draft resumed. The clock is live.' : 'Draft paused by the commissioner.'))
+        .catch(() => {});
+      return;
+    }
     if (state.draft.paused) {
       state.draft.paused = false;
       if (state.settings.pickTimer) state.draft.deadline = Date.now() + (state.draft.pausedLeft || state.settings.pickTimer * 1000);
-      pushShared('draft/paused', false);
-      pushShared('draft/deadline', state.draft.deadline);
       toast('Draft resumed. The clock is live.');
     } else {
       state.draft.paused = true;
       state.draft.pausedLeft = Math.max(5000, (state.draft.deadline || Date.now()) - Date.now());
-      pushShared('draft/paused', true);
-      pushShared('draft/pausedLeft', state.draft.pausedLeft);
       toast('Draft paused by the commissioner.');
     }
     save(); render();
@@ -2526,19 +3219,18 @@ function bindDraft() {
   bindPoolTable();
   $('#undoPick').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can undo a pick'); return; }
-    const resetClock = () => {
-      if (state.settings.pickTimer) {
-        state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
-        pushShared('draft/deadline', state.draft.deadline);
-      }
-    };
-    if (netOn()) {
-      window.WCSync.txn('draft/picks', cur => { const a = toArr(cur); a.pop(); return a; })
-        .then(res => { state.draft.picks = toArr(res.snapshot.val()); resetClock(); save(); render(); });
-    } else {
-      state.draft.picks.pop(); resetClock(); save(); render();
-    }
+    if (netOn()) { serverAct('draftAdmin', { op: 'undo', expectedCount: state.draft.picks.length }).catch(() => {}); return; }
+    state.draft.picks.pop();
+    if (state.phase === 'season') state.phase = 'draft'; // the final pick flipped it; undo reopens the board
+    if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
+    save(); render();
   };
+  const iq = $('#interceptQ');
+  if (iq) iq.onclick = () => iq.classList.toggle('open');
+  const qf = $('#queueFab'), qd = $('#queueDrawer');
+  if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };
+  const qc = $('#queueClose');
+  if (qc) qc.onclick = () => { window._queueOpen = false; qd?.classList.remove('open'); };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
@@ -2561,7 +3253,7 @@ function refreshPool() {
   q.setSelectionRange(q.value.length, q.value.length);
 }
 function bindPoolTable() {
-  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
     const pid = +b.dataset.pick, mid = currentManagerId(), p = PLAYER_BY_ID[pid];
     // explain, don't dead-tap: a disabled-looking button now says why (tooltips
     // don't exist on touch — the #1 "it's broken" generator on phones)
@@ -2569,7 +3261,12 @@ function bindPoolTable() {
     if (!canPick(mid, p)) { toast(`Can't fit another ${p.pos} — your squad's full at that position.`); return; }
     // one confirm before an instant, commissioner-only-undo pick (rows shift as
     // other picks land, so a mis-tap is easy)
-    if (!confirm(`Draft ${p.name} (${p.club} ${p.pos}) — pick #${pickNo() + 1}?`)) return;
+    if (!await confirmSheet({
+      title: `Pick #${pickNo() + 1}`,
+      body: dealRows([], [p]),
+      yes: `Draft ${esc(p.name)}`,
+      note: 'Instant — and only the Chairman can undo it.',
+    })) return;
     makePick(pid);
   });
   document.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => {
@@ -2630,15 +3327,17 @@ function viewTeam() {
   return `
   ${notMine ? `<div class="card" style="margin-bottom:12px;border-color:var(--accent)"><p style="font-size:13px">&#128065;&#65039; You're looking at <b>${esc(teamName(mid))}</b> — ${esc(managerName(mid))}'s team${isCommissioner() ? '. Commissioner changes require confirmation.' : '. Look, don\'t touch.'} <button class="btn small" id="backToMine" style="margin-left:8px">Back to my team</button></p></div>` : ''}
   <div class="team-controls card">
-    <select id="teamMgr">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
-    <select id="teamGw">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
+    <select id="teamMgr" aria-label="Manager">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
+    <select id="teamGw" aria-label="Gameweek">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
     <span class="tag">${locked ? (gwIsOver(gw) ? 'Gameweek finished — locked' : 'Deadline passed — locked') : `Lineup open — locks ${new Date(gwFrom(gw)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
     <span class="tag">GW points: <b class="gold">&nbsp;${gwManagerPoints(mid, gw)}</b></span>
     <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
+    <button class="tag" id="clubBtn" style="cursor:pointer" title="Name, kit, sponsor, gaffer, rival — the club office">${kitSvg(mid, 14)} Club office</button>
+    ${gafferChip(mid)}
   </div>
   <div class="card" style="margin-bottom:18px">
-    <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
+    <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted pitch-hint" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
       ${(() => {
         const opp = pairingsFor(gw).find(pr => pr.includes(mid));
         return opp ? `<button class="btn ghost small" id="showOpp" style="margin-left:auto">${teamView.showOpp ? 'Hide' : 'Show'} opponent</button>` : '';
@@ -2667,7 +3366,7 @@ function viewTeam() {
       const pic = p => browsing ? kitImg(p.team, p.pos === 'GK') : kitImg(p.team, p.pos === 'GK');
       const info = p => browsing ? '' : `<span class="pitch-info" data-pcard="${p.id}" title="${esc(p.name)} — stats">&#9432;</span>`;
       return `
-    ${adStrip(mid * 37 + gw)}
+    ${adStrip(mid * 37 + gw, 3, mid)}
     <div class="pitch">
       ${['GK', 'DF', 'MF', 'FW'].map(pos => `
         <div class="pitch-row">
@@ -2774,16 +3473,20 @@ function bindTeam() {
   const so = $('#showOpp');
   if (so) so.onclick = () => { teamView.showOpp = !teamView.showOpp; render(); };
   // --- stadium naming ---
+  const cb = $('#clubBtn');
+  if (cb) cb.onclick = () => { state.view = 'club'; save(); render(); };
   const sb2 = $('#stadiumBtn');
   if (sb2) sb2.onclick = () => {
     if (!actGuard(mid, 'stadium')) return;
     const v = prompt(`Name ${teamName(mid)}'s stadium:`, stadium(mid));
     if (v == null || !v.trim()) return;
+    if (netOn()) {
+      serverAct('stadiumSet', { name: v.trim().slice(0, 40), ...(mid !== whoami && { asManager: mid }) })
+        .then(() => toast(`${v.trim()} — naming rights sold for nothing.`)).catch(() => {});
+      return;
+    }
     const idx = state.managers.findIndex(m => m.id === mid);
     state.managers[idx].stadium = v.trim().slice(0, 40);
-    // write only this manager's stadium — never the whole 12-manager array,
-    // which would revert anyone else's just-changed name/team/stadium
-    pushShared(`managers/${idx}/stadium`, state.managers[idx].stadium);
     save(); render();
     toast(`${v.trim()} — naming rights sold for nothing.`);
   };
@@ -2862,8 +3565,12 @@ function bindTeam() {
     if (!n || n < 1 || n > 99) { toast('Numbers 1–99 only'); return; }
     const clash = squadAt(mid, cur2).find(x => x.id !== pid && +shirtNum(mid, x.id) === n);
     if (clash) { toast(`${n} is taken by ${clash.name}`); return; }
+    if (netOn()) {
+      serverAct('shirtNumSet', { pid, num: n, ...(mid !== whoami && { asManager: mid }) })
+        .then(() => toast(`${PLAYER_BY_ID[pid].name} takes the number ${n} shirt`)).catch(() => {});
+      return;
+    }
     (state.shirtNums[mid] = state.shirtNums[mid] || {})[pid] = n;
-    pushShared(`shirtNums/${mid}`, state.shirtNums[mid]);
     save(); render();
     toast(`${PLAYER_BY_ID[pid].name} takes the number ${n} shirt`);
   });  const gt = $('#goTransfers');
@@ -2931,14 +3638,15 @@ function viewTransfers() {
       <div class="lrow" style="font-size:12.5px">
         <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
-        <span style="margin-left:auto;display:flex;gap:4px">
-          ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
+        <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
+          <button class="btn ghost small" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
+          <button class="btn ghost small" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''}>&#9660;</button>
           <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
     return `${head}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Players on waivers need a claim — ranked, blind, resolved in reverse table order (win one, go to the back). Everyone else is free to sign instantly. Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Two taps: choose your <b>player out</b> below, then hit <b>Sign</b> next to the one you want — instant if they&rsquo;re free, a ranked blind claim if they&rsquo;re on waivers (resolved in reverse table order; win one, go to the back). Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
       <select id="trOut" style="width:100%;margin:8px 0;max-width:420px">
@@ -2969,7 +3677,7 @@ function viewTransfers() {
     </div>
     <div class="card">
       <h2>Trade desk</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap; it executes the instant the other manager accepts.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap with another <b>manager</b>; it executes the instant they accept. After a free agent instead? That&rsquo;s not a trade — that&rsquo;s <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>: pick who goes out, sign who comes in.</p>
       ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
         <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
           <span><b>${esc(managerName(t.from))}</b> gives <b>${esc(tradeNames(tGive(t)))}</b> for <b>${esc(tradeNames(tGet(t)))}</b>${t.terms ? `<br><span class="muted" style="font-size:11px">&#128220; ${esc(t.terms)}</span>` : ''}</span>
@@ -3011,7 +3719,7 @@ function viewTransfers() {
     return `${head}<div class="card"><h2>Every move, on the record</h2>${rows || '<p class="muted">Nothing yet. Cowards.</p>'}</div>`;
   }
   // order
-  const order = waiverOrder(cur);
+  const order = waiverOrder();
   const claimCounts = state.managers.map(m => ({ m, n: myClaims(m.id).length }));
   const waiverHist = state.transfers.filter(t => t.waiver);
   return `${head}<div class="card">
@@ -3032,6 +3740,11 @@ function bindTransfers() {
     if (!actGuard(mid, 'covenant')) return;
     const to = +$('#covWith').value, text = $('#covText').value.trim();
     if (!to || !text) { toast('Pick a counterparty and state the nonsense'); return; }
+    if (netOn()) {
+      serverAct('covenantAdd', { to, text: text.slice(0, 200), gw: GAMEWEEKS[cur].n, ...(mid !== whoami && { asManager: mid }) })
+        .then(() => toast('Recorded. It is now canon.')).catch(() => {});
+      return;
+    }
     const covenant = { id: Date.now() + '-' + mid, from: mid, to, text: text.slice(0, 200), t: Date.now(), gw: GAMEWEEKS[cur].n };
     txnArray('covenants', arr => [...arr, covenant])
       .then(ok => toast(ok ? 'Recorded. It is now canon.' : 'Didn’t record — check connection and try again'));
@@ -3042,8 +3755,8 @@ function bindTransfers() {
     const ord = [...state.draft.order].reverse();
     if (!ord.length) { toast('No draft order on record'); return; }
     if (!confirm(`Start the Window Draft? Order snakes backwards from draft night: ${ord.map(managerName).join(' › ')}. It runs until a full lap of passes.`)) return;
+    if (netOn()) { serverAct('windowDraft', { op: 'start' }).catch(() => {}); return; }
     state.windowDraft = { status: 'live', order: ord, turn: 0, passes: 0, picks: [] };
-    pushShared('windowDraft', state.windowDraft);
     save(); render();
   };
   const wdr = $('#wdRelease');
@@ -3051,8 +3764,17 @@ function bindTransfers() {
   const wde = $('#wdEnd');
   if (wde) wde.onclick = () => { if (confirm('End the Window Draft? Remaining arrivals go to the Trough.')) wdFinish(); };
   const wdp = $('#wdPass');
-  if (wdp) wdp.onclick = () => { if (!actGuard(wdActor(), 'window draft')) return; toast(`${managerName(wdActor())} passes.`); wdAdvance(true); };
-  document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = () => {
+  if (wdp) wdp.onclick = () => {
+    if (!actGuard(wdActor(), 'window draft')) return;
+    if (netOn()) {
+      serverAct('windowDraft', { op: 'pass', expectedTurn: state.windowDraft?.turn || 0 })
+        .then(() => toast(`${managerName(wdActor())} passes.`)).catch(() => {});
+      return;
+    }
+    toast(`${managerName(wdActor())} passes.`);
+    wdAdvance(true);
+  };
+  document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = async () => {
     const actor = wdActor();
     if (!actGuard(actor, 'window draft')) return;
     const outId = +($('#wdOut')?.value || 0);
@@ -3060,6 +3782,18 @@ function bindTransfers() {
     const inP = PLAYER_BY_ID[+b.dataset.wdin];
     const tgw = transferGw();
     if (!squadShapeOk([...squadAt(actor, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+    if (!await confirmSheet({
+      title: 'Window Draft signing',
+      body: dealRows([PLAYER_BY_ID[outId]], [inP]),
+      yes: `Sign ${esc(inP.name)}`,
+      note: 'Done the moment you confirm — and your turn is used.',
+    })) return;
+    if (netOn()) {
+      serverAct('windowDraft', { op: 'pick', inId: inP.id, outId, expectedTurn: state.windowDraft?.turn || 0 })
+        .then(() => toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`))
+        .catch(() => {});
+      return;
+    }
     txnArray('transfers', arr => {
       const owned = ownedIdsGiven(arr, tgw);
       if (owned.has(inP.id) || !owned.has(outId)) return null;
@@ -3085,7 +3819,14 @@ function bindTransfers() {
   document.querySelectorAll('[data-claimup]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
     const k = +b.dataset.claimup, arr = [...myClaims(mid)];
+    if (k === 0) return;
     [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setClaims(mid, arr);
+  });
+  document.querySelectorAll('[data-claimdn]').forEach(b => b.onclick = () => {
+    if (!actGuard(mid, 'waiver claims')) return;
+    const k = +b.dataset.claimdn, arr = [...myClaims(mid)];
+    if (k >= arr.length - 1) return;
+    [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setClaims(mid, arr);
   });
   // Chairman's office
   const rw = $('#runWaivers');
@@ -3120,7 +3861,7 @@ function bindTransfers() {
       <table class="pool-table">
         <thead><tr>
           <th data-trsort="name">Player</th><th></th>
-          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th></th>
+          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
         </tr></thead>
         <tbody>${shown.map(p => {
           const ownerMid = ownedBy[p.id];
@@ -3137,7 +3878,7 @@ function bindTransfers() {
             <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
-            <td>${action}</td>
+            <td class="act">${action}</td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>
@@ -3168,11 +3909,17 @@ function bindTransfers() {
       if (more) more.onclick = () => { transfersView.limit += 50; renderTrResults(); };
       const showAll = results.querySelector('#trAll');
       if (showAll) showAll.onclick = () => { transfersView.limit = 9999; renderTrResults(); };
-      results.querySelectorAll('[data-trin]').forEach(b => b.onclick = () => {
+      results.querySelectorAll('[data-trin]').forEach(b => b.onclick = async () => {
         if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = transfersView.out;
-        const inP = PLAYER_BY_ID[inId];
+        const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
         if (b.dataset.waiv === '1') {
+          if (!await confirmSheet({
+            title: 'Lodge this claim?',
+            body: dealRows([outP], [inP]),
+            yes: 'Lodge claim',
+            note: 'Resolves when waivers run. You can withdraw or reorder it from your claims list until then.',
+          })) return;
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           toast(`Claim lodged: ${inP.name}. Resolves when waivers run.`);
@@ -3180,6 +3927,21 @@ function bindTransfers() {
         }
         const tgw = transferGw();
         if (!squadShapeOk([...squadAt(mid, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
+        if (!await confirmSheet({
+          title: 'Do the deal?',
+          body: dealRows([outP], [inP]),
+          yes: `Sign ${esc(inP.name)}`,
+          note: `First come, first served — the deal is done the moment you confirm${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. ${esc(outP?.name || 'Your man')} goes to waivers.`,
+        })) return;
+        if (netOn()) {
+          // first come, first served — settled by a server transaction
+          serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) })
+            .then(r => {
+              transfersView.out = null;
+              toast(`${inP.name} signed from the Trough${r.tgw !== cur ? ` — in for GW${GAMEWEEKS[r.tgw].n}` : ''}. First come, first served.`);
+            }).catch(() => {});
+          return;
+        }
         // first come, first served — settled by a transaction, not by luck
         txnArray('transfers', arr => {
           const owned = ownedIdsGiven(arr, tgw);
@@ -3207,10 +3969,17 @@ function bindTransfers() {
     } else renderTrResults();
   }
   // --- trade desk: propose / accept / reject / withdraw ---
-  document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('[data-tracc]').forEach(b => b.onclick = async () => {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.tracc);
     if (!tr) return;
     if (!actGuard(tr.to, 'trade')) return;
+    if (!await confirmSheet({
+      title: 'Accept this trade?',
+      body: dealRows(tGet(tr).map(id => PLAYER_BY_ID[id]), tGive(tr).map(id => PLAYER_BY_ID[id]))
+        + (tr.terms ? `<p style="font-size:13px;margin:8px 0 0">Side-terms: <i>${esc(tr.terms)}</i></p>` : ''),
+      yes: 'Accept &amp; execute',
+      note: 'Executes instantly — both squads swap on confirm. No takebacks.',
+    })) return;
     respondTrade(tr.id, true);
   });
   document.querySelectorAll('[data-trrej]').forEach(b => b.onclick = () => {
@@ -3223,6 +3992,11 @@ function bindTransfers() {
     const tr = toArr(state.trades).find(x => x.id === b.dataset.trwd);
     if (!tr) return;
     if (!actGuard(tr.from, 'trade')) return;
+    if (netOn()) {
+      serverAct('tradeRespond', { tradeId: tr.id, action: 'withdraw' })
+        .then(() => toast('Offer withdrawn. Never happened.')).catch(() => {});
+      return;
+    }
     setTradeStatus(tr.id, 'withdrawn')
       .then(ok => toast(ok ? 'Offer withdrawn. Never happened.' : 'Too late — the offer already moved.'));
   });
@@ -3271,7 +4045,7 @@ function bindTransfers() {
         <button class="btn small" id="tradeGo">Propose trade</button>`;
       const tradeGo = pickers.querySelector('#tradeGo');
       if (!tradeGo) return;
-      tradeGo.onclick = () => {
+      tradeGo.onclick = async () => {
         if (!actGuard(mid, 'trade')) return;
         const give = [...pickers.querySelectorAll('[data-trside="mine"]:checked')].map(x => +x.value);
         const get = [...pickers.querySelectorAll('[data-trside="theirs"]:checked')].map(x => +x.value);
@@ -3281,15 +4055,71 @@ function bindTransfers() {
         const meAfter = [...squadAt(mid, cur).filter(p => !giveSet.has(p.id)), ...get.map(pid => PLAYER_BY_ID[pid])];
         const themAfter = [...squadAt(other, cur).filter(p => !getSet.has(p.id)), ...give.map(pid => PLAYER_BY_ID[pid])];
         if (!squadShapeOk(meAfter) || !squadShapeOk(themAfter)) { toast('That combination breaks a squad’s position limits'); return; }
-        proposeTrade(mid, other, give, get, $('#tradeTerms').value.trim());
+        const terms = $('#tradeTerms').value.trim();
+        if (!await confirmSheet({
+          title: `Propose to ${esc(managerName(other))}?`,
+          body: dealRows(give.map(pid => PLAYER_BY_ID[pid]), get.map(pid => PLAYER_BY_ID[pid]))
+            + (terms ? `<p style="font-size:13px;margin:8px 0 0">Side-terms: <i>${esc(terms)}</i></p>` : ''),
+          yes: 'Send offer',
+          note: 'They accept or reject. You can withdraw the offer any time before they answer.',
+        })) return;
+        proposeTrade(mid, other, give, get, terms);
       };
     };
   }
 }
 
 /* ---------------- dashboard ---------------- */
+/* ----- "the app": the site IS the app — home-screen install helpers ----- */
+let a2hsEvent = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  a2hsEvent = e; // Chrome/Edge/Android hand us a one-tap installer; stash it for the card
+  try { if (state && document.querySelector('#main')) render(); } catch { /* fired before boot — card picks it up on first render */ }
+});
+const A2HS_KEY = `${LS_NS}-a2hs-hidden`;
+const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function installApp() {
+  if (!a2hsEvent) return;
+  const ev = a2hsEvent; a2hsEvent = null;
+  ev.prompt();
+  ev.userChoice.then(c => {
+    if (c.outcome === 'accepted') toast('Installed — The League is on your home screen');
+    // dismissed: the event is spent — show the manual instructions instead.
+    // Chrome refires beforeinstallprompt later and the one-tap button returns.
+    else render();
+  });
+}
+function installCard(settingsPage = false) {
+  if (isStandalone()) return settingsPage ? `<div class="card"><h2>The app</h2>
+    <p class="muted" style="font-size:12.5px">&#9989; You're running the installed app — its own icon, full screen, same live league. Nothing to update; it always loads the latest build.</p></div>` : '';
+  if (!settingsPage && localStorage.getItem(A2HS_KEY)) return '';
+  const how = a2hsEvent ? ''
+    : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone, in <b>Safari</b>: tap the <b>Share</b> button (square with an up arrow) — or the <b>&#8943; menu</b> by the address bar — then <b>Add to Home Screen</b>. It hides sometimes: scroll down the list, or check <b>View More / Edit Actions</b>. Own icon, full screen, no browser bar.</p>`
+    : `<p class="rules-p" style="font-size:12.5px">In Chrome: open the <b>&#8942; menu</b> and choose <b>Add to Home screen / Install app</b> (on desktop it's the install icon in the address bar).</p>`;
+  return `<div class="card" style="margin-bottom:18px"><h2>Get the app &#128241;</h2>
+    <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
+    ${how}
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      ${a2hsEvent ? '<button class="btn small" id="a2hsGo">Install the app</button>' : ''}
+      ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsHide">Not now</button>'}
+    </div>
+  </div>`;
+}
+function bindInstall() {
+  const go = $('#a2hsGo');
+  if (go) go.onclick = installApp;
+  const hide = $('#a2hsHide');
+  if (hide) hide.onclick = () => { localStorage.setItem(A2HS_KEY, '1'); toast('Fine — it lives in Settings if you change your mind'); render(); };
+}
+
 function viewDash() {
-  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  // a signed-out visitor must never be shown manager #1's world as "yours" —
+  // Toby got a dashboard of Ben's team and reasonably concluded the app
+  // thought he WAS Ben
+  const identified = (whoami && whoami !== -1) || demoMode || !netOn();
+  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : state.managers[0].id;
   const cur = currentGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
@@ -3306,16 +4136,23 @@ function viewDash() {
   const myPos = table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   return `
+  ${foundingCard()}
   <div class="settings-grid">
+    ${!identified ? `
+    <div class="card" style="border-color:var(--accent)">
+      <h2>Who goes there?</h2>
+      <p class="rules-p">You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.</p>
+      <button class="btn" id="dashSignIn">Sign in</button>
+    </div>` : `
     <div class="card">
       <h2>GW${GAMEWEEKS[cur].n} — your matchup</h2>
       ${pair ? `
       <div class="h2h-fx" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
-        <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))}</b></span>
+        <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))} ${kitSvg(pair[0])}</b></span>
         <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
-        <span style="flex:1"><b>${esc(teamName(pair[1]))}</b></span>
+        <span style="flex:1"><b>${kitSvg(pair[1])} ${esc(teamName(pair[1]))}</b></span>
       </div>
-      <div class="venue-line">at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
+      <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))} &middot; ${gwStatus(cur) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; you're ${(mid === pair[0] ? pct : 100 - pct) >= 50 ? '' : 'only '}${mid === pair[0] ? pct : 100 - pct}% to win it`}</div>
       <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -3330,7 +4167,7 @@ function viewDash() {
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
-    </div>
+    </div>`}
     <div class="card">
       <h2>Around the league</h2>
       ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
@@ -3340,6 +4177,7 @@ function viewDash() {
       ${myPos > 4 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
     </div>
   </div>
+  ${installCard()}
   ${vidiCard(true)}
   ${awardsCard()}
   ${lobusCard()}
@@ -3402,11 +4240,11 @@ function pointsGridCard(standings) {
     <h2>Points, week by week <span class="muted" style="font-weight:400;font-size:12px">gold = top score of the week</span></h2>
     <div style="overflow-x:auto">
     <table class="pool-table" style="font-size:12px">
-      <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num">Total</th></tr></thead>
+      <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num act">Total</th></tr></thead>
       <tbody>${standings.map(r => `<tr>
         <td style="white-space:nowrap"><b>${esc(r.team || r.name)}</b></td>
         ${gws.map((i, k) => `<td class="num ${scores[r.id][k] === hi[k] && hi[k] > 0 ? 'gold' : 'muted'}">${scores[r.id][k]}</td>`).join('')}
-        <td class="num" style="font-weight:700">${scores[r.id].reduce((t, x) => t + x, 0)}</td>
+        <td class="num act" style="font-weight:700">${scores[r.id].reduce((t, x) => t + x, 0)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
   </div>`;
@@ -3557,6 +4395,13 @@ function committeeMinutes(last) {
   return L.join('\n');
 }
 function bindDash() {
+  bindInstall();
+  const fb = $('#foundBtn');
+  if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
+  const fl = $('#foundLater');
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
+  const ds = $('#dashSignIn');
+  if (ds) ds.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
   const cm = $('#copyMinutes');
   if (cm) cm.onclick = () => {
@@ -3575,23 +4420,32 @@ function bindDash() {
   });
 }
 
-/* ----- playoffs (GW34 semis, GW35–36 two-legged final) ----- */
+/* ----- playoffs (top 8: GW34 handicap quarter-finals, GW35 semis, GW36–38 three-legged final) ----- */
+const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
+const QF_HANDICAPS = [12, 9, 6, 3]; // head start for the higher seed: 1v8, 2v7, 3v6, 4v5
 function playoffState() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') return null;
-  const seeds = standingsBefore(REGULAR_GWS).rows.map(r => r.id).slice(0, 4);
-  const semiIdx = REGULAR_GWS; // GW34
-  const semis = [[seeds[0], seeds[3]], [seeds[1], seeds[2]]];
-  const semiDone = gwStatus(semiIdx) === 'final';
+  const seeds = standingsBefore(REGULAR_GWS).rows.map(r => r.id).slice(0, 8);
+  const qfIdx = REGULAR_GWS;       // GW34
+  const semiIdx = REGULAR_GWS + 1; // GW35
+  const finalIdx = [REGULAR_GWS + 2, REGULAR_GWS + 3, REGULAR_GWS + 4]; // GW36–38
   const higherSeed = (a, b) => seeds.indexOf(a) < seeds.indexOf(b) ? a : b;
-  const semiWinners = semiDone ? semis.map(([a, b]) => {
+  const qfs = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  const qfWinners = gwStatus(qfIdx) === 'final' ? qfs.map(([a, b], k) => {
+    const pa = gwManagerPoints(a, qfIdx) + QF_HANDICAPS[k], pb = gwManagerPoints(b, qfIdx);
+    return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
+  }) : null;
+  // fixed bracket: winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6
+  const semis = qfWinners ? [[qfWinners[0], qfWinners[3]], [qfWinners[1], qfWinners[2]]] : null;
+  const semiWinners = semis && gwStatus(semiIdx) === 'final' ? semis.map(([a, b]) => {
     const pa = gwManagerPoints(a, semiIdx), pb = gwManagerPoints(b, semiIdx);
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
   }) : null;
   let champion = null;
-  if (semiWinners && gwStatus(REGULAR_GWS + 2) === 'final') {
+  if (semiWinners && finalIdx.every(i => gwStatus(i) === 'final')) {
     const [x, y] = semiWinners;
     let wx = 0, wy = 0, cx = 0, cy = 0;
-    for (const i of [REGULAR_GWS + 1, REGULAR_GWS + 2]) {
+    for (const i of finalIdx) {
       const px = gwManagerPoints(x, i), py = gwManagerPoints(y, i);
       cx += px; cy += py;
       if (px > py) wx++; else if (py > px) wy++;
@@ -3599,23 +4453,41 @@ function playoffState() {
     champion = wx > wy ? x : wy > wx ? y
       : cx > cy ? x : cy > cx ? y : higherSeed(x, y);
   }
-  return { seeds, semis, semiIdx, semiWinners, champion };
+  return { seeds, qfs, qfIdx, qfWinners, semis, semiIdx, semiWinners, finalIdx, champion };
 }
 function playoffCard() {
   const po = playoffState();
   if (!po) {
     return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top four go through: GW34 semi-finals (1st v 4th, 2nd v 3rd, one leg), GW35–36 the two-legged final. Ties: cumulative points, then regular-season position.</p></div>`;
+      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting +${QF_HANDICAPS.join(', +')}. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
   }
-  const semiScore = (a, b) => `${gwManagerPoints(a, po.semiIdx)} – ${gwManagerPoints(b, po.semiIdx)}`;
+  const seedNo = id => po.seeds.indexOf(id) + 1;
+  const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
+  const tieRow = (a, b, score, hcap) => `<div class="h2h-fx">
+      <span style="flex:1;text-align:right">${ord(seedNo(a))} ${esc(teamName(a))}${hcap ? ` <span class="gold" style="font-size:11px" title="handicap — the higher seed starts +${hcap}">+${hcap}</span>` : ''}</span>
+      <span class="fx-score">${score}</span>
+      <span style="flex:1">${esc(teamName(b))} ${ord(seedNo(b))}</span></div>`;
+  const qfRows = po.qfs.map(([a, b], k) => tieRow(a, b,
+    gwStatus(po.qfIdx) === 'upcoming' ? 'GW34' : `${gwManagerPoints(a, po.qfIdx) + QF_HANDICAPS[k]} – ${gwManagerPoints(b, po.qfIdx)}`,
+    QF_HANDICAPS[k])).join('');
+  const semiRows = po.semis ? po.semis.map(([a, b]) => tieRow(a, b,
+    gwStatus(po.semiIdx) === 'upcoming' ? 'GW35' : `${gwManagerPoints(a, po.semiIdx)} – ${gwManagerPoints(b, po.semiIdx)}`)).join('') : '';
+  let finalRows = '';
+  if (po.semiWinners) {
+    const [x, y] = po.semiWinners;
+    const played = po.finalIdx.filter(i => gwStatus(i) !== 'upcoming');
+    if (!played.length) finalRows = tieRow(x, y, 'GW36–38');
+    else {
+      const legs = played.map(i => `${gwManagerPoints(x, i)}–${gwManagerPoints(y, i)}`);
+      const agg = played.reduce((t, i) => [t[0] + gwManagerPoints(x, i), t[1] + gwManagerPoints(y, i)], [0, 0]);
+      finalRows = tieRow(x, y, `${agg[0]} – ${agg[1]}`)
+        + `<p class="muted" style="font-size:11px;text-align:center;margin:2px 0 0">legs: ${legs.join(' · ')}${played.length < 3 ? ` · ${3 - played.length} to play` : ' · aggregate'}</p>`;
+    }
+  }
   return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-    ${po.semis.map(([a, b], k) => `<div class="h2h-fx">
-      <span style="flex:1;text-align:right">${k === 0 ? '1st' : '2nd'} ${esc(teamName(a))}</span>
-      <span class="fx-score">${gwStatus(po.semiIdx) === 'upcoming' ? 'GW34' : semiScore(a, b)}</span>
-      <span style="flex:1">${esc(teamName(b))} ${k === 0 ? '4th' : '3rd'}</span></div>`).join('')}
-    ${po.semiWinners ? `<div class="h2h-fx"><span style="flex:1;text-align:right">${esc(teamName(po.semiWinners[0]))}</span>
-      <span class="fx-score">FINAL · GW35–36</span>
-      <span style="flex:1">${esc(teamName(po.semiWinners[1]))}</span></div>` : ''}
+    ${stageHead('Quarter-finals · GW34 · handicaps apply')}${qfRows}
+    ${po.semis ? stageHead('Semi-finals · GW35') + semiRows : ''}
+    ${finalRows ? stageHead('The Final · GW36–38 · three legs') + finalRows : ''}
     ${po.champion ? `<p style="text-align:center;font-size:16px;margin-top:10px">&#127942; <b>${esc(teamName(po.champion))}</b> — champions of The League 2026/27</p>` : ''}
   </div>`;
 }
@@ -3670,7 +4542,8 @@ function showMatchup(a, b, i) {
     .map(p => `<div class="lrow" style="font-size:12px"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="sp-pts ${started && gwPlayerPoints(p.id, i) > 0 ? 'gold' : 'muted'}" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : playerXp(p).toFixed(1)}</span></div>`).join('')}
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
-    <h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    ${gafferFor(mid) ? `<p class="muted" style="text-align:center;font-size:10.5px;margin:-4px 0 4px">${gafferChip(mid)}</p>` : ''}
     <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
   </div>`;
@@ -3686,7 +4559,7 @@ function showMatchup(a, b, i) {
       <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; Att ${attendance(a, b, i).toLocaleString()} &middot; ${gwStatus(i) === 'final' ? 'full time' : `${started ? 'in play' : 'projected'} &middot; ${Math.round(liveWinProb(a, b, i) * 100)}% – ${100 - Math.round(liveWinProb(a, b, i) * 100)}%`}</p>
       <button class="btn ghost small" id="muClose">&#10005;</button>
     </div>
-    ${adStrip(a * 1009 + b * 31 + i, 4)}
+    ${adStrip(a * 1009 + b * 31 + i, 4, a)}
     <div class="mu-grid">${side(a)}${side(b)}</div>
     <p class="venue-line" style="margin-top:8px">${esc(chantFor(a, b, i))}</p>
   </div>`;
@@ -3705,6 +4578,15 @@ function bindH2H() {
   const prev = $('#gwPrev'), next = $('#gwNext');
   if (prev) prev.onclick = () => { h2hView.gw = Math.max(0, h2hView.gw - 1); render(); };
   if (next) next.onclick = () => { h2hView.gw = Math.min(REGULAR_GWS - 1, h2hView.gw + 1); render(); };
+  const cp = $('#copyPreview');
+  if (cp) cp.onclick = e => {
+    e.stopPropagation();
+    const txt = gwPreviewText(currentGwIndex());
+    if (!txt) return;
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
+      () => toast('Preview copied — paste straight into the chat'),
+      () => { window.prompt('Copy the Preview:', txt); });
+  };
 }
 
 /* ----- the weekly preview ----- */
@@ -3766,14 +4648,13 @@ function chantFor(a, b, i) {
     .replaceAll('{stadium}', stadium(a));
 }
 
-function gwPreviewCard(i) {
-  if (i >= REGULAR_GWS || gwStatus(i) === 'final' || !state.draft.picks.length) return '';
+function gwPreviewData(i) {
+  if (i >= REGULAR_GWS || gwStatus(i) === 'final' || !state.draft.picks.length) return null;
   const pairs = pairingsFor(i);
-  if (!pairs.length) return '';
+  if (!pairs.length) return null;
   const table = h2hStandings();
   const posOf = Object.fromEntries(table.map((r, k) => [r.id, k + 1]));
   const anyPlayed = table.some(r => r.p > 0);
-  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
   const rows = pairs.map(([a, b]) => {
     const sa = projectedGwScore(a, i), sb = projectedGwScore(b, i);
     return { a, b, sa, sb, p: liveWinProb(a, b, i), riv: rivalryFor(a, b, i) };
@@ -3793,7 +4674,7 @@ function gwPreviewCard(i) {
     if (anyPlayed && out.length < 2) {
       for (const id of [r.a, r.b]) {
         if (posOf[id] >= 10) { out.push(`${teamName(id)} (${ord(posOf[id])}) badly needs the points.`); break; }
-        if (posOf[id] === 5) { out.push(`${teamName(id)} sits 5th — right on the playoff line.`); break; }
+        if (posOf[id] === 9) { out.push(`${teamName(id)} sits 9th — right on the playoff line.`); break; }
       }
     }
     if (out.length < 2) {
@@ -3806,9 +4687,38 @@ function gwPreviewCard(i) {
     return out.slice(0, 2);
   };
   const recent = state.transfers.filter(t => t.gw === i || t.gw === i - 1).slice(-6);
+  return { rows, motw, notes, recent };
+}
+/* ----- the GW preview, WhatsApp-ready: the Minutes' pre-match twin ----- */
+function gwPreviewText(i) {
+  const d = gwPreviewData(i);
+  if (!d) return '';
+  const L = [`\u{1F52E} THE LEAGUE — GW${GAMEWEEKS[i].n} PREVIEW`, ''];
+  const line = r => {
+    const pct = Math.round(r.p * 100);
+    const fav = pct >= 50 ? r.a : r.b;
+    const name = id => id === fav ? `*${teamName(id)}*` : teamName(id);
+    return `${name(r.a)} ${r.sa}–${r.sb} ${name(r.b)} (${Math.max(pct, 100 - pct)}%)`;
+  };
+  L.push('⭐ Matchup of the Week');
+  L.push(line(d.motw));
+  for (const n of d.notes(d.motw)) L.push(`_${n}_`);
+  L.push(`_${chantFor(d.motw.a, d.motw.b, i)}_`);
+  L.push('', '*The rest*');
+  for (const r of d.rows.filter(r => r !== d.motw)) L.push(line(r));
+  if (d.recent.length) L.push('', `\u{1F416} Trough watch: ${d.recent.map(t => `${managerName(t.managerId)} ${t.trade ? 'traded for' : 'signed'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(' · ')}`);
+  L.push('', 'Projections from FPL expected points. The Committee accepts no liability.');
+  L.push('https://benmpolak.github.io/the-league/');
+  return L.join('\n');
+}
+function gwPreviewCard(i) {
+  const d = gwPreviewData(i);
+  if (!d) return '';
+  const { rows, motw, notes, recent } = d;
   const trough = recent.length ? `<p class="muted" style="font-size:12px;margin-top:10px"><b>Trough watch:</b> ${recent.map(t => `${esc(managerName(t.managerId))} ${t.trade ? 'traded for' : 'signed'} ${esc(PLAYER_BY_ID[t.inId]?.name || '?')}`).join(' · ')}</p>` : '';
   return `<div class="card" style="margin-bottom:18px">
-    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span></h2>
+    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span>
+      <button class="btn ghost small" id="copyPreview" style="margin-left:auto" title="WhatsApp-ready preview">&#128203; Copy the Preview</button></h2>
     ${[motw, ...rows.filter(r => r !== motw)].map(r => {
       const pct = Math.round(r.p * 100);
       return `<div class="preview-fx${r === motw ? ' motw' : ''}">
@@ -3847,21 +4757,22 @@ function viewH2H() {
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <div style="overflow-x:auto">
     <table class="pool-table">
-      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num">Pts</th><th class="num">Overall</th></tr></thead>
+      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num">Overall</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr></thead>
       <tbody>
       ${standings.map((r, i) => `
-        <tr class="${i === 3 ? 'playoff-line' : ''}">
+        <tr class="${i === 7 ? 'playoff-line' : ''}">
           <td class="muted">${i + 1}</td>
           <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
           <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
-          <td class="num gold">${r.pts}</td>
+          <td class="num gold act">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
+          <td class="num">${i < 4 ? `<span class="gold">+${QF_HANDICAPS[i]}</span>` : i < 8 ? `<span style="color:#e05555">&minus;${QF_HANDICAPS[7 - i]}</span>` : ''}</td>
         </tr>`).join('')}
       </tbody>
     </table>
     </div>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top four make the playoffs.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
+    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs. QF = the handicap your position carries into the quarter-final.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
   </div>
   ${pointsGridCard(standings)}
   ${crystalBallCard(standings)}
@@ -3873,7 +4784,7 @@ function viewH2H() {
     const st = gwStatus(i);
     const tag = st === 'final' ? '<span class="tag">FT</span>'
       : st === 'live' ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>'
-      : st === 'underway' ? '<span class="tag">underway — tap the lines</span>'
+      : st === 'underway' ? '<span class="tag">underway — refresh for the latest</span>'
       : '<span class="tag">upcoming</span>';
     return `
     <div class="card" style="margin-bottom:12px">
@@ -3889,11 +4800,11 @@ function viewH2H() {
         const pb = st === 'upcoming' ? '–' : gwManagerPoints(b, i);
         const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
         return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-          <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} <span class="muted" style="font-size:10px">(H)</span></span>
+          <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)} <span class="muted" style="font-size:10px">(H)</span></span>
           <span class="fx-score">${pa} &ndash; ${pb}</span>
-          <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${esc(teamName(b))}</span>
+          <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
         </div>
-        <div class="venue-line">${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
+        <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
           const w = Math.round(liveWinProb(a, b, i) * 100);
           const ta = teamOutlook(a, i), tb = teamOutlook(b, i);
           return ` &middot; win chance ${w}% – ${100 - w}% &middot; ${ta.toPlay} v ${tb.toPlay} still to play`;
@@ -4016,8 +4927,13 @@ function bindCup() {
     const cur = currentGwIndex();
     const from = Math.min(cur + 2, REGULAR_GWS - 1);
     const gw = from + Math.floor(Math.random() * Math.max(1, REGULAR_GWS - from));
+    if (netOn()) {
+      serverAct('hamAdmin', { op: 'draw', gw })
+        .then(() => { playSound('cheer'); toast(`THE HAM CUP IS DRAWN — GW${GAMEWEEKS[gw].n}. Palwin corks are popping.`); })
+        .catch(() => {});
+      return;
+    }
     state.hamCup = { gw, drawnAt: new Date().toISOString(), entries: {} };
-    pushShared('hamCup', state.hamCup);
     save(); render();
     playSound('cheer');
     toast(`THE HAM CUP IS DRAWN — GW${GAMEWEEKS[gw].n}. Palwin corks are popping.`);
@@ -4026,11 +4942,16 @@ function bindCup() {
   if (cancel) cancel.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the Chairman calls it off'); return; }
     if (!confirm('Call off the Ham Cup — for EVERYONE?')) return;
+    if (netOn()) {
+      serverAct('hamAdmin', { op: 'cancel' })
+        .then(() => toast('The Ham Cup is off. Palwin has withdrawn its sponsorship in disgust.'))
+        .catch(() => {});
+      return;
+    }
     // a tombstone, not a deletion: deleting the node would be invisible to
     // other devices (an absent key reads as "never drawn"), so a lingering
     // entry could resurrect a gw-less cup and crash the view
     state.hamCup = { status: 'off' };
-    pushShared('hamCup', state.hamCup);
     save(); render();
     toast('The Ham Cup is off. Palwin has withdrawn its sponsorship in disgust.');
   };
@@ -4049,9 +4970,14 @@ function bindCup() {
     if (!state.hamCup || state.hamCup.status === 'off' || GAMEWEEKS[state.hamCup.gw] === undefined) { toast('No Ham Cup is running.'); render(); return; }
     const sel = hamView.sel ?? toArr(state.hamCup?.entries?.[whoami] || []);
     if (!xiValid(sel)) { toast('That XI is illegal, even for the Ham Cup'); return; }
+    if (netOn()) {
+      serverAct('hamEnter', { xi: sel, gw: state.hamCup.gw })
+        .then(() => { hamView.sel = null; toast('Ham XI entered. May God have mercy.'); })
+        .catch(() => {});
+      return;
+    }
     state.hamCup.entries = state.hamCup.entries || {};
     state.hamCup.entries[whoami] = sel;
-    pushShared(`hamCup/entries/${whoami}`, sel);
     hamView.sel = null;
     save(); render();
     toast('Ham XI entered. May God have mercy.');
@@ -4059,6 +4985,33 @@ function bindCup() {
 }
 
 /* ----- league table ----- */
+/* the table page opens with this week's scores — and flips to next week's
+   fixtures once the gameweek is fully in the books (the Tuesday rollover) */
+function tableGwCard() {
+  let i = currentGwIndex();
+  if (gwStatus(i) === 'final' && i + 1 < GAMEWEEKS.length) i++;
+  if (i >= REGULAR_GWS) return ''; // playoffs have their own stage on Head-to-Head
+  const st = gwStatus(i);
+  const tag = st === 'final' ? '<span class="tag">full time</span>'
+    : st === 'live' ? '<span class="live-pill"><span class="rec"></span>LIVE</span>'
+    : st === 'underway' ? '<span class="tag">underway — refresh for the latest</span>'
+    : '<span class="tag">upcoming</span>';
+  return `<div class="card" style="margin-bottom:12px">
+    <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">GW${GAMEWEEKS[i].n} ${st === 'upcoming' ? 'fixtures' : 'scores'} ${tag}
+      <button class="btn ghost small" data-goto="h2h" style="margin-left:auto">All matches</button></h2>
+    ${pairingsFor(i).map(([a, b]) => {
+      const pa = st === 'upcoming' ? '&ndash;' : gwManagerPoints(a, i);
+      const pb = st === 'upcoming' ? '&ndash;' : gwManagerPoints(b, i);
+      const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
+      return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
+        <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)}</span>
+        <span class="fx-score">${pa} &ndash; ${pb}</span>
+        <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
+      </div>${derbyTag(a, b) ? `<div class="venue-line">${derbyTag(a, b)}</div>` : ''}`;
+    }).join('')}
+    ${st === 'upcoming' ? `<p class="muted" style="font-size:12px;margin-top:8px">Lineups lock ${new Date(gwFrom(i)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</p>` : ''}
+  </div>`;
+}
 function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
@@ -4071,6 +5024,7 @@ function viewTable() {
     ? `<div class="card investigation"><span class="rec"></span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</div>`
     : '';
   return `
+    ${tableGwCard()}
     ${investigation}
     ${ranked.map((m, i) => {
       const commTag = !hasPts ? '' :
@@ -4079,7 +5033,7 @@ function viewTable() {
       return `
       <div class="league-row ${i === 0 && m.pts > 0 ? 'leader' : ''}" data-mgr-row="${m.id}" style="cursor:pointer">
         <span class="rank">${i + 1}</span>
-        <span class="lname">${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
+        <span class="lname">${kitSvg(m.id)} ${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
         <span class="lpts">${m.pts}</span>
       </div>
       <div class="breakdown" id="bd-${m.id}" style="display:none">
@@ -4103,7 +5057,7 @@ function viewTable() {
           };
         }).sort((a, b) => b.total - a.total);
         const max = rows[0]?.total || 0;
-        return `<table class="pool-table">
+        return `<div style="overflow-x:auto"><table class="pool-table">
           <thead><tr><th>Manager</th><th class="num">Trough signings</th><th class="num">Waiver claims won</th><th class="num">Trades</th><th class="num">Total moves</th></tr></thead>
           <tbody>${rows.map((r, i) => `<tr>
             <td><b>${esc(teamName(r.id))}</b> <span class="muted" style="font-size:11px">${esc(managerName(r.id))}</span>
@@ -4112,7 +5066,7 @@ function viewTable() {
             <td class="num">${r.signs}</td><td class="num">${r.claims}</td><td class="num">${r.trades}</td>
             <td class="num gold">${r.total}</td>
           </tr>`).join('')}</tbody>
-        </table>`;
+        </table></div>`;
       })()}
       ${(() => {
         const counts = {};
@@ -4139,6 +5093,11 @@ function bindTable() {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
     bd.style.display = bd.style.display === 'none' ? 'block' : 'none';
   });
+  document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
+    const [a, b, i] = el.dataset.mu.split(':').map(Number);
+    showMatchup(a, b, i);
+  });
+  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
 }
 
 /* ----- fixtures ----- */
@@ -4147,8 +5106,8 @@ function viewFixtures() {
   if (!state.fixtures.length) {
     return `<div class="card" style="text-align:center;padding:50px">
       <h2>No fixtures loaded yet</h2>
-      <p class="muted" style="margin:10px 0 18px">Tap the lines to pull the season's schedule and any results.</p>
-      <button class="btn" onclick="syncNow(true)">&#128222; Tap the lines</button></div>`;
+      <p class="muted" style="margin:10px 0 18px">Refresh to pull the season's schedule and any results.</p>
+      <button class="btn" id="fxSync">&#8635; Refresh</button></div>`;
   }
   if (fxView.gw == null) fxView.gw = GAMEWEEKS[currentGwIndex()].n;
   const fxs = state.fixtures.filter(f => f.gw === fxView.gw);
@@ -4178,6 +5137,8 @@ function viewFixtures() {
 function bindFixtures() {
   const sel = $('#fxGw');
   if (sel) sel.onchange = e => { fxView.gw = +e.target.value; render(); };
+  const fs = $('#fxSync');
+  if (fs) fs.onclick = () => syncNow(true); // inline onclick= is dead under the CSP
 }
 
 /* ----- rules ----- */
@@ -4201,8 +5162,9 @@ function viewRules() {
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
       <p class="rules-p"><b>GW1–33</b>: regular season, head-to-head every week — everyone plays everyone, nearly three times over. Win 3, draw 1, loss 0.</p>
-      <p class="rules-p"><b>GW34</b>: playoff semi-finals, one leg — 1st v 4th, 2nd v 3rd.</p>
-      <p class="rules-p"><b>GW35–36</b>: the final, two legs. One win each → cumulative points. Still level → higher regular-season finish takes it.</p>
+      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting <b>+12, +9, +6, +3</b> respectively. Your reward for the regular season.</p>
+      <p class="rules-p"><b>GW35</b>: semi-finals, one leg — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. No handicaps from here.</p>
+      <p class="rules-p"><b>GW36–38</b>: the final, three legs. Most legs won → cumulative points → higher regular-season finish. All other ties: higher seed advances.</p>
       <p class="rules-p"><b>The Monzo League Cup</b>, from GW8: last man standing. Lowest score each gameweek is eliminated; ties roll over.</p>
     </div>
     <div class="card">
@@ -4210,7 +5172,7 @@ function viewRules() {
       ${Object.keys(DEFAULT_SCORING).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus-point nonsense. Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
-      <p class="rules-p"><b>Waivers:</b> everyone goes on waivers when a gameweek starts, and dropped players go back on waivers. Lodge ranked claims (blind); they resolve <b>Tuesdays &amp; Fridays at 10:00 UTC</b> in reverse table order — win a claim, drop to the back. The Chairman can run waivers early, or open/close the Trough entirely.</p>
+      <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
       <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Knitty-grittys confirmed nearer the time, as is tradition.</p>
@@ -4261,6 +5223,44 @@ function recordBookCards() {
     }
     const init = t => esc(t.split(/\s+/).map(w => (w.codePointAt(0) < 128 ? w[0] : '')).join('').slice(0, 3).toUpperCase() || t.slice(0, 3).toUpperCase());
     const rec = (icon, label, text) => `<div class="lrow" style="font-size:12.5px"><span style="width:22px">${icon}</span><b style="min-width:170px">${label}</b><span>${text}</span></div>`;
+
+    // Draft Night board — [round, pick, teamIdx, player, club, pos], snake order preserved by pick number
+    let draftCard = '';
+    if (S.draft && S.draft.length) {
+      const order = S.draft.filter(p => p[0] === 1).sort((a, b) => a[1] - b[1]).map(p => p[2]);
+      const nRounds = Math.max(...S.draft.map(p => p[0]));
+      const cell = {};
+      for (const [r, , t, player, club, pos] of S.draft) cell[r + ':' + t] = { player, club, pos };
+      draftCard = `
+    <div class="card" style="margin-top:14px">
+      <h2>Draft Night — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">the full board, ${S.draft.length} picks, snake order</span></h2>
+      <div style="overflow-x:auto">
+      <table class="pool-table" style="font-size:11px">
+        <thead><tr><th></th>${order.map(t => `<th class="num" title="${esc(rows[t].name)}">${init(rows[t].team)}</th>`).join('')}</tr></thead>
+        <tbody>${Array.from({ length: nRounds }, (_, k) => k + 1).map(r => `<tr>
+          <td class="muted">R${r}</td>
+          ${(r % 2 ? order : [...order].reverse()).map(t => { const p = cell[r + ':' + t]; return p ? `<td style="white-space:nowrap"><span class="pos-badge pos-${p.pos}" style="font-size:9px;padding:1px 4px">${p.pos}</span> ${esc(p.player)} <span class="muted" style="font-size:10px">${esc(p.club)}</span></td>` : '<td class="muted">—</td>'; }).join('')}
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="muted" style="font-size:10.5px;margin-top:6px">Even rounds read right-to-left, as the snake intended. First overall: <b>${esc(S.draft[0][3])}</b> to ${esc(rows[S.draft[0][2]].team)}.</p>
+    </div>`;
+    }
+
+    // The Cup — [gw, round, leg, home, away, hp, ap]
+    let cupCard = '';
+    if (S.cup && S.cup.length) {
+      const maxR = Math.max(...S.cup.map(m => m[1]));
+      const label = m => m[1] === maxR ? `Final${S.cup.filter(x => x[1] === maxR).length > 1 ? `, leg ${m[2]}` : ''}` : 'Semi-final';
+      const agg = {};
+      for (const m of S.cup.filter(x => x[1] === maxR)) { agg[m[3]] = (agg[m[3]] || 0) + m[5]; agg[m[4]] = (agg[m[4]] || 0) + m[6]; }
+      const [wIdx] = Object.entries(agg).sort((a, b) => b[1] - a[1])[0] || [];
+      cupCard = `
+    <div class="card" style="margin-top:14px">
+      <h2>The Cup — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">as recorded by Draft Fantasy</span></h2>
+      ${S.cup.map(m => rec('&#9917;', `${label(m)} &middot; GW${m[0]}`, `<b>${esc(rows[m[3]].team)}</b> ${m[5]}&ndash;${m[6]} <b>${esc(rows[m[4]].team)}</b>`)).join('')}
+      ${wIdx !== undefined ? `<p class="rules-p" style="margin-top:8px">&#127942; Cup winner: <b>${esc(rows[wIdx].team)}</b> (${esc(rows[wIdx].name)}), ${Object.values(agg).sort((a, b) => b - a).join('&ndash;')} on aggregate.</p>` : ''}
+    </div>`;
+    }
     return `
     <div class="card" style="margin-top:18px">
       <h2>The Record Book — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">mined from Draft Fantasy before we turned the lights off</span></h2>
@@ -4280,7 +5280,7 @@ function recordBookCards() {
       ${hi ? rec('&#128293;', 'Highest score', `<b>${esc(rows[hi.idx].team)}</b> — ${hi.pts} points, GW${hi.gw}`) : ''}
       ${lo ? rec('&#128128;', 'Lowest score', `<b>${esc(rows[lo.idx].team)}</b> — ${lo.pts} points, GW${lo.gw}`) : ''}
       ${hiding ? rec('&#128296;', 'Biggest hiding', `<b>${esc(rows[hiding.w].team)}</b> ${hiding.ws}&ndash;${hiding.ls} <b>${esc(rows[hiding.l].team)}</b>, GW${hiding.gw}`) : ''}
-    </div>
+    </div>${draftCard}${cupCard}
     <div class="card" style="margin-top:14px">
       <h2>Head-to-head ledger — ${esc(S.season)} <span class="muted" style="font-weight:400;font-size:12px">row's record vs column (W-D-L), grudges included</span></h2>
       <div style="overflow-x:auto">
@@ -4311,6 +5311,7 @@ function viewSettings() {
       <input type="number" step="1" id="lobusBonus" value="${+state.settings.lobusBonus || 0}" ${ro}></div>
       <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only ${esc(managerName(state.managers[0]?.id))} can change scoring.`}</p>
     </div>
+    ${installCard(true)}
     ${admin ? `
     <div class="card">
       <h2>League admin</h2>
@@ -4321,15 +5322,8 @@ function viewSettings() {
         <button class="btn danger" id="resetBtn">Reset everything</button>
       </div>
       <p class="muted" style="font-size:12px;margin-top:10px">Backups only — the league syncs live on its own, no files to pass around. Export drops a snapshot to your device; import restores one if it all goes wrong.</p>
-      <h3 style="margin-top:18px">PIN resets</h3>
-      <p class="muted" style="font-size:12px;margin-bottom:8px">Forgotten PINs go to the Chairman. Reset lets the manager set a new one on next sign-in.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <select id="pinMgr" style="flex:1;min-width:160px">
-          <option value="">Pick a manager…</option>
-          ${state.managers.filter(m => state.pins?.[m.id]).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
-        </select>
-        <button class="btn small" id="pinReset">Reset PIN</button>
-      </div>
+      <h3 style="margin-top:18px">Sign-in</h3>
+      <p class="muted" style="font-size:12px;margin-bottom:8px">Managers sign in with an email link — no PINs, nothing to reset. Adding or changing a manager's email is done with the provisioning script (see the README).</p>
       <h3 style="margin-top:18px">Manual point adjustments</h3>
       <p class="muted" style="font-size:12px;margin-bottom:8px">If a stat feed gets something wrong, add/subtract points per player.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -4348,7 +5342,7 @@ function viewSettings() {
       <p class="rules-p">&sect;1 The title is the playoffs. The table is for arguing.</p>
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
-      <p class="rules-p">&sect;4 Waivers run Tuesdays and Fridays, 10:00 UTC, reverse table order. The Trough takes the rest.</p>
+      <p class="rules-p">&sect;4 Waivers follow the fixtures: 8pm after the gameweek, 8pm before the next. Reverse table order. The Trough takes the rest.</p>
       <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, knitty-grittys nearer the time, as is tradition.</p>
       <p class="rules-p">&sect;6 Every manager declares one (1) Lobus. The klaxon is ceremonial until the Committee says otherwise.</p>
       <p class="rules-p">&sect;7 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
@@ -4358,18 +5352,29 @@ function viewSettings() {
   </div>`;
 }
 function bindSettings() {
+  bindInstall();
   document.querySelectorAll('[data-score]').forEach(inp => inp.onchange = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner changes scoring'); render(); return; }
+    if (netOn()) {
+      serverAct('settingsSet', { scoringKey: inp.dataset.score, value: +inp.value || 0 })
+        .then(() => toast('Scoring updated')).catch(() => {});
+      return;
+    }
     state.settings.scoring[inp.dataset.score] = +inp.value || 0;
-    pushShared(`settings/scoring/${inp.dataset.score}`, state.settings.scoring[inp.dataset.score]);
     save(); toast('Scoring updated');
   });
   const lb = $('#lobusBonus');
   if (lb) lb.onchange = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner changes scoring'); render(); return; }
-    state.settings.lobusBonus = +lb.value || 0;
-    pushShared('settings/lobusBonus', state.settings.lobusBonus);
-    save(); toast(state.settings.lobusBonus ? `Lobus bonus live: +${state.settings.lobusBonus}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.');
+    const v = +lb.value || 0;
+    if (netOn()) {
+      serverAct('settingsSet', { key: 'lobusBonus', value: v })
+        .then(() => toast(v ? `Lobus bonus live: +${v}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.'))
+        .catch(() => {});
+      return;
+    }
+    state.settings.lobusBonus = v;
+    save(); toast(v ? `Lobus bonus live: +${v}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.');
   };
   const demoB = $('#demoBtn2'); if (demoB) demoB.onclick = enterDemo;
   const exportB = $('#exportBtn');
@@ -4400,29 +5405,22 @@ function bindSettings() {
   $('#resetBtn').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can reset the league'); return; }
     if (confirm('Wipe the league, draft and all scores — for EVERYONE?')) {
+      if (netOn()) { serverAct('resetLeague', { confirm: 'RESET' }).catch(() => {}); return; }
       state = freshState();
       localStorage.removeItem(`${LS_NS}-ceremony-seen`);
-      // rules only allow deleting a league that is back in setup — flip, then wipe
-      if (netOn()) window.WCSync.set('phase', 'setup').then(() => window.WCSync.setRoot(null)).catch(e => console.warn('[sync] wipe failed', e));
       save(); render();
     }
-  };
-  const pr = $('#pinReset');
-  if (pr) pr.onclick = () => {
-    if (netOn() && !isCommissioner()) { toast('Only the Chairman resets PINs'); return; }
-    const mid2 = +$('#pinMgr').value;
-    if (!mid2) return;
-    delete state.pins[mid2];
-    pushShared(`pins/${mid2}`, null);
-    save(); render();
-    toast(`${managerName(mid2)}'s PIN cleared — they'll set a new one on next sign-in`);
   };
   $('#adjApply').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner adjusts points'); return; }
     const pid = +$('#adjPlayer').value, pts = +$('#adjPts').value || 0;
     if (!pid) return;
+    if (netOn()) {
+      serverAct('adjustmentSet', { pid, value: (state.adjustments[pid] || 0) + pts })
+        .then(() => toast('Adjustment applied')).catch(() => {});
+      return;
+    }
     state.adjustments[pid] = (state.adjustments[pid] || 0) + pts;
-    pushShared(`adjustments/${pid}`, state.adjustments[pid]);
     save(); render(); toast('Adjustment applied');
   };
 }
@@ -4453,7 +5451,7 @@ function showPlayerCard(pid) {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card pcard">
     <div class="pcard-head">
-      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="">
+      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="">
       <div>
         <h2 style="margin-bottom:2px">${esc(p.name)} <span class="pos-badge pos-${p.pos}">${p.pos}</span></h2>
         <p class="muted" style="font-size:12px">${esc(p.full)}</p>
@@ -4503,7 +5501,16 @@ function showPlayerCard(pid) {
   const iAmManager = whoami && whoami !== -1;
   if (state.phase === 'draft' && !draftedIds().has(pid)) {
     const myTurn = currentManagerId() != null && canActFor(currentManagerId()) && canPick(currentManagerId(), p);
-    if (myTurn) btn('Draft him', () => { ov.remove(); makePick(pid); });
+    if (myTurn) btn('Draft him', async () => {
+      // same confirm the pool table gets — this path had none at all
+      if (!await confirmSheet({
+        title: `Pick #${pickNo() + 1}`,
+        body: dealRows([], [p]),
+        yes: `Draft ${esc(p.name)}`,
+        note: 'Instant — and only the Chairman can undo it.',
+      })) return;
+      ov.remove(); makePick(pid);
+    });
     if (iAmManager && !toArr(state.autolists?.[whoami]).includes(pid)) {
       btn('&#9734; Add to autopick list', () => { setAutolist(whoami, [...toArr(state.autolists?.[whoami]), pid]); ov.remove(); toast(`${p.name} added to your list`); }, true);
     }
@@ -4535,11 +5542,14 @@ function showPlayerCard(pid) {
       } else if (!myLob || !gwHasStarted(0)) {
         btn('&#128239; Declare my Lobus', () => {
           ov.remove();
+          const crow = () => {
+            playSound('cheer');
+            toast(`LOBUS KLAXON — ${p.name} is now ${managerName(whoami)}'s Lobus. Big unit. Great feet for a big man.`);
+          };
+          if (netOn()) { serverAct('lobusDeclare', { pid }).then(crow).catch(() => {}); return; }
           state.lobus[whoami] = pid;
-          pushShared(`lobus/${whoami}`, pid);
           save(); render();
-          playSound('cheer');
-          toast(`LOBUS KLAXON — ${p.name} is now ${managerName(whoami)}'s Lobus. Big unit. Great feet for a big man.`);
+          crow();
         }, true);
       }
     }
@@ -4589,13 +5599,41 @@ document.addEventListener('visibilitychange', () => {
   if (_snapSeen && netOn() && !demoMode) applySharedSnapshot(_snapLatest);
 });
 
-// a #hash deep-link (or a restored tab) opens straight onto that page
+// a #hash deep-link opens straight onto that page; otherwise the app always
+// opens at home — the Dashboard — not wherever it was left last time
 {
   const v0 = location.hash.slice(1);
   if (state.phase !== 'setup' && NAV_ITEMS.some(([k]) => k === v0)) state.view = v0;
+  else if (state.phase === 'setup' && SETUP_NAV.has(v0)) state.view = v0;
+  else if (state.phase === 'season') state.view = 'dash';
 }
 render();
 manageWakeLock();
+// stale save detected at load: offer recovery rather than a subtly-broken game
+if (staleSave) {
+  const bar = document.createElement('div');
+  bar.className = 'stale-bar';
+  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
+    <button class="btn small" id="staleReload">Reload latest draft</button>
+    <button class="btn ghost small" id="staleDismiss">&#10005;</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
+  bar.querySelector('#staleReload').onclick = async () => {
+    if (!await confirmSheet({
+      title: 'Reload the latest draft?',
+      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
+      yes: 'Reload',
+    })) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  };
+}
+// local mode: a refresh mid-ceremony replays the pomp, exactly like the online
+// snapshot path — otherwise the reload skips straight to a live clock (sol r5)
+if (!netOn() && state.phase === 'draft') {
+  const bootCer = ceremonyKey();
+  if (bootCer && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== bootCer) showCeremony();
+}
 // ?demo drops visitors straight into the demo season
 if (new URLSearchParams(location.search).has('demo')) enterDemo();
 // commissioner devices run overdue scheduled waivers automatically — but only
@@ -4603,11 +5641,13 @@ if (new URLSearchParams(location.search).has('demo')) enterDemo();
 // fresh, or waiverOrder would fall back to reverse-draft order and resolve
 // every claim with the wrong priority
 function tryAutoWaivers(attempt = 0) {
-  if (!(netOn() && isCommissioner() && waiverRunDue())) return;
+  // online, the scheduled Cloud Function owns waiver runs — no device fires them
+  if (netOn()) return;
+  if (!(syncOn() && isCommissioner() && waiverRunDue())) return;
   const statsFresh = state.lastSync && (Date.now() - new Date(state.lastSync).getTime()) < 20 * 60 * 1000
     && Object.keys(state.matchStats || {}).length > 0;
-  if (cloudKnown && statsFresh) { processWaivers(false); return; }
-  if (attempt < 6) setTimeout(() => tryAutoWaivers(attempt + 1), 5000); // wait for cloud + feed
+  if (statsFresh) { processWaivers(false); return; }
+  if (attempt < 6) setTimeout(() => tryAutoWaivers(attempt + 1), 5000); // wait for the feed
 }
 setTimeout(() => tryAutoWaivers(), 4000);
 // auto-sync on load during the tournament (max once per 20 min, always if live,
@@ -4633,3 +5673,11 @@ async function checkBuild() {
 }
 checkBuild();
 setInterval(checkBuild, 10 * 60 * 1000);
+
+// Cache the app shell for flaky draft-night Wi-Fi. Live league writes still go
+// straight to Firebase; the worker only makes the interface itself resilient.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('[sw]', e));
+  });
+}

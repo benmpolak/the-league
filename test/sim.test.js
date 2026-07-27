@@ -1,8 +1,9 @@
 // Full 26/27 season simulation through the real app — snake draft, 33 H2H
 // gameweeks with lineups/bench orders/waivers/trough/trades, the Window Draft,
-// auto-subs, the Monzo Cup, and the GW34–36 playoffs. Runs against ?nosync.
+// auto-subs, the Monzo Cup, and the GW34–38 top-8 playoffs. Runs against ?nosync.
 // Usage: python3 -m http.server 8125 &  then  node test/sim.test.js
 const puppeteer = require('puppeteer-core');
+const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -12,7 +13,7 @@ const check = (label, ok, detail = '') => {
 
 (async () => {
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: chromePath,
     headless: 'new',
   });
   const p = await browser.newPage();
@@ -23,6 +24,7 @@ const check = (label, ok, detail = '') => {
 
   // ---------- 0. hermetic setup: no background syncs, clean clock ----------
   await p.evaluate(() => {
+    window.__autoConfirm = true; // sail through the confirm sheet
     syncNow = async () => {};
     state.matchStats = {};
     state.fixtures = [];
@@ -32,6 +34,21 @@ const check = (label, ok, detail = '') => {
     save(); render();
   });
   check('setup phase renders', await p.evaluate(() => state.phase === 'setup' && !!document.querySelector('#startDraftOrdered')));
+  const timerAudit = await p.evaluate(() => ({
+    before: draftDeadlineTiming(10_000, 7_000),
+    overdue: draftDeadlineTiming(10_000, 19_000),
+  }));
+  check('draft timer preserves overdue seconds for the on-clock fallback',
+    timerAudit.before.left === 3 && timerAudit.before.overBy === 0
+      && timerAudit.overdue.left === 0 && timerAudit.overdue.overBy === 9,
+    JSON.stringify(timerAudit));
+  const demoAudit = await p.evaluate(async () => {
+    await enterDemo();
+    return { current: currentGwIndex(), selected: teamView.gw, text: document.querySelector('main')?.innerText || '' };
+  });
+  check('demo opens on its populated GW1 instead of a blank real-world GW',
+    demoAudit.current === 0 && demoAudit.selected === 0 && /GW1/.test(demoAudit.text) && !/GW38 — Gameweek 38 \(current\)/.test(demoAudit.text));
+  await p.evaluate(() => exitDemo());
 
   // ---------- 1. draft: ordered start, engine-run 168 picks ----------
   await p.evaluate(() => document.querySelector('#startDraftOrdered').click());
@@ -74,6 +91,17 @@ const check = (label, ok, detail = '') => {
   // ---------- 2. the regular season, GW by GW ----------
   const N_REG = 33;
   for (let gw = 0; gw < N_REG; gw++) {
+    if (gw === 10) {
+      // mid-season trip to the club office: the rebrand must carry through
+      // every remaining week, view and record without a wobble
+      await p.evaluate(() => {
+        const i1 = state.managers.findIndex(x => x.id === 1);
+        state.managers[i1] = { ...state.managers[i1], team: 'Rebranded Athletic', kit: { pattern: 'hoops', c1: '#c81919', c2: '#ffffff' }, sponsor: 'WAX ON', rival: 2, stadium: 'The Bagel Bowl', boards: [0, 2, 5] };
+        const i2 = state.managers.findIndex(x => x.id === 2);
+        state.managers[i2] = { ...state.managers[i2], rival: 1 };
+        save(); render();
+      });
+    }
     const res = await p.evaluate(gw => {
       const out = { checks: {} };
       // clock: middle of this GW's real window
@@ -94,7 +122,7 @@ const check = (label, ok, detail = '') => {
       // waiver claims: two managers contest the same top free agent
       const owned0 = ownedIdsAt(gw);
       const fa = PLAYERS.filter(x => !owned0.has(x.id) && !arrivalLocked(x)).sort((a, b) => rating(b) - rating(a));
-      const order = waiverOrder(gw); // who SHOULD win a contested claim: earliest in this queue
+      const order = waiverOrder(); // pre-kick queue — used only to PICK two contestants
       const [hi, lo] = [order[0], order[order.length - 1]];
       const target = fa.find(x => {
         const dropHi = [...squadAt(hi, gw)].sort((a, b) => rating(a) - rating(b)).find(d => squadShapeOk([...squadAt(hi, gw).filter(q => q.id !== d.id), x]));
@@ -131,9 +159,14 @@ const check = (label, ok, detail = '') => {
       const before = state.transfers.length;
       processWaivers(true);
       if (target) {
+        // the run resolves by the CURRENT table (the GW that just went final
+        // counts — sol 5.6 finding), so recompute the queue post-stats
+        const q = waiverOrder();
+        const expWin = q.indexOf(hi) < q.indexOf(lo) ? hi : lo;
+        const expLose = expWin === hi ? lo : hi;
         const winner = state.transfers.slice(before).find(t => t.inId === target.id && t.waiver);
-        out.checks.contestedToTopOfQueue = !!winner && winner.managerId === hi;
-        out.checks.loserGotNothing = !state.transfers.slice(before).some(t => t.inId === target.id && t.managerId === lo);
+        out.checks.contestedToTopOfQueue = !!winner && winner.managerId === expWin;
+        out.checks.loserGotNothing = !state.transfers.slice(before).some(t => t.inId === target.id && t.managerId === expLose);
       } else { out.checks.contestedToTopOfQueue = true; out.checks.loserGotNothing = true; }
 
       // a trough stroll: someone signs a free agent the moment waivers clear.
@@ -317,8 +350,8 @@ const check = (label, ok, detail = '') => {
   });
   check('Monzo Cup eliminations consistent with the card', cup.cardAgrees, `${cup.rounds} rounds, ${cup.alive} alive${cup.winner ? ', winner ' + cup.winner : ''}`);
 
-  // ---------- 7. playoffs: GW34 semis, GW35–36 two-legged final ----------
-  for (let gw = 33; gw < 36; gw++) {
+  // ---------- 7. playoffs: GW34 handicap QFs, GW35 semis, GW36–38 three-legged final ----------
+  for (let gw = 33; gw < 38; gw++) {
     await p.evaluate(gw => {
       const mid = (new Date(GAMEWEEKS[gw].from).getTime() + new Date(GAMEWEEKS[gw].to).getTime()) / 2;
       Date.now = () => mid;
@@ -334,35 +367,52 @@ const check = (label, ok, detail = '') => {
     }, gw);
   }
   const po = await p.evaluate(() => {
-    Date.now = () => new Date(GAMEWEEKS[36].from).getTime() + 1000;
+    Date.now = () => new Date(GAMEWEEKS[37].to).getTime() + 1000;
     const po = playoffState();
-    if (!po) return { err: 'playoffState null after GW36' };
+    if (!po) return { err: 'playoffState null after GW38' };
     // independent recompute
-    const seeds = standingsBefore(33).rows.map(r => r.id).slice(0, 4);
-    const semiW = [[seeds[0], seeds[3]], [seeds[1], seeds[2]]].map(([x, y]) => {
-      const px = gwManagerPoints(x, 33), py = gwManagerPoints(y, 33);
-      return px === py ? (seeds.indexOf(x) < seeds.indexOf(y) ? x : y) : (px > py ? x : y);
+    const seeds = standingsBefore(33).rows.map(r => r.id).slice(0, 8);
+    const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
+    const H = [12, 9, 6, 3];
+    const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
+      const px = gwManagerPoints(x, 33) + H[k], py = gwManagerPoints(y, 33);
+      return px === py ? hi(x, y) : (px > py ? x : y);
+    });
+    const semiW = [[qfW[0], qfW[3]], [qfW[1], qfW[2]]].map(([x, y]) => {
+      const px = gwManagerPoints(x, 34), py = gwManagerPoints(y, 34);
+      return px === py ? hi(x, y) : (px > py ? x : y);
     });
     let cx = 0, cy = 0, wx = 0, wy = 0;
-    for (const i of [34, 35]) {
+    for (const i of [35, 36, 37]) {
       const a = gwManagerPoints(semiW[0], i), b = gwManagerPoints(semiW[1], i);
       cx += a; cy += b;
       if (a > b) wx++; else if (b > a) wy++;
     }
     const champ = wx > wy ? semiW[0] : wy > wx ? semiW[1]
-      : cx > cy ? semiW[0] : cy > cx ? semiW[1] : (seeds.indexOf(semiW[0]) < seeds.indexOf(semiW[1]) ? semiW[0] : semiW[1]);
+      : cx > cy ? semiW[0] : cy > cx ? semiW[1] : hi(semiW[0], semiW[1]);
     state.view = 'h2h'; render();
     const html = document.querySelector('#main').innerHTML;
     return {
       seedsMatch: JSON.stringify(po.seeds) === JSON.stringify(seeds),
+      qfsMatch: JSON.stringify(po.qfWinners) === JSON.stringify(qfW),
       semisMatch: JSON.stringify(po.semiWinners) === JSON.stringify(semiW),
       champMatch: po.champion === champ,
       champ: teamName(champ),
       cardShowsChamp: html.includes('champions of The League'),
     };
   });
-  check('playoffs: seeds, semi winners and champion all agree with independent recompute',
-    !po.err && po.seedsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
+  check('playoffs: seeds, QF winners (handicaps), semi winners and champion all agree with independent recompute',
+    !po.err && po.seedsMatch && po.qfsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
+
+  // no champion may be crowned while any final leg is unsettled (sol 5.6 finding)
+  const early = await p.evaluate(() => {
+    const saved = state.matchStats['gw37'];
+    delete state.matchStats['gw37']; // middle leg no longer final
+    const po = playoffState();
+    state.matchStats['gw37'] = saved;
+    return { noChamp: po.champion === null, semisStand: !!po.semiWinners };
+  });
+  check('no champion until every final leg is final', early.noChamp && early.semisStand, JSON.stringify(early));
 
   // ---------- 8. season-end table + analytics sanity ----------
   const finals = await p.evaluate(() => {
@@ -385,6 +435,31 @@ const check = (label, ok, detail = '') => {
     // fixtures is legitimately sparse here — the sim runs with no fixture data
     check(`view "${v}" renders`, len > (v === 'fixtures' ? 100 : 400), `${len} chars`);
   }
+
+  // ---------- 10. the GW10 rebrand carried all the way through ----------
+  const club = await p.evaluate(() => {
+    state.view = 'table'; render();
+    const tableHtml = document.querySelector('#main').innerHTML;
+    const kitsInRows = document.querySelectorAll('.league-row .club-kit').length;
+    state.view = 'h2h'; render();
+    const h2hHtml = document.querySelector('#main').innerHTML;
+    return {
+      renamed: teamName(1) === 'Rebranded Athletic',
+      inTable: tableHtml.includes('Rebranded Athletic'),
+      kits: kitsInRows,
+      sponsorOnShirt: kitSvg(1, 40, true).includes('WAX ON'),
+      inH2H: h2hHtml.includes('Rebranded Athletic') && !h2hHtml.includes('The Dog’s Polaks'),
+      stadium: stadium(1) === 'The Bagel Bowl',
+      adStrip: adStrip(3, 3, 1).includes(AD_BOARDS[0].t),
+      clasico: derbyTag(1, 2).includes('CL'),
+    };
+  });
+  check('mid-season rename carries to the table', club.renamed && club.inTable);
+  check('all twelve kits render on the table', club.kits === 12);
+  check('sponsor prints on the shirt', club.sponsorOnShirt);
+  check('h2h speaks the new name only', club.inH2H);
+  check('stadium + hoardings carried', club.stadium && club.adStrip);
+  check('the clásico is recognised at season end', club.clasico);
 
   check('zero page errors across the whole season', pageErrors.length === 0, pageErrors.slice(0, 3).join(' ; '));
   await browser.close();

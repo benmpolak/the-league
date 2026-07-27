@@ -3,14 +3,36 @@
 // 8-way scramble for the same player (exactly one winner), listener fan-out
 // convergence, and offline/reconnect behaviour.
 // Usage: python3 -m http.server 8143 (from the repo) then node test/stress.test.js
+// RETIRED (25 Jul 2026, sol 5.6 audit): this suite predates auth-v2 — it
+// drives localStorage identities and legacy RTDB paths that no longer exist,
+// and its emulator mode redirects ONLY the RTDB, so the current client's
+// callable mutations would hit PRODUCTION Functions. The v2 equivalents live
+// in functions.test.js (draft/trough/trade races) + rules.test.js.
+if (process.env.LEGACY_SUITE !== '1') {
+  console.log('SKIP retired legacy suite (set LEGACY_SUITE=1 to run against the pre-cutover stack)');
+  process.exit(0);
+}
 const puppeteer = require('puppeteer-core');
+const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const curl = a => execFileSync('curl', ['-s', ...a], { encoding: 'utf8' });
 
 const LEAGUE = 'the-league-e2e-test';
-const DB = 'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app';
+// Target selection: emulator (preferred) or an explicitly acknowledged live run.
+const EMULATOR_HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
+if (!EMULATOR_HOST && process.env.LIVE_DB_TESTS !== '1') {
+  console.error('Refusing to run against the live RTDB without acknowledgement.');
+  console.error('Set FIREBASE_DATABASE_EMULATOR_HOST=127.0.0.1:9000 (preferred) or LIVE_DB_TESTS=1.');
+  process.exit(2);
+}
+const NS = 'calciopoli-wc26-default-rtdb';
+const DB = EMULATOR_HOST ? `http://${EMULATOR_HOST}`
+  : 'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app';
+const dbUrl = p => EMULATOR_HOST ? `${DB}/${p}.json?ns=${NS}` : `${DB}/${p}.json`;
+const CURL_AUTH = EMULATOR_HOST ? ['-H', 'Authorization: Bearer owner'] : [];
+console.log(EMULATOR_HOST ? `[db] emulator at ${EMULATOR_HOST} (ns=${NS})` : '[db] LIVE Firebase RTDB (LIVE_DB_TESTS=1)');
 const SITE = 'http://localhost:8143';
 const N = 8;
 let failures = 0;
@@ -18,8 +40,8 @@ const check = (l, ok, d = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${l}${d
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function wipe() {
-  curl(['-X', 'PUT', '-d', '"setup"', `${DB}/leagues/${LEAGUE}/phase.json`]);
-  curl(['-X', 'DELETE', `${DB}/leagues/${LEAGUE}.json`]);
+  curl(['-X', 'PUT', '-d', '"setup"', dbUrl(`leagues/${LEAGUE}/phase`), ...CURL_AUTH]);
+  curl(['-X', 'DELETE', dbUrl(`leagues/${LEAGUE}`), ...CURL_AUTH]);
 }
 
 async function newClient(browser, whoami) {
@@ -27,8 +49,12 @@ async function newClient(browser, whoami) {
   const p = await ctx.newPage();
   p.on('dialog', d => d.accept());
   await p.setRequestInterception(true);
-  const syncSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'sync.js'), 'utf8')
-    .replace("const LEAGUE = 'the-league-2627';", `const LEAGUE = '${LEAGUE}';`);
+  let syncSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'sync.js'), 'utf8')
+    .replace(/'the-league-2627'/g, `'${LEAGUE}'`);
+  if (EMULATOR_HOST) {
+    syncSrc = syncSrc.replace(/databaseURL:\s*'[^']+'/, `databaseURL: 'http://${EMULATOR_HOST}?ns=${NS}'`);
+  }
+  if (syncSrc.includes('the-league-2627')) throw new Error('sync.js stub failed — refusing to touch the real league');
   p.on('request', req => req.url().includes('js/sync.js')
     ? req.respond({ contentType: 'application/javascript', body: syncSrc }) : req.continue());
   await p.evaluateOnNewDocument(id => { localStorage.clear(); localStorage.setItem('tl2627-whoami', String(id)); }, whoami);
@@ -40,7 +66,7 @@ async function newClient(browser, whoami) {
 (async () => {
   wipe();
   const browser = await puppeteer.launch({
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    executablePath: chromePath,
     headless: 'new', protocolTimeout: 300000,
     args: ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'],
   });
@@ -91,7 +117,7 @@ async function newClient(browser, whoami) {
   // wave 1: eight different players, one instant — ALL must land
   const w1 = await Promise.all(clients.map((p, k) => sign(p, k + 1, k)));
   await sleep(3000);
-  let cloud = Object.values(JSON.parse(curl([`${DB}/leagues/${LEAGUE}/transfers.json`])) || {});
+  let cloud = Object.values(JSON.parse(curl([dbUrl(`leagues/${LEAGUE}/transfers`), ...CURL_AUTH])) || {});
   check(`${N}-way burst: every signing of a DIFFERENT player lands`,
     w1.every(x => x.ok) && w1.every(x => cloud.some(t => t && t.inId === x.inId)),
     `cloud holds ${cloud.length}/8`);
@@ -99,7 +125,7 @@ async function newClient(browser, whoami) {
   // wave 2: all eight scramble for the SAME player — exactly one winner
   const w2 = await Promise.all(clients.map((p, k) => sign(p, k + 1, 20)));
   await sleep(3000);
-  cloud = Object.values(JSON.parse(curl([`${DB}/leagues/${LEAGUE}/transfers.json`])) || {});
+  cloud = Object.values(JSON.parse(curl([dbUrl(`leagues/${LEAGUE}/transfers`), ...CURL_AUTH])) || {});
   const target = w2[0].inId;
   const landed = cloud.filter(t => t && t.inId === target).length;
   const winners = w2.filter(x => x.ok).length;
@@ -135,7 +161,7 @@ async function newClient(browser, whoami) {
   await B.setOfflineMode(false);
   const off = await offSign;
   await sleep(3000);
-  cloud = Object.values(JSON.parse(curl([`${DB}/leagues/${LEAGUE}/transfers.json`])) || {});
+  cloud = Object.values(JSON.parse(curl([dbUrl(`leagues/${LEAGUE}/transfers`), ...CURL_AUTH])) || {});
   // contract: the local view may show the move optimistically while offline,
   // but confirmation (ok/toast) waits for the server, the move lands exactly
   // once on reconnect, and every client converges on the same truth

@@ -1,0 +1,55 @@
+name: Test game engine
+
+on:
+  push:
+    branches: [main, auth-v2]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Start local site
+        run: python3 -m http.server 8125 >/tmp/the-league-http.log 2>&1 &
+      - name: Syntax, no-eval guard, feed validation, full season, DGW, engine parity
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: npm test
+      - name: Auth UI + offline UX browser smokes
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: npm run test:browser
+
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install functions dependencies
+        run: npm ci --prefix functions
+      - name: Copy the engine into functions (same file the predeploy hook copies)
+        run: node -e "require('fs').copyFileSync('js/engine.js','functions/engine.js')"
+      - name: Rules, functions, migration, backup/restore and provisioning suites
+        env:
+          # functions fetch reference data from here; the suites generate and
+          # serve the synthetic players/gameweeks feed on this port themselves
+          DATA_BASE_URL: http://127.0.0.1:8126
+        run: npx firebase-tools emulators:exec --config firebase.emu.json --project calciopoli-wc26 "node test/rules.test.js && node test/functions.test.js && node test/migrate.test.js && node test/backup.test.js && node test/provision.test.js && node test/emaillink.test.js"

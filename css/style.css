@@ -50,6 +50,26 @@ body {
 .nav button:hover { color: var(--text); background: var(--card); }
 .nav button.active { color: #07120e; background: var(--accent); }
 .nav button:disabled { opacity: .3; cursor: default; background: none; color: var(--muted); }
+/* icons + short labels only surface on the phone tab bar */
+.nav-ico { display: none; width: 22px; height: 22px; }
+.nav-lbl-short { display: none; }
+.nav-more { position: relative; }
+.nav-more summary {
+  list-style: none; color: var(--muted); cursor: pointer; font-size: 14px;
+  font-weight: 600; padding: 9px 14px; border-radius: 9px; user-select: none;
+  position: relative;
+}
+.nav-more summary::-webkit-details-marker { display: none; }
+.nav-more summary::after { content: ' ▾'; font-size: 10px; }
+.nav-more summary:hover { color: var(--text); background: var(--card); }
+.nav-more.active summary { color: #07120e; background: var(--accent); }
+.nav-more-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 80;
+  min-width: 190px; padding: 8px; display: grid; gap: 3px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.nav-more-menu button { width: 100%; text-align: left; }
 .sync-area { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
 
 main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }
@@ -108,15 +128,19 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 @media (max-width: 980px) { .draft-layout { grid-template-columns: 1fr; } }
 
 .on-clock {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  display: grid; grid-template-columns: 1fr auto auto; gap: 3px 14px; align-items: center;
+  grid-template-areas: "who clock btns" "meta clock btns" "int clock btns";
   background: linear-gradient(100deg, rgba(45,212,167,.16), rgba(45,212,167,.03));
   border: 1px solid rgba(45,212,167,.4);
   border-radius: var(--radius); padding: 16px 20px; margin-bottom: 16px;
 }
-.on-clock .who { font-size: 22px; font-weight: 800; }
-.on-clock .pick-meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.on-clock .who { grid-area: who; font-size: 22px; font-weight: 800; }
+.on-clock > .pick-clock { grid-area: clock; }
+.on-clock .pick-meta { grid-area: meta; color: var(--muted); font-size: 13px; }
+.on-clock .intercept { grid-area: int; }
+.on-clock .oc-btns { grid-area: btns; display: flex; gap: 8px; align-items: center; }
 .intercept {
-  margin-top: 9px; font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  margin-top: 6px; font-family: "SF Mono", ui-monospace, Menlo, monospace;
   font-size: 11.5px; color: var(--muted); letter-spacing: .2px;
   display: flex; align-items: center; gap: 7px;
 }
@@ -152,6 +176,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pool-table th:hover { color: var(--text); }
 .pool-table td { padding: 8px 10px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 14px; }
 .pool-table tr:hover td { background: rgba(45,212,167,.05); }
+/* action column pinned to the right edge so Sign/Claim/Draft never scrolls out of view on phones */
+.pool-table th.act, .pool-table td.act {
+  position: sticky; right: 0; z-index: 1;
+  background: var(--card);
+  box-shadow: -10px 0 10px -8px rgba(0,0,0,.55);
+}
+.pool-table tr:hover td.act { background: var(--card2); }
 .pcell { display: flex; align-items: center; gap: 10px; }
 .pcell .pname { font-weight: 600; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
@@ -237,18 +268,74 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   overflow-y: auto; padding: 16px; /* tall cards (12-manager sign-in) must scroll, not clip */
 }
 .overlay > .card { max-height: 92vh; overflow-y: auto; }
+
+/* the confirm sheet: one last look before a deal commits */
+.deal { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.deal-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: 14px; background: var(--card2); }
+.deal-row + .deal-row { border-top: 1px solid var(--line); }
+.deal-tag { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; padding: 2px 8px; border-radius: 999px; }
+.deal-tag.out { background: rgba(239, 100, 97, .16); color: var(--red); }
+.deal-tag.in { background: rgba(45, 212, 167, .16); color: var(--accent); }
 .conn { color: var(--red); font-size: 13px; transition: color .3s; }
 .conn.up { color: var(--accent); }
 
-/* ---------- demo / rules ---------- */
-.demo-bar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 80;
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  background: #3a1f24; border-top: 1px solid var(--red); color: #ffb4b2;
-  font-size: 13px; font-weight: 700; padding: 10px 16px;
+/* the autopick queue drawer: sidebar content, reachable by thumb mid-draft */
+.queue-fab { display: none; }
+.warn-tag { background: rgba(212,160,23,.18); color: #ffd76e; border: none; }
+.qrow { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; padding: 5px 0; min-width: 0; }
+.ready-row { border-bottom: 1px solid rgba(38,50,80,.5); padding: 8px 0; }
+.ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
+.ready-row.is-ready .ready-dot { background: var(--accent); color: #07120e; border-color: var(--accent); }
+.qrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.warn-tag { flex: none; }
+@media (max-width: 980px) {
+  .queue-fab {
+    display: inline-flex; align-items: center; gap: 6px;
+    position: fixed; right: 14px; bottom: 16px; z-index: 65; box-shadow: var(--shadow);
+  }
+  .queue-drawer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 66;
+    background: var(--card); border-top: 1px solid var(--line);
+    border-radius: 14px 14px 0 0; max-height: 60vh; overflow-y: auto;
+    padding: 16px; transform: translateY(105%); transition: transform .25s;
+    box-shadow: 0 -12px 30px rgba(0,0,0,.5);
+  }
+  .queue-drawer.open { transform: translateY(0); }
 }
-.sandbox-bar { background: #3a2e14; border-top-color: #d4a017; color: #ffd76e; }
-.sandbox-bar .rec { background: #d4a017; }
+@media (max-width: 700px) {
+  .queue-fab { bottom: calc(62px + env(safe-area-inset-bottom)); }
+  .queue-drawer { bottom: calc(48px + env(safe-area-inset-bottom)); }
+}
+@media (min-width: 981px) { .queue-drawer { display: none; } }
+
+/* stale-save recovery bar */
+.stale-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 75;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  background: #3a2e14; border-bottom: 1px solid #d4a017; color: #ffd76e;
+  font-size: 13px; font-weight: 600; padding: 9px 14px;
+}
+
+/* ---------- demo / rules ---------- */
+/* demo & sandbox announce themselves as a small header chip, not a banner
+   over the app — tap it for the explanation and the way out */
+.mode-chip {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .5px;
+  background: #3a1f24; border: 1px solid var(--red); color: #ffb4b2;
+}
+.sandbox-chip { background: #3a2e14; border-color: #d4a017; color: #ffd76e; }
+.sandbox-chip .rec { background: #d4a017; }
+/* club kits ride inline with team names everywhere */
+.club-kit { vertical-align: -3px; flex-shrink: 0; }
+.derby-tag { background: #3a1f24; border: 1px solid var(--red); color: #ffb4b2; }
+#kitPreview svg { filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
+[data-pat].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
+/* FM-style gaffer cards in the club office */
+.gaffer-card { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 9px 10px; }
+.gaffer-card b { font-size: 12px; }
+.gaffer-card .muted { font-size: 10.5px; line-height: 1.35; white-space: normal; }
+.gaffer-card.active { border-color: var(--accent); background: rgba(45,212,167,.12); }
 .rules-p { font-size: 13.5px; line-height: 1.55; margin-bottom: 10px; color: var(--text); }
 .pundit-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .pundit-chip {
@@ -390,13 +477,89 @@ tr.st-red .pname { color: #ff9c9c; }
 .sub-arrow.in { color: #3fb96d; }
 .sub-arrow.out { color: #e05555; }
 
-/* phones: nav wraps so every tab stays visible — a hidden-scrollbar row buried
-   Rules/Settings off the right edge and nobody knew they existed */
+/* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
-  .topbar { gap: 10px; padding: 12px 14px; }
-  .nav { order: 3; flex: 1 1 100%; min-width: 100%; }
-  .nav button { white-space: nowrap; flex: 0 0 auto; }
+  body { padding-bottom: 66px; }
+  /* the pitch must read as a formation: rows NEVER wrap — a back four
+     spilling onto two lines made every shape look illegal. Five across
+     fits a 390px screen with slimmer chips and smaller shirts. */
+  .pitch-row { flex-wrap: nowrap; gap: 2px; }
+  .pitch-row .pitch-chip { min-width: 0; flex: 1 1 0; max-width: 76px; padding: 6px 2px; }
+  .pitch-row .pitch-chip .kit { width: 36px; height: 46px; }
+  .pitch-row .pitch-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+  .pitch { min-height: 420px; padding: 18px 6px; }
+  /* compact header: one line of brand, icon-only refresh — content starts a
+     full card sooner */
+  /* on the clock, rebuilt for thumbs: manager, then a big timer, then the
+     details, then a 2-by-2 grid of controls that can never leave the screen */
+  .on-clock {
+    grid-template-columns: 1fr; gap: 8px;
+    grid-template-areas: "who" "clock" "meta" "int" "btns";
+  }
+  .on-clock .who { font-size: 19px; }
+  .on-clock > .pick-clock { font-size: 34px; padding: 10px; width: 100%; box-sizing: border-box; }
+  .on-clock .oc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .on-clock .oc-btns .btn { width: 100%; padding: 11px 8px; }
+  /* the group chat can go on a bit — two lines, tap for the rest */
+  .intercept .int-q {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; cursor: pointer;
+  }
+  .intercept.open .int-q { -webkit-line-clamp: unset; }
+  .brand { gap: 8px; }
+  .brand-ball { font-size: 22px; }
+  .brand h1 { font-size: 17px; }
+  .brand-sub { display: none; }
+  .sync-txt { display: none; }
+  .pitch-hint { display: none; }
+  /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
+     containing block for position:fixed descendants, pinning the bottom nav
+     (and the More menu) to the header instead of the viewport */
+  .topbar { gap: 10px; padding: 12px 14px; position: static; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  /* the phone tab bar — icons over labels, like a proper app */
+  .nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0;
+    padding: 5px max(6px, env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left));
+    background: rgba(11,15,26,.97); border-top: 1px solid var(--line);
+  }
+  .nav:empty { display: none; }
+  .nav > button, .nav-more > summary {
+    width: 100%; display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 7px 2px 6px; text-align: center; white-space: nowrap; border-radius: 10px;
+  }
+  .nav .nav-ico { display: block; }
+  .nav > button .nav-lbl-full, .nav-more > summary .nav-lbl-full { display: none; }
+  .nav > button .nav-lbl-short, .nav-more > summary .nav-lbl-short {
+    display: block; font-size: 10px; font-weight: 700; letter-spacing: .2px;
+  }
+  /* active tab = coloured icon + label, no chunky pill */
+  .nav > button.active, .nav-more.active summary { color: var(--accent); background: none; }
+  .nav > button:hover, .nav-more summary:hover { background: none; }
+  .nav-more summary::after { content: none; }
+  .nav-dot { top: 2px; right: calc(50% - 20px); }
+  /* More opens as a bottom sheet: big labelled icon tiles */
+  .nav-more-menu {
+    position: fixed; left: 0; right: 0; top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom)); min-width: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+    padding: 14px 12px; border-radius: 18px 18px 0 0; border-bottom: none;
+    box-shadow: 0 -12px 40px rgba(0,0,0,.55);
+  }
+  .nav-more-menu button {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 13px 4px; font-size: 11.5px; font-weight: 700; text-align: center;
+    background: var(--card2, rgba(255,255,255,.04)); border-radius: 12px;
+  }
+  .nav-more-menu button .nav-ico { display: block; width: 24px; height: 24px; }
+  .nav-more-menu button .nav-lbl-full { display: block; }
+  .nav-more-menu button .nav-lbl-short { display: none; }
+  .nav-more-menu button.active { color: var(--accent); background: var(--card2, rgba(255,255,255,.04)); }
+  .nav-more-menu .nav-dot { position: static; margin-top: -2px; }
+  .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav.setup-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .sync-updated { display: none; }
 }
 
 /* pitch-side advertising boards */
@@ -444,8 +607,9 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: thumb-sized tap targets */
 @media (max-width: 700px) {
   .btn.small { padding: 9px 14px; font-size: 12.5px; }
-  .nav button { padding: 10px 10px; font-size: 12px; }
   .lrow input[type=checkbox] { width: 20px; height: 20px; }
+  /* waiver claim up/down: proper thumb targets (Marc's ask — no drag-drop) */
+  .claim-btns .btn.small { min-width: 42px; padding: 10px 0; text-align: center; }
 }
 
 /* a button that looks unavailable but still taps to explain why (mobile has no tooltips) */
