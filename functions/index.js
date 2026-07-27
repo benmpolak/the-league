@@ -858,6 +858,15 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
     if (!st) throw new HttpsError('invalid-argument', 'a ground needs a name');
     up[`managers/${idx}/stadium`] = st;
   }
+  if (data.gaffer !== undefined) {
+    // the FM character sheet: an archetype off the stable, or a made-up one
+    const g = data.gaffer;
+    if (g === null) up[`managers/${idx}/gaffer`] = null;
+    else if (Number.isInteger(g) && g >= 0 && g <= 19) up[`managers/${idx}/gaffer`] = g;
+    else if (g && typeof g === 'object' && typeof g.t === 'string' && cleanText(g.t, 30).trim().length >= 2) {
+      up[`managers/${idx}/gaffer`] = { t: cleanText(g.t, 30).trim(), bio: cleanText(g.bio || '', 60).trim() || null };
+    } else throw new HttpsError('invalid-argument', 'gaffer is an archetype number or a name + bio');
+  }
   if (data.boards !== undefined) {
     // up to three hoardings off the league's stable to line the home ground
     if (data.boards === null) up[`managers/${idx}/boards`] = null;

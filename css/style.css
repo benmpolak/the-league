@@ -331,6 +331,11 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .derby-tag { background: #3a1f24; border: 1px solid var(--red); color: #ffb4b2; }
 #kitPreview svg { filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
 [data-pat].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
+/* FM-style gaffer cards in the club office */
+.gaffer-card { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 9px 10px; }
+.gaffer-card b { font-size: 12px; }
+.gaffer-card .muted { font-size: 10.5px; line-height: 1.35; white-space: normal; }
+.gaffer-card.active { border-color: var(--accent); background: rgba(45,212,167,.12); }
 .rules-p { font-size: 13.5px; line-height: 1.55; margin-bottom: 10px; color: var(--text); }
 .pundit-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .pundit-chip {

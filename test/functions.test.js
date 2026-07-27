@@ -202,6 +202,13 @@ const SB = 'the-league-sandbox';
     && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/stadium`, { owner: true })).val === 'The Rec'
     && JSON.stringify((await T.rest('GET', `v2/leagues/${SB}/public/managers/1/boards`, { owner: true })).val) === '[0,5,2]');
   chk('four hoardings rejected', (await T.mutate(SB, 'clubSet', { boards: [0, 1, 2, 3] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('gaffer archetype lands', !(await T.mutate(SB, 'clubSet', { gaffer: 1 }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/gaffer`, { owner: true })).val === 1);
+  chk('homemade gaffer lands trimmed', !(await T.mutate(SB, 'clubSet', { gaffer: { t: 'Roy of the Rec', bio: 'seen it all twice' } }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/gaffer/t`, { owner: true })).val === 'Roy of the Rec');
+  chk('junk gaffer rejected', (await T.mutate(SB, 'clubSet', { gaffer: 'roy' }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('gaffer sacked to null', !(await T.mutate(SB, 'clubSet', { gaffer: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/gaffer`, { owner: true })).val == null);
   chk('junk hoarding number rejected', (await T.mutate(SB, 'clubSet', { boards: [99] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
 
   chk('draft start is Chairman-gated', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok2)).error?.status === 'PERMISSION_DENIED');

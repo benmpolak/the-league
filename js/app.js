@@ -772,6 +772,17 @@ function kitFor(mid) {
   return { pattern: 'plain', c1, c2 };
 }
 function sponsorFor(mid) { return state.managers.find(x => x.id === mid)?.sponsor || ''; }
+// the gaffer in the dugout: an archetype off the FM-style stable, or homemade
+function gafferFor(mid) {
+  const g = state.managers.find(x => x.id === mid)?.gaffer;
+  if (g == null) return null;
+  if (typeof g === 'number') return GAFFERS[g] || null;
+  return { t: g.t, e: '🧢', bio: g.bio || '', fm: { badges: 'Unverifiable', playing: 'Undisclosed', media: 'No comment' } };
+}
+function gafferChip(mid) {
+  const g = gafferFor(mid);
+  return g ? `<span class="tag" title="${esc(g.bio)}&#10;Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">${g.e} ${esc(g.t)}</span>` : '';
+}
 // a wearable SVG shirt: pattern clipped to the jersey, sponsor across the chest
 function kitSvg(mid, size = 18, showSponsor = false) {
   return kitSvgRaw(kitFor(mid), showSponsor ? sponsorFor(mid) : '', size, `kc${mid}-${size}${showSponsor ? 's' : ''}`);
@@ -805,7 +816,7 @@ function derbyTag(a, b) {
 function clubEditor(mid) {
   if (!actGuard(mid, 'club')) return;
   const m = state.managers.find(x => x.id === mid);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: [...(m?.boards || [])] };
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: [...(m?.boards || [])], gaffer: m?.gaffer ?? null };
   const stock = AD_BOARDS.map(b => b.t);
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -814,6 +825,7 @@ function clubEditor(mid) {
     if (prev) prev.innerHTML = kitSvgRaw(draft.kit, draft.sponsor, 120, 'kprev');
     ov.querySelectorAll('[data-pat]').forEach(b => b.classList.toggle('active', b.dataset.pat === draft.kit.pattern));
     ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
+    ov.querySelectorAll('[data-gaffer]').forEach(b => b.classList.toggle('active', draft.gaffer === +b.dataset.gaffer));
   };
   ov.innerHTML = `<div class="card" style="max-width:460px;width:94%">
     <h2>The club office</h2>
@@ -845,6 +857,16 @@ function clubEditor(mid) {
     <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
       ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
     </div>
+    <label class="muted" style="font-size:11px">THE GAFFER — who's in your dugout?</label>
+    <div id="gafferGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:4px 0 6px">
+      ${GAFFERS.map((g, i) => `<button class="btn ghost gaffer-card" data-gaffer="${i}" title="Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">
+        <b>${g.e} ${esc(g.t)}</b><span class="muted">${esc(g.bio)}</span>
+      </button>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn ghost small" id="gafferOwn">Make one up…</button>
+      <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
+    </div>
     <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
     <select id="clubRival" style="width:100%;margin:4px 0 14px">
       <option value="">No declared rival (coward)</option>
@@ -870,6 +892,16 @@ function clubEditor(mid) {
   spOwn.oninput = () => { draft.sponsor = spOwn.value.trim(); paint(); };
   ov.querySelector('#clubRival').onchange = e => { draft.rival = e.target.value ? +e.target.value : null; };
   ov.querySelector('#clubStadium').oninput = e => { draft.stadium = e.target.value; };
+  ov.querySelectorAll('[data-gaffer]').forEach(b => b.onclick = () => { draft.gaffer = +b.dataset.gaffer; paint(); });
+  ov.querySelector('#gafferNone').onclick = () => { draft.gaffer = null; paint(); toast('The dugout stands empty.'); };
+  ov.querySelector('#gafferOwn').onclick = () => {
+    const t = prompt('Your gaffer (30 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.t : '');
+    if (!t || t.trim().length < 2) return;
+    const bio = prompt('One-line bio (60 characters):', typeof draft.gaffer === 'object' && draft.gaffer ? draft.gaffer.bio || '' : '') || '';
+    draft.gaffer = { t: t.trim().slice(0, 30), bio: bio.trim().slice(0, 60) };
+    paint();
+    toast(`${draft.gaffer.t} — appointed.`);
+  };
   ov.querySelectorAll('[data-board]').forEach(b => b.onclick = () => {
     const i = +b.dataset.board;
     if (draft.boards.includes(i)) draft.boards = draft.boards.filter(x => x !== i);
@@ -886,13 +918,13 @@ function clubEditor(mid) {
     const stadiumName = draft.stadium.trim();
     if (!stadiumName) { toast('A ground needs a name'); return; }
     if (netOn()) {
-      serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, ...(mid !== whoami && { asManager: mid }) })
+      serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) })
         .then(() => toast('The club is founded. Wear it well.')).catch(() => {});
       closeOv(ov);
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null };
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
     save(); render();
     closeOv(ov);
     toast('The club is founded. Wear it well.');
@@ -3224,7 +3256,8 @@ function viewTeam() {
     <span class="tag">GW points: <b class="gold">&nbsp;${gwManagerPoints(mid, gw)}</b></span>
     <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
-    <button class="tag" id="clubBtn" style="cursor:pointer" title="Name, kit, sponsor, rival — the club office">${kitSvg(mid, 14)} Club office</button>
+    <button class="tag" id="clubBtn" style="cursor:pointer" title="Name, kit, sponsor, gaffer, rival — the club office">${kitSvg(mid, 14)} Club office</button>
+    ${gafferChip(mid)}
   </div>
   <div class="card" style="margin-bottom:18px">
     <h2 style="display:flex;align-items:center;gap:10px">The pitch <span class="muted pitch-hint" style="font-weight:400;font-size:12px">tap two players in a line to swap them — left back goes left</span>
@@ -4425,6 +4458,7 @@ function showMatchup(a, b, i) {
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
     <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    ${gafferFor(mid) ? `<p class="muted" style="text-align:center;font-size:10.5px;margin:-4px 0 4px">${gafferChip(mid)}</p>` : ''}
     <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
   </div>`;
