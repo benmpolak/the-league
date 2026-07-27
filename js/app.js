@@ -639,7 +639,16 @@ const flagImg = (team, big = false) => {
 };
 // official PL headshot, falling back to the league's own "Photo Missing" card.
 // data-pcard makes every photo a button that opens the player's stats card.
-const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+const PHOTO_MISSING = 'https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png';
+const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
+// the CSP kills inline onerror= handlers, so broken photos fall back centrally
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (img && img.tagName === 'IMG' && !img.dataset.fbk && (img.classList.contains('headshot') || img.classList.contains('pcard-photo'))) {
+    img.dataset.fbk = '1';
+    img.src = PHOTO_MISSING;
+  }
+}, true);
 // the actual kit artwork FPL uses (GK variant for keepers); pass p to make it clickable too
 const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
@@ -4637,6 +4646,33 @@ function bindCup() {
 }
 
 /* ----- league table ----- */
+/* the table page opens with this week's scores — and flips to next week's
+   fixtures once the gameweek is fully in the books (the Tuesday rollover) */
+function tableGwCard() {
+  let i = currentGwIndex();
+  if (gwStatus(i) === 'final' && i + 1 < GAMEWEEKS.length) i++;
+  if (i >= REGULAR_GWS) return ''; // playoffs have their own stage on Head-to-Head
+  const st = gwStatus(i);
+  const tag = st === 'final' ? '<span class="tag">full time</span>'
+    : st === 'live' ? '<span class="live-pill"><span class="rec"></span>LIVE</span>'
+    : st === 'underway' ? '<span class="tag">underway — refresh for the latest</span>'
+    : '<span class="tag">upcoming</span>';
+  return `<div class="card" style="margin-bottom:12px">
+    <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">GW${GAMEWEEKS[i].n} ${st === 'upcoming' ? 'fixtures' : 'scores'} ${tag}
+      <button class="btn ghost small" data-goto="h2h" style="margin-left:auto">All matches</button></h2>
+    ${pairingsFor(i).map(([a, b]) => {
+      const pa = st === 'upcoming' ? '&ndash;' : gwManagerPoints(a, i);
+      const pb = st === 'upcoming' ? '&ndash;' : gwManagerPoints(b, i);
+      const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
+      return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
+        <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))}</span>
+        <span class="fx-score">${pa} &ndash; ${pb}</span>
+        <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${esc(teamName(b))}</span>
+      </div>`;
+    }).join('')}
+    ${st === 'upcoming' ? `<p class="muted" style="font-size:12px;margin-top:8px">Lineups lock ${new Date(gwFrom(i)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</p>` : ''}
+  </div>`;
+}
 function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
@@ -4649,6 +4685,7 @@ function viewTable() {
     ? `<div class="card investigation"><span class="rec"></span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</div>`
     : '';
   return `
+    ${tableGwCard()}
     ${investigation}
     ${ranked.map((m, i) => {
       const commTag = !hasPts ? '' :
@@ -4681,7 +4718,7 @@ function viewTable() {
           };
         }).sort((a, b) => b.total - a.total);
         const max = rows[0]?.total || 0;
-        return `<table class="pool-table">
+        return `<div style="overflow-x:auto"><table class="pool-table">
           <thead><tr><th>Manager</th><th class="num">Trough signings</th><th class="num">Waiver claims won</th><th class="num">Trades</th><th class="num">Total moves</th></tr></thead>
           <tbody>${rows.map((r, i) => `<tr>
             <td><b>${esc(teamName(r.id))}</b> <span class="muted" style="font-size:11px">${esc(managerName(r.id))}</span>
@@ -4690,7 +4727,7 @@ function viewTable() {
             <td class="num">${r.signs}</td><td class="num">${r.claims}</td><td class="num">${r.trades}</td>
             <td class="num gold">${r.total}</td>
           </tr>`).join('')}</tbody>
-        </table>`;
+        </table></div>`;
       })()}
       ${(() => {
         const counts = {};
@@ -4717,6 +4754,11 @@ function bindTable() {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
     bd.style.display = bd.style.display === 'none' ? 'block' : 'none';
   });
+  document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
+    const [a, b, i] = el.dataset.mu.split(':').map(Number);
+    showMatchup(a, b, i);
+  });
+  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
 }
 
 /* ----- fixtures ----- */
@@ -4726,7 +4768,7 @@ function viewFixtures() {
     return `<div class="card" style="text-align:center;padding:50px">
       <h2>No fixtures loaded yet</h2>
       <p class="muted" style="margin:10px 0 18px">Refresh to pull the season's schedule and any results.</p>
-      <button class="btn" onclick="syncNow(true)">&#8635; Refresh</button></div>`;
+      <button class="btn" id="fxSync">&#8635; Refresh</button></div>`;
   }
   if (fxView.gw == null) fxView.gw = GAMEWEEKS[currentGwIndex()].n;
   const fxs = state.fixtures.filter(f => f.gw === fxView.gw);
@@ -4756,6 +4798,8 @@ function viewFixtures() {
 function bindFixtures() {
   const sel = $('#fxGw');
   if (sel) sel.onchange = e => { fxView.gw = +e.target.value; render(); };
+  const fs = $('#fxSync');
+  if (fs) fs.onclick = () => syncNow(true); // inline onclick= is dead under the CSP
 }
 
 /* ----- rules ----- */
@@ -5068,7 +5112,7 @@ function showPlayerCard(pid) {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card pcard">
     <div class="pcard-head">
-      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" onerror="this.onerror=null;this.src='https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png'" alt="">
+      <img class="pcard-photo" src="https://resources.premierleague.com/premierleague/photos/players/110x140/p${p.code}.png" alt="">
       <div>
         <h2 style="margin-bottom:2px">${esc(p.name)} <span class="pos-badge pos-${p.pos}">${p.pos}</span></h2>
         <p class="muted" style="font-size:12px">${esc(p.full)}</p>
