@@ -91,6 +91,17 @@ const check = (label, ok, detail = '') => {
   // ---------- 2. the regular season, GW by GW ----------
   const N_REG = 33;
   for (let gw = 0; gw < N_REG; gw++) {
+    if (gw === 10) {
+      // mid-season trip to the club office: the rebrand must carry through
+      // every remaining week, view and record without a wobble
+      await p.evaluate(() => {
+        const i1 = state.managers.findIndex(x => x.id === 1);
+        state.managers[i1] = { ...state.managers[i1], team: 'Rebranded Athletic', kit: { pattern: 'hoops', c1: '#c81919', c2: '#ffffff' }, sponsor: 'WAX ON', rival: 2, stadium: 'The Bagel Bowl', boards: [0, 2, 5] };
+        const i2 = state.managers.findIndex(x => x.id === 2);
+        state.managers[i2] = { ...state.managers[i2], rival: 1 };
+        save(); render();
+      });
+    }
     const res = await p.evaluate(gw => {
       const out = { checks: {} };
       // clock: middle of this GW's real window
@@ -424,6 +435,31 @@ const check = (label, ok, detail = '') => {
     // fixtures is legitimately sparse here — the sim runs with no fixture data
     check(`view "${v}" renders`, len > (v === 'fixtures' ? 100 : 400), `${len} chars`);
   }
+
+  // ---------- 10. the GW10 rebrand carried all the way through ----------
+  const club = await p.evaluate(() => {
+    state.view = 'table'; render();
+    const tableHtml = document.querySelector('#main').innerHTML;
+    const kitsInRows = document.querySelectorAll('.league-row .club-kit').length;
+    state.view = 'h2h'; render();
+    const h2hHtml = document.querySelector('#main').innerHTML;
+    return {
+      renamed: teamName(1) === 'Rebranded Athletic',
+      inTable: tableHtml.includes('Rebranded Athletic'),
+      kits: kitsInRows,
+      sponsorOnShirt: kitSvg(1, 40, true).includes('WAX ON'),
+      inH2H: h2hHtml.includes('Rebranded Athletic') && !h2hHtml.includes('The Dog’s Polaks'),
+      stadium: stadium(1) === 'The Bagel Bowl',
+      adStrip: adStrip(3, 3, 1).includes(AD_BOARDS[0].t),
+      clasico: derbyTag(1, 2).includes('CL'),
+    };
+  });
+  check('mid-season rename carries to the table', club.renamed && club.inTable);
+  check('all twelve kits render on the table', club.kits === 12);
+  check('sponsor prints on the shirt', club.sponsorOnShirt);
+  check('h2h speaks the new name only', club.inH2H);
+  check('stadium + hoardings carried', club.stadium && club.adStrip);
+  check('the clásico is recognised at season end', club.clasico);
 
   check('zero page errors across the whole season', pageErrors.length === 0, pageErrors.slice(0, 3).join(' ; '));
   await browser.close();

@@ -2278,6 +2278,7 @@ function viewSetup() {
         <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
+      ${foundingCard()}
       ${readyRoomCard()}
       ${installCard(true)}
     </div>`;
@@ -2288,6 +2289,7 @@ function viewSetup() {
       <h2>&#9917; The League &mdash; 2026/27</h2>
       <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
+    ${foundingCard()}
     ${readyRoomCard()}
     <div class="card">
       <h2>Managers</h2>
@@ -2335,6 +2337,10 @@ function bindSetup() {
       .then(() => toast(val ? (mid === whoami ? 'Ready. The Committee notes your promptness.' : `${managerName(mid)} vouched for.`) : 'Unreadied.'))
       .catch(() => {});
   });
+  const fb = $('#foundBtn');
+  if (fb) fb.onclick = () => clubEditor(whoami);
+  const fl = $('#foundLater');
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${whoami}`, '1'); render(); };
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
