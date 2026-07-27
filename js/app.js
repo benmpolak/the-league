@@ -1642,7 +1642,7 @@ function vidiCard(compact = false) {
 async function syncNow(manual = false) {
   if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Tapping…</span>'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
     const [statsRes, fxRes] = await Promise.all([
@@ -1680,7 +1680,7 @@ async function syncNow(manual = false) {
     if (manual) toast('Sync failed — check connection');
   }
   const b2 = $('#syncBtn');
-  if (b2) { b2.disabled = false; b2.innerHTML = '📞<span class="sync-txt"> Tap the lines</span>'; }
+  if (b2) { b2.disabled = false; b2.innerHTML = '&#8635;<span class="sync-txt"> Refresh</span>'; }
   // keep tapping while matches are in play (the Action refreshes every 15 min)
   clearTimeout(liveTimer);
   if (anyMatchLive()) liveTimer = setTimeout(() => syncNow(false), 5 * 60 * 1000);
@@ -1764,17 +1764,32 @@ const dealRows = (outs, ins) => `<div class="deal">${
 
 /* ---------------- views ---------------- */
 const NAV_ITEMS = [
-  ['dash', 'Dashboard'],
-  ['draft', 'The Console'],
-  ['team', 'My Team'],
-  ['transfers', 'Transfers'],
-  ['h2h', 'Head-to-Head'],
-  ['cup', 'The Monzo Cup'],
-  ['table', 'League Table'],
-  ['fixtures', 'Fixtures'],
-  ['rules', 'Rules'],
-  ['settings', 'Settings'],
+  ['dash', 'Dashboard', 'Home'],
+  ['draft', 'The Console', 'Console'],
+  ['team', 'My Team', 'My Team'],
+  ['transfers', 'Transfers', 'Transfers'],
+  ['h2h', 'Head-to-Head', 'H2H'],
+  ['cup', 'The Monzo Cup', 'Cup'],
+  ['table', 'League Table', 'Table'],
+  ['fixtures', 'Fixtures', 'Fixtures'],
+  ['rules', 'Rules', 'Rules'],
+  ['settings', 'Settings', 'Settings'],
 ];
+// phone tab bar icons — inline so the CSP stays 'self'-only
+const navSvg = paths => `<svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const NAV_ICONS = {
+  dash: navSvg('<path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/>'),
+  draft: navSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>'),
+  team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
+  transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
+  h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
+  cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
+  table: navSvg('<path d="M6 20v-8M12 20V5M18 20v-5"/><path d="M4 20h16"/>'),
+  fixtures: navSvg('<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>'),
+  rules: navSvg('<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z"/><path d="M5 17a3 3 0 0 1 3-3h10"/>'),
+  settings: navSvg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
+  more: navSvg('<circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/>'),
+};
 const SEASON_PRIMARY_NAV = new Set(['dash', 'team', 'transfers', 'table']);
 const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
 
@@ -1791,24 +1806,6 @@ function render() {
   if (lastRenderedView !== state.view) { window.scrollTo(0, 0); lastRenderedView = state.view; window.onscroll = null; }
   renderNav();
   renderSyncArea();
-  let bar = $('#demoBar');
-  if (demoMode && !bar) {
-    bar = document.createElement('div');
-    bar.id = 'demoBar';
-    bar.className = 'demo-bar';
-    bar.innerHTML = `<span class="rec"></span> DEMO — fake draft, fictional results. Your real league is untouched. <button class="btn small" id="demoExit">Exit demo</button>`;
-    document.body.appendChild(bar);
-    $('#demoExit').onclick = exitDemo;
-  } else if (!demoMode && bar) {
-    bar.remove();
-  }
-  if (SANDBOX && !$('#sandboxBar')) {
-    const sb = document.createElement('div');
-    sb.id = 'sandboxBar';
-    sb.className = 'demo-bar sandbox-bar';
-    sb.innerHTML = `<span class="rec"></span> SANDBOX — practice league for testing. The real league is untouched. <a class="btn small" href="${location.pathname}">Real site</a>`;
-    document.body.appendChild(sb);
-  }
   const main = $('#main');
   if (state.phase === 'setup') { main.innerHTML = viewSetup(); bindSetup(); return; }
   switch (state.view) {
@@ -1957,21 +1954,33 @@ function renderNav() {
   const primarySet = state.phase === 'draft' ? new Set(['draft']) : SEASON_PRIMARY_NAV;
   const primary = available.filter(([id]) => primarySet.has(id));
   const more = available.filter(([id]) => !primarySet.has(id));
-  const button = ([id, label]) =>
-    `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}"${state.view === id ? ' aria-current="page"' : ''}>${label}${dots[id] ? `<span class="nav-dot" title="Needs your attention" aria-label="${dots[id]} item${dots[id] === 1 ? '' : 's'} need attention">${dots[id]}</span>` : ''}</button>`;
+  const button = ([id, label, short]) =>
+    `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}"${state.view === id ? ' aria-current="page"' : ''}>${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span>${dots[id] ? `<span class="nav-dot" title="Needs your attention" aria-label="${dots[id]} item${dots[id] === 1 ? '' : 's'} need attention">${dots[id]}</span>` : ''}</button>`;
   const moreActive = more.some(([id]) => id === state.view);
+  const moreDots = more.reduce((n, [id]) => n + (dots[id] || 0), 0);
   nav.innerHTML = `${primary.map(button).join('')}
     <details class="nav-more${moreActive ? ' active' : ''}">
-      <summary${moreActive ? ' aria-current="page"' : ''}>More</summary>
+      <summary${moreActive ? ' aria-current="page"' : ''}>${NAV_ICONS.more}<span class="nav-lbl-full">More</span><span class="nav-lbl-short">More</span>${moreDots ? `<span class="nav-dot" aria-label="${moreDots} item${moreDots === 1 ? '' : 's'} need attention">${moreDots}</span>` : ''}</summary>
       <div class="nav-more-menu">${more.map(button).join('')}</div>
     </details>`;
   nav.querySelectorAll('button[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
+  // tapping anywhere else puts the More sheet away
+  if (!window.__navMoreCloser) {
+    window.__navMoreCloser = true;
+    document.addEventListener('click', e => {
+      const open = document.querySelector('.nav-more[open]');
+      if (open && !open.contains(e.target)) open.removeAttribute('open');
+    });
+  }
 }
 
 function renderSyncArea() {
   const el = $('#syncArea');
   if (!el || state.phase === 'setup') { if (el) el.innerHTML = ''; return; }
   const bits = [];
+  // demo/sandbox live as small chips up here, not a banner over the app
+  if (demoMode) bits.push('<button class="tag mode-chip demo-chip" id="demoChip"><span class="rec"></span>DEMO</button>');
+  if (SANDBOX && !demoMode) bits.push('<button class="tag mode-chip sandbox-chip" id="sandboxChip"><span class="rec"></span>SANDBOX</button>');
   if (anyMatchLive()) bits.push('<span class="live-pill"><span class="rec"></span>LIVE</span>');
   // the feed going quiet on a matchday should be visible, not discovered
   if (state.feedGenerated && anyMatchLive()) {
@@ -1986,7 +1995,7 @@ function renderSyncArea() {
   }
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<span class="sync-updated" title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#128222;<span class="sync-txt"> Tap the lines</span></button>`);
+    bits.push(`<span class="sync-updated" title="Scores auto-refresh every ~15 min on matchdays">Updated ${last}</span><button id="syncBtn" class="btn small" title="Refresh scores now">&#8635;<span class="sync-txt"> Refresh</span></button>`);
   }
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
@@ -2010,6 +2019,18 @@ function renderSyncArea() {
   };
   const sb = $('#syncBtn');
   if (sb) sb.onclick = () => syncNow(true);
+  const dc = $('#demoChip');
+  if (dc) dc.onclick = () => confirmSheet({
+    title: 'Demo mode',
+    body: '<p class="rules-p">Everything here is a fake draft with fictional results — just a look around. Your real league is untouched.</p>',
+    yes: 'Exit demo',
+  }).then(go => { if (go) exitDemo(); });
+  const sc = $('#sandboxChip');
+  if (sc) sc.onclick = () => confirmSheet({
+    title: 'Sandbox',
+    body: '<p class="rules-p">This is the practice league — sign in, draft, trade, break things. The real league is untouched.</p>',
+    yes: 'Go to the real site',
+  }).then(go => { if (go) location.href = location.pathname; });
 }
 
 /* ----- the ready room: pre-draft roll call, one tap per manager ----- */
@@ -4413,7 +4434,7 @@ function viewH2H() {
     const st = gwStatus(i);
     const tag = st === 'final' ? '<span class="tag">FT</span>'
       : st === 'live' ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>'
-      : st === 'underway' ? '<span class="tag">underway — tap the lines</span>'
+      : st === 'underway' ? '<span class="tag">underway — refresh for the latest</span>'
       : '<span class="tag">upcoming</span>';
     return `
     <div class="card" style="margin-bottom:12px">
@@ -4702,8 +4723,8 @@ function viewFixtures() {
   if (!state.fixtures.length) {
     return `<div class="card" style="text-align:center;padding:50px">
       <h2>No fixtures loaded yet</h2>
-      <p class="muted" style="margin:10px 0 18px">Tap the lines to pull the season's schedule and any results.</p>
-      <button class="btn" onclick="syncNow(true)">&#128222; Tap the lines</button></div>`;
+      <p class="muted" style="margin:10px 0 18px">Refresh to pull the season's schedule and any results.</p>
+      <button class="btn" onclick="syncNow(true)">&#8635; Refresh</button></div>`;
   }
   if (fxView.gw == null) fxView.gw = GAMEWEEKS[currentGwIndex()].n;
   const fxs = state.fixtures.filter(f => f.gw === fxView.gw);
