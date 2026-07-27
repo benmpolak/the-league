@@ -41,21 +41,10 @@ const GAFFERS = [
 // pitch — real workplaces first, then the commercial portfolio.
 // t = wordmark, s = strapline, c = brand colour, bg = board background.
 const AD_BOARDS = [
+  // real workplaces first
   { t: 'HERTILITY', s: 'know your body', c: '#ff9ec6', bg: '#1c0f16' },
   { t: 'T8', s: 'ask Iain what it does', c: '#7dd8ff', bg: '#0c1620' },
-  { t: 'GELT & CO.', s: 'wealth management, allegedly', c: '#e8b64c', bg: '#171106' },
-  { t: 'OY VEY INSURANCE', s: 'you should worry', c: '#f4f4f4', bg: '#5a1414' },
-  { t: 'BUBBE’S SOUP CO.', s: 'jewish penicillin since 1936', c: '#ffd98a', bg: '#26190a' },
-  { t: 'KOSHER NOSTRA', s: 'a deli you can’t refuse', c: '#e0e0e0', bg: '#101010' },
-  { t: 'CHALLAH BACK BOYS', s: 'artisan bakery · est. 5784', c: '#f2c179', bg: '#1d130a' },
-  { t: 'GOLDSTEIN & SONS', s: 'we schlep so you don’t have to', c: '#c9d6ff', bg: '#101528' },
-  { t: 'MENSCH CAPITAL', s: 'nice boys, aggressive returns', c: '#9fe8c5', bg: '#0a1c14' },
-  { t: 'L’CHAIM WINES', s: 'to life. to a 2-1 win.', c: '#e88aa0', bg: '#1e0a10' },
-  { t: 'THE SCHMEAR CAMPAIGN', s: 'bagels · lox · public relations', c: '#ffe0b3', bg: '#211405' },
-  { t: 'SHABBAT ENERGY', s: 'we’re off saturdays', c: '#fff3a0', bg: '#1c1a05' },
-  { t: 'POLAK & LEVY LLP', s: 'no win, no schmear', c: '#b7e4f7', bg: '#0b1a22' },
-  { t: 'NICE JEWISH BOY™', s: 'the dating app your mum chose', c: '#f7b7d0', bg: '#20101a' },
-  // commissioned by the group chat, 27 Jul 2026
+  // the commercial portfolio - commissioned live by the group chat, 27 Jul 2026
   { t: 'VODAFONE NEWBURY', s: 'signal not guaranteed', c: '#ff8a8a', bg: '#260808' },
   { t: 'BRANDSMITHS', s: 'see you in court', c: '#e8e8e8', bg: '#141414' },
   { t: 'HOME REIT', s: 'residential property, broadly', c: '#d9c9a3', bg: '#1c150a' },
@@ -70,17 +59,17 @@ const AD_BOARDS = [
   { t: 'HIGH PERFORMANCE PODCAST', s: 'what does defeat mean to YOU?', c: '#ffd98a', bg: '#1f1502' },
   { t: 'MGS', s: 'sapere aude, lads', c: '#a9c4e8', bg: '#0a1220' },
   { t: 'VICTORIA PLUMBING', s: 'taps for the treble winners', c: '#b8e0f7', bg: '#081722' },
-  { t: 'HYMAN’S DELI', s: 'salt beef for the semi-finals', c: '#ffd6a8', bg: '#221204' },
-  { t: 'STATE FAYRE', s: 'bagels since time immemorial', c: '#f2e2b8', bg: '#1c1608' },
   { t: 'INTERLINK RECRUITMENT', s: 'a young graduate in need of opportunity? call us', c: '#c9b8f0', bg: '#140f24' },
   { t: 'SLATTERY', s: 'patissier to the playoffs', c: '#e8c9b0', bg: '#1f130a' },
-  // Jewish Manchester, past and present — commissioned 27 Jul, for the lads
+  // Jewish Manchester, past and present - for the lads
   { t: 'TITANICS', s: 'unsinkable since 1912', c: '#b8d4f0', bg: '#0a1420' },
   { t: 'SWERSKY’S', s: 'the bagel benchmark, Prestwich', c: '#f0dcb0', bg: '#1e1706' },
   { t: 'DELI KING', s: 'royalty. Prestwich royalty.', c: '#ffd98a', bg: '#221604' },
   { t: 'M&S PENNY BAZAAR', s: 'don’t ask the price, it’s a penny', c: '#a8e0c9', bg: '#062016' },
   { t: 'GT UNIVERSAL STORES', s: 'everything, by catalogue, from Manchester', c: '#d4c4f0', bg: '#130f22' },
   { t: 'RAKUSEN’S', s: 'official matzo of the title run-in', c: '#f2e8d0', bg: '#1a1608' },
+  { t: 'HYMAN’S DELI', s: 'salt beef for the semi-finals', c: '#ffd6a8', bg: '#221204' },
+  { t: 'STATE FAYRE', s: 'bagels since time immemorial', c: '#f2e2b8', bg: '#1c1608' },
   { t: 'GATLEY TANDOORI', s: 'the post-match curry of champions', c: '#ffb88a', bg: '#241004' },
 ];
 

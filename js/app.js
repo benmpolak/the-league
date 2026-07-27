@@ -1013,14 +1013,21 @@ function adStrip(seed, n = 3, homeMid = null) {
   if (typeof AD_BOARDS === 'undefined' || !AD_BOARDS.length) return '';
   let s = (seed * 2654435761) % 2147483648;
   const boards = [];
-  // a manager who picked their own hoardings in the club office fills the home
-  // strip with them; the group chat's commissioned boards are the fallback
-  const picked = homeMid != null ? (state.managers.find(x => x.id === homeMid)?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean) : [];
+  // the home side's SHIRT sponsor leads their strip — including made-up ones,
+  // which get a board synthesised in their kit colours
+  const homeM = homeMid != null ? state.managers.find(x => x.id === homeMid) : null;
+  if (homeM?.sponsor) {
+    const stock = AD_BOARDS.find(bd => bd.t === homeM.sponsor);
+    const k = kitFor(homeMid);
+    boards.push(stock || { t: homeM.sponsor.toUpperCase(), s: `principal partner of ${teamName(homeMid)}`, c: k.c1, bg: '#10141c' });
+  }
+  // then their picked hoardings; the group chat's commissioned boards fall back
+  const picked = homeM ? (homeM.boards || []).map(i => AD_BOARDS[i]).filter(Boolean).filter(bd => bd.t !== homeM.sponsor) : [];
   if (picked.length) {
-    boards.push(...picked.slice(0, n));
+    boards.push(...picked.slice(0, Math.max(0, n - boards.length)));
   } else {
     const own = (typeof MANAGER_BOARDS !== 'undefined' && homeMid != null) ? MANAGER_BOARDS[homeMid] : null;
-    if (own && own.length) {
+    if (own && own.length && boards.length < n) {
       s = (s * 1103515245 + 12345) % 2147483648;
       boards.push(own[s % own.length]);
     }
