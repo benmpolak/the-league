@@ -3726,7 +3726,11 @@ function viewTransfers() {
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
         <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
         <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
-      </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>` : ''}
+      </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>`
+      : demoMode ? `<div style="margin-top:10px">
+        <button class="btn small" id="runWaivers">&#9889; Run waivers now (demo)</button>
+        <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run on the fixture clock — the evening after a gameweek finishes and the evening before the next kicks off. In the demo you ARE the Chairman: lodge a claim on anyone marked "waivers", then run the round and watch it resolve.</p>
+      </div>` : ''}
     </div>`;
   }
   if (tab === 'trades') {
