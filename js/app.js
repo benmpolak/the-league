@@ -947,6 +947,50 @@ function foundingCard() {
       <button class="btn ghost small" id="foundLater" data-mid="${mid}">Maybe later</button>
     </div></div>`;
 }
+
+/* ----- My Club: the identity on permanent display, changeable whenever ----- */
+function viewClub() {
+  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
+  if (!mid) {
+    return `<div class="card" style="text-align:center;padding:40px">
+      <h2>Whose club?</h2>
+      <p class="rules-p">Sign in and this page becomes your club — kit, gaffer, ground, rivals, the lot.</p>
+      <button class="btn" id="clubSignIn">Sign in</button></div>`;
+  }
+  const m = state.managers.find(x => x.id === mid);
+  const g = gafferFor(mid);
+  const myRival = rivalOf(mid);
+  const enemies = state.managers.filter(x => x.rival === mid && x.id !== mid);
+  const boards = (m?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean);
+  return `
+  <div class="card" style="text-align:center">
+    <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, 'clubpage')}</div>
+    <h2 style="margin-bottom:2px">${esc(teamName(mid))}</h2>
+    <p class="muted" style="font-size:12px">${esc(managerName(mid))} &middot; est. 2015 &middot; ${esc(stadium(mid))}</p>
+    ${sponsorFor(mid) ? `<p class="muted" style="font-size:11.5px">Principal partner: <b>${esc(sponsorFor(mid))}</b></p>` : ''}
+    <button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>The dugout</h2>
+    ${g ? `<p style="font-size:14px"><b>${g.e} ${esc(g.t)}</b></p><p class="muted" style="font-size:12.5px;margin:4px 0 8px">${esc(g.bio)}</p>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Coaching badges</span><b style="margin-left:auto">${esc(g.fm.badges)}</b></div>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Playing career</span><b style="margin-left:auto">${esc(g.fm.playing)}</b></div>
+      <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Media handling</span><b style="margin-left:auto">${esc(g.fm.media)}</b></div>`
+      : '<p class="muted">The dugout stands vacant. The board is monitoring the situation.</p>'}
+  </div>
+  <div class="card" style="margin-top:14px">
+    <h2>Rivalries</h2>
+    ${myRival ? `<p style="font-size:13px">Declared: <b>${teamTag(myRival)}</b> ${derbyTag(mid, myRival)}</p>` : '<p class="muted">No declared rival. The dropdown calls this cowardice.</p>'}
+    ${enemies.map(x => `<p style="font-size:12.5px" class="muted">${teamTag(x.id)} has declared YOU.${myRival === x.id ? '' : ' You remain officially unaware.'}</p>`).join('')}
+  </div>
+  ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
+}
+function bindClub() {
+  const ce = $('#clubEdit');
+  if (ce) ce.onclick = () => clubEditor((whoami && whoami !== -1) ? whoami : state.managers[0].id);
+  const cs = $('#clubSignIn');
+  if (cs) cs.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
+}
 // default grounds, until the owner sells the naming rights (tap the stadium name on My Team)
 const DEFAULT_STADIA = {
   1: 'The Kennel',                                // The Dog's Polaks
@@ -1985,6 +2029,7 @@ const NAV_ITEMS = [
   ['dash', 'Dashboard', 'Home'],
   ['draft', 'The Console', 'Console'],
   ['team', 'My Team', 'My Team'],
+  ['club', 'My Club', 'Club'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Head-to-Head', 'H2H'],
   ['cup', 'The Monzo Cup', 'Cup'],
@@ -1999,6 +2044,7 @@ const NAV_ICONS = {
   dash: navSvg('<path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/>'),
   draft: navSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>'),
   team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
+  club: navSvg('<path d="M12 3 5 5.5v6c0 4.5 3 7.5 7 9.5 4-2 7-5 7-9.5v-6Z"/><path d="M12 8v5M9.5 10.5h5"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
@@ -2030,6 +2076,7 @@ function render() {
   switch (state.view) {
     case 'draft': main.innerHTML = viewDraft(); bindDraft(); break;
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
+    case 'club': main.innerHTML = viewClub(); bindClub(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
     case 'dash': main.innerHTML = viewDash(); bindDash(); break;
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
@@ -3403,7 +3450,7 @@ function bindTeam() {
   if (so) so.onclick = () => { teamView.showOpp = !teamView.showOpp; render(); };
   // --- stadium naming ---
   const cb = $('#clubBtn');
-  if (cb) cb.onclick = () => clubEditor(mid);
+  if (cb) cb.onclick = () => { state.view = 'club'; save(); render(); };
   const sb2 = $('#stadiumBtn');
   if (sb2) sb2.onclick = () => {
     if (!actGuard(mid, 'stadium')) return;
