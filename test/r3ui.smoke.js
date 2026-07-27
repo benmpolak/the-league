@@ -131,16 +131,98 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     state.draft.picks = stash.filter(pk => pk.managerId !== strip);
     teamView.mid = state.draft.order[0]; teamView.gw = 0; teamView.showOpp = true; render();
     const opp = document.querySelector('main').innerText;
+    const oppDuel = !!document.querySelector('.duel-grid'), oppBar = !!document.querySelector('.prob-wrap');
     teamView.mid = strip; render();
     const own = document.querySelector('main').innerText;
+    const ownDuel = !!document.querySelector('.duel-grid'), ownBar = !!document.querySelector('.prob-wrap');
     state.draft.picks = stash;
     teamView.showOpp = false; render();
-    return { opp, own };
+    return { opp, own, oppDuel, oppBar, ownDuel, ownBar };
   });
+  // the duel must still RENDER against an empty XI — a vanished duel would
+  // pass a bare NaN grep while hiding the regression it exists to catch
+  chk('empty opponent XI: duel + bar still render',
+    nanChk.oppDuel && nanChk.oppBar, JSON.stringify(nanChk));
   chk('empty opponent XI: no NaN/Infinity in the duel or bar',
     !/NaN|Infinity/.test(nanChk.opp), (nanChk.opp.match(/.{0,30}(NaN|Infinity).{0,30}/) || [''])[0]);
+  chk('own empty XI: duel + bar still render',
+    nanChk.ownDuel && nanChk.ownBar, JSON.stringify(nanChk));
   chk('own empty XI: no NaN/Infinity on the team page',
     !/NaN|Infinity/.test(nanChk.own), (nanChk.own.match(/.{0,30}(NaN|Infinity).{0,30}/) || [''])[0]);
+
+  /* 4b — dashboard + matchup-modal bar orientation (sol r4: previously only
+   * the duel was pinned). Both surfaces render pair[0]/a LEFT, so the bar's
+   * left projection must equal teamOutlook(pair[0]).exp — and the seeded
+   * gradient guarantees the two sides differ, so a reversal cannot hide. */
+  const dashChk = await p.evaluate(() => {
+    const pair = pairingsFor(0)[0];
+    whoami = pair[1]; // viewer sits at pair[1]; the card must still show pair[0] left
+    state.view = 'dash'; render();
+    const wrap = document.querySelector('.prob-wrap');
+    const projs = wrap ? [...wrap.querySelectorAll('.prob-sub span:not(.prob-mid)')]
+      .map(s => s.textContent).filter(t => /proj/.test(t)).map(t => +t.replace(/\D/g, '')) : [];
+    const leftName = document.querySelector('.h2h-fx span b')?.textContent || '';
+    whoami = null;
+    return {
+      projs,
+      leftName,
+      exp0: Math.round(teamOutlook(pair[0], 0).exp),
+      exp1: Math.round(teamOutlook(pair[1], 0).exp),
+      name0: teamName(pair[0]),
+    };
+  });
+  chk('dashboard matchup: sides differ (orientation check is non-vacuous)',
+    dashChk.exp0 !== dashChk.exp1, JSON.stringify(dashChk));
+  chk('dashboard matchup: pair[0] named LEFT and bar left proj is pair[0]\'s',
+    dashChk.leftName.includes(dashChk.name0) && dashChk.projs.length === 2
+      && dashChk.projs[0] === dashChk.exp0 && dashChk.projs[1] === dashChk.exp1,
+    JSON.stringify(dashChk));
+  const muChk = await p.evaluate(() => {
+    const pair = pairingsFor(0)[0];
+    showMatchup(pair[0], pair[1], 0);
+    const ov = document.querySelector('#muOverlay');
+    const wrap = ov.querySelector('.prob-wrap');
+    const projs = [...wrap.querySelectorAll('.prob-sub span:not(.prob-mid)')]
+      .map(s => s.textContent).filter(t => /proj/.test(t)).map(t => +t.replace(/\D/g, ''));
+    const leftHead = ov.querySelector('.mu-side h3')?.textContent || '';
+    const fill = wrap.querySelector('.prob-bar span')?.style.width;
+    ov.remove();
+    return {
+      projs, leftHead, fill,
+      exp0: Math.round(teamOutlook(pair[0], 0).exp),
+      exp1: Math.round(teamOutlook(pair[1], 0).exp),
+      pct0: Math.round(liveWinProb(pair[0], pair[1], 0) * 100),
+      name0: teamName(pair[0]),
+    };
+  });
+  chk('matchup modal: a-side named LEFT and bar left proj is a\'s',
+    muChk.leftHead.includes(muChk.name0) && muChk.projs.length === 2
+      && muChk.projs[0] === muChk.exp0 && muChk.projs[1] === muChk.exp1,
+    JSON.stringify(muChk));
+  chk('matchup modal: bar fill width equals the LEFT side\'s win chance',
+    muChk.fill === `${muChk.pct0}%`, `${muChk.fill} vs ${muChk.pct0}%`);
+
+  /* 4c — player card starts on the CURRENT photo library with the fallback
+   * chain armed (sol r4 P2: it hardcoded the legacy URL with no data-code,
+   * so missing-from-legacy players jumped straight to the silhouette) */
+  const pcardChk = await p.evaluate(() => {
+    const pl = PLAYERS.find(x => x.code);
+    showPlayerCard(pl.id);
+    const img = document.querySelector('#pcardOverlay .pcard-photo');
+    const out = {
+      src: img?.src || '',
+      code: img?.dataset.code,
+      fbk: img?.dataset.fbk,
+      want: String(pl.code),
+    };
+    document.querySelector('#pcardOverlay')?.remove();
+    return out;
+  });
+  chk('player card photo starts on the current library (premierleague25, no p-prefix)',
+    /premierleague25\/photos\/players/.test(pcardChk.src) && pcardChk.src.includes(`/${pcardChk.want}.png`),
+    pcardChk.src);
+  chk('player card photo carries data-code so the fallback chain can fire',
+    pcardChk.code === pcardChk.want && !pcardChk.fbk, JSON.stringify(pcardChk));
 
   /* 5 — a stale saved `price` column preference cannot resurrect the column */
   const priceChk = await p.evaluate(() => {
