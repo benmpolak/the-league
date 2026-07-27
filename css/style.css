@@ -557,6 +557,7 @@ tr.st-red .pname { color: #ff9c9c; }
   .nav-more-menu button.active { color: var(--accent); background: var(--card2, rgba(255,255,255,.04)); }
   .nav-more-menu .nav-dot { position: static; margin-top: -2px; }
   .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nav.setup-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
   .sync-updated { display: none; }
 }

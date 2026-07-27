@@ -2057,6 +2057,9 @@ const NAV_ICONS = {
 // the four daily-use tabs, in Ben's order — everything else lives under More
 const SEASON_PRIMARY_NAV = ['team', 'h2h', 'table', 'transfers'];
 const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
+// pre-draft the app is mostly a waiting room, but the club office, rules and
+// settings are already worth visiting — so those three get a bar
+const SETUP_NAV = new Set(['club', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
@@ -2072,7 +2075,15 @@ function render() {
   renderNav();
   renderSyncArea();
   const main = $('#main');
-  if (state.phase === 'setup') { main.innerHTML = viewSetup(); bindSetup(); return; }
+  if (state.phase === 'setup' && !SETUP_NAV.has(state.view)) { main.innerHTML = viewSetup(); bindSetup(); return; }
+  if (state.phase === 'setup') {
+    // pre-draft, only the setup-bar views resolve; everything else is the room
+    if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
+    else if (state.view === 'rules') { main.innerHTML = viewRules(); }
+    else { main.innerHTML = viewSettings(); bindSettings(); }
+    renderIdentity();
+    return;
+  }
   switch (state.view) {
     case 'draft': main.innerHTML = viewDraft(); bindDraft(); break;
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
@@ -2218,7 +2229,15 @@ function renderIdentity() {
 
 function renderNav() {
   const nav = $('#nav');
-  if (state.phase === 'setup') { nav.innerHTML = ''; return; }
+  if (state.phase === 'setup') {
+    nav.classList.remove('draft-nav');
+    nav.classList.add('setup-nav');
+    nav.innerHTML = NAV_ITEMS.filter(([id]) => SETUP_NAV.has(id)).map(([id, label, short]) =>
+      `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}">${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span></button>`).join('');
+    nav.querySelectorAll('button[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
+    return;
+  }
+  nav.classList.remove('setup-nav');
   nav.classList.toggle('draft-nav', state.phase === 'draft');
   // attention dots — the app taps you on the shoulder when it needs you
   const dots = {};
@@ -2259,7 +2278,9 @@ function renderNav() {
 
 function renderSyncArea() {
   const el = $('#syncArea');
-  if (!el || state.phase === 'setup') { if (el) el.innerHTML = ''; return; }
+  if (!el) return;
+  // this used to blank itself pre-draft, which hid the sign-in pill and Home
+  // during the exact weeks the lads are arriving to found their clubs
   const bits = [];
   // demo/sandbox live as small chips up here, not a banner over the app
   if (demoMode) bits.push('<button class="tag mode-chip demo-chip" id="demoChip"><span class="rec"></span>DEMO</button>');
@@ -2279,7 +2300,10 @@ function renderSyncArea() {
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
     bits.push(`<button class="tag" id="syncBtn" title="Scores auto-refresh every ~15 min on matchdays — tap to refresh now">&#8635;<span class="sync-txt"> ${last}</span></button>`);
-    bits.push(`<button id="homeBtn" class="btn small" title="Back to the Dashboard"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
+  }
+  if (state.phase !== 'draft') {
+    // Home: the Dashboard in season, the waiting room pre-draft
+    bits.push(`<button id="homeBtn" class="btn small" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
   }
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
@@ -5572,6 +5596,7 @@ document.addEventListener('visibilitychange', () => {
 {
   const v0 = location.hash.slice(1);
   if (state.phase !== 'setup' && NAV_ITEMS.some(([k]) => k === v0)) state.view = v0;
+  else if (state.phase === 'setup' && SETUP_NAV.has(v0)) state.view = v0;
   else if (state.phase === 'season') state.view = 'dash';
 }
 render();
