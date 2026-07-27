@@ -4814,6 +4814,11 @@ function showMatchup(a, b, i) {
       <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; Att ${attendance(a, b, i).toLocaleString()}${gwStatus(i) === 'final' ? ' &middot; full time' : ''}</p>
       <button class="btn ghost small" id="muClose">&#10005;</button>
     </div>
+    <div class="h2h-fx mu-scoreline">
+      <span style="flex:1;text-align:right"><b>${esc(teamName(a))} ${kitSvg(a)}</b></span>
+      <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(a, i) : projectedGwScore(a, i)} &ndash; ${started ? gwManagerPoints(b, i) : projectedGwScore(b, i)}</span>
+      <span style="flex:1"><b>${kitSvg(b)} ${esc(teamName(b))}</b></span>
+    </div>
     ${winProbBar(a, b, i)}
     ${adStrip(a * 1009 + b * 31 + i, 4, a)}
     <div class="mu-grid">${side(a)}${side(b)}</div>
