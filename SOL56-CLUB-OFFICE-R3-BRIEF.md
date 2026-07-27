@@ -60,3 +60,20 @@ No production writes. Sandbox, emulator, localhost only.
 
 Findings ranked P0→P3 with repros, then one word: does the GO stand —
 GO or NO-GO.
+
+## Addendum — landed after this brief was written, sweep these too
+
+- **Nationality flags** (Lee): fetch_fpl.py exports FPL `region` as `nat`;
+  feedcheck validates it; NATIONS map in app.js (67 codes, anchored
+  empirically) renders emoji flags in the pool tables and player card.
+  Check: unknown/null region renders nothing; no XSS through titles; the
+  map's country assignments spot-check correctly.
+- **Show Opponent side-by-side** (Lee): viewTeam's opponent preview is now a
+  full-scale pitch in a .duel-grid next to your interactive pitch — the
+  closing tags for the grid are emitted CONDITIONALLY after the own-pitch
+  block (viewTeam ~line 3420). Check malformed-HTML risk when showOpp
+  toggles with no pairing (playoff GWs, cup weeks).
+- **League Table rebuild** (Lee): full compact table (pool-table style) is
+  now the FIRST card; breakdown rows are hidden <tr>s toggled by row tap;
+  fixtures + investigation moved below. sim's kit check re-pinned to the new
+  selector — audit that re-pin for honesty.

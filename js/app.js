@@ -666,6 +666,36 @@ const kitImg = (team, gk = false, p = null) => {
   // 110px asset: the 66px one upscales soft on retina pitch chips (Lee's kit love deserves better)
   return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-110.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
 };
+
+/* ----- nationalities (Lee's ask): FPL 'region' code → country + emoji flag.
+   Codes are the PL's own country ids, anchored empirically against the 26/27
+   player pool (241 England, 200 Spain, 106 Italy…). Academy kids ship null —
+   no flag, no fuss. Northern Ireland has no Unicode flag; the Union flag
+   stands in with the right name on the tooltip. */
+const NATIONS = {
+  2: ['Albania', '🇦🇱'], 3: ['Algeria', '🇩🇿'], 10: ['Argentina', '🇦🇷'], 13: ['Australia', '🇦🇺'],
+  14: ['Austria', '🇦🇹'], 21: ['Belgium', '🇧🇪'], 27: ['Bosnia & Herzegovina', '🇧🇦'], 30: ['Brazil', '🇧🇷'],
+  34: ['Bulgaria', '🇧🇬'], 35: ['Burkina Faso', '🇧🇫'], 38: ['Cameroon', '🇨🇲'], 39: ['Canada', '🇨🇦'],
+  44: ['Chile', '🇨🇱'], 48: ['Colombia', '🇨🇴'], 50: ['DR Congo', '🇨🇩'], 54: ['Ivory Coast', '🇨🇮'],
+  57: ['Czechia', '🇨🇿'], 58: ['Denmark', '🇩🇰'], 62: ['Ecuador', '🇪🇨'], 63: ['Egypt', '🇪🇬'],
+  73: ['France', '🇫🇷'], 78: ['Gambia', '🇬🇲'], 79: ['Georgia', '🇬🇪'], 80: ['Germany', '🇩🇪'],
+  81: ['Ghana', '🇬🇭'], 83: ['Greece', '🇬🇷'], 90: ['Guinea-Bissau', '🇬🇼'], 92: ['Haiti', '🇭🇹'],
+  97: ['Croatia', '🇭🇷'], 98: ['Hungary', '🇭🇺'], 99: ['Iceland', '🇮🇸'], 103: ['Iraq', '🇮🇶'],
+  104: ['Ireland', '🇮🇪'], 106: ['Italy', '🇮🇹'], 107: ['Jamaica', '🇯🇲'], 108: ['Japan', '🇯🇵'],
+  114: ['South Korea', '🇰🇷'], 132: ['Mali', '🇲🇱'], 139: ['Mexico', '🇲🇽'], 145: ['Morocco', '🇲🇦'],
+  146: ['Mozambique', '🇲🇿'], 152: ['Netherlands', '🇳🇱'], 154: ['New Zealand', '🇳🇿'], 157: ['Nigeria', '🇳🇬'],
+  161: ['Norway', '🇳🇴'], 168: ['Paraguay', '🇵🇾'], 172: ['Poland', '🇵🇱'], 173: ['Portugal', '🇵🇹'],
+  189: ['Senegal', '🇸🇳'], 190: ['Serbia', '🇷🇸'], 194: ['Slovakia', '🇸🇰'], 195: ['Slovenia', '🇸🇮'],
+  200: ['Spain', '🇪🇸'], 203: ['Suriname', '🇸🇷'], 206: ['Sweden', '🇸🇪'], 207: ['Switzerland', '🇨🇭'],
+  217: ['Trinidad & Tobago', '🇹🇹'], 219: ['Türkiye', '🇹🇷'], 225: ['Ukraine', '🇺🇦'], 229: ['USA', '🇺🇸'],
+  230: ['Uruguay', '🇺🇾'], 231: ['Uzbekistan', '🇺🇿'],
+  241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', '🇬🇧'], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
+};
+const natOf = p => NATIONS[p.nat] || null;
+const natFlag = p => {
+  const n = natOf(p);
+  return n ? `<span class="nat-flag" title="${esc(n[0])}">${n[1]}</span>` : '';
+};
 // next fixture for a club in a gameweek — "MCI (H)" style
 function nextOpp(club, gwN) {
   const f = state.fixtures.find(f => f.gw === gwN && (f.home === club || f.away === club));
@@ -3147,7 +3177,7 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}">
-        <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)}</div><div class="pclub">${esc(p.full)}</div></div></div></td>
+        <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${esc(p.full)}</div></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
@@ -3412,14 +3442,25 @@ function viewTeam() {
       })()}
     </h2>
     ${(() => {
+      // Lee: opponent belongs SIDE BY SIDE at the same scale, not a mini
+      // pitch in the corner. Their XI renders on a full pitch in one column;
+      // your interactive pitch fills the other (the closing tags land after
+      // your pitch block below).
       if (!teamView.showOpp) return '';
       const pair = pairingsFor(gw).find(pr => pr.includes(mid));
       if (!pair) return '';
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
-      return `<div class="mu-grid" style="margin-bottom:10px"><div class="mu-side"><h3 style="text-align:center">${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
-        <div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `<div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}">${kitImg(p.team, p.pos === 'GK')}<span class="pitch-name">${esc(p.name)}</span></div>`).join('')}</div>`).join('')}</div>
-      </div><div class="mu-side"><h3 style="text-align:center">${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3><p class="muted" style="font-size:11px;text-align:center">Your pitch is below — this is who you're up against.</p></div></div>`;
+      return `<div class="duel-grid"><div class="duel-side">
+        <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
+        <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
+          <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
+            ${kitImg(p.team, p.pos === 'GK')}
+            <span class="pitch-name">${esc(p.name)}</span>
+            ${!gwIsOver(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
+          </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}</div>
+      </div><div class="duel-side">
+        <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
     ${(() => {
       // browsing someone else's team: every chip opens the player card.
@@ -3458,6 +3499,7 @@ function viewTeam() {
         </div>`).join('')}
     </div>`;
     })()}
+    ${teamView.showOpp && pairingsFor(gw).find(pr => pr.includes(mid)) ? '</div></div>' : ''}
     <p class="muted" style="font-size:11px;margin-top:6px"><b>Tap two players to swap them.</b> Bench order = auto-sub order, leftmost first. &#9432; for stats.</p>
   </div>
   <div class="draft-layout">
@@ -3947,7 +3989,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
+            <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
             <td class="act">${action}</td>
@@ -5099,27 +5141,42 @@ function viewTable() {
   const investigation = hasPts
     ? `<div class="card investigation"><span class="rec"></span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</div>`
     : '';
+  // Lee (twice): the FULL table must be the first thing this page shows, and
+  // the dense H2H-table look beats the big expandable rows. Fixtures and the
+  // investigation gag moved below; tap a row for the points breakdown.
+  const cur = currentGwIndex();
   return `
-    ${tableGwCard()}
-    ${investigation}
-    ${ranked.map((m, i) => {
-      const commTag = !hasPts ? '' :
-        i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
-        i === ranked.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
-      return `
-      <div class="league-row ${i === 0 && m.pts > 0 ? 'leader' : ''}" data-mgr-row="${m.id}" style="cursor:pointer">
-        <span class="rank">${i + 1}</span>
-        <span class="lname">${kitSvg(m.id)} ${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
-        <button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch">&#9917;</button>
-        <span class="lpts">${m.pts}</span>
+    <div class="card" style="margin-bottom:14px">
+      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">overall points &middot; playoffs seed off the Head-to-Head table</span></h2>
+      <div style="overflow-x:auto">
+      <table class="pool-table">
+        <thead><tr><th></th><th>Team</th><th class="num" title="Points this gameweek">GW</th><th class="num act">Pts</th></tr></thead>
+        <tbody>
+        ${ranked.map((m, i) => {
+          const commTag = !hasPts ? '' :
+            i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
+            i === ranked.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
+          return `
+          <tr data-mgr-row="${m.id}" style="cursor:pointer">
+            <td class="muted">${i + 1}</td>
+            <td><button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch" style="padding:2px 7px">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
+            <td class="num muted">${gwManagerPoints(m.id, cur)}</td>
+            <td class="num gold act"><b>${m.pts}</b></td>
+          </tr>
+          <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="4">
+            ${managerSquad(m.id).map(p => ({ p, c: contributedPoints(m.id, p.id), r: playerPoints(p.id) }))
+              .sort((a, b) => b.c - a.c)
+              .map(({ p, c, r }) => `<div class="squad-row" title="Season: ${esc(r.lines.join(' · ') || 'nothing yet')}"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${esc(p.name)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(r.lines.join(' · '))}</span><span class="sp-pts">${c}</span></div>`).join('') || '<span class="muted">Empty squad</span>'}
+            <p class="muted" style="font-size:11px;margin:6px 0 4px">Points shown are what each player banked while in the starting XI.</p>
+          </td></tr>`;
+        }).join('')}
+        </tbody>
+      </table>
       </div>
-      <div class="breakdown" id="bd-${m.id}" style="display:none">
-        ${managerSquad(m.id).map(p => ({ p, c: contributedPoints(m.id, p.id), r: playerPoints(p.id) }))
-          .sort((a, b) => b.c - a.c)
-          .map(({ p, c, r }) => `<div class="squad-row" title="Season: ${esc(r.lines.join(' · ') || 'nothing yet')}"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${esc(p.name)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(r.lines.join(' · '))}</span><span class="sp-pts">${c}</span></div>`).join('') || '<span class="muted">Empty squad</span>'}
-        <p class="muted" style="font-size:11px;margin-top:8px">Points shown are what each player banked while in the starting XI.</p>
-      </div>`;
-    }).join('')}
+      <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
+    </div>
+    ${investigation}
+    ${tableGwCard()}
     <div class="card toplist" style="margin-top:24px">
       <h2>Trough activity <span class="muted" style="font-weight:400;font-size:12px">who can't leave it alone</span></h2>
       ${(() => {
@@ -5181,7 +5238,7 @@ function bindTable() {
   bindPitchLinks();
   document.querySelectorAll('[data-mgr-row]').forEach(row => row.onclick = () => {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
-    bd.style.display = bd.style.display === 'none' ? 'block' : 'none';
+    bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
   });
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);

@@ -605,6 +605,13 @@ tr.st-red .pname { color: #ff9c9c; }
   .pitch:not(.mu-pitch) { min-height: 580px; }
 }
 
+/* Show Opponent: two pitches side by side at the SAME scale (Lee) —
+   stacks on narrow screens, never a mini pitch in a corner */
+.duel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.duel-side { min-width: 0; }
+.duel-side h3 { margin-bottom: 8px; }
+@media (max-width: 980px) { .duel-grid { grid-template-columns: 1fr; } }
+
 /* the Vidiprinter tape */
 .vidi-tape {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px;

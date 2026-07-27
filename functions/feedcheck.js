@@ -64,6 +64,7 @@ function validateData(d) {
     if (!isStr(p.status || '', 3) || !isStr(p.news || '', 400) || !isStr(p.newsAdded || '', 40)) fail('data.json: player news fields');
     if (p.chance != null && !isNum(p.chance)) fail('data.json: player chance');
     if (p.code != null && !isInt(p.code)) fail('data.json: player code');
+    if (p.nat != null && !isInt(p.nat)) fail('data.json: player nat');
     for (const k of ['price', 'pts', 'rating', 'xp', 'ppg', 'mp', 'g', 'a', 'cs', 'xg', 'xa']) {
       if (p[k] != null && !isNum(p[k])) fail(`data.json: player ${k}`);
     }

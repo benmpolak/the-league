@@ -440,7 +440,7 @@ const check = (label, ok, detail = '') => {
   const club = await p.evaluate(() => {
     state.view = 'table'; render();
     const tableHtml = document.querySelector('#main').innerHTML;
-    const kitsInRows = document.querySelectorAll('.league-row .club-kit').length;
+    const kitsInRows = document.querySelectorAll('.pool-table [data-mgr-row] .club-kit').length; // the compact table rows (Lee's redesign)
     state.view = 'h2h'; render();
     const h2hHtml = document.querySelector('#main').innerHTML;
     return {
