@@ -741,14 +741,25 @@ const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
    as fixtures run, uncertainty drains and banked points take over.
    Even teams before kickoff = exactly 50:50; final whistle = 100:0. */
 const PLAYER_SD = 4; // one player's gameweek points spread
+// every fixture a club has in a gameweek — blanks return [], doubles both.
+// The one fixture-parsing helper: the win bar, "what do I need" and Next Six
+// all read the calendar through here.
+function teamFixturesInGw(team, gwN) {
+  return state.fixtures.filter(f => f.gw === gwN && (f.home === team || f.away === team));
+}
 function playerFixtureState(p, gwN) {
-  const f = state.fixtures.find(f => f.gw === gwN && (f.home === p.team || f.away === p.team));
+  const fx = teamFixturesInGw(p.team, gwN);
   // no fixture DATA at all for this GW (failed fetch, not yet synced): assume everyone is
   // still to play rather than letting the win bar collapse to a false 100–0
-  if (!f) return { st: 'none', frac: state.fixtures.some(x => x.gw === gwN) ? 0 : 1 };
-  if (f.finished) return { st: 'done', frac: 0 };
-  if (f.started) return { st: 'live', frac: Math.max(0, (90 - Math.min(90, f.minutes || 0)) / 90) };
-  return { st: 'pre', frac: 1 };
+  if (!fx.length) return { st: 'none', frac: state.fixtures.some(x => x.gw === gwN) ? 0 : 1, fx };
+  // frac = the share of this player's gameweek still to come. A double counts
+  // per fixture: one done + one not started = half the expectation banked.
+  const fracs = fx.map(f => f.finished ? 0 : f.started ? Math.max(0, (90 - Math.min(90, f.minutes || 0)) / 90) : 1);
+  const frac = fracs.reduce((a, b) => a + b, 0) / fx.length;
+  const st = fracs.every(fr => fr === 0) ? 'done'
+    : fx.some(f => f.started && !f.finished) ? 'live'
+    : fracs.every(fr => fr === 1) ? 'pre' : 'mixed';
+  return { st, frac, fx };
 }
 function teamOutlook(mid, i) {
   const gwN = GAMEWEEKS[i].n;
@@ -778,19 +789,81 @@ function liveWinProb(a, b, i) {
   if (A.toPlay + B.toPlay > 0) p = Math.min(0.99, Math.max(0.01, p));
   return p;
 }
+/* ----- "what do I need?" — the Opta desk's requirement sheet -----
+   One pure calculation for every matchup surface. Sides are (a=left, b=right)
+   exactly as the caller renders them; pov (a manager id, or null for a
+   neutral) decides who the copy speaks to. Rendering consumes this — the
+   requirement maths lives nowhere else. */
+function matchNeeds(a, b, i, pov = null) {
+  const A = teamOutlook(a, i), B = teamOutlook(b, i);
+  const st = gwStatus(i) === 'final' ? 'final' : gwHasStarted(i) ? 'live' : 'pre';
+  const gwN = GAMEWEEKS[i].n;
+  const remaining = mid => effectiveXI(mid, i).xi
+    .map(pid => PLAYER_BY_ID[pid])
+    .filter(p => p && playerFixtureState(p, gwN).frac > 0);
+  const left = { mid: a, current: gwManagerPoints(a, i), projected: Math.round(A.exp), remainingPlayers: remaining(a), toPlay: A.toPlay };
+  const right = { mid: b, current: gwManagerPoints(b, i), projected: Math.round(B.exp), remainingPlayers: remaining(b), toPlay: B.toPlay };
+  // speak to the pov manager if they're in this tie, about-them otherwise
+  const P = pov === b ? right : pov === a ? left : left;
+  const O = P === left ? right : left;
+  const neutral = pov !== a && pov !== b;
+  const you = neutral ? esc(teamName(P.mid)) : 'You';
+  const margin = P.current - O.current;
+  const leader = left.current > right.current ? a : right.current > left.current ? b : null;
+  const nameFew = ps => {
+    const names = ps.slice(0, 2).map(p => esc(p.name));
+    return ps.length > 2 ? `${names.join(', ')} and ${ps.length - 2} more` : names.join(' and ');
+  };
+  const lines = [];
+  if (st === 'pre') {
+    const gap = P.projected - O.projected;
+    if (Math.abs(gap) < 2) lines.push('Nothing between them on the models.');
+    else if (gap > 0) lines.push(neutral ? `${you} are projected to edge it by ${gap}.` : `Projected to edge it by ${gap}.`);
+    else lines.push(neutral ? `${you} are projected to fall ${-gap} short.` : `Projected to fall ${-gap} short.`);
+  } else if (st === 'final') {
+    lines.push(margin > 0 ? `${neutral ? you + ' w' : 'W'}on by ${margin}.` : margin < 0 ? `${neutral ? you + ' l' : 'L'}ost by ${-margin}.` : 'Finished level.');
+  } else {
+    const pLeft = P.remainingPlayers, oLeft = O.remainingPlayers;
+    if (margin === 0) {
+      lines.push('All level. Next point takes the lead.');
+      if (pLeft.length || oLeft.length) lines.push(`${you} have ${pLeft.length ? nameFew(pLeft) : 'nobody'} left; ${esc(teamName(O.mid))} ${oLeft.length ? nameFew(oLeft) : 'nobody'}.`);
+    } else if (margin < 0) {
+      const tieN = -margin, leadN = tieN + 1;
+      if (!pLeft.length) {
+        lines.push(`Nobody left. This now requires an official-stat correction${oLeft.length ? ` — and ${esc(teamName(O.mid))} still have ${nameFew(oLeft)} to come` : ''}.`);
+      } else if (pLeft.length === 1) {
+        lines.push(`${you} need ${leadN} from ${esc(pLeft[0].name)} to lead — ${tieN} ties it.`);
+      } else if (!oLeft.length) {
+        lines.push(`${you} need ${leadN} more points to take the lead (${nameFew(pLeft)} still out there).`);
+      } else {
+        lines.push(`Currently ${neutral ? esc(teamName(P.mid)) + ' need' : 'you need'} ${leadN} more than ${nameFew(oLeft)} produce — ${pLeft.length} of yours still going.`);
+      }
+    } else {
+      if (!oLeft.length) {
+        lines.push(`${you} lead by ${margin} and ${esc(teamName(O.mid))} have nobody left.`);
+      } else {
+        lines.push(`${you} lead by ${margin}, but ${esc(teamName(O.mid))} ${oLeft.length === 1 ? 'has' : 'have'} ${nameFew(oLeft)} remaining${pLeft.length ? '' : ' — and ' + (neutral ? `${esc(teamName(P.mid))} are` : 'you are') + ' done'}.`);
+      }
+    }
+  }
+  return { state: st, left, right, leader, margin, tieRequirement: margin < 0 ? -margin : 0, leadRequirement: margin < 0 ? -margin + 1 : 0, lines };
+}
+
 /* the Opta bar (Conway's ask, Lee-approved): live win chance + projected
    points for a matchup, recomputed every render as minutes tick down — you
-   can go into Sunday 20:80 down and watch it swing. Hidden at full time;
-   pre-kickoff it's the pure squad-vs-squad projection. */
-function winProbBar(a, b, i) {
-  if (gwStatus(i) === 'final') return '';
+   can go into Sunday 20:80 down and watch it swing. Pre-kickoff it's the pure
+   squad-vs-squad projection; at full time it hands over to a result line. */
+function winProbBar(a, b, i, pov = null) {
+  const m = matchNeeds(a, b, i, pov);
+  const needLine = m.lines.length ? `<div class="need-line">${m.lines.join(' ')}</div>` : '';
+  if (m.state === 'final') return needLine ? `<div class="prob-wrap prob-final">${needLine}</div>` : '';
   const w = Math.round(liveWinProb(a, b, i) * 100);
-  const A = teamOutlook(a, i), B = teamOutlook(b, i);
-  const live = gwHasStarted(i);
+  const live = m.state === 'live';
   return `<div class="prob-wrap" title="Win chance from each XI's expected points, ${live ? 'updating as the gameweek plays out' : 'squad vs squad before kickoff'}">
     <div class="prob-row"><span><b>${w}%</b> ${kitSvg(a)}</span><span class="prob-mid">${live ? '<span class="rec"></span> LIVE WIN CHANCE' : 'WIN CHANCE'}</span><span>${kitSvg(b)} <b>${100 - w}%</b></span></div>
     <div class="prob-bar"><span style="width:${w}%"></span></div>
-    <div class="prob-row prob-sub"><span>proj ${Math.round(A.exp)}</span><span class="prob-mid">${live ? `${A.toPlay} v ${B.toPlay} still to play` : 'projected points'}</span><span>proj ${Math.round(B.exp)}</span></div>
+    <div class="prob-row prob-sub"><span>${live ? `<b>${m.left.current}</b> &middot; proj ${m.left.projected}` : `proj ${m.left.projected}`}</span><span class="prob-mid">${live ? `${m.left.toPlay} v ${m.right.toPlay} still to play` : 'projected points'}</span><span>${live ? `<b>${m.right.current}</b> &middot; proj ${m.right.projected}` : `proj ${m.right.projected}`}</span></div>
+    ${needLine}
   </div>`;
 }
 
@@ -3753,7 +3826,7 @@ function viewTeam() {
       if (!pair) return '';
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
-      return `${winProbBar(oppMid, mid, gw)}<div class="duel-grid"><div class="duel-side">
+      return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
@@ -3851,10 +3924,50 @@ function viewTeam() {
         })()}
       </div>
     </div>
+  </div>
+  ${nextSixCard(mid)}`;
+}
+
+/* ----- Next Six: the current squad's fixture runway. Deliberately small —
+   no planning state, no hypotheticals, no crystal ball. Reads the calendar
+   through teamFixturesInGw like everything else. ----- */
+const NEXT6_KEY = `${LS_NS}-next6-open`;
+function nextSixCard(mid) {
+  const cur = currentGwIndex();
+  const gws = GAMEWEEKS.slice(cur, cur + 6);
+  const squad = squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
+  if (!gws.length || !squad.length || !state.fixtures.length) return '';
+  const saved = localStorage.getItem(NEXT6_KEY);
+  const open = saved != null ? saved === '1' : !window.matchMedia('(max-width: 700px)').matches;
+  const cell = (p, g) => {
+    const fx = teamFixturesInGw(p.team, g.n);
+    if (!fx.length) return '<td class="num n6-blank" title="No fixture — a blank">&mdash;</td>';
+    return `<td class="num${fx.length > 1 ? ' n6-double' : ''}">${fx.map(f => {
+      const home = f.home === p.team;
+      const opp = home ? f.away : f.home;
+      return `<span class="n6-fx ${fdrCls(opp)}">${esc(TEAM_BY_NAME[opp]?.short || opp)} (${home ? 'H' : 'A'})</span>`;
+    }).join('')}</td>`;
+  };
+  return `<div class="card" style="margin-top:14px">
+    <details id="next6"${open ? ' open' : ''}>
+      <summary class="n6-summary"><h2 style="display:inline;margin:0">Next Six <span class="muted" style="font-weight:400;font-size:12px">the current squad's fixture runway — not a transfer planner</span></h2></summary>
+      <div style="overflow-x:auto">
+      <table class="pool-table n6-table">
+        <thead><tr><th class="n6-name">Player</th>${gws.map(g => `<th class="num">GW${g.n}</th>`).join('')}</tr></thead>
+        <tbody>${squad.map(p => `<tr>
+          <td class="n6-name"><span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="plink" data-pcard="${p.id}">${esc(p.name)}</span> ${statusChip(p)}</td>
+          ${gws.map(g => cell(p, g)).join('')}
+        </tr>`).join('')}</tbody>
+      </table>
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:6px">This is the squad as it stands — signings change it. &mdash; is a blank, two chips is a double, colours are the usual fixture tints. Tap a name for stats.</p>
+    </details>
   </div>`;
 }
 
 function bindTeam() {
+  const n6 = $('#next6');
+  if (n6) n6.ontoggle = () => localStorage.setItem(NEXT6_KEY, n6.open ? '1' : '0');
   $('#teamMgr').onchange = e => { teamView.mid = +e.target.value; teamView.transferOut = null; render(); };
   const btm = $('#backToMine');
   if (btm) btm.onclick = () => { teamView.mid = whoami; teamView.transferOut = null; render(); };
@@ -4569,7 +4682,7 @@ function viewDash() {
         <span style="flex:1"><b>${kitSvg(pair[1])} ${esc(teamName(pair[1]))}</b></span>
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
-      ${winProbBar(pair[0], pair[1], cur)}
+      ${winProbBar(pair[0], pair[1], cur, mid)}
       <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -4980,7 +5093,7 @@ function showMatchup(a, b, i) {
       <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(a, i) : projectedGwScore(a, i)} &ndash; ${started ? gwManagerPoints(b, i) : projectedGwScore(b, i)}</span>
       <span style="flex:1"><b>${kitSvg(b)} ${esc(teamName(b))}</b></span>
     </div>
-    ${winProbBar(a, b, i)}
+    ${winProbBar(a, b, i, (whoami === a || whoami === b) ? whoami : null)}
     ${adStrip(a * 1009 + b * 31 + i, 4, a)}
     <div class="mu-grid">${side(a)}${side(b)}</div>
     <p class="venue-line" style="margin-top:8px">${esc(chantFor(a, b, i))}</p>
@@ -5439,6 +5552,27 @@ function tableGwCard() {
     ${st === 'upcoming' ? `<p class="muted" style="font-size:12px;margin-top:8px">Lineups lock ${new Date(gwFrom(i)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</p>` : ''}
   </div>`;
 }
+/* form table: the same table, judged over a shorter memory. Informational
+   only — official standings, seeding and waivers never read this. */
+let tableView = { mode: 'overall' }; // 'overall' | 3 | 5 — survives the session, never persisted
+function finishedGwIdxs() {
+  const out = [];
+  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') out.push(i);
+  return out;
+}
+function formStandings(n) {
+  const idxs = finishedGwIdxs().slice(-n);
+  const overall = [...state.managers].map(m => ({ id: m.id, pts: managerPoints(m.id) })).sort((a, b) => b.pts - a.pts);
+  const overallPos = Object.fromEntries(overall.map((r, i) => [r.id, i + 1]));
+  const constitution = Object.fromEntries(state.managers.map((m, i) => [m.id, i]));
+  const rows = state.managers.map(m => ({
+    ...m,
+    win: idxs.reduce((t, i) => t + gwManagerPoints(m.id, i), 0),
+    overall: managerPoints(m.id),
+  }));
+  rows.sort((a, b) => b.win - a.win || b.overall - a.overall || constitution[a.id] - constitution[b.id]);
+  return { rows, counted: idxs.length, overallPos };
+}
 function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
@@ -5454,23 +5588,45 @@ function viewTable() {
   // the dense H2H-table look beats the big expandable rows. Fixtures and the
   // investigation gag moved below; tap a row for the points breakdown.
   const cur = currentGwIndex();
+  const mode = tableView.mode;
+  const form = mode === 'overall' ? null : formStandings(mode);
+  const rowsData = form ? form.rows : ranked;
+  const toggles = `<div class="pool-controls" style="margin:0 0 10px">
+      <button class="btn small ${mode === 'overall' ? '' : 'ghost'}" data-tblmode="overall">Overall</button>
+      <button class="btn small ${mode === 3 ? '' : 'ghost'}" data-tblmode="3">Last 3</button>
+      <button class="btn small ${mode === 5 ? '' : 'ghost'}" data-tblmode="5">Last 5</button>
+    </div>`;
+  const formNote = form ? (form.counted === 0
+    ? '<p class="muted" style="font-size:11.5px;margin-bottom:8px">Form begins after GW1 — nothing has finished yet, so this is the constitutional order.</p>'
+    : form.counted < mode
+      ? `<p class="muted" style="font-size:11.5px;margin-bottom:8px">Only ${form.counted} gameweek${form.counted === 1 ? '' : 's'} finished so far — form is judged on what exists.</p>`
+      : '') : '';
+  const moveTag = m => {
+    if (!form || form.counted === 0) return '';
+    const d = form.overallPos[m.id] - (rowsData.findIndex(r => r.id === m.id) + 1);
+    return d > 0 ? `<span class="form-move up" title="vs overall position">&#9650;${d}</span>`
+      : d < 0 ? `<span class="form-move down" title="vs overall position">&#9660;${-d}</span>`
+      : '<span class="form-move flat" title="vs overall position">&ndash;</span>';
+  };
   return `
     <div class="card" style="margin-bottom:14px">
-      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">overall points &middot; playoffs seed off the Head-to-Head table</span></h2>
+      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'overall points &middot; playoffs seed off the Head-to-Head table'}</span></h2>
+      ${toggles}
+      ${formNote}
       <div style="overflow-x:auto">
       <table class="pool-table">
-        <thead><tr><th></th><th>Team</th><th class="num" title="Points this gameweek">GW</th><th class="num act">Pts</th></tr></thead>
+        <thead><tr><th></th><th>Team</th><th class="num" title="${form ? 'Finished gameweeks counted' : 'Points this gameweek'}">${form ? 'GWs' : 'GW'}</th><th class="num act">Pts</th></tr></thead>
         <tbody>
-        ${ranked.map((m, i) => {
-          const commTag = !hasPts ? '' :
+        ${rowsData.map((m, i) => {
+          const commTag = form || !hasPts ? '' :
             i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
             i === ranked.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
           return `
           <tr data-mgr-row="${m.id}" style="cursor:pointer">
             <td class="muted">${i + 1}</td>
-            <td><button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch" style="padding:2px 7px">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
-            <td class="num muted">${gwManagerPoints(m.id, cur)}</td>
-            <td class="num gold act"><b>${m.pts}</b></td>
+            <td><button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch" style="padding:2px 7px">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${moveTag(m)} ${!form && i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
+            <td class="num muted">${form ? form.counted : gwManagerPoints(m.id, cur)}</td>
+            <td class="num gold act"><b>${form ? m.win : m.pts}</b></td>
           </tr>
           <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="4">
             ${(() => { const md = supportersMood(m.id); return `<p style="font-size:12.5px;margin-bottom:2px">&#128227; <b>${esc(md.t)}</b> <span class="muted" style="font-size:11.5px">${esc(md.line)}</span></p>`; })()}
@@ -5547,6 +5703,10 @@ function bindPitchLinks() {
 }
 function bindTable() {
   bindPitchLinks();
+  document.querySelectorAll('[data-tblmode]').forEach(b => b.onclick = () => {
+    tableView.mode = b.dataset.tblmode === 'overall' ? 'overall' : +b.dataset.tblmode;
+    render();
+  });
   document.querySelectorAll('[data-mgr-row]').forEach(row => row.onclick = () => {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
     bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row

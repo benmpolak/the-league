@@ -729,3 +729,29 @@ tr.st-red .pname { color: #ff9c9c; }
   .gs-row { flex-wrap: wrap; }
   .gs-act { flex-direction: row; width: 100%; }
 }
+
+/* the Opta desk's requirement line + full-time result */
+.need-line { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 5px; }
+.need-line b { color: var(--text); }
+.prob-final { padding: 6px 0 2px; }
+.prob-final .need-line { margin-top: 0; font-size: 12.5px; color: var(--text); font-weight: 600; }
+
+/* form-table movement vs overall */
+.form-move { font-size: 10px; font-weight: 800; }
+.form-move.up { color: #3fb96d; }
+.form-move.down { color: #e05555; }
+.form-move.flat { color: var(--muted); }
+
+/* ----- Next Six fixture runway ----- */
+.n6-summary { cursor: pointer; user-select: none; list-style: none; }
+.n6-summary::-webkit-details-marker { display: none; }
+.n6-summary::after { content: ' ▾'; font-size: 11px; color: var(--muted); }
+details[open] > .n6-summary::after { content: ' ▴'; }
+.n6-table { margin-top: 10px; }
+.n6-table .n6-name {
+  position: sticky; left: 0; background: var(--card); z-index: 1;
+  box-shadow: 6px 0 8px -6px rgba(0,0,0,.6); white-space: nowrap;
+}
+.n6-fx { display: block; font-size: 11px; white-space: nowrap; }
+.n6-blank { color: var(--muted); opacity: .5; }
+.n6-double .n6-fx:first-child { margin-bottom: 2px; }
