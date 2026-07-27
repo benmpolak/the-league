@@ -415,7 +415,8 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 
 /* --- The League 26/27 additions --- */
 .status-chip { font-size: 12px; margin-left: 2px; }
-.playoff-line td { border-bottom: 2px solid var(--accent); }
+/* the playoff cutoff: dashed so it reads as a line in the sand, not a border */
+.playoff-line td { border-bottom: 2px dashed var(--accent); }
 .headshot { width: 28px; height: 36px; border-radius: 5px; object-fit: cover; object-position: top; background: var(--bg2); flex-shrink: 0; }
 .pool-table .headshot { width: 32px; height: 41px; }
 .kit { width: 22px; height: 28px; object-fit: contain; flex-shrink: 0; }
@@ -471,7 +472,8 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .mu-pts.xp { color: #cfe3d4; opacity: .8; }
 .mu-divider { border-top: 2px solid #ffffff33; margin: 4px 10px; text-align: center; }
 .mu-divider span { font-size: 10px; color: #ffffffb0; font-style: italic; }
-.pitch-vs { font-size: 9px; color: #cfe3d4; opacity: .85; text-shadow: 0 1px 2px #000a; }
+/* the fixture chip under each player — Lee: too thin, blends with the pitch */
+.pitch-vs { font-size: 10px; font-weight: 800; color: #f2fbf5; letter-spacing: .03em; text-shadow: 0 1px 3px #000d, 0 0 6px #0008; }
 .mu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .mu-card { max-width: 760px; }
 @media (max-width: 700px) { .mu-grid { grid-template-columns: 1fr; } }
@@ -579,16 +581,29 @@ tr.st-red .pname { color: #ff9c9c; }
   .sync-updated { display: none; }
 }
 
-/* pitch-side advertising boards */
-.ad-strip { display: flex; gap: 6px; margin-bottom: 8px; }
+/* pitch-side advertising boards — Lee: "took me a minute to realise they were
+   hoardings". Framed like the physical thing: one continuous strip sat on a
+   baseboard, wordmarks big enough to read from the stands. */
+.ad-strip { display: flex; gap: 0; margin-bottom: 0; border-radius: 6px 6px 0 0; overflow: hidden; border: 1px solid rgba(255,255,255,.14); border-bottom: 4px solid #0a0d14; box-shadow: 0 3px 8px rgba(0,0,0,.35); }
+.ad-strip + .pitch { border-top-left-radius: 0; border-top-right-radius: 0; }
 .ad-board {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-  justify-content: center; text-align: center; padding: 6px 8px; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.08);
+  justify-content: center; text-align: center; padding: 8px 10px 7px;
+  border-right: 1px solid rgba(255,255,255,.12);
 }
-.ad-board b { font-size: 11.5px; font-weight: 800; letter-spacing: .09em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.ad-board i { font-size: 9.5px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-@media (max-width: 700px) { .ad-board i { display: none; } }
+.ad-board:last-child { border-right: none; }
+.ad-board b { font-size: 13px; font-weight: 900; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.ad-board i { font-size: 9.5px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-top: 1px; }
+@media (max-width: 700px) { .ad-board i { display: none; } .ad-board b { font-size: 11px; } }
+/* small phones: two readable hoardings beat three ellipsized ones */
+@media (max-width: 480px) { .ad-strip .ad-board:nth-child(3) { display: none; } }
+
+/* desktop: the pitch reads as a pitch, not a letterbox — capped width,
+   centred, taller (Lee: "squashed together, super wide") */
+@media (min-width: 701px) {
+  .ad-strip, .pitch:not(.mu-pitch), .bench-strip { max-width: 660px; margin-left: auto; margin-right: auto; }
+  .pitch:not(.mu-pitch) { min-height: 580px; }
+}
 
 /* the Vidiprinter tape */
 .vidi-tape {
