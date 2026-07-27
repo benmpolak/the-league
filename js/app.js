@@ -930,19 +930,21 @@ function clubEditor(mid) {
     toast('The club is founded. Wear it well.');
   };
 }
-// the founding card: shown on the Dashboard until the club has been to the office
+// the founding card: shown until the club has been to the office. In the demo
+// it fronts for manager #1 so visitors can see the toy without signing in.
 function foundingCard() {
-  if (!whoami || whoami === -1) return '';
-  const m = state.managers.find(x => x.id === whoami);
-  if (!m || m.kit || localStorage.getItem(`${LS_NS}-founded-${whoami}`)) return '';
+  const mid = (whoami && whoami !== -1) ? whoami : (demoMode ? state.managers[0].id : null);
+  if (!mid) return '';
+  const m = state.managers.find(x => x.id === mid);
+  if (!m || m.kit || localStorage.getItem(`${LS_NS}-founded-${mid}`)) return '';
   return `<div class="card" style="border-color:var(--accent)">
-    <h2>Found your club ${kitSvg(whoami, 22)}</h2>
-    <p class="rules-p">You've inherited <b>${esc(teamName(whoami))}</b>. Keep the name or take a new one —
-    then cut your kit, sign a shirt sponsor, name your ground, line it with hoardings and declare your
-    biggest rival. It all goes on show across the league.</p>
+    <h2>Found your club ${kitSvg(mid, 22)}</h2>
+    <p class="rules-p">You've inherited <b>${esc(teamName(mid))}</b>. Keep the name or take a new one —
+    then cut your kit, sign a shirt sponsor, name your ground, line it with hoardings, appoint your
+    gaffer and declare your biggest rival. It all goes on show across the league.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn" id="foundBtn">Open the club office</button>
-      <button class="btn ghost small" id="foundLater">Maybe later</button>
+      <button class="btn" id="foundBtn" data-mid="${mid}">Open the club office</button>
+      <button class="btn ghost small" id="foundLater" data-mid="${mid}">Maybe later</button>
     </div></div>`;
 }
 // default grounds, until the owner sells the naming rights (tap the stadium name on My Team)
@@ -2247,7 +2249,11 @@ function renderSyncArea() {
       localStorage.removeItem(SPECT_KEY);
       if (authUser) {
         if (confirm('Sign out of the league on this device?')) window.WCSync?.auth.signOut();
-      } else { whoami = null; render(); }
+      } else {
+        // force the overlay: in the setup phase it doesn't appear on its own,
+        // which left the Sign in button dead before the draft
+        whoami = null; forceIdentity = true; render();
+      }
       return;
     }
     whoami = null; localStorage.removeItem(WHO_KEY); render();
@@ -2370,9 +2376,9 @@ function bindSetup() {
       .catch(() => {});
   });
   const fb = $('#foundBtn');
-  if (fb) fb.onclick = () => clubEditor(whoami);
+  if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
-  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${whoami}`, '1'); render(); };
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
@@ -4312,9 +4318,9 @@ function committeeMinutes(last) {
 function bindDash() {
   bindInstall();
   const fb = $('#foundBtn');
-  if (fb) fb.onclick = () => clubEditor(whoami);
+  if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
-  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${whoami}`, '1'); render(); };
+  if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
   const ds = $('#dashSignIn');
   if (ds) ds.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
