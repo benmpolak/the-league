@@ -3638,8 +3638,9 @@ function viewTransfers() {
       <div class="lrow" style="font-size:12.5px">
         <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
-        <span style="margin-left:auto;display:flex;gap:4px">
-          ${k > 0 ? `<button class="btn ghost small" data-claimup="${k}" title="Raise priority">&#9650;</button>` : ''}
+        <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
+          <button class="btn ghost small" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
+          <button class="btn ghost small" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''}>&#9660;</button>
           <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
@@ -3818,7 +3819,14 @@ function bindTransfers() {
   document.querySelectorAll('[data-claimup]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
     const k = +b.dataset.claimup, arr = [...myClaims(mid)];
+    if (k === 0) return;
     [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setClaims(mid, arr);
+  });
+  document.querySelectorAll('[data-claimdn]').forEach(b => b.onclick = () => {
+    if (!actGuard(mid, 'waiver claims')) return;
+    const k = +b.dataset.claimdn, arr = [...myClaims(mid)];
+    if (k >= arr.length - 1) return;
+    [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setClaims(mid, arr);
   });
   // Chairman's office
   const rw = $('#runWaivers');
