@@ -474,7 +474,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
           setupMgrs.set(m.id, { name: cleanText(m.name || '', 60).trim(), team: cleanText(m.team || '', 80).trim() });
         }
       }
-      if (data.setup.settings != null) setupSettings = cleanSettingsSection(data.setup.settings);
+      if (data.setup.settings != null) setupSettings = cleanSettingsPatch(data.setup.settings);
     }
     const ctx2 = await loadCtx();
     const poolIds = Object.fromEntries(ctx2.PLAYERS.map(p => [p.id, p.club]));
@@ -495,9 +495,16 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
         if (s) { if (s.name) m.name = s.name; if (s.team) m.team = s.team; }
       }
       c.managers = mgrs;
-      // merge ONTO committed settings: fields the setup screen doesn't edit
-      // (lobusBonus) keep their committed value
-      if (setupSettings) c.settings = { ...(c.settings || {}), ...setupSettings };
+      // the settings payload is a PATCH onto committed settings — only the
+      // keys actually supplied change; omitted rules keep their committed
+      // values, never a default (sol r2 P2). Legality is judged on the merge.
+      if (setupSettings) {
+        const cur = c.settings || {};
+        const merged = { ...DEFAULT_SETTINGS(), ...cur, ...setupSettings };
+        merged.scoring = { ...Engine.DEFAULT_SCORING, ...(cur.scoring || {}), ...(setupSettings.scoring || {}) };
+        try { validateSquadRules(merged); } catch { deny = { code: 'invalid-argument', msg: 'those squad rules cannot make a legal squad' }; return; }
+        c.settings = merged;
+      }
       c.phase = 'draft';
       c.draft = { ...(c.draft || {}), order, picks: null, deadline: null }; // deadline armed by clockStart when the ceremony ends — the pomp must not eat pick one's clock
       c.draftPool = { at: Date.now(), ids: poolIds };
@@ -858,7 +865,7 @@ ACTIONS.readySet = async ({ league, a, data, state }) => {
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
   if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
-  await managerMerge(league, state, mid, { stadium: cleanText(data.name, 60) });
+  await managerMerge(league, state, mid, { stadium: cleanStadium(data.name) });
   return { ok: true };
 };
 
@@ -886,11 +893,21 @@ const cleanGaffer = g => {
   throw new HttpsError('invalid-argument', 'gaffer is an archetype number or a name + bio');
 };
 const cleanBoards = b0 => {
-  // up to three hoardings off the league's stable to line the home ground
+  // up to three hoardings off the league's stable to line the home ground.
+  // RAW length is checked before dedupe — a thousand-entry array must not
+  // sneak in as "one board" (sol club-office r2 P3)
   if (b0 === null) return null;
-  const b = Array.isArray(b0) ? [...new Set(b0)] : null;
-  if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i >= BOARD_COUNT)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
+  if (!Array.isArray(b0) || b0.length > 3) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
+  const b = [...new Set(b0)];
+  if (b.some(i => !Number.isInteger(i) || i < 0 || i >= BOARD_COUNT)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
   return b.length ? b : null;
+};
+// ONE stadium contract everywhere — office, rename button and import share it
+const cleanStadium = v => {
+  if (typeof v !== 'string') throw new HttpsError('invalid-argument', 'a ground needs a name');
+  const st = cleanText(v, 40).trim();
+  if (!st) throw new HttpsError('invalid-argument', 'a ground needs a name');
+  return st;
 };
 /* merge fields onto ONE manager, resolved BY ID inside the txn — an index
  * computed from a stale snapshot lands the write on whoever now occupies that
@@ -901,6 +918,10 @@ async function managerMerge(league, state, mid, up) {
   const res = await ref.transaction(seeded(state.managers, arr => {
     const i = arr.findIndex(m => m && m.id === mid);
     if (i < 0) return; // roster changed underneath — abort, never a blind write
+    // relational fields revalidate against the roster AT COMMIT — a rival
+    // validated on the request's snapshot can vanish under a concurrent
+    // import, leaving a ghost rivalry (sol club-office r2 P1)
+    if (up.rival != null && !arr.some(m => m && m.id === up.rival)) return;
     arr[i] = { ...arr[i], ...up };
     return arr;
   }));
@@ -927,11 +948,7 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
     if (data.rival !== null && (!state.managers.some(x => x.id === data.rival) || data.rival === mid)) throw new HttpsError('invalid-argument', 'a rival must be another of the twelve');
     up.rival = data.rival;
   }
-  if (data.stadium !== undefined) {
-    const st = cleanText(data.stadium, 40).trim();
-    if (!st) throw new HttpsError('invalid-argument', 'a ground needs a name');
-    up.stadium = st;
-  }
+  if (data.stadium !== undefined) up.stadium = cleanStadium(data.stadium);
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
   if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
   if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
@@ -1215,8 +1232,9 @@ async function ensureSetupState(league) {
   return res.committed;
 }
 // the actions a founder (or the Chairman starting the draft) may fire against
-// a never-initialised league — each seeds setup state on the way in
-const SETUP_SEED_ACTIONS = new Set(['clubSet', 'readySet', 'stadiumSet']);
+// a never-initialised league — each seeds setup state on the way in.
+// settingsSet is here for the Chairman's pre-draft Settings page (sol r2 P1).
+const SETUP_SEED_ACTIONS = new Set(['clubSet', 'readySet', 'stadiumSet', 'settingsSet']);
 
 /* A confirmed reset atomically installs a valid setup-state, clears private
  * game data (claims/autolists) and the waiver run log, preserves membership,
@@ -1269,6 +1287,43 @@ function cleanSettingsSection(sIn) {
   return cand;
 }
 
+/* start-time settings PATCH: only the keys actually supplied are validated
+ * and returned — filling omissions from defaults here would silently reset
+ * committed rules on start (sol club-office r2 P2). The full-import path
+ * keeps cleanSettingsSection; squad-shape legality of a patch is judged
+ * inside the start txn against the settings it merges onto. */
+function cleanSettingsPatch(sIn) {
+  if (!isPlainObj(sIn)) importError('settings');
+  const out = {};
+  for (const k of Object.keys(sIn)) {
+    if (!['squadSize', 'posMin', 'posMax', 'pickTimer', 'scoring', 'lobusBonus'].includes(k)) importError(`settings key "${k}"`);
+  }
+  for (const k of ['squadSize', 'pickTimer', 'lobusBonus']) {
+    if (sIn[k] !== undefined) {
+      if (typeof sIn[k] !== 'number' || !Number.isFinite(sIn[k])) importError(`settings "${k}"`);
+      out[k] = sIn[k];
+    }
+  }
+  for (const k of ['posMin', 'posMax']) {
+    if (sIn[k] !== undefined) {
+      if (!isPlainObj(sIn[k])) importError(k);
+      for (const pos of ['GK', 'DF', 'MF', 'FW']) if (typeof sIn[k][pos] !== 'number' || !Number.isFinite(sIn[k][pos])) importError(`${k}.${pos}`);
+      out[k] = { GK: sIn[k].GK, DF: sIn[k].DF, MF: sIn[k].MF, FW: sIn[k].FW };
+    }
+  }
+  if (sIn.scoring !== undefined) {
+    if (!isPlainObj(sIn.scoring)) importError('scoring');
+    const sc = {};
+    for (const [k, v] of Object.entries(sIn.scoring)) {
+      if (k === 'appearance' || k === 'appearance60') continue; // retired keys, dropped
+      if (!(k in Engine.DEFAULT_SCORING) || typeof v !== 'number' || !Number.isFinite(v)) importError(`scoring "${k}"`);
+      sc[k] = v;
+    }
+    out.scoring = sc;
+  }
+  return out;
+}
+
 ACTIONS.importState = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   const s = data.state;
@@ -1291,7 +1346,12 @@ ACTIONS.importState = async ({ league, a, data }) => {
     for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'gaffer', 'boards'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
-    if (m.stadium != null && (typeof m.stadium !== 'string' || m.stadium.length > 80)) importError('manager stadium');
+    // stadium shares the office's 40-char contract; old longer backups are
+    // clamped rather than refused (a restore must not fail on cosmetics)
+    if (m.stadium != null) {
+      if (typeof m.stadium !== 'string') importError('manager stadium');
+      m.stadium = cleanText(m.stadium, 40).trim() || null;
+    }
     if (m.sponsor != null && (typeof m.sponsor !== 'string' || !m.sponsor.length || m.sponsor.length > 20)) importError('manager sponsor');
     // kit/gaffer/boards reuse the clubSet validators — same bounds, same shapes
     if (m.kit != null) m.kit = cleanKit(m.kit);

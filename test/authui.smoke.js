@@ -129,6 +129,42 @@ const chk = (name, ok, detail = '') => {
   chk('setup: header Sign in summons the email overlay (sol P1.2)', await p2.evaluate(() =>
     !!document.querySelector('#whoOverlay #whoEmail')));
 
+  /* the club-office save contract (sol r2): a rejected save keeps the form,
+     Cancel goes dead while a save is in flight, success closes + marks founded */
+  await p2.evaluate(() => {
+    forceIdentity = false;
+    window.onAuthChanged({ uid: 'u-two', email: 'two@example.com' });
+    window.onMembershipSnapshot({ managerId: 2, role: 'manager' });
+    let mode = 'reject', release = null;
+    window.__saveMode = m => { mode = m; };
+    window.__releaseSave = () => release && release();
+    window.WCSync.call = () => {
+      if (mode === 'reject') return Promise.reject(new Error('the Committee refused'));
+      if (mode === 'hang') return new Promise(res => { release = () => res({ ok: true }); });
+      return Promise.resolve({ ok: true });
+    };
+  });
+  await new Promise(r => setTimeout(r, 200));
+  await p2.evaluate(() => { state.view = 'club'; render(); });
+  await p2.click('#clubEdit');
+  chk('office opens with keyboard focus inside', await p2.evaluate(() => document.activeElement?.id === 'clubName'));
+  await p2.click('#clubSave');
+  await new Promise(r => setTimeout(r, 250));
+  chk('rejected save keeps the office open, Save re-enabled, not marked founded (sol P2.1)', await p2.evaluate(() =>
+    !!document.querySelector('.club-office') && !document.querySelector('#clubSave').disabled
+    && !localStorage.getItem('tl2627-founded-2')));
+  await p2.evaluate(() => window.__saveMode('hang'));
+  await p2.click('#clubSave');
+  await new Promise(r => setTimeout(r, 100));
+  chk('Cancel is dead while the save is in flight (sol r2 P3)', await p2.evaluate(() => {
+    document.querySelector('#clubCancel').click();
+    return !!document.querySelector('.club-office') && document.querySelector('#clubCancel').disabled;
+  }));
+  await p2.evaluate(() => window.__releaseSave());
+  await new Promise(r => setTimeout(r, 250));
+  chk('successful save closes the office and marks founded', await p2.evaluate(() =>
+    !document.querySelector('.club-office') && localStorage.getItem('tl2627-founded-2') === '1'));
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

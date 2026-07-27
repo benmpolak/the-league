@@ -925,8 +925,12 @@ function clubEditor(mid) {
     else draft.boards.push(i);
     paint();
   });
-  ov.querySelector('#clubCancel').onclick = () => closeOv(ov);
-  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  // once a save is dispatched it cannot be un-sent — Cancel and the backdrop
+  // go dead until the server answers, so a mid-flight dismiss can't pretend
+  // the save didn't happen
+  let saving = false;
+  ov.querySelector('#clubCancel').onclick = () => { if (!saving) closeOv(ov); };
+  ov.onclick = e => { if (e.target === ov && !saving) closeOv(ov); };
   ov.querySelector('#clubSave').onclick = async () => {
     const team = draft.team.trim();
     if (team.length < 2) { toast('A club needs a name — 2 characters minimum'); return; }
@@ -936,10 +940,14 @@ function clubEditor(mid) {
       // the office closes and the founding is marked ONLY on server success —
       // a rejected save keeps the form (and everything typed into it) open
       const btn = ov.querySelector('#clubSave');
-      btn.disabled = true; btn.textContent = 'Saving…';
+      const cnl = ov.querySelector('#clubCancel');
+      saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
         await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) });
-      } catch { btn.disabled = false; btn.textContent = 'Save the lot'; return; } // serverAct already toasted why
+      } catch {
+        saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
+        return; // serverAct already toasted why
+      }
       localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
       closeOv(ov);
       toast('The club is founded. Wear it well.');

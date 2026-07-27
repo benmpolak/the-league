@@ -186,6 +186,17 @@ const SB = 'the-league-sandbox';
   await T.mutate(SB, 'readySet', { ready: true }, sbTok3);
   chk('seeding is idempotent — the founded club survives later setup actions',
     (await db.ref(`v2/leagues/${SB}/public/managers/1/team`).get()).val() === 'Cold Start FC');
+  // cold Settings (sol r2 P1): the Chairman's pre-draft Settings page seeds too
+  await db.ref(`v2/leagues/${SB}/public`).set(null);
+  const coldSet = await T.mutate(SB, 'settingsSet', { scoringKey: 'assist', value: 4 }, sbTok1);
+  chk('settingsSet on a never-initialised league seeds and lands', !coldSet.error
+    && (await db.ref(`v2/leagues/${SB}/public/settings/scoring/assist`).get()).val() === 4
+    && (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'setup', JSON.stringify(coldSet.error));
+  // cold Start: starting the draft as the league's first-ever action
+  await db.ref(`v2/leagues/${SB}/public`).set(null);
+  const coldStart = await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] }, sbTok1);
+  chk('draft start on a never-initialised league seeds then starts', !coldStart.error
+    && (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'draft', JSON.stringify(coldStart.error));
 
   await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1);
 
@@ -251,18 +262,27 @@ const SB = 'the-league-sandbox';
   const exported = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
   const reimp = await T.mutate(SB, 'importState', { state: exported }, sbTok1);
   chk('export after foundings re-imports clean (club fields allowed)', !reimp.error, JSON.stringify(reimp.error));
-  chk('club identity survives the round-trip',
+  chk('EVERY club field survives the round-trip',
     (await db.ref(`v2/leagues/${SB}/public/managers/1/kit/c1`).get()).val() === '#c81919'
-    && (await db.ref(`v2/leagues/${SB}/public/managers/1/stadium`).get()).val() === 'The Rec');
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/stadium`).get()).val() === 'The Rec'
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/gaffer`).get()).val() === GC - 1
+    && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/boards`).get()).val()) === JSON.stringify([BC - 1])
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/rival`).get()).val() === 1);
   chk('import still rejects a junk manager key', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map(m => ({ ...m, chef: 1 })) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects an out-of-catalogue gaffer', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, gaffer: GC }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects a rival outside the roster', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, rival: 55 }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('thousand-entry boards array rejected even though it dedupes to one (sol r2 P3)',
+    (await T.mutate(SB, 'clubSet', { boards: Array(1000).fill(0) }, sbTok2)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, boards: Array(1000).fill(0) }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('import clamps an over-long stadium to the office contract (40)',
+    !(await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, stadium: 'X'.repeat(60) }) } }, sbTok1)).error
+    && ((await db.ref(`v2/leagues/${SB}/public/managers/0/stadium`).get()).val() || '').length === 40);
 
   /* sol P1.1: clubSet racing a roster-REORDERING import must never write the
      wrong manager. The import may legitimately win the whole state (it's a
      restore), but a rename landing on someone else's club is corruption. */
   const reorderedSeed = { ...sbSeed, managers: [sbSeed.managers[1], sbSeed.managers[0], sbSeed.managers[2]] };
-  let wrongMgr = 0;
+  let wrongMgr = 0, landed = 0;
   for (let i = 0; i < 10; i++) {
     await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1);
     await Promise.all([
@@ -271,9 +291,30 @@ const SB = 'the-league-sandbox';
     ]);
     const mgrs = Object.values((await db.ref(`v2/leagues/${SB}/public/managers`).get()).val() || {});
     for (const mg of mgrs) if (mg.team === `Race FC ${i}` && mg.id !== 2) wrongMgr++;
+    if (mgrs.some(mg => mg.team === `Race FC ${i}` && mg.id === 2)) landed++;
   }
-  chk('clubSet vs reordering import raced 10x: rename NEVER lands on the wrong manager (sol P1.1)', wrongMgr === 0, `wrong=${wrongMgr}`);
-  await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1); // clean slate for the start tests
+  // landed floor keeps this honest: all-aborts would also give wrong=0 (sol r2)
+  chk('clubSet vs reordering import raced 10x: rename NEVER lands on the wrong manager (sol P1.1)', wrongMgr === 0 && landed >= 3, `wrong=${wrongMgr} landed=${landed}`);
+
+  /* sol r2 P1: clubSet(rival) racing an import that REMOVES the rival must
+     never leave a ghost rivalry — the merge txn revalidates rival at commit */
+  const twoManSeed = { ...sbSeed, managers: sbSeed.managers.slice(0, 2) };
+  let ghosts = 0;
+  for (let i = 0; i < 10; i++) {
+    await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1);
+    await Promise.all([
+      T.mutate(SB, 'clubSet', { rival: 3 }, sbTok2),
+      T.mutate(SB, 'importState', { state: twoManSeed }, sbTok1),
+    ]);
+    const mgrs = Object.values((await db.ref(`v2/leagues/${SB}/public/managers`).get()).val() || {});
+    if (!mgrs.some(mg => mg.id === 3) && mgrs.some(mg => mg.rival === 3)) ghosts++;
+  }
+  chk('clubSet(rival) vs rival-removing import raced 10x: no ghost rivalry (sol r2 P1)', ghosts === 0, `ghosts=${ghosts}`);
+
+  // clean slate for the start tests — with NON-DEFAULT committed settings so
+  // the patch semantics below are pinned honestly (sol r2 test-honesty note)
+  const startSeed = { ...sbSeed, settings: { ...sbSeed.settings, lobusBonus: 13, scoring: { ...sbSeed.settings.scoring, assist: 8 } } };
+  await T.mutate(SB, 'importState', { state: startSeed }, sbTok1);
   await T.mutate(SB, 'readySet', { ready: true }, sbTok2);
 
   /* the atomic start: founders' clubs survive, the Chairman's screen edits
@@ -294,6 +335,10 @@ const SB = 'the-league-sandbox';
   chk('start merged the screen edits in the same txn',
     (await db.ref(`v2/leagues/${SB}/public/managers/0/name`).get()).val() === 'Renamed Chair'
     && (await db.ref(`v2/leagues/${SB}/public/settings/pickTimer`).get()).val() === 45);
+  chk('start settings are a PATCH — committed non-defaults survive omission (sol r2 P2)',
+    (await db.ref(`v2/leagues/${SB}/public/settings/scoring/assist`).get()).val() === 8
+    && (await db.ref(`v2/leagues/${SB}/public/settings/lobusBonus`).get()).val() === 13
+    && (await db.ref(`v2/leagues/${SB}/public/settings/squadSize`).get()).val() === 14);
   chk('the just-founded club SURVIVED the start (no whole-state import — sol P1.1)',
     (await db.ref(`v2/leagues/${SB}/public/managers/2/team`).get()).val() === 'Founded Late FC'
     && (await db.ref(`v2/leagues/${SB}/public/managers/2/kit/pattern`).get()).val() === 'sash');
