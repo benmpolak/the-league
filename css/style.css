@@ -125,6 +125,9 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 
 /* ---------- draft ---------- */
 .draft-layout { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: start; }
+/* grid children default to min-width:auto, so one unwrappable squad row can
+   push the whole document wider than a small phone — never let it */
+.draft-layout > * { min-width: 0; }
 @media (max-width: 980px) { .draft-layout { grid-template-columns: 1fr; } }
 
 .on-clock {
@@ -205,6 +208,12 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .squad-card .mgr-head .pts { font-size: 22px; font-weight: 800; color: var(--gold); }
 .squad-row { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 13.5px; border-bottom: 1px solid rgba(38,50,80,.4); }
 .squad-row:last-child { border: none; }
+/* phones: rows stay one line and shed width from the name, never the page */
+@media (max-width: 700px) {
+  .squad-row { gap: 7px; }
+  .squad-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .squad-row .sp-pts, .squad-row .xi-chip, .squad-row .pos-badge, .squad-row .shirt-no { flex: none; overflow: visible; }
+}
 .squad-row .sp-pts { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* ---------- league table ---------- */
@@ -268,6 +277,14 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   overflow-y: auto; padding: 16px; /* tall cards (12-manager sign-in) must scroll, not clip */
 }
 .overlay > .card { max-height: 92vh; overflow-y: auto; }
+
+/* the club office: essentials up top, extras behind a drawer, Save always in
+   reach — 2,000px of scroll must never hide the only button that matters */
+.club-office { padding-bottom: 0; }
+.club-extras { margin: 2px 0 6px; }
+.club-extras > summary { cursor: pointer; font-size: 12px; font-weight: 800; letter-spacing: .4px; color: var(--muted); padding: 9px 0; user-select: none; }
+.club-extras > summary:hover { color: var(--text); }
+.club-actions { position: sticky; bottom: 0; display: flex; gap: 8px; padding: 10px 0 14px; background: var(--card); box-shadow: 0 -10px 14px -10px rgba(0,0,0,.6); }
 
 /* the confirm sheet: one last look before a deal commits */
 .deal { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }

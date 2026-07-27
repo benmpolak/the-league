@@ -5,7 +5,7 @@
     "leagues": {
       "$league": {
         ".read": true,
-        ".write": "newData.exists() || !data.exists() || data.child('phase').val() === 'setup'",
+        ".write": "data.exists() && (newData.exists() || data.child('phase').val() === 'setup')",
         ".validate": "newData.hasChildren(['managers', 'phase'])",
         "phase": {
           ".validate": "newData.isString() && (newData.val() === 'setup' || newData.val() === 'draft' || newData.val() === 'season')"

@@ -97,6 +97,38 @@ const chk = (name, ok, detail = '') => {
   chk('sync area shows the signed-in name', await p.evaluate(() =>
     document.querySelector('#whoBtn')?.textContent.includes('Ben')));
 
+  /* sol club-office P1.2: the pre-draft waiting room — the header "Sign in"
+     button must summon the overlay (render used to return before
+     renderIdentity on the setup branch, leaving the button dead) */
+  const p2 = await browser.newPage();
+  p2.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
+  await p2.setRequestInterception(true);
+  p2.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
+  await p2.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await p2.waitForFunction(() => typeof state !== 'undefined');
+  await p2.evaluate(() => {
+    window.WCSync = {
+      league: 'the-league-2627',
+      call: () => Promise.resolve({ ok: true }),
+      auth: { user: () => null, sendLink: () => Promise.resolve(), completeLink: () => Promise.resolve(false), signOut: () => Promise.resolve() },
+    };
+    window.onSyncConnection(true);
+    const s = freshState();
+    window.onSharedSnapshot(JSON.parse(JSON.stringify({
+      phase: 'setup', managers: s.managers, settings: s.settings, draft: s.draft,
+      lineups: {}, transfers: [], trades: [], covenants: [], waiverMeta: s.waiverMeta,
+      adjustments: {}, shirtNums: {}, draftPool: null, windowDraft: null,
+      tradeBlock: {}, benchOrders: {}, lobus: {}, hamCup: null,
+    })));
+  });
+  await new Promise(r => setTimeout(r, 300));
+  chk('setup: waiting room renders without a forced overlay', await p2.evaluate(() =>
+    !document.querySelector('#whoOverlay') && !!document.querySelector('#whoBtn')));
+  await p2.click('#whoBtn');
+  await new Promise(r => setTimeout(r, 200));
+  chk('setup: header Sign in summons the email overlay (sol P1.2)', await p2.evaluate(() =>
+    !!document.querySelector('#whoOverlay #whoEmail')));
+
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

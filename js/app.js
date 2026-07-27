@@ -816,7 +816,11 @@ function derbyTag(a, b) {
 function clubEditor(mid) {
   if (!actGuard(mid, 'club')) return;
   const m = state.managers.find(x => x.id === mid);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: [...(m?.boards || [])], gaffer: m?.gaffer ?? null };
+  // stale board indices (a hoarding later retired from the catalogue) render
+  // nothing — drop them here so they can't eat a slot of the three
+  const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
+  const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer };
   const stock = AD_BOARDS.map(b => b.t);
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -827,7 +831,10 @@ function clubEditor(mid) {
     ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
     ov.querySelectorAll('[data-gaffer]').forEach(b => b.classList.toggle('active', draft.gaffer === +b.dataset.gaffer));
   };
-  ov.innerHTML = `<div class="card" style="max-width:460px;width:94%">
+  // extras open when any is already chosen — a founder editing their boards
+  // shouldn't have to hunt for them behind a closed drawer
+  const extrasOpen = draft.boards.length || draft.gaffer != null || draft.rival != null;
+  ov.innerHTML = `<div class="card club-office" role="dialog" aria-modal="true" aria-label="The club office" style="max-width:460px;width:94%">
     <h2>The club office</h2>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
       <div id="kitPreview" style="flex-shrink:0"></div>
@@ -853,32 +860,41 @@ function clubEditor(mid) {
     </div>
     <label class="muted" style="font-size:11px">YOUR GROUND</label>
     <input id="clubStadium" maxlength="40" value="${esc(draft.stadium)}" style="width:100%;margin:4px 0 10px" />
-    <label class="muted" style="font-size:11px">PITCH-SIDE HOARDINGS — pick up to three for home games</label>
-    <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
-      ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
-    </div>
-    <label class="muted" style="font-size:11px">THE GAFFER — who's in your dugout?</label>
-    <div id="gafferGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:4px 0 6px">
-      ${GAFFERS.map((g, i) => `<button class="btn ghost gaffer-card" data-gaffer="${i}" title="Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">
-        <b>${g.e} ${esc(g.t)}</b><span class="muted">${esc(g.bio)}</span>
-      </button>`).join('')}
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <button class="btn ghost small" id="gafferOwn">Make one up…</button>
-      <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
-    </div>
-    <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
-    <select id="clubRival" style="width:100%;margin:4px 0 14px">
-      <option value="">No declared rival (coward)</option>
-      ${state.managers.filter(x => x.id !== mid).map(x => `<option value="${x.id}"${draft.rival === x.id ? ' selected' : ''}>${esc(x.team || x.name)} — ${esc(x.name)}</option>`).join('')}
-    </select>
-    <div style="display:flex;gap:8px">
+    <details class="club-extras"${extrasOpen ? ' open' : ''}>
+      <summary>The extras — hoardings, gaffer, rival</summary>
+      <label class="muted" style="font-size:11px">PITCH-SIDE HOARDINGS — pick up to three for home games</label>
+      <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
+        ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
+      </div>
+      <label class="muted" style="font-size:11px">THE GAFFER — who's in your dugout?</label>
+      <div id="gafferGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:4px 0 6px">
+        ${GAFFERS.map((g, i) => `<button class="btn ghost gaffer-card" data-gaffer="${i}" title="Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">
+          <b>${g.e} ${esc(g.t)}</b><span class="muted">${esc(g.bio)}</span>
+        </button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btn ghost small" id="gafferOwn">Make one up…</button>
+        <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
+      </div>
+      <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
+      <select id="clubRival" style="width:100%;margin:4px 0 14px">
+        <option value="">No declared rival (coward)</option>
+        ${state.managers.filter(x => x.id !== mid).map(x => `<option value="${x.id}"${draft.rival === x.id ? ' selected' : ''}>${esc(x.team || x.name)} — ${esc(x.name)}</option>`).join('')}
+      </select>
+    </details>
+    <div class="club-actions">
       <button class="btn ghost" id="clubCancel" style="flex:1">Cancel</button>
       <button class="btn" id="clubSave" style="flex:1">Save the lot</button>
     </div></div>`;
   document.body.appendChild(ov);
   pushOvState();
   paint();
+  // dialog focus contract: keyboard lands inside the office on open and goes
+  // back where it came from on close (however the office closed)
+  const prevFocus = document.activeElement;
+  const origRemove = ov.remove.bind(ov);
+  ov.remove = () => { origRemove(); if (prevFocus && document.contains(prevFocus)) try { prevFocus.focus(); } catch { /* gone */ } };
+  ov.querySelector('#clubName').focus();
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
   ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { draft.kit.pattern = b.dataset.pat; paint(); });
   ov.querySelector('#clubC1').oninput = e => { draft.kit.c1 = e.target.value; paint(); };
@@ -911,20 +927,27 @@ function clubEditor(mid) {
   });
   ov.querySelector('#clubCancel').onclick = () => closeOv(ov);
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
-  ov.querySelector('#clubSave').onclick = () => {
+  ov.querySelector('#clubSave').onclick = async () => {
     const team = draft.team.trim();
     if (team.length < 2) { toast('A club needs a name — 2 characters minimum'); return; }
-    localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     const stadiumName = draft.stadium.trim();
     if (!stadiumName) { toast('A ground needs a name'); return; }
     if (netOn()) {
-      serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) })
-        .then(() => toast('The club is founded. Wear it well.')).catch(() => {});
+      // the office closes and the founding is marked ONLY on server success —
+      // a rejected save keeps the form (and everything typed into it) open
+      const btn = ov.querySelector('#clubSave');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) });
+      } catch { btn.disabled = false; btn.textContent = 'Save the lot'; return; } // serverAct already toasted why
+      localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
       closeOv(ov);
+      toast('The club is founded. Wear it well.');
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
     state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
+    localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
     toast('The club is founded. Wear it well.');
@@ -1964,8 +1987,12 @@ let hashInit = false;
 let ovDepth = 0;        // history entries currently representing open pop-overs
 let ovSkipClose = false; // set when a pop-over closed itself and fired history.back()
 function syncHash() {
-  if (state.phase === 'setup') return;
-  const want = `#${state.view}`;
+  // setup participates too: the three setup tabs get their own hashes and the
+  // waiting room is #home, so Back walks Rules → Club → room instead of
+  // falling out of setup entirely (sol club-office P2.3)
+  const want = state.phase === 'setup'
+    ? `#${SETUP_NAV.has(state.view) ? state.view : 'home'}`
+    : `#${state.view}`;
   if (location.hash === want) return;
   try {
     hashInit ? history.pushState(null, '', want) : history.replaceState(null, '', want);
@@ -1991,7 +2018,14 @@ window.addEventListener('popstate', () => {
     return;
   }
   const v = location.hash.slice(1);
-  if (state.phase !== 'setup' && v && v !== state.view && NAV_ITEMS.some(([k]) => k === v)) {
+  if (state.phase === 'setup') {
+    // #club/#rules/#settings restore that tab; anything else is the room
+    const target = SETUP_NAV.has(v) ? v : 'home';
+    const curr = SETUP_NAV.has(state.view) ? state.view : 'home';
+    if (target !== curr) { state.view = SETUP_NAV.has(v) ? v : 'dash'; save(); render(); }
+    return;
+  }
+  if (v && v !== state.view && NAV_ITEMS.some(([k]) => k === v)) {
     state.view = v; save(); render();
   }
 });
@@ -2083,7 +2117,10 @@ function render() {
   renderNav();
   renderSyncArea();
   const main = $('#main');
-  if (state.phase === 'setup' && !SETUP_NAV.has(state.view)) { main.innerHTML = viewSetup(); bindSetup(); return; }
+  // renderIdentity runs on BOTH setup branches: the waiting room is exactly
+  // where the lads first tap "Sign in", and returning before it left that
+  // button doing nothing (sol club-office P1.2)
+  if (state.phase === 'setup' && !SETUP_NAV.has(state.view)) { main.innerHTML = viewSetup(); bindSetup(); renderIdentity(); return; }
   if (state.phase === 'setup') {
     // pre-draft, only the setup-bar views resolve; everything else is the room
     if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
@@ -2505,10 +2542,23 @@ function bindSetup() {
       ? state.managers.map(m => m.id).sort(() => Math.random() - 0.5)
       : state.managers.map(m => m.id);
     if (netOn()) {
-      // seed the setup state first (managers/settings edited on this screen),
-      // then the server flips the phase, stamps the pool and sets the clock
-      serverAct('importState', { state: { ...sharedSnapshot(), draft: { ...state.draft, order } } })
-        .then(() => serverAct('draftAdmin', { op: 'start', order }))
+      // ONE server action: the screen's edits (names, teams, squad rules) ride
+      // along and merge inside the same txn that flips the phase. The old
+      // importState-then-start replaced the whole public node and wiped any
+      // club a founder saved while the Chairman's tab sat open (sol P1.1).
+      serverAct('draftAdmin', {
+        op: 'start', order,
+        setup: {
+          managers: state.managers.map(mg => ({ id: mg.id, name: mg.name, team: mg.team || '' })),
+          settings: {
+            squadSize: state.settings.squadSize,
+            posMin: state.settings.posMin,
+            posMax: state.settings.posMax,
+            pickTimer: state.settings.pickTimer,
+            scoring: state.settings.scoring,
+          },
+        },
+      })
         .then(() => showCeremony()) // stamps "seen" itself at the end
         .catch(() => {});
       return;
@@ -5613,6 +5663,7 @@ document.addEventListener('visibilitychange', () => {
   const v0 = location.hash.slice(1);
   if (state.phase !== 'setup' && NAV_ITEMS.some(([k]) => k === v0)) state.view = v0;
   else if (state.phase === 'setup' && SETUP_NAV.has(v0)) state.view = v0;
+  else if (state.phase === 'setup') state.view = 'dash'; // the waiting room is home
   else if (state.phase === 'season') state.view = 'dash';
 }
 render();

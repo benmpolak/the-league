@@ -455,16 +455,59 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
   if (op === 'start') {
     if (state.phase !== 'setup') throw new HttpsError('failed-precondition', 'already started');
     const order = intArray(data.order, 'order', 20);
-    const ids = state.managers.map(m => m.id).sort((x, y) => x - y);
-    if (JSON.stringify([...order].sort((x, y) => x - y)) !== JSON.stringify(ids)) throw new HttpsError('invalid-argument', 'order must be a permutation of the twelve');
+    /* Optional setup payload: the Chairman's screen edits (names, team names,
+     * squad rules) ride along and merge HERE, inside the same txn that flips
+     * the phase. The old flow — client importState of the whole setup state,
+     * then start — replaced the entire public node and lost any club a founder
+     * saved concurrently (sol club-office P1.1). Club identity fields (kit,
+     * sponsor, rival, gaffer, boards, stadium) are never accepted from this
+     * payload: the committed server state owns them. */
+    let setupMgrs = null, setupSettings = null;
+    if (data.setup !== undefined) {
+      if (!isPlainObj(data.setup)) throw new HttpsError('invalid-argument', 'bad setup payload');
+      for (const k of Object.keys(data.setup)) if (!['managers', 'settings'].includes(k)) throw new HttpsError('invalid-argument', `setup key "${k}"`);
+      if (data.setup.managers != null) {
+        setupMgrs = new Map();
+        for (const m of toArr(data.setup.managers)) {
+          if (!isPlainObj(m) || !Number.isInteger(m.id)) throw new HttpsError('invalid-argument', 'setup manager entry');
+          for (const k of Object.keys(m)) if (!['id', 'name', 'team'].includes(k)) throw new HttpsError('invalid-argument', `setup manager key "${k}"`);
+          setupMgrs.set(m.id, { name: cleanText(m.name || '', 60).trim(), team: cleanText(m.team || '', 80).trim() });
+        }
+      }
+      if (data.setup.settings != null) setupSettings = cleanSettingsSection(data.setup.settings);
+    }
     const ctx2 = await loadCtx();
-    await db().ref().update({
-      [`${base}/public/phase`]: 'draft',
-      [`${d}/order`]: order,
-      [`${d}/picks`]: null,
-      [`${d}/deadline`]: null, // armed by clockStart when the ceremony ends — the pomp must not eat pick one's clock
-      [`${base}/public/draftPool`]: { at: Date.now(), ids: Object.fromEntries(ctx2.PLAYERS.map(p => [p.id, p.club])) },
+    const poolIds = Object.fromEntries(ctx2.PLAYERS.map(p => [p.id, p.club]));
+    const pubRef = db().ref(`${base}/public`);
+    const pubSeed = (await pubRef.get()).val();
+    let deny = null;
+    const res = await pubRef.transaction(cur => {
+      const c = cur === null ? (pubSeed && JSON.parse(JSON.stringify(pubSeed))) : cur;
+      if (!c) return;
+      deny = null; // a retry must re-judge against the fresh value
+      if (c.phase !== 'setup') { deny = { code: 'failed-precondition', msg: 'already started' }; return; }
+      const mgrs = toArr(c.managers);
+      // permutation check against COMMITTED managers, not the request's snapshot
+      const ids = mgrs.map(m => m.id).sort((x, y) => x - y);
+      if (JSON.stringify([...order].sort((x, y) => x - y)) !== JSON.stringify(ids)) { deny = { code: 'invalid-argument', msg: 'order must be a permutation of the twelve' }; return; }
+      if (setupMgrs) for (const m of mgrs) {
+        const s = setupMgrs.get(m.id);
+        if (s) { if (s.name) m.name = s.name; if (s.team) m.team = s.team; }
+      }
+      c.managers = mgrs;
+      // merge ONTO committed settings: fields the setup screen doesn't edit
+      // (lobusBonus) keep their committed value
+      if (setupSettings) c.settings = { ...(c.settings || {}), ...setupSettings };
+      c.phase = 'draft';
+      c.draft = { ...(c.draft || {}), order, picks: null, deadline: null }; // deadline armed by clockStart when the ceremony ends — the pomp must not eat pick one's clock
+      c.draftPool = { at: Date.now(), ids: poolIds };
+      c.ready = null; // the roll call served its purpose; it must not haunt the next reset
+      return c;
     });
+    if (!res.committed) {
+      const dn = deny || { code: 'aborted', msg: 'try again' };
+      throw new HttpsError(dn.code, dn.msg);
+    }
     return { ok: true };
   }
   if (op === 'pause') { await db().ref().update({ [`${d}/paused`]: true, [`${d}/pausedLeft`]: Math.max(0, (state.draft.deadline || 0) - Date.now()) }); return { ok: true }; }
@@ -814,9 +857,8 @@ ACTIONS.readySet = async ({ league, a, data, state }) => {
 
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
-  const idx = state.managers.findIndex(m => m.id === mid);
-  if (idx < 0) throw new HttpsError('not-found', 'no such manager');
-  await db().ref(`${leagueBase(league)}/public/managers/${idx}/stadium`).set(cleanText(data.name, 60));
+  if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
+  await managerMerge(league, state, mid, { stadium: cleanText(data.name, 60) });
   return { ok: true };
 };
 
@@ -824,61 +866,76 @@ ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
 // the validation is not.
 const KIT_PATTERNS = ['plain', 'stripes', 'hoops', 'sash', 'halves'];
 const hexOk = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+// the catalogues live in js/lore.js; these counts are pinned to that file by
+// functions.test.js — grow them together or the suite fails. Out-of-range
+// values render as a vacant dugout / dead hoarding, so they must not validate.
+const GAFFER_COUNT = 12;
+const BOARD_COUNT = 27;
+const cleanKit = k => {
+  if (k === null) return null;
+  if (!KIT_PATTERNS.includes(k?.pattern) || !hexOk(k?.c1) || !hexOk(k?.c2)) throw new HttpsError('invalid-argument', 'kit is a pattern + two hex colours');
+  return { pattern: k.pattern, c1: k.c1.toLowerCase(), c2: k.c2.toLowerCase() };
+};
+const cleanGaffer = g => {
+  // the FM character sheet: an archetype off the stable, or a made-up one
+  if (g === null) return null;
+  if (Number.isInteger(g) && g >= 0 && g < GAFFER_COUNT) return g;
+  if (g && typeof g === 'object' && typeof g.t === 'string' && cleanText(g.t, 30).trim().length >= 2) {
+    return { t: cleanText(g.t, 30).trim(), bio: cleanText(g.bio || '', 60).trim() || null };
+  }
+  throw new HttpsError('invalid-argument', 'gaffer is an archetype number or a name + bio');
+};
+const cleanBoards = b0 => {
+  // up to three hoardings off the league's stable to line the home ground
+  if (b0 === null) return null;
+  const b = Array.isArray(b0) ? [...new Set(b0)] : null;
+  if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i >= BOARD_COUNT)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
+  return b.length ? b : null;
+};
+/* merge fields onto ONE manager, resolved BY ID inside the txn — an index
+ * computed from a stale snapshot lands the write on whoever now occupies that
+ * slot when a concurrent import reorders the roster (sol club-office P1.1).
+ * Null values in `up` delete the key (RTDB strips nulls on write). */
+async function managerMerge(league, state, mid, up) {
+  const ref = db().ref(`${leagueBase(league)}/public/managers`);
+  const res = await ref.transaction(seeded(state.managers, arr => {
+    const i = arr.findIndex(m => m && m.id === mid);
+    if (i < 0) return; // roster changed underneath — abort, never a blind write
+    arr[i] = { ...arr[i], ...up };
+    return arr;
+  }));
+  if (!res.committed) throw new HttpsError('aborted', 'the roster changed underneath you — try again');
+}
 ACTIONS.clubSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
-  const idx = state.managers.findIndex(m => m.id === mid);
-  if (idx < 0) throw new HttpsError('not-found', 'no such manager');
+  if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
   const up = {};
   if (data.team !== undefined) {
     const t = cleanText(data.team, 30).trim();
     if (t.length < 2) throw new HttpsError('invalid-argument', 'team name needs 2+ characters');
-    up[`managers/${idx}/team`] = t;
+    up.team = t;
   }
-  if (data.kit !== undefined) {
-    if (data.kit === null) up[`managers/${idx}/kit`] = null;
-    else {
-      const k = data.kit;
-      if (!KIT_PATTERNS.includes(k?.pattern) || !hexOk(k?.c1) || !hexOk(k?.c2)) throw new HttpsError('invalid-argument', 'kit is a pattern + two hex colours');
-      up[`managers/${idx}/kit`] = { pattern: k.pattern, c1: k.c1.toLowerCase(), c2: k.c2.toLowerCase() };
-    }
-  }
+  if (data.kit !== undefined) up.kit = cleanKit(data.kit);
   if (data.sponsor !== undefined) {
     // a name off the league's hoardings, or one they made up themselves
-    const s = data.sponsor === null ? '' : cleanText(data.sponsor, 20).trim();
     if (data.sponsor !== null && typeof data.sponsor !== 'string') throw new HttpsError('invalid-argument', 'sponsor is text');
-    up[`managers/${idx}/sponsor`] = s || null;
+    const s = data.sponsor === null ? '' : cleanText(data.sponsor, 20).trim();
+    up.sponsor = s || null;
   }
   if (data.rival !== undefined) {
     // declared rivalry — your derby. Mutuality is not required; that's the joke.
     if (data.rival !== null && (!state.managers.some(x => x.id === data.rival) || data.rival === mid)) throw new HttpsError('invalid-argument', 'a rival must be another of the twelve');
-    up[`managers/${idx}/rival`] = data.rival;
+    up.rival = data.rival;
   }
   if (data.stadium !== undefined) {
     const st = cleanText(data.stadium, 40).trim();
     if (!st) throw new HttpsError('invalid-argument', 'a ground needs a name');
-    up[`managers/${idx}/stadium`] = st;
+    up.stadium = st;
   }
-  if (data.gaffer !== undefined) {
-    // the FM character sheet: an archetype off the stable, or a made-up one
-    const g = data.gaffer;
-    if (g === null) up[`managers/${idx}/gaffer`] = null;
-    else if (Number.isInteger(g) && g >= 0 && g <= 19) up[`managers/${idx}/gaffer`] = g;
-    else if (g && typeof g === 'object' && typeof g.t === 'string' && cleanText(g.t, 30).trim().length >= 2) {
-      up[`managers/${idx}/gaffer`] = { t: cleanText(g.t, 30).trim(), bio: cleanText(g.bio || '', 60).trim() || null };
-    } else throw new HttpsError('invalid-argument', 'gaffer is an archetype number or a name + bio');
-  }
-  if (data.boards !== undefined) {
-    // up to three hoardings off the league's stable to line the home ground
-    if (data.boards === null) up[`managers/${idx}/boards`] = null;
-    else {
-      const b = Array.isArray(data.boards) ? [...new Set(data.boards)] : null;
-      // bound tracks AD_BOARDS growth loosely — a stale index just renders nothing
-      if (!b || b.length > 3 || b.some(i => !Number.isInteger(i) || i < 0 || i > 63)) throw new HttpsError('invalid-argument', 'boards are up to three hoarding numbers');
-      up[`managers/${idx}/boards`] = b.length ? b : null;
-    }
-  }
+  if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
+  if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
   if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
-  await db().ref(`${leagueBase(league)}/public`).update(up);
+  await managerMerge(league, state, mid, up);
   return { ok: true };
 };
 
@@ -1145,6 +1202,22 @@ function canonicalSetupState(prevPub) {
   };
 }
 
+/* The empty live league: founders arrive to found clubs and mark ready before
+ * the Chairman has ever pressed anything, but every stateful action refuses on
+ * a null /public (sol club-office P0.1). Setup-phase actions therefore seed
+ * the canonical setup state first — idempotent: the txn only writes when the
+ * node is truly absent. If the node exists (or a concurrent seed wins), the
+ * retry pass sees real data and aborts without touching it. */
+async function ensureSetupState(league) {
+  const ref = db().ref(`${leagueBase(league)}/public`);
+  if ((await ref.get()).exists()) return false;
+  const res = await ref.transaction(cur => cur === null ? canonicalSetupState(null) : undefined);
+  return res.committed;
+}
+// the actions a founder (or the Chairman starting the draft) may fire against
+// a never-initialised league — each seeds setup state on the way in
+const SETUP_SEED_ACTIONS = new Set(['clubSet', 'readySet', 'stadiumSet']);
+
 /* A confirmed reset atomically installs a valid setup-state, clears private
  * game data (claims/autolists) and the waiver run log, preserves membership,
  * and leaves the commissioner able to start a new draft immediately. */
@@ -1174,6 +1247,28 @@ const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'v
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 
+// shared by importState and draftAdmin:start — one definition of what a
+// settings section may contain. Mutates sIn only to drop retired scoring keys
+// (pre-Jul-2026 exports carry the 60-minute appearance keys; tolerated, never
+// imported). Returns the fully-defaulted candidate.
+function cleanSettingsSection(sIn) {
+  if (!isPlainObj(sIn)) importError('settings');
+  for (const k of Object.keys(sIn)) {
+    if (!['squadSize', 'posMin', 'posMax', 'pickTimer', 'scoring', 'lobusBonus'].includes(k)) importError(`settings key "${k}"`);
+  }
+  const cand = { ...DEFAULT_SETTINGS(), ...sIn };
+  validateSquadRules(cand); // throws its own HttpsError on nonsense
+  if (sIn.scoring != null) {
+    if (!isPlainObj(sIn.scoring)) importError('scoring');
+    for (const [k, v] of Object.entries(sIn.scoring)) {
+      if (k === 'appearance' || k === 'appearance60') { delete sIn.scoring[k]; continue; }
+      if (!(k in Engine.DEFAULT_SCORING) || typeof v !== 'number' || !Number.isFinite(v)) importError(`scoring "${k}"`);
+    }
+    cand.scoring = { ...Engine.DEFAULT_SCORING, ...sIn.scoring };
+  }
+  return cand;
+}
+
 ACTIONS.importState = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   const s = data.state;
@@ -1190,28 +1285,23 @@ ACTIONS.importState = async ({ league, a, data }) => {
   for (const m of managers) {
     if (!isPlainObj(m) || !Number.isInteger(m.id) || m.id < 1 || m.id > 99 || midSeen.has(m.id)) importError('manager entry');
     midSeen.add(m.id);
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium'].includes(k)) importError(`manager key "${k}"`);
+    // club identity fields travel with the manager — a backup taken after a
+    // founding must restore, and the pre-draft start once exported them too
+    // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'gaffer', 'boards'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     if (m.stadium != null && (typeof m.stadium !== 'string' || m.stadium.length > 80)) importError('manager stadium');
+    if (m.sponsor != null && (typeof m.sponsor !== 'string' || !m.sponsor.length || m.sponsor.length > 20)) importError('manager sponsor');
+    // kit/gaffer/boards reuse the clubSet validators — same bounds, same shapes
+    if (m.kit != null) m.kit = cleanKit(m.kit);
+    if (m.gaffer != null) m.gaffer = cleanGaffer(m.gaffer);
+    if (m.boards != null) m.boards = cleanBoards(m.boards);
   }
-  if (s.settings != null) {
-    if (!isPlainObj(s.settings)) importError('settings');
-    for (const k of Object.keys(s.settings)) {
-      if (!['squadSize', 'posMin', 'posMax', 'pickTimer', 'scoring', 'lobusBonus'].includes(k)) importError(`settings key "${k}"`);
-    }
-    const cand = { ...DEFAULT_SETTINGS(), ...s.settings };
-    validateSquadRules(cand); // throws its own HttpsError on nonsense
-    if (s.settings.scoring != null) {
-      if (!isPlainObj(s.settings.scoring)) importError('scoring');
-      for (const [k, v] of Object.entries(s.settings.scoring)) {
-        // pre-Jul-2026 exports carry the retired 60-minute appearance keys —
-        // tolerated and dropped, never imported
-        if (k === 'appearance' || k === 'appearance60') { delete s.settings.scoring[k]; continue; }
-        if (!(k in Engine.DEFAULT_SCORING) || typeof v !== 'number' || !Number.isFinite(v)) importError(`scoring "${k}"`);
-      }
-    }
+  for (const m of managers) {
+    if (m.rival != null && (!midSeen.has(m.rival) || m.rival === m.id)) importError('manager rival');
   }
+  if (s.settings != null) cleanSettingsSection(s.settings);
   const arrayCaps = { transfers: 5000, trades: 1000, covenants: 500 };
   for (const [k, cap] of Object.entries(arrayCaps)) {
     if (s[k] != null && toArr(s[k]).length > cap) importError(`${k} too long`);
@@ -1395,6 +1485,8 @@ exports.mutate = onCall(async req => {
   const a = await actor(req, league);
   const ctx = await loadCtx();
   const needsState = !['autolistSet', 'adjustmentSet', 'waiverRunNow', 'resetLeague', 'importState'].includes(action);
+  // a never-initialised league accepts setup actions by seeding itself first
+  if (SETUP_SEED_ACTIONS.has(action) || (action === 'draftAdmin' && data.op === 'start')) await ensureSetupState(league);
   const state = needsState ? await loadState(league, ctx) : null;
   return fn({ league, a, data, ctx, state, eng: ctx.eng });
 });
