@@ -1037,8 +1037,9 @@ function adStrip(seed, n = 3, homeMid = null) {
     s = (s * 1103515245 + 12345) % 2147483648;
     boards.push(AD_BOARDS[pool.splice(s % pool.length, 1)[0]]);
   }
+  // boards can carry manager-typed text (custom sponsors) — escape everything
   return `<div class="ad-strip">${boards.map(b =>
-    `<span class="ad-board" style="color:${b.c};background:${b.bg}"><b>${b.t}</b><i>${b.s}</i></span>`
+    `<span class="ad-board" style="color:${esc(b.c)};background:${esc(b.bg)}"><b>${esc(b.t)}</b><i>${esc(b.s)}</i></span>`
   ).join('')}</div>`;
 }
 // matchday attendance: deterministic per fixture, so every device reports the same crowd
