@@ -663,7 +663,8 @@ document.addEventListener('error', e => {
 // the actual kit artwork FPL uses (GK variant for keepers); pass p to make it clickable too
 const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
-  return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-66.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
+  // 110px asset: the 66px one upscales soft on retina pitch chips (Lee's kit love deserves better)
+  return t ? `<img class="kit" loading="lazy"${p ? ` data-pcard="${p.id}"` : ''} src="https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${t.code}${gk ? '_1' : ''}-110.png" alt="${esc(team)}" title="${p ? esc(p.name) + ' — tap for stats' : esc(team)}">` : '';
 };
 // next fixture for a club in a gameweek — "MCI (H)" style
 function nextOpp(club, gwN) {
@@ -3069,7 +3070,8 @@ function nextFx(team) {
 // the full column menu, Draft Fantasy style; users pick their own set (kept per device)
 const ALL_STAT_COLS = live => [
   { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => { const t = nextFx(p.team); const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null; return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t; }, cls: ' muted', sortable: false },
-  { k: 'price', h: '£m', t: 'Current FPL price', v: m => m.price.toFixed(1) },
+  // FPL price column RETIRED (Lee read '£m' as transfer fees — there is no
+  // money in this league; do not resurrect)
   { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
   { k: 'min', h: 'MP', t: 'Minutes played', v: m => m.min },
   { k: 'g', h: 'G', t: 'Goals', v: m => m.g },
@@ -3082,8 +3084,8 @@ const ALL_STAT_COLS = live => [
   { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
 ];
 const DEFAULT_COL_KEYS = live => live
-  ? ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
-  : ['vs', 'price', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts'];
+  ? ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
+  : ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts'];
 // phones default to the essentials — tap any player for the full story, or
 // add columns back via the Columns toggle (a saved preference wins everywhere)
 const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'pts'] : ['vs', 'ppg', 'pts'];
@@ -3456,7 +3458,7 @@ function viewTeam() {
         </div>`).join('')}
     </div>`;
     })()}
-    <p class="muted" style="font-size:11px;margin-top:6px"><b>Tap a player, then tap another to swap them</b> — within a line to arrange it, bench onto pitch to substitute, two bench players to set auto-sub order (leftmost comes on first). On a computer you can also drag. Tap <span style="color:var(--text)">&#9432;</span> for a player's stats.</p>
+    <p class="muted" style="font-size:11px;margin-top:6px"><b>Tap two players to swap them.</b> Bench order = auto-sub order, leftmost first. &#9432; for stats.</p>
   </div>
   <div class="draft-layout">
     <div class="card">
@@ -3712,7 +3714,7 @@ function viewTransfers() {
       </div>`).join('');
     return `${head}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Two taps: choose your <b>player out</b> below, then hit <b>Sign</b> next to the one you want — instant if they&rsquo;re free, a ranked blind claim if they&rsquo;re on waivers (resolved in reverse table order; win one, go to the back). Squads stay at ${state.settings.squadSize}: someone always goes out.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Pick your <b>player out</b>, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
       <select id="trOut" style="width:100%;margin:8px 0;max-width:420px">
@@ -4241,10 +4243,9 @@ function viewDash() {
     <div class="card">
       <h2>Around the league</h2>
       ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
-      ${covs.length ? `<h3 style="margin-top:12px">Latest covenants</h3>${covs.map(c => `<div class="lrow" style="font-size:12px">&#128220; <b>${esc(managerName(c.from))}</b> &harr; <b>${esc(managerName(c.to))}</b>: ${esc(c.text)}</div>`).join('')}` : ''}
-      <h3 style="margin-top:12px">The table</h3>
-      ${table.slice(0, 4).map((r, i) => `<div class="lrow" style="font-size:12.5px"><span class="muted">${i + 1}</span> <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
-      ${myPos > 4 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
+      <h3 style="margin-top:12px">Top six</h3>
+      ${table.slice(0, 6).map((r, i) => `<div class="lrow" style="font-size:12.5px"><span class="muted">${i + 1}</span> ${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
+      ${myPos > 6 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> ${kitSvg(mid)} <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
     </div>
   </div>
   ${installCard()}
@@ -4641,6 +4642,7 @@ function showMatchup(a, b, i) {
 }
 let h2hView = { gw: null };
 function bindH2H() {
+  bindPitchLinks();
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
     showMatchup(a, b, i);
@@ -4822,7 +4824,7 @@ function viewH2H() {
   const arrow = id => !liveNow || !delta[id] ? ''
     : delta[id] > 0 ? `<span style="color:#3fb96d;font-size:11px">&#9650;${delta[id]}</span>`
     : `<span style="color:#e05555;font-size:11px">&#9660;${-delta[id]}</span>`;
-  return `
+  const tableCard = `
   <div class="card" style="margin-bottom:18px">
     <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
     <div style="overflow-x:auto">
@@ -4832,7 +4834,7 @@ function viewH2H() {
       ${standings.map((r, i) => `
         <tr class="${i === 7 ? 'playoff-line' : ''}">
           <td class="muted">${i + 1}</td>
-          <td><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
+          <td><span class="plink" data-pitchview="${r.id}" title="See this team on the pitch"><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span></span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
           <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
           <td class="num gold act">${r.pts}</td>
@@ -4842,13 +4844,9 @@ function viewH2H() {
       </tbody>
     </table>
     </div>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs. QF = the handicap your position carries into the quarter-final.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
-  </div>
-  ${pointsGridCard(standings)}
-  ${crystalBallCard(standings)}
-  ${gwPreviewCard(cur)}
-  ${playoffCard()}
-  ${(() => {
+    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs — the dashed line is the cut. QF = the handicap your position carries into the quarter-final.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
+  </div>`;
+  const matchesCard = (() => {
     if (h2hView.gw == null) h2hView.gw = Math.min(cur, REGULAR_GWS - 1);
     const i = h2hView.gw, g = GAMEWEEKS[i];
     const st = gwStatus(i);
@@ -4894,7 +4892,15 @@ function viewH2H() {
         }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
       })()}
     </div>`;
-  })()}
+  })();
+  // Lee's note: "Head-to-Head" must LEAD with the head-to-heads. Matches and
+  // the preview first, THEN the standings — it read as a second league table.
+  return `${matchesCard}
+  ${gwPreviewCard(cur)}
+  ${tableCard}
+  ${playoffCard()}
+  ${pointsGridCard(standings)}
+  ${crystalBallCard(standings)}
   ${vidiCard()}`;
 }
 
@@ -5104,6 +5110,7 @@ function viewTable() {
       <div class="league-row ${i === 0 && m.pts > 0 ? 'leader' : ''}" data-mgr-row="${m.id}" style="cursor:pointer">
         <span class="rank">${i + 1}</span>
         <span class="lname">${kitSvg(m.id)} ${esc(m.team || m.name)} <span class="muted" style="font-size:11.5px;font-weight:400">${esc(m.name)}</span> ${i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</span>
+        <button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch">&#9917;</button>
         <span class="lpts">${m.pts}</span>
       </div>
       <div class="breakdown" id="bd-${m.id}" style="display:none">
@@ -5158,7 +5165,20 @@ function viewTable() {
         <span class="sp-pts gold">${pts}</span></div>`).join('') || '<span class="muted">Points appear once matches are played and synced.</span>'}
     </div>`;
 }
+// any [data-pitchview] jumps straight to that team's pitch (Lee's ask:
+// every team clickable through to a pitch view, not just a dropdown)
+function bindPitchLinks() {
+  document.querySelectorAll('[data-pitchview]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    teamView.mid = +b.dataset.pitchview;
+    teamView.gw = null;
+    teamView.showOpp = false;
+    state.view = 'team';
+    save(); render();
+  });
+}
 function bindTable() {
+  bindPitchLinks();
   document.querySelectorAll('[data-mgr-row]').forEach(row => row.onclick = () => {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
     bd.style.display = bd.style.display === 'none' ? 'block' : 'none';
@@ -5525,7 +5545,7 @@ function showPlayerCard(pid) {
       <div>
         <h2 style="margin-bottom:2px">${esc(p.name)} <span class="pos-badge pos-${p.pos}">${p.pos}</span></h2>
         <p class="muted" style="font-size:12px">${esc(p.full)}</p>
-        <p style="font-size:13px;margin-top:4px">${flagImg(p.team)} ${esc(p.team)} &middot; \u00a3${p.price.toFixed(1)}m</p>
+        <p style="font-size:13px;margin-top:4px">${flagImg(p.team)} ${esc(p.team)}</p>
         ${p.news ? `<p class="warn" style="font-size:12px;margin-top:4px">${statusChip(p)} ${esc(p.news)}</p>` : ''}
         <p class="muted" style="font-size:12px;margin-top:4px">${owner ? `Owned by <b style="color:var(--text)">${esc(teamName(owner.id))}</b>` : 'Free agent' + (state.phase === 'season' && onWaivers(p) ? ' \u2014 on waivers' : ' \u2014 in the Trough')}</p>
       </div>
