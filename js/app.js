@@ -4716,6 +4716,35 @@ function viewDash() {
    Injury lines ride the official FPL feed (Premier Injuries / Ben Dinnery data);
    blank & double gameweeks are computed from the fixture list, Crellin-style. */
 let trmShowAll = false;
+function treatmentBand(p) {
+  const news = String(p.news || '');
+  if (p.status === 'd') {
+    const chance = Number.isFinite(+p.chance) ? +p.chance : null;
+    return {
+      k: chance != null && chance <= 25 ? 'major-doubt' : 'doubt',
+      label: chance != null && chance > 0 && chance < 100 ? `${chance}% CHANCE` : 'DOUBT',
+    };
+  }
+  if (p.status === 's') return { k: 'suspended', label: 'SUSPENDED' };
+  const m = news.match(/Expected back\s+(\d{1,2})\s+([A-Za-z]{3})/i);
+  if (m) {
+    const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+    const month = months.indexOf(m[2].toLowerCase());
+    if (month >= 0) {
+      const now = new Date(Date.now());
+      let target = new Date(now.getFullYear(), month, +m[1], 12);
+      // December news read in January (or vice versa) should resolve to the
+      // nearest sensible future date, not look eleven months overdue.
+      if (target.getTime() < now.getTime() - 120 * 86400000) target = new Date(now.getFullYear() + 1, month, +m[1], 12);
+      const days = Math.ceil((target.getTime() - now.getTime()) / 86400000);
+      if (days > 28) return { k: 'long', label: 'LONG-TERM' };
+      if (days > 14) return { k: 'medium', label: '2–4 WEEKS' };
+      return { k: 'out', label: 'OUT' };
+    }
+  }
+  if (/unknown return/i.test(news)) return { k: 'unknown', label: 'RETURN UNKNOWN' };
+  return { k: 'out', label: p.status === 'n' || p.status === 'u' ? 'UNAVAILABLE' : 'OUT' };
+}
 function treatmentRoomCard() {
   const ownedBy = {};
   for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
@@ -4723,12 +4752,21 @@ function treatmentRoomCard() {
   const flagged = PLAYERS.filter(p => p.status !== 'a' && (ownedBy[p.id] != null || 'ids'.includes(p.status)))
     .sort((a, b) => ((ownedBy[b.id] != null) - (ownedBy[a.id] != null)) || (b.newsAdded || '').localeCompare(a.newsAdded || ''));
   const shown = trmShowAll ? flagged : flagged.slice(0, 10);
-  const when = p => p.newsAdded ? ` <span style="opacity:.6">(${new Date(p.newsAdded).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>` : '';
-  const rows = shown.map(p => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
-      ${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
-      ${ownedBy[p.id] != null ? `<span class="tag">${esc(teamName(ownedBy[p.id]))}</span>` : '<span class="muted" style="font-size:10.5px">free agent</span>'}
-      <span class="muted" style="font-size:11px;margin-left:auto;text-align:right">${esc(p.news || 'No update')}${p.chance != null && p.chance > 0 && p.chance < 100 ? ` · <b style="color:var(--text)">${p.chance}%</b>` : ''}${when(p)}</span>
-    </div>`).join('');
+  const when = p => p.newsAdded ? `<span class="treatment-updated">Updated ${new Date(p.newsAdded).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : '';
+  const rows = shown.map(p => {
+    const band = treatmentBand(p);
+    return `<div class="treatment-row treatment-${band.k}">
+      <span class="treatment-icon" aria-hidden="true">${statusChip(p)}</span>
+      <div class="treatment-body">
+        <div class="treatment-head">
+          <span class="treatment-player">${pname(p)} <span class="treatment-club">${esc(p.club)}</span></span>
+          <span class="treatment-severity">${esc(band.label)}</span>
+        </div>
+        <div class="treatment-owner">${ownedBy[p.id] != null ? `<span class="tag">${esc(teamName(ownedBy[p.id]))}</span>` : '<span>Free agent</span>'}</div>
+        <div class="treatment-news">${esc(p.news || 'No update')} ${when(p)}</div>
+      </div>
+    </div>`;
+  }).join('');
   // fixture desk: blank & double gameweeks still to come
   const byGw = {};
   for (const f of (state.fixtures || [])) if (f.gw) (byGw[f.gw] = byGw[f.gw] || []).push(f);
@@ -4859,18 +4897,22 @@ function awardsCard() {
   if (last < 0) return '';
   const { hi, lo, jammy, robbed, hiding, bench, handful, nffb, handfulBits, ownerAt } = weeklyAwards(last);
   const ownTag = pid => { const o = ownerAt(+pid); return o ? ` <span class="muted">(${esc(teamName(o.id))})</span>` : ' <span class="muted">(the Trough)</span>'; };
-  const row = (icon, label, text) => `<div class="lrow" style="font-size:12.5px"><span style="width:22px">${icon}</span><b style="min-width:150px">${label}</b><span>${text}</span></div>`;
+  const row = (icon, label, text) => `<div class="award-row"><span class="award-icon" aria-hidden="true">${icon}</span><b class="award-label">${label}</b><span class="award-value">${text}</span></div>`;
   return `<div class="card" style="margin-top:14px">
-    <h2>GW${GAMEWEEKS[last].n} — The Committee's Awards <span class="muted" style="font-weight:400;font-size:12px">issued automatically, disputed endlessly</span>
-      <button class="btn ghost small" id="copyMinutes" style="margin-left:auto" title="WhatsApp-ready gameweek recap">&#128203; Copy the Minutes</button></h2>
-    ${row('&#127942;', 'Manager of the Week', `<b>${esc(teamName(hi.id))}</b> — ${hi.s} points`)}
-    ${row('&#129348;', 'The Wooden Spoon', `<b>${esc(teamName(lo.id))}</b> — ${lo.s} points`)}
-    ${jammy ? row('&#127808;', 'Jammiest Win', `<b>${esc(teamName(jammy.w))}</b> won with just ${jammy.ws}`) : ''}
-    ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
-    ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
-    ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
-    ${handful ? row('&#128058;', '&ldquo;He&rsquo;s A Handful&trade;&rdquo;', `<b>${pname(handful.p)}</b> — ${handfulBits(handful)}${ownTag(handful.p.id)}`) : ''}
-    ${nffb ? row('&#129462;', 'No-Footed Full Back', `<b>${pname(nffb.p)}</b> — the full 90, no goal, no assist, no clean sheet. Presented by the Punditry Desk${ownTag(nffb.p.id)}`) : ''}
+    <div class="awards-head">
+      <div><h2>GW${GAMEWEEKS[last].n} — The Committee's Awards</h2><p>issued automatically, disputed endlessly</p></div>
+      <button class="btn ghost small" id="copyMinutes" title="WhatsApp-ready gameweek recap">&#128203; Copy the Minutes</button>
+    </div>
+    <div class="awards-list">
+      ${row('&#127942;', 'Manager of the Week', `<b>${esc(teamName(hi.id))}</b> — ${hi.s} points`)}
+      ${row('&#129348;', 'The Wooden Spoon', `<b>${esc(teamName(lo.id))}</b> — ${lo.s} points`)}
+      ${jammy ? row('&#127808;', 'Jammiest Win', `<b>${esc(teamName(jammy.w))}</b> won with just ${jammy.ws}`) : ''}
+      ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
+      ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
+      ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
+      ${handful ? row('&#128058;', '&ldquo;He&rsquo;s A Handful&trade;&rdquo;', `<b>${pname(handful.p)}</b> — ${handfulBits(handful)}${ownTag(handful.p.id)}`) : ''}
+      ${nffb ? row('&#129462;', 'No-Footed Full Back', `<b>${pname(nffb.p)}</b> — the full 90, no goal, no assist, no clean sheet. Presented by the Punditry Desk${ownTag(nffb.p.id)}`) : ''}
+    </div>
   </div>`;
 }
 /* ----- the Lobus Registry (ledger #1 — one mandatory Lobus each) ----- */

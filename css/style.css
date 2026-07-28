@@ -640,6 +640,73 @@ tr.st-red .pname { color: #ff9c9c; }
 .vidi-line:last-child { border-bottom: none; }
 .vidi-when { color: var(--muted); font-size: 10px; margin-right: 4px; }
 
+/* Committee awards: labels and results are deliberately separate columns.
+   The old generic lrow class had no dashboard-wide layout, which made
+   "Manager of the WeekGeldog FC" read as one accidental word on phones. */
+.awards-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; margin-bottom: 8px;
+}
+.awards-head h2 { margin-bottom: 3px; }
+.awards-head p { color: var(--muted); font-size: 12px; }
+.awards-head .btn { flex: none; }
+.awards-list { border-top: 1px solid rgba(38,50,80,.65); }
+.award-row {
+  display: grid; grid-template-columns: 26px minmax(145px, auto) minmax(0, 1fr);
+  gap: 8px; align-items: start; padding: 9px 0;
+  border-bottom: 1px solid rgba(38,50,80,.5); font-size: 12.5px;
+}
+.award-row:last-child { border-bottom: none; }
+.award-icon { font-size: 17px; line-height: 1.25; text-align: center; }
+.award-label { line-height: 1.4; }
+.award-value { min-width: 0; color: var(--muted); line-height: 1.45; }
+.award-value b { color: var(--text); }
+
+/* Treatment Room: status is a readable band, not an emoji buried in prose. */
+.treatment-row {
+  --trm-colour: var(--red);
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px;
+  padding: 10px 11px; margin-bottom: 7px;
+  border: 1px solid color-mix(in srgb, var(--trm-colour) 30%, var(--line));
+  border-left: 4px solid var(--trm-colour); border-radius: 10px;
+  background: color-mix(in srgb, var(--trm-colour) 7%, var(--bg2));
+}
+.treatment-icon { padding-top: 1px; text-align: center; }
+.treatment-icon .status-chip { margin: 0; font-size: 15px; }
+.treatment-body { min-width: 0; }
+.treatment-head {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  min-width: 0; margin-bottom: 3px;
+}
+.treatment-player { min-width: 0; font-size: 13.5px; font-weight: 700; }
+.treatment-club { color: var(--muted); font-size: 11px; font-weight: 500; }
+.treatment-severity {
+  margin-left: auto; padding: 2px 7px; border-radius: 99px; flex: none;
+  border: 1px solid color-mix(in srgb, var(--trm-colour) 55%, transparent);
+  background: color-mix(in srgb, var(--trm-colour) 16%, transparent);
+  color: color-mix(in srgb, var(--trm-colour) 65%, white);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .05em;
+}
+.treatment-owner { min-height: 18px; color: var(--muted); font-size: 10.5px; margin-bottom: 3px; }
+.treatment-owner .tag { display: inline-block; padding: 2px 7px; }
+.treatment-news { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.treatment-updated { opacity: .65; white-space: nowrap; }
+.treatment-doubt { --trm-colour: #e0a83c; }
+.treatment-major-doubt, .treatment-medium { --trm-colour: #e8843a; }
+.treatment-out, .treatment-suspended { --trm-colour: #e05555; }
+.treatment-long, .treatment-unknown { --trm-colour: #c04468; }
+
+@media (max-width: 560px) {
+  .awards-head { flex-direction: column; align-items: stretch; }
+  .awards-head .btn { align-self: flex-start; }
+  .award-row { grid-template-columns: 26px minmax(0, 1fr); gap: 2px 9px; padding: 10px 0; }
+  .award-icon { grid-row: 1 / span 2; }
+  .award-label, .award-value { grid-column: 2; }
+  .award-value { font-size: 12.5px; }
+  .treatment-row { padding: 9px; }
+  .treatment-severity { margin-left: 0; }
+}
+
 /* attention dots on the nav */
 .nav button { position: relative; }
 .nav-dot {
