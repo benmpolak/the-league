@@ -669,12 +669,17 @@ const SEED_SEASON = `(() => {
     return {
       open: !!ov, rows: ov.querySelectorAll('.gs-row').length,
       scrollW: document.documentElement.scrollWidth,
-      home: { w: homeRect.width, h: homeRect.height, label: home.getAttribute('aria-label') },
+      home: {
+        w: homeRect.width, h: homeRect.height,
+        label: home.getAttribute('aria-label'),
+        textVisible: getComputedStyle(home.querySelector('.sync-txt')).display !== 'none',
+      },
     };
   });
-  chk('G1b/G18: 320px header controls are usable; search fits and Dashboard is a 44px target',
+  chk('G1b/G18: 320px header controls are usable; search fits and Dashboard is a labelled pill',
     g18.open && g18.rows > 0 && g18.scrollW <= 320
-      && g18.home.w >= 44 && g18.home.h >= 44 && g18.home.label === 'Dashboard',
+      && g18.home.w >= 110 && g18.home.h >= 44
+      && g18.home.label === 'Dashboard' && g18.home.textVisible,
     JSON.stringify(g18));
   await g320.close();
 
