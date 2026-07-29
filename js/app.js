@@ -39,8 +39,8 @@ const POS_LABEL = { GK: 'Goalkeepers', DF: 'Defenders', MF: 'Midfielders', FW: '
 // how many players outrank you on last season's points — used for pundit judgement
 const ratingRank = r => PLAYERS.filter(x => (x.rating ?? 0) > r).length;
 
-// Draft Fantasy's default table (docs.draftfantasy.com), minus bonus points.
-// Yes, a goalkeeper goal really is 10.
+// Our established scoring table: no bonus points and no defensive-contribution
+// (DEFCON) points. Yes, a goalkeeper goal really is 10.
 const DEFAULT_SCORING = {
   appearanceStart: 2,
   appearanceSub: 1,
@@ -2525,6 +2525,7 @@ function render() {
   renderNav();
   renderSyncArea();
   const main = $('#main');
+  paintScoutCompare();
   // renderIdentity runs on BOTH setup branches: the waiting room is exactly
   // where the lads first tap "Sign in", and returning before it left that
   // button doing nothing (sol club-office P1.2)
@@ -3524,6 +3525,208 @@ function bindColToggle(rerender) {
 const metricSort = s => (a, b) => s === 'name' ? a.name.localeCompare(b.name)
   : ((metricsFor(b)[s] ?? 0) - (metricsFor(a)[s] ?? 0)) || rating(b) - rating(a);
 
+/* ----- Scouting Desk -----
+   Views and comparisons are deliberately device-local. They never enter the
+   shared league state, so twelve managers can tinker without touching one
+   another's board (or creating another server schema to babysit). */
+const SCOUT_PRESETS = [
+  { id: 'form', name: 'Form watch', cols: ['vs', 'f5', 'gw', 'ppg', 'pts'], sort: 'f5' },
+  { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
+  { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'ppg', 'pts'], sort: 'pts' },
+];
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']);
+const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
+let scoutActiveView = { draft: '', transfers: '' };
+const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
+function cleanScoutView(v) {
+  if (!v || typeof v !== 'object') return null;
+  const name = String(v.name || '').trim().replace(/\s+/g, ' ').slice(0, 28);
+  if (!name) return null;
+  const allowedCols = new Set(ALL_STAT_COLS(seasonHasStats()).map(c => c.k));
+  const cols = toArr(v.cols).filter((k, i, a) => allowedCols.has(k) && a.indexOf(k) === i);
+  const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'pts';
+  const pos = SCOUT_POS.has(v.pos) ? v.pos : '';
+  const team = TEAM_BY_NAME[v.team] ? v.team : '';
+  const scope = v.scope === 'all' ? 'all' : 'free';
+  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope };
+}
+function scoutViews() {
+  try {
+    return toArr(JSON.parse(localStorage.getItem(scoutViewsKey()))).map(cleanScoutView).filter(Boolean).slice(0, 8);
+  } catch { return []; }
+}
+function writeScoutViews(views) {
+  try { localStorage.setItem(scoutViewsKey(), JSON.stringify(views.map(cleanScoutView).filter(Boolean).slice(0, 8))); }
+  catch { toast('This device could not save that view'); }
+}
+function scoutViewHtml(surface) {
+  const saved = scoutViews();
+  const active = scoutActiveView[surface] || '';
+  return `<div class="scout-desk">
+    <span class="scout-title">Scouting desk</span>
+    <select data-scout-view aria-label="Open a scouting view">
+      <option value="" ${active ? '' : 'selected'}>Open a view…</option>
+      <optgroup label="Built in">${SCOUT_PRESETS.map(v => `<option value="preset:${v.id}" ${active === `preset:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>
+      ${saved.length ? `<optgroup label="My saved views">${saved.map(v => `<option value="saved:${esc(v.id)}" ${active === `saved:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>` : ''}
+    </select>
+    <button class="btn ghost small" data-scout-save>Save current</button>
+    ${saved.length ? `<button class="btn ghost small" data-scout-delete ${active.startsWith('saved:') ? '' : 'disabled'}>Delete</button>` : ''}
+    <span class="muted scout-private">Private to this device</span>
+  </div>`;
+}
+function scoutSnapshot(surface) {
+  const src = surface === 'draft' ? poolFilter : transfersView;
+  return cleanScoutView({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: 'view',
+    cols: visibleColKeys(seasonHasStats()),
+    sort: src.sort,
+    pos: src.pos,
+    team: surface === 'draft' ? src.team : src.club,
+    scope: surface === 'transfers' ? src.scope : 'free',
+  });
+}
+function applyScoutView(v, surface) {
+  const clean = cleanScoutView(v);
+  if (!clean) return false;
+  _colPrefs = clean.cols.length ? clean.cols : DEFAULT_COL_KEYS(seasonHasStats());
+  localStorage.setItem('tl2627-cols', JSON.stringify(_colPrefs));
+  if (surface === 'draft') {
+    poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
+  } else {
+    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
+  }
+  return true;
+}
+function bindScoutDesk(surface, rerender) {
+  document.querySelectorAll('.scout-desk').forEach(desk => {
+    const sel = desk.querySelector('[data-scout-view]');
+    const del = desk.querySelector('[data-scout-delete]');
+    sel.onchange = () => {
+      scoutActiveView[surface] = sel.value;
+      if (del) del.disabled = !sel.value.startsWith('saved:');
+      if (!sel.value) return;
+      const v = sel.value.startsWith('preset:')
+        ? SCOUT_PRESETS.find(x => x.id === sel.value.slice(7))
+        : scoutViews().find(x => x.id === sel.value.slice(6));
+      if (v && applyScoutView(v, surface)) rerender();
+    };
+    desk.querySelector('[data-scout-save]').onclick = () => {
+      const raw = prompt('Name this scouting view (for example: Friday shortlist)');
+      const name = String(raw || '').trim().replace(/\s+/g, ' ').slice(0, 28);
+      if (!name) return;
+      const views = scoutViews();
+      const snap = { ...scoutSnapshot(surface), name };
+      const existing = views.findIndex(v => v.name.toLowerCase() === name.toLowerCase());
+      if (existing >= 0) {
+        views[existing] = { ...snap, id: views[existing].id };
+        scoutActiveView[surface] = `saved:${views[existing].id}`;
+      } else {
+        views.push(snap);
+        scoutActiveView[surface] = `saved:${snap.id}`;
+      }
+      writeScoutViews(views.slice(-8));
+      toast(existing >= 0 ? `${name} updated` : `${name} saved on this device`);
+      rerender();
+    };
+    if (del) del.onclick = () => {
+      if (!sel.value.startsWith('saved:')) return;
+      const id = sel.value.slice(6);
+      const doomed = scoutViews().find(v => v.id === id);
+      writeScoutViews(scoutViews().filter(v => v.id !== id));
+      scoutActiveView[surface] = '';
+      toast(doomed ? `${doomed.name} deleted` : 'Saved view deleted');
+      rerender();
+    };
+  });
+}
+
+let scoutCompare = [];
+const compareButtonHtml = pid => {
+  const on = scoutCompare.includes(pid);
+  return `<button class="btn ghost small${on ? ' compare-on' : ''}" data-compare="${pid}" aria-pressed="${on}" title="${on ? 'Remove from comparison' : 'Add to comparison'}">${on ? '&#10003; Comparing' : 'Compare'}</button>`;
+};
+function compareOwner(pid) {
+  return state.managers.find(m => managerSquad(m.id).some(p => p.id === pid));
+}
+function paintScoutCompare() {
+  document.querySelectorAll('[data-compare]').forEach(b => {
+    const on = scoutCompare.includes(+b.dataset.compare);
+    b.classList.toggle('compare-on', on);
+    b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = on ? '&#10003; Comparing' : 'Compare';
+  });
+  let fab = document.getElementById('scoutCompareFab');
+  if (state.phase === 'setup' || !scoutCompare.length) {
+    fab?.remove();
+    const ov = document.getElementById('scoutCompareOverlay');
+    if (ov) closeOv(ov);
+    return;
+  }
+  if (!fab) {
+    fab = document.createElement('button');
+    fab.id = 'scoutCompareFab';
+    fab.className = 'btn compare-fab';
+    fab.onclick = () => showScoutCompare(true);
+    document.body.appendChild(fab);
+  }
+  fab.textContent = `Compare ${scoutCompare.length}/3`;
+  fab.setAttribute('aria-label', `Compare ${scoutCompare.length} selected players`);
+  if (document.getElementById('scoutCompareOverlay')) showScoutCompare(false);
+}
+function toggleScoutCompare(pid) {
+  if (!PLAYER_BY_ID[pid]) return;
+  if (scoutCompare.includes(pid)) scoutCompare = scoutCompare.filter(id => id !== pid);
+  else if (scoutCompare.length >= 3) { toast('Three is enough for an honest comparison'); return; }
+  else scoutCompare = [...scoutCompare, pid];
+  paintScoutCompare();
+}
+function showScoutCompare(addHistory = true) {
+  document.getElementById('scoutCompareOverlay')?.remove();
+  if (!scoutCompare.length) return;
+  const fields = [
+    ['Next', p => esc(nextFx(p.team))],
+    ['Apps', p => metricsFor(p).apps],
+    ['Minutes', p => metricsFor(p).min],
+    ['Goals', p => metricsFor(p).g],
+    ['Assists', p => metricsFor(p).a],
+    ['xGI', p => metricsFor(p).xgi.toFixed(1)],
+    ['Form (5)', p => metricsFor(p).f5.toFixed(1)],
+    ['PPG', p => metricsFor(p).ppg.toFixed(1)],
+    ['League pts', p => `<b class="gold">${metricsFor(p).pts}</b>`],
+  ];
+  const players = scoutCompare.map(id => PLAYER_BY_ID[id]).filter(Boolean);
+  const gws = GAMEWEEKS.slice(currentGwIndex(), currentGwIndex() + 6);
+  const ov = document.createElement('div');
+  ov.id = 'scoutCompareOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card compare-card" role="dialog" aria-modal="true" aria-label="Player comparison">
+    <div class="compare-head">
+      <div><h2>Scouting comparison <span class="tag">${players.length}/3</span></h2><p class="muted">League scoring only. No bonus. No DEFCON.</p></div>
+      <button class="btn ghost small" data-compare-close aria-label="Close comparison">&#10005;</button>
+    </div>
+    <div class="compare-grid" style="--compare-count:${players.length}">
+      ${players.map(p => {
+        const owner = compareOwner(p.id);
+        return `<section class="compare-player">
+          <div class="compare-player-head">${photoImg(p)}<div><h3>${esc(p.name)}</h3><p class="muted">${esc(p.club)} &middot; ${p.pos}</p><p class="muted">${owner ? `Owned by ${esc(teamName(owner.id))}` : 'Free agent'}</p></div></div>
+          ${fields.map(([label, val]) => `<div class="compare-row"><span>${label}</span><span>${val(p)}</span></div>`).join('')}
+          <div class="compare-runway"><b>Next six</b>${gws.map(g => `<span><small>GW${g.n}</small>${esc(nextOpp(p.team, g.n) || '—')}</span>`).join('')}</div>
+          <button class="btn ghost small" data-compare-remove="${p.id}">Remove</button>
+        </section>`;
+      }).join('')}
+    </div>
+    <div class="compare-foot"><button class="btn ghost small" data-compare-clear>Clear all</button></div>
+  </div>`;
+  ov.onclick = e => { if (e.target === ov || e.target.closest('[data-compare-close]')) closeOv(ov); };
+  ov.querySelectorAll('[data-compare-remove]').forEach(b => b.onclick = e => { e.stopPropagation(); toggleScoutCompare(+b.dataset.compareRemove); });
+  ov.querySelector('[data-compare-clear]').onclick = e => { e.stopPropagation(); scoutCompare = []; paintScoutCompare(); };
+  document.body.appendChild(ov);
+  if (addHistory) pushOvState();
+}
+
+let bulkQueueIds = new Set();
+
 function poolTable() {
   const taken = draftedIds();
   const mid = currentManagerId();
@@ -3539,12 +3742,23 @@ function poolTable() {
   rows.sort(metricSort(s));
   const total = rows.length;
   rows = rows.slice(0, poolFilter.limit);
+  const canQueue = whoami && whoami !== -1;
+  const visibleIds = rows.map(p => p.id);
+  const selected = [...bulkQueueIds].filter(id => !taken.has(id));
   return `
   <div class="pool-wrap">
-  <div style="display:flex;align-items:center;margin-bottom:4px">${colToggleHtml(seasonHasStats())}</div>
+  ${scoutViewHtml('draft')}
+  <div class="pool-toolbar">
+    ${canQueue ? `<div class="bulk-queue">
+      <button class="btn ghost small" data-bulk-all="${visibleIds.join(',')}">${visibleIds.length && visibleIds.every(id => bulkQueueIds.has(id)) ? 'Clear page' : 'Select page'}</button>
+      <button class="btn small" data-bulk-add ${selected.length ? '' : 'disabled'}>Add ${selected.length || ''} to queue</button>
+    </div>` : ''}
+    ${colToggleHtml(seasonHasStats())}
+  </div>
   <div style="overflow-x:auto">
   <table class="pool-table">
     <thead><tr>
+      ${canQueue ? '<th class="bulk-check"><span class="sr-only">Queue selection</span></th>' : ''}
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
       ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
@@ -3552,12 +3766,13 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}">
+        ${canQueue ? `<td class="bulk-check"><input type="checkbox" data-bulk-pid="${p.id}" aria-label="Select ${esc(p.name)} for the autopick queue" ${bulkQueueIds.has(p.id) ? 'checked' : ''}></td>` : ''}
         <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${esc(p.full)}</div></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td class="act" style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${whoami && whoami !== -1 ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${compareButtonHtml(p.id)}${canQueue ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -3726,6 +3941,39 @@ function refreshPool() {
   q.setSelectionRange(q.value.length, q.value.length);
 }
 function bindPoolTable() {
+  bindScoutDesk('draft', refreshPool);
+  const updateBulkQueue = () => {
+    const add = document.querySelector('[data-bulk-add]');
+    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !draftedIds().has(id));
+    if (add) {
+      add.disabled = !selected.length;
+      add.textContent = `Add ${selected.length || ''} to queue`;
+    }
+  };
+  document.querySelectorAll('[data-bulk-pid]').forEach(cb => cb.onchange = () => {
+    const pid = +cb.dataset.bulkPid;
+    cb.checked ? bulkQueueIds.add(pid) : bulkQueueIds.delete(pid);
+    updateBulkQueue();
+  });
+  const all = document.querySelector('[data-bulk-all]');
+  if (all) all.onclick = () => {
+    const ids = all.dataset.bulkAll.split(',').map(Number).filter(Boolean);
+    const clear = ids.length && ids.every(id => bulkQueueIds.has(id));
+    ids.forEach(id => clear ? bulkQueueIds.delete(id) : bulkQueueIds.add(id));
+    refreshPool();
+  };
+  const bulkAdd = document.querySelector('[data-bulk-add]');
+  if (bulkAdd) bulkAdd.onclick = () => {
+    if (!whoami || whoami === -1) return;
+    const taken = draftedIds();
+    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !taken.has(id));
+    const current = toArr(state.autolists?.[whoami]);
+    const fresh = selected.filter(id => !current.includes(id));
+    if (!fresh.length) { toast('Those players are already queued'); return; }
+    bulkQueueIds = new Set();
+    setAutolist(whoami, [...current, ...fresh]);
+    toast(`${fresh.length} player${fresh.length === 1 ? '' : 's'} added to your autopick queue`);
+  };
   document.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
     const pid = +b.dataset.pick, mid = currentManagerId(), p = PLAYER_BY_ID[pid];
     // explain, don't dead-tap: a disabled-looking button now says why (tooltips
@@ -4407,12 +4655,12 @@ function bindTransfers() {
             <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
-            <td class="act">${action}</td>
+            <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>
       ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more</button> <button class="btn ghost small" id="trAll">Show all ${total}</button></div>` : ''}`;
-      results.innerHTML = hint + `
+      results.innerHTML = hint + scoutViewHtml('transfers') + `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
         ${['', 'GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${transfersView.pos === pp ? '' : 'ghost'}" data-trpos="${pp}">${pp || 'All'}</button>`).join('')}
         <select id="trClub" style="padding:6px 8px;font-size:12px">
@@ -4433,6 +4681,7 @@ function bindTransfers() {
         transfersView.tab = 'trades'; window._tradeFocus = { other, get }; render();
       });
       results.querySelectorAll('[data-trsort]').forEach(th => th.onclick = () => { transfersView.sort = th.dataset.trsort; renderTrResults(); });
+      bindScoutDesk('transfers', renderTrResults);
       bindColToggle(renderTrResults);
       const more = results.querySelector('#trMore');
       if (more) more.onclick = () => { transfersView.limit += 50; renderTrResults(); };
@@ -5624,7 +5873,7 @@ function viewTable() {
     .sort((a, b) => b.pts - a.pts).slice(0, 10);
   const hasPts = ranked.some(r => r.pts !== 0);
   const investigation = hasPts
-    ? `<div class="card investigation"><span class="rec"></span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</div>`
+    ? `<div class="card investigation"><span class="rec"></span><span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</span></div>`
     : '';
   // Lee (twice): the FULL table must be the first thing this page shows, and
   // the dense H2H-table look beats the big expandable rows. Fixtures and the
@@ -5830,7 +6079,7 @@ function viewRules() {
     <div class="card">
       <h2>Scoring</h2>
       ${Object.keys(DEFAULT_SCORING).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
-      <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus-point nonsense. Double gameweeks score on the week's combined stats.</p>
+      <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus points. <b>No defensive-contribution (DEFCON) points.</b> Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
       <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
@@ -6144,7 +6393,7 @@ function showPlayerCard(pid) {
     })()}
     <div style="max-height:260px;overflow-y:auto">${gwRows.join('') || '<p class="muted" style="font-size:12px">No gameweek data yet this season.</p>'}</div>
     <div id="pcardActions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
-    <p class="muted" style="font-size:10.5px;margin-top:8px">League pts use our scoring (no bonus). FPL official shown for arguments.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">League pts use our scoring: no bonus and no defensive-contribution (DEFCON) points. FPL official shown for arguments.</p>
   </div>`;
   ov.onclick = e => { if (e.target === ov || e.target.id === 'pcardClose') closeOv(ov); };
   document.body.appendChild(ov);
@@ -6162,6 +6411,7 @@ function showPlayerCard(pid) {
     acts.appendChild(b);
   };
   const iAmManager = whoami && whoami !== -1;
+  btn(scoutCompare.includes(pid) ? '&#10003; Remove from comparison' : 'Compare player', () => toggleScoutCompare(pid), true);
   if (state.phase === 'draft' && !draftedIds().has(pid)) {
     const myTurn = currentManagerId() != null && canActFor(currentManagerId()) && canPick(currentManagerId(), p);
     if (myTurn) btn('Draft him', async () => {
@@ -6227,13 +6477,22 @@ function showPlayerCard(pid) {
     }
   }
 }
+// Compare buttons are dynamic across the draft pool, Trough and global search.
+// Capture them before their enclosing player row opens the normal stats card.
+document.addEventListener('click', e => {
+  const b = e.target.closest?.('[data-compare]');
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  toggleScoutCompare(+b.dataset.compare);
+}, true);
 // any player photo/kit anywhere opens the card (capture phase beats row handlers)
 document.addEventListener('click', e => {
   const t = e.target.closest?.('[data-pcard]');
   if (!t) return;
   // search-result action buttons sit inside a data-pcard row — their click is
   // a navigation, not a card-open; let the palette's own handler take it
-  if (e.target.closest?.('[data-gsact]')) return;
+  if (e.target.closest?.('[data-gsact], [data-compare]')) return;
   // mid-swap on your own pitch: the tap completes the swap instead of opening the card
   if (state.view === 'team' && teamView.pitchSel != null && e.target.closest?.('[data-pitch]')) return;
   e.preventDefault();
@@ -6307,7 +6566,7 @@ function gsRowsHtml(players, ownerOf) {
         <span class="muted" title="FPL expected points, next gameweek">x${playerXp(p).toFixed(1)}</span>
         <span>${nextOppHtml(p.team, GAMEWEEKS[cur]?.n)}</span>
       </div>
-      ${act ? `<div class="gs-act">${act}</div>` : ''}
+      <div class="gs-act">${compareButtonHtml(p.id)}${act}</div>
     </div>`;
   }).join('');
 }

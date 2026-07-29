@@ -161,6 +161,7 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   color: var(--muted); margin-bottom: 16px; padding: 13px 18px;
   border-color: rgba(239,100,97,.35);
 }
+.investigation > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .investigation b { color: var(--red); letter-spacing: 1px; flex: none; }
 
 .order-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -173,6 +174,15 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 
 .pool-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .pool-controls input[type=text] { flex: 1; min-width: 180px; }
+.pool-toolbar { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
+.bulk-queue { display: flex; gap: 6px; align-items: center; margin-right: auto; }
+.bulk-check { width: 34px; min-width: 34px; text-align: center !important; padding-left: 5px !important; padding-right: 5px !important; }
+.bulk-check input { width: 17px; height: 17px; cursor: pointer; }
+.row-actions { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
 .pool-table { width: 100%; border-collapse: collapse; }
 .pool-table th {
   text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
@@ -795,6 +805,50 @@ tr.st-red .pname { color: #ff9c9c; }
 @media (max-width: 480px) {
   .gs-row { flex-wrap: wrap; }
   .gs-act { flex-direction: row; width: 100%; }
+}
+
+/* ----- private Scouting Desk ----- */
+.scout-desk {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  padding: 8px 10px; margin: 2px 0 9px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: rgba(255,255,255,.025);
+}
+.scout-title { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.scout-desk select { min-width: 150px; padding: 7px 9px; font-size: 12px; }
+.scout-private { margin-left: auto; font-size: 10.5px; }
+.compare-on { border-color: var(--accent) !important; color: var(--accent) !important; }
+.compare-fab {
+  position: fixed; left: 18px; bottom: 18px; z-index: 55;
+  box-shadow: 0 8px 26px rgba(0,0,0,.45);
+}
+.compare-card { width: min(94%, 920px); max-height: 91vh; overflow-y: auto; }
+.compare-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; margin-bottom: 12px; }
+.compare-head h2 { margin-bottom: 2px; }
+.compare-head p { font-size: 11.5px; }
+.compare-grid {
+  display: grid; grid-template-columns: repeat(var(--compare-count), minmax(0, 1fr));
+  gap: 10px;
+}
+.compare-player {
+  min-width: 0; padding: 11px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card2);
+}
+.compare-player-head { display: flex; gap: 8px; align-items: flex-start; min-height: 64px; margin-bottom: 8px; }
+.compare-player-head .headshot { width: 44px; height: 56px; flex: none; object-fit: cover; }
+.compare-player-head h3 { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
+.compare-player-head p { font-size: 10.5px; margin-top: 2px; }
+.compare-row { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-top: 1px solid rgba(38,50,80,.45); font-size: 11.5px; }
+.compare-row > span:first-child { color: var(--muted); }
+.compare-runway { display: grid; gap: 4px; margin: 8px 0; }
+.compare-runway > span { display: flex; justify-content: space-between; gap: 6px; font-size: 10.5px; }
+.compare-runway small { color: var(--muted); }
+.compare-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+@media (max-width: 700px) {
+  .scout-private { width: 100%; margin-left: 0; }
+  .compare-fab { bottom: calc(62px + env(safe-area-inset-bottom)); left: 10px; }
+  .compare-grid { grid-template-columns: 1fr; }
+  .compare-player { display: grid; grid-template-columns: minmax(0, 1fr); }
 }
 
 /* the Opta desk's requirement line + full-time result */
