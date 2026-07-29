@@ -2758,7 +2758,8 @@ function renderSyncArea() {
   }
   if (state.phase !== 'draft') {
     // Home: the Dashboard in season, the waiting room pre-draft
-    bits.push(`<button id="homeBtn" class="btn small" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt"> Home</span></button>`);
+    const homeLabel = state.phase === 'setup' ? 'Waiting room' : 'Dashboard';
+    bits.push(`<button id="homeBtn" class="btn home-btn${state.view === 'dash' ? ' is-current' : ''}" aria-label="${homeLabel}" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt">${homeLabel}</span></button>`);
   }
   bits.push(`<button class="tag" id="gSearchBtn" style="cursor:pointer" aria-label="Search players" title="Search every player (Ctrl+K or /)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-1px"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>`);
   bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);

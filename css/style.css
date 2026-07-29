@@ -93,6 +93,18 @@ h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spa
 .btn.ghost { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
 .btn.danger { background: var(--red); color: #fff; }
 .btn.small { padding: 6px 12px; font-size: 12px; }
+.home-btn {
+  min-height: 36px; padding: 8px 14px; display: inline-flex;
+  align-items: center; justify-content: center; gap: 6px; font-size: 13px;
+  white-space: nowrap;
+}
+.home-btn svg { width: 15px; height: 15px; flex: none; }
+/* It remains an obvious escape hatch without competing with the active
+   navigation tab when the manager is already on the Dashboard. */
+.home-btn.is-current {
+  color: var(--accent); background: rgba(45,212,167,.10);
+  border: 1px solid rgba(45,212,167,.45);
+}
 input[type=text], input[type=number], select {
   background: var(--bg2); border: 1px solid var(--line); color: var(--text);
   border-radius: 9px; padding: 9px 12px; font-size: 14px; outline: none;
@@ -596,6 +608,8 @@ tr.st-red .pname { color: #ff9c9c; }
   .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nav.setup-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .home-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 11px; }
+  .home-btn svg { width: 17px; height: 17px; }
   .sync-updated { display: none; }
 }
 
