@@ -659,15 +659,28 @@ const SEED_SEASON = `(() => {
   /* G18 — 320px search palette */
   const g320 = await newPage(dCtx, 'http://localhost:8125?demo', { width: 320, height: 650 });
   const g18 = await g320.evaluate(async () => {
+    const home = document.getElementById('homeBtn');
+    const homeRect = home.getBoundingClientRect();
     document.getElementById('gSearchBtn').click();
     const ov = document.getElementById('searchOverlay');
     const q = ov.querySelector('#gsq');
     q.value = 'a'; q.dispatchEvent(new Event('input'));
     await new Promise(r => setTimeout(r, 100));
-    return { open: !!ov, rows: ov.querySelectorAll('.gs-row').length, scrollW: document.documentElement.scrollWidth };
+    return {
+      open: !!ov, rows: ov.querySelectorAll('.gs-row').length,
+      scrollW: document.documentElement.scrollWidth,
+      home: {
+        w: homeRect.width, h: homeRect.height,
+        label: home.getAttribute('aria-label'),
+        textVisible: getComputedStyle(home.querySelector('.sync-txt')).display !== 'none',
+      },
+    };
   });
-  chk('G1b/G18: 320px header button opens the palette; results fit without overflow',
-    g18.open && g18.rows > 0 && g18.scrollW <= 320, JSON.stringify(g18));
+  chk('G1b/G18: 320px header controls are usable; search fits and Dashboard is a labelled pill',
+    g18.open && g18.rows > 0 && g18.scrollW <= 320
+      && g18.home.w >= 110 && g18.home.h >= 44
+      && g18.home.label === 'Dashboard' && g18.home.textVisible,
+    JSON.stringify(g18));
   await g320.close();
 
   /* G17 — no uncaught page errors anywhere */

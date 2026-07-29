@@ -13,7 +13,7 @@ Forked from the World Cup 2026 build; reskinned for this group.
 - **The Monzo League Cup**: last man standing from GW8 — lowest gameweek score is eliminated, ties roll over
 - **Weekly waivers**: one swap each in reverse table order (bottom feeds first); trade desk for agreed swaps
 - **Auto-subs**: a starter who never plays is replaced by your best bench player who did (keeps XI shape legal)
-- Scoring computed from raw official FPL stats with our own editable table — pen save +5, no captains, no bonus nonsense
+- Scoring computed from raw official FPL stats with our own editable table — pen save +5, no captains, no bonus or defensive-contribution (DEFCON) points
 - Pure static site on GitHub Pages + Firebase RTDB for multiplayer sync (free tier)
 
 ## Data pipeline

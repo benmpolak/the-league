@@ -595,6 +595,55 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   const x9 = await x.evaluate(() => window.__wc2.length);
   chk('X9: Next Six triggered zero WCSync calls', x9 === 0, `${x9}`);
 
+  /* ═══════════════ DASHBOARD MOBILE READABILITY ═══════════════ */
+  const dash320 = await newPage(ctx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const dBands = await dash320.evaluate(() => {
+    const t0 = new Date(2026, 6, 28, 12).getTime();
+    Date.now = () => t0;
+    const cases = [
+      treatmentBand({ status: 'd', chance: 75, news: '75% chance of playing' }),
+      treatmentBand({ status: 'i', chance: 0, news: 'Expected back 5 Aug' }),
+      treatmentBand({ status: 'i', chance: 0, news: 'Expected back 21 Aug' }),
+      treatmentBand({ status: 'i', chance: 0, news: 'Unknown return date' }),
+      treatmentBand({ status: 's', chance: 0, news: 'Suspended until 29 Aug' }),
+    ];
+    state.view = 'dash'; trmShowAll = true; render();
+    const awards = [...document.querySelectorAll('.award-row')];
+    const treatments = [...document.querySelectorAll('.treatment-row')];
+    const firstAward = awards[0];
+    const label = firstAward?.querySelector('.award-label')?.getBoundingClientRect();
+    const value = firstAward?.querySelector('.award-value')?.getBoundingClientRect();
+    return {
+      cases,
+      awards: awards.length,
+      awardGrid: firstAward ? getComputedStyle(firstAward).display : '',
+      awardParts: firstAward?.children.length || 0,
+      mobileAwardStacks: !!label && !!value && value.top >= label.bottom - 1,
+      treatments: treatments.length,
+      treatmentGrid: treatments[0] ? getComputedStyle(treatments[0]).display : '',
+      treatmentParts: treatments[0]?.querySelectorAll('.treatment-player,.treatment-severity,.treatment-owner,.treatment-news').length || 0,
+      severityLabels: treatments.slice(0, 20).map(r => r.querySelector('.treatment-severity')?.textContent.trim()).filter(Boolean),
+      docW: document.documentElement.scrollWidth,
+    };
+  });
+  chk('D1: severity helper distinguishes doubt, short absence, 2–4 weeks, unknown return and suspension',
+    JSON.stringify(dBands.cases) === JSON.stringify([
+      { k: 'doubt', label: '75% CHANCE' },
+      { k: 'out', label: 'OUT' },
+      { k: 'medium', label: '2–4 WEEKS' },
+      { k: 'unknown', label: 'RETURN UNKNOWN' },
+      { k: 'suspended', label: 'SUSPENDED' },
+    ]), JSON.stringify(dBands.cases));
+  chk('D2: awards are real three-part grid rows and stack label over value at 320px',
+    dBands.awards >= 5 && dBands.awardGrid === 'grid' && dBands.awardParts === 3 && dBands.mobileAwardStacks,
+    JSON.stringify({ awards: dBands.awards, display: dBands.awardGrid, parts: dBands.awardParts, stacked: dBands.mobileAwardStacks }));
+  chk('D3: treatment rows expose player, severity, owner and news as separate grid content',
+    dBands.treatments >= 5 && dBands.treatmentGrid === 'grid' && dBands.treatmentParts === 4 && dBands.severityLabels.length >= 5,
+    JSON.stringify({ treatments: dBands.treatments, display: dBands.treatmentGrid, labels: dBands.severityLabels.slice(0, 6) }));
+  chk('D4: dashboard readability changes add no 320px horizontal overflow',
+    dBands.docW <= 320, `scrollWidth ${dBands.docW}`);
+  await dash320.close();
+
   chk('N21: no uncaught page errors across all pages', allErrors.length === 0, allErrors.join(' | ').slice(0, 200));
 
   await browser.close();
