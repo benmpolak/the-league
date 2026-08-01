@@ -662,6 +662,16 @@ const PHOTO_MISSING = 'https://resources.premierleague.com/premierleague/photos/
 const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" data-code="${p.code}" src="${PHOTO_NEW(p.code)}" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
 // the CSP kills inline onerror= handlers, so broken photos fall back centrally:
 // new library → legacy library → silhouette
+// the wordmark is a home button — clicking "The League" goes to the dashboard
+// (waiting room pre-draft), same as #homeBtn (Ben's UX ask, 1 Aug)
+{
+  const brandEl = document.querySelector('.brand');
+  if (brandEl) {
+    brandEl.style.cursor = 'pointer';
+    brandEl.title = 'Back to the Dashboard';
+    brandEl.addEventListener('click', () => { state.view = 'dash'; save(); render(); });
+  }
+}
 document.addEventListener('error', e => {
   const img = e.target;
   if (!img || img.tagName !== 'IMG' || !(img.classList.contains('headshot') || img.classList.contains('pcard-photo'))) return;
@@ -2120,17 +2130,6 @@ function gwManagerPoints(mid, gwIdx) {
   }
   return pts;
 }
-// GWs in which a manager's Lobus scored or assisted from the starting XI
-function lobusHonours(mid) {
-  const lob = state.lobus?.[mid];
-  if (!lob) return 0;
-  let n = 0;
-  for (let i = 0; i < GAMEWEEKS.length; i++) {
-    const s = gwEvent(i)?.playerStats?.[lob];
-    if (s && (s.g || 0) + (s.a || 0) > 0 && effectiveXI(mid, i).xi.includes(lob)) n++;
-  }
-  return n;
-}
 function managerPoints(mid) {
   let pts = 0;
   for (let i = 0; i < GAMEWEEKS.length; i++) {
@@ -2507,7 +2506,7 @@ const NAV_ITEMS = [
   ['club', 'My Club', 'Club'],
   ['directory', 'Club directory', 'Clubs'],
   ['transfers', 'Transfers', 'Transfers'],
-  ['h2h', 'Head-to-Head', 'H2H'],
+  ['h2h', 'Matches', 'Matches'],
   ['cup', 'Cup competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
@@ -4107,6 +4106,7 @@ function viewTeam() {
       const oxi = lineupFor(oppMid, gw);
       return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
+        ${adStrip(oppMid * 37 + gw, 3, oppMid)}
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
             ${kitImg(p.team, p.pos === 'GK')}
@@ -4918,9 +4918,11 @@ function installCard(settingsPage = false) {
   const how = a2hsEvent ? ''
     : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone, in <b>Safari</b>: tap the <b>Share</b> button (square with an up arrow) — or the <b>&#8943; menu</b> by the address bar — then <b>Add to Home Screen</b>. It hides sometimes: scroll down the list, or check <b>View More / Edit Actions</b>. Own icon, full screen, no browser bar.</p>`
     : `<p class="rules-p" style="font-size:12.5px">In Chrome: open the <b>&#8942; menu</b> and choose <b>Add to Home screen / Install app</b> (on desktop it's the install icon in the address bar).</p>`;
-  return `<div class="card" style="margin-bottom:18px;position:relative">
-    ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsX" title="Dismiss — it lives in Settings" aria-label="Dismiss" style="position:absolute;top:10px;right:10px;padding:2px 9px">&#10005;</button>'}
-    <h2>Get the app &#128241;</h2>
+  return `<div class="card" style="margin-bottom:18px">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <h2 style="flex:1;min-width:0">Get the app &#128241;</h2>
+      ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsX" title="Dismiss — it lives in Settings" aria-label="Dismiss" style="padding:2px 9px;flex:none">&#10005;</button>'}
+    </div>
     <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
     ${how}
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -4992,12 +4994,31 @@ function viewDash() {
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
+      ${(() => {
+        const next = [];
+        for (let k = cur + 1; k < REGULAR_GWS && next.length < 3; k++) {
+          const pr = pairingsFor(k).find(x => x.includes(mid));
+          if (pr) next.push({ k, opp: pr[0] === mid ? pr[1] : pr[0] });
+        }
+        return next.length ? `<h3 style="margin-top:12px">Next three</h3>
+          ${next.map(({ k, opp }) => `<div class="lrow" style="font-size:12.5px"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${kitSvg(opp)} <b>${esc(teamName(opp))}</b> <span class="muted" style="margin-left:auto;font-size:11px">${esc(managerName(opp))}</span></div>`).join('')}` : '';
+      })()}
     </div>`}
     <div class="card">
       <h2>Around the league</h2>
       ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
-      <h3 style="margin-top:12px">The table</h3>
-      ${table.map((r, i) => `<div class="lrow" style="font-size:12.5px${i === 7 ? ';border-bottom:1px dashed var(--gold, #d4af37);padding-bottom:6px;margin-bottom:4px' : ''}${r.id === mid ? ';background:rgba(45,212,167,.07);border-radius:6px' : ''}"><span class="muted">${i + 1}</span> ${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
+      <h3 style="margin-top:12px">The table <span class="muted" style="font-weight:400;font-size:11px">win 3 &middot; draw 1</span></h3>
+      <div style="overflow-x:auto"><table class="pool-table">
+        <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
+        <tbody>
+        ${table.map((r, i) => `<tr class="${i === 7 ? 'playoff-line' : ''}"${r.id === mid ? ' style="background:rgba(45,212,167,.07)"' : ''}>
+          <td class="muted">${i + 1}</td>
+          <td>${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b></td>
+          <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
+          <td class="num gold">${r.pts}</td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
       <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
@@ -5285,7 +5306,7 @@ function awardsCard() {
 /* ----- the Lobus (ledger #1): the Registry card is GONE (Marc, 1 Aug —
    "not a fully formed joke"); declarations stay (player card) and the gag is
    delivered by the LOBUS KLAXON on the Vidiprinter when a declared Lobus
-   scores. lobusHonours feeds the klaxon era's record-keeping. ----- */
+   scores. ----- */
 /* ----- the Committee Minutes: one tap, WhatsApp-ready recap ----- */
 function committeeMinutes(last) {
   const g = GAMEWEEKS[last];
@@ -5665,44 +5686,9 @@ function viewH2H() {
   const cur = currentGwIndex();
   const liveNow = GAMEWEEKS.slice(0, REGULAR_GWS).some((g, i) => gwStatus(i) === 'live');
   const standings = h2hStandings(liveNow);
-  const anyFinal = standings.some(r => r.p > 0);
-  let delta = {};
-  if (liveNow) {
-    const base = h2hStandings(false);
-    const basePos = Object.fromEntries(base.map((r, k) => [r.id, k]));
-    standings.forEach((r, k) => { delta[r.id] = basePos[r.id] - k; });
-  }
-  const arrow = id => !liveNow || !delta[id] ? ''
-    : delta[id] > 0 ? `<span style="color:#3fb96d;font-size:11px">&#9650;${delta[id]}</span>`
-    : `<span style="color:#e05555;font-size:11px">&#9660;${-delta[id]}</span>`;
-  const tableCard = `
-  <div class="card" style="margin-bottom:18px">
-    <h2>Head-to-Head table ${liveNow ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points &middot; regular season = GW1–33</span></h2>
-    <div style="overflow-x:auto">
-    <table class="pool-table">
-      <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num">Overall</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr></thead>
-      <tbody>
-      ${standings.map((r, i) => `
-        <tr class="${i === 7 ? 'playoff-line' : ''}">
-          <td class="muted">${i + 1}</td>
-          <td><span class="plink" data-pitchview="${r.id}" title="See this team on the pitch"><b>${esc(r.team || r.name)}</b> <span class="muted" style="font-size:11px">${esc(r.name)}</span></span> ${arrow(r.id)} ${anyFinal && i === 0 ? '&#127942;' : ''}</td>
-          <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
-          <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
-          <td class="num gold act">${r.pts}</td>
-          <td class="num muted">${managerPoints(r.id)}</td>
-          <td class="num">${(() => {
-            if (i >= 8) return '';
-            const k = Math.min(i, 7 - i);
-            const h = qfHandicap(standings[k].pts, standings[7 - k].pts);
-            if (!h) return '<span class="muted">0</span>';
-            return i < 4 ? `<span class="gold">+${h}</span>` : `<span style="color:#e05555">&minus;${h}</span>`;
-          })()}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>
-    </div>
-    <p class="muted" style="font-size:11px;margin-top:6px">Top eight make the playoffs — the dashed line is the cut. QF = the handicap your position carries into the quarter-final.${liveNow ? ' Live table — includes the gameweek in progress.' : ''}</p>
-  </div>`;
+  // the standings table itself moved to the League Table page (Ben, 1 Aug:
+  // "the head to head table is what should be in the league table") — this
+  // page is Matches: fixtures, preview, playoffs, points grid, crystal ball
   const matchesCard = (() => {
     if (h2hView.gw == null) h2hView.gw = Math.min(cur, REGULAR_GWS - 1);
     const i = h2hView.gw, g = GAMEWEEKS[i];
@@ -5754,7 +5740,6 @@ function viewH2H() {
   // the preview first, THEN the standings — it read as a second league table.
   return `${matchesCard}
   ${gwPreviewCard(cur)}
-  ${tableCard}
   ${playoffCard()}
   ${pointsGridCard(standings)}
   ${crystalBallCard(standings)}
@@ -5960,33 +5945,8 @@ function bindCup() {
 }
 
 /* ----- league table ----- */
-/* the table page opens with this week's scores — and flips to next week's
-   fixtures once the gameweek is fully in the books (the Tuesday rollover) */
-function tableGwCard() {
-  let i = currentGwIndex();
-  if (gwStatus(i) === 'final' && i + 1 < GAMEWEEKS.length) i++;
-  if (i >= REGULAR_GWS) return ''; // playoffs have their own stage on Head-to-Head
-  const st = gwStatus(i);
-  const tag = st === 'final' ? '<span class="tag">full time</span>'
-    : st === 'live' ? '<span class="live-pill"><span class="rec"></span>LIVE</span>'
-    : st === 'underway' ? '<span class="tag">underway — refresh for the latest</span>'
-    : '<span class="tag">upcoming</span>';
-  return `<div class="card" style="margin-bottom:12px">
-    <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">GW${GAMEWEEKS[i].n} ${st === 'upcoming' ? 'fixtures' : 'scores'} ${tag}
-      <button class="btn ghost small" data-goto="h2h" style="margin-left:auto">All matches</button></h2>
-    ${pairingsFor(i).map(([a, b]) => {
-      const pa = st === 'upcoming' ? '&ndash;' : gwManagerPoints(a, i);
-      const pb = st === 'upcoming' ? '&ndash;' : gwManagerPoints(b, i);
-      const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
-      return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-        <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)}</span>
-        <span class="fx-score">${pa} &ndash; ${pb}</span>
-        <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
-      </div>${derbyTag(a, b) ? `<div class="venue-line">${derbyTag(a, b)}</div>` : ''}`;
-    }).join('')}
-    ${st === 'upcoming' ? `<p class="muted" style="font-size:12px;margin-top:8px">Lineups lock ${new Date(gwFrom(i)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</p>` : ''}
-  </div>`;
-}
+/* tableGwCard (this GW's scores on the Table page) RETIRED in the 1 Aug
+   dedupe audit — the Matches page leads with exactly that, one tab away */
 /* form table: the same table, judged over a shorter memory. Informational
    only — official standings, seeding and waivers never read this. */
 let tableView = { mode: 'overall' }; // 'overall' | 3 | 5 — survives the session, never persisted
@@ -6019,10 +5979,15 @@ function viewTable() {
   // Lee (twice): the FULL table must be the first thing this page shows, and
   // the dense H2H-table look beats the big expandable rows. Fixtures and the
   // investigation gag moved below; tap a row for the points breakdown.
+  // Ben (1 Aug): THE league table is the head-to-head table — 3 for a win,
+  // 1 for a draw, W/D/L columns like Draft Fantasy. Overall FPL points is a
+  // tiebreak column, not the ranking.
   const cur = currentGwIndex();
+  const liveNow = anyMatchLive();
   const mode = tableView.mode;
   const form = mode === 'overall' ? null : formStandings(mode);
-  const rowsData = form ? form.rows : ranked;
+  const standings = form ? null : h2hStandings(true);
+  const rowsData = form ? form.rows : standings;
   const toggles = `<div class="pool-controls" style="margin:0 0 10px">
       <button class="btn small ${mode === 'overall' ? '' : 'ghost'}" data-tblmode="overall">Overall</button>
       <button class="btn small ${mode === 3 ? '' : 'ghost'}" data-tblmode="3">Last 3</button>
@@ -6040,27 +6005,42 @@ function viewTable() {
       : d < 0 ? `<span class="form-move down" title="vs overall position">&#9660;${-d}</span>`
       : '<span class="form-move flat" title="vs overall position">&ndash;</span>';
   };
+  const nCols = form ? 4 : 11;
   return `
     <div class="card" style="margin-bottom:14px">
-      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'overall points &middot; playoffs seed off the Head-to-Head table'}</span></h2>
+      <h2>The table ${liveNow && !form ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points'}</span></h2>
       ${toggles}
       ${formNote}
       <div style="overflow-x:auto">
       <table class="pool-table">
-        <thead><tr><th></th><th>Team</th><th class="num" title="${form ? 'Finished gameweeks counted' : 'Points this gameweek'}">${form ? 'GWs' : 'GW'}</th><th class="num act">Pts</th></tr></thead>
+        <thead>${form
+          ? '<tr><th></th><th>Team</th><th class="num" title="Finished gameweeks counted">GWs</th><th class="num act">Pts</th></tr>'
+          : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr>'}</thead>
         <tbody>
         ${rowsData.map((m, i) => {
           const commTag = form || !hasPts ? '' :
             i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
-            i === ranked.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
+            i === rowsData.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
+          const qfCell = form ? '' : (() => {
+            if (i >= 8) return '<td class="num"></td>';
+            const k = Math.min(i, 7 - i);
+            const h = qfHandicap(standings[k].pts, standings[7 - k].pts);
+            if (!h) return '<td class="num"><span class="muted">0</span></td>';
+            return `<td class="num">${i < 4 ? `<span class="gold">+${h}</span>` : `<span style="color:#e05555">&minus;${h}</span>`}</td>`;
+          })();
           return `
-          <tr data-mgr-row="${m.id}" style="cursor:pointer">
+          <tr data-mgr-row="${m.id}" style="cursor:pointer" class="${!form && i === 7 ? 'playoff-line' : ''}">
             <td class="muted">${i + 1}</td>
             <td><button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch" style="padding:2px 7px">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${moveTag(m)} ${!form && i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
-            <td class="num muted">${form ? form.counted : gwManagerPoints(m.id, cur)}</td>
-            <td class="num gold act"><b>${form ? m.win : m.pts}</b></td>
+            ${form
+              ? `<td class="num muted">${form.counted}</td><td class="num gold act"><b>${m.win}</b></td>`
+              : `<td class="num">${m.p}</td><td class="num">${m.w}</td><td class="num">${m.d}</td><td class="num">${m.l}</td>
+                 <td class="num muted">${m.pf}</td><td class="num muted">${m.pa}</td>
+                 <td class="num gold act"><b>${m.pts}</b></td>
+                 <td class="num muted">${managerPoints(m.id)}</td>
+                 ${qfCell}`}
           </tr>
-          <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="4">
+          <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="${nCols}">
             ${(() => { const md = supportersMood(m.id); return `<p style="font-size:12.5px;margin-bottom:2px">&#128227; <b>${esc(md.t)}</b> <span class="muted" style="font-size:11.5px">${esc(md.line)}</span></p>`; })()}
             ${(() => { const rr = clubRecordsHtml(m.id); return rr.length ? `<div style="margin-bottom:8px">${rr.join('')}</div>` : ''; })()}
             ${managerSquad(m.id).map(p => ({ p, c: contributedPoints(m.id, p.id), r: playerPoints(p.id) }))
@@ -6074,8 +6054,7 @@ function viewTable() {
       </div>
       <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
     </div>
-    ${investigation}
-    ${tableGwCard()}`;
+    ${investigation}`;
 }
 // team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
 function troughActivityCard() {
@@ -6542,7 +6521,6 @@ function showPlayerCard(pid) {
     })()}
     <div style="max-height:260px;overflow-y:auto">${gwRows.join('') || '<p class="muted" style="font-size:12px">No gameweek data yet this season.</p>'}</div>
     <div id="pcardActions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"></div>
-    <p class="muted" style="font-size:10.5px;margin-top:8px">League pts use our scoring: no bonus and no defensive-contribution (DEFCON) points. FPL official shown for arguments.</p>
   </div>`;
   ov.onclick = e => { if (e.target === ov || e.target.id === 'pcardClose') closeOv(ov); };
   document.body.appendChild(ov);

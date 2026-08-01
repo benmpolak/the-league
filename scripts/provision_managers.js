@@ -74,7 +74,11 @@ const db = admin.database();
   const prunedUids = new Set();
   for (const lg of cfg.leagues) {
     // managerUid is rebuilt wholesale from the file, so a reassigned or removed
-    // manager can never leave a stale managerId -> uid mapping behind
+    // manager can never leave a stale managerId -> uid mapping behind.
+    // NOTE (sol56 demo-night P3, resolved false-positive): RTDB coerces the
+    // dense integer keys 1..12 into an ARRAY with a null slot 0 — reading the
+    // node shows keys 0..12. Slot 0 is null, not a stale uid; per-key reads
+    // (managerUid/{mid}) are unaffected.
     const uidMap = {};
     for (const r of report) if (r.uid && Number.isInteger(r.managerId)) uidMap[r.managerId] = r.uid;
     await db.ref(`v2/leagues/${lg}/server/managerUid`).set(uidMap);

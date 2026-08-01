@@ -1042,6 +1042,10 @@ ACTIONS.hamAdmin = async ({ league, a, data, state, eng, ctx }) => {
     const gw = Number(data.gw);
     if (!Number.isInteger(gw) || gw < CUP_START || gw >= Engine.REGULAR_GWS) throw new HttpsError('invalid-argument', 'draw a gameweek between the cup start and the end of the regular season');
     if (gw >= ctx.gameweeks.length) throw new HttpsError('invalid-argument', 'no such gameweek in the fixture calendar');
+    // the ham belongs later in the season (Marc, 1 Aug): GW20+ in a real
+    // calendar; clamped so short synthetic test calendars stay drawable
+    const hamFloor = Math.min(19, ctx.gameweeks.length - 1);
+    if (gw < hamFloor) throw new HttpsError('invalid-argument', 'the velvet bag only opens from GW20 — the ham belongs later in the season');
     if (eng.gwHasStarted(gw)) throw new HttpsError('failed-precondition', 'that gameweek has already kicked off');
     // an existing cup with entries — upcoming, live or settled — can't be
     // silently replaced (entries and results would vanish); the Chairman must

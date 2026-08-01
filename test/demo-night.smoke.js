@@ -165,7 +165,8 @@ const chk = (name, ok, detail = '') => {
     const tableText = document.querySelector('#main').innerText;
     state.view = 'dash'; render();
     const around = [...document.querySelectorAll('#main .card')].find(c => c.querySelector('h2')?.textContent.includes('Around the league'));
-    const dashRows = around ? [...around.querySelectorAll('.lrow')] : [];
+    // the dashboard table is a real pool-table now (Ben: DF-style W/D/L)
+    const dashRows = around ? [...around.querySelectorAll('tbody tr')] : [];
     return {
       weeklyKeys, twoKeys: two && Object.keys(two).sort(), fullKeys: full && Object.keys(full).sort(),
       noBenchTwo: two?.bench === null, noBenchFull: full?.bench === null,
@@ -174,8 +175,8 @@ const chk = (name, ok, detail = '') => {
       tableConsolidated: !tableText.includes('Trough activity') && !tableText.includes('Top players'),
       dashTable: {
         rows: dashRows.length,
-        eighth: dashRows[7]?.getAttribute('style') || '',
-        ownHighlighted: dashRows.some(r => (r.getAttribute('style') || '').includes('background:')),
+        eighth: dashRows[7]?.className || '',
+        ownHighlighted: dashRows.some(r => (r.getAttribute('style') || '').includes('background')),
         fullButton: !!around?.querySelector('[data-goto="table"]'),
       },
       filterCount, showAll,
@@ -189,7 +190,7 @@ const chk = (name, ok, detail = '') => {
     !/Handful|No-Footed/.test(dataAudit.minutes) && /Manager of the Week|Wooden Spoon/.test(dataAudit.minutes));
   chk('Data Room owns awards, team/player data and treatment; Table no longer duplicates moved cards',
     dataAudit.dataHasAll && dataAudit.tableConsolidated && dataAudit.dashTable.rows === 12
-      && dataAudit.dashTable.eighth.includes('dashed') && dataAudit.dashTable.ownHighlighted && dataAudit.dashTable.fullButton
+      && dataAudit.dashTable.eighth.includes('playoff-line') && dataAudit.dashTable.ownHighlighted && dataAudit.dashTable.fullButton
       && dataAudit.filterCount === 5 && /Show all 12/.test(dataAudit.showAll), JSON.stringify(dataAudit));
 
   await page.evaluate(() => {
@@ -359,8 +360,10 @@ const chk = (name, ok, detail = '') => {
     gwManagerPoints = (id, i) => i === 33 ? raw[id] : 0;
     const pre = playoffState();
     const card = playoffCard();
-    state.view = 'h2h'; render();
-    const col = [...document.querySelectorAll('.pool-table tbody tr')].slice(0, 8)
+    // the standings (and QF column) live on the League Table page now
+    tableView.mode = 'overall';
+    state.view = 'table'; render();
+    const col = [...document.querySelectorAll('.pool-table tbody tr[data-mgr-row]')].slice(0, 8)
       .map(r => r.lastElementChild.textContent.trim().replace('−', '-'));
     qfFinal = true;
     const settled = playoffState();
