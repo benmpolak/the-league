@@ -383,6 +383,7 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 [data-pat].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
 [data-board].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
 [data-hampos].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
+[data-trmpos].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
 /* FM-style gaffer cards in the club office */
 .gaffer-card { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 9px 10px; }
 .gaffer-card b { font-size: 12px; }
@@ -667,11 +668,6 @@ tr.st-red .pname { color: #ff9c9c; }
 .duel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .duel-side { min-width: 0; }
 .duel-side h3 { margin-bottom: 8px; }
-.duel-bench { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-.duel-bench-chip {
-  font-size: 12px; padding: 3px 8px; background: var(--card2); border: 1px solid var(--line);
-  border-radius: 8px; white-space: nowrap;
-}
 @media (max-width: 980px) { .duel-grid { grid-template-columns: 1fr; } }
 
 /* the Vidiprinter tape */

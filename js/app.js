@@ -4111,11 +4111,17 @@ function viewTeam() {
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
-            ${!gwIsOver(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
+            ${!gwHasStarted(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
           </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}</div>
-        <div class="duel-bench">
-          <span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">Bench</span>
-          ${benchFor(oppMid, gw).map((p, bi) => `<span class="duel-bench-chip" data-pcard="${p.id}" style="cursor:pointer"><span class="muted">${bi + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${esc(p.name)}${gwIsOver(gw) || gwHasStarted(gw) ? ` <b>${gwPlayerPoints(p.id, gw)}</b>` : ''}</span>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
+        <div class="bench-strip">
+          <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
+          ${benchFor(oppMid, gw).map((p, bi) => `
+            <div class="pitch-chip benched ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer" title="${esc(p.name)} — auto-sub priority ${bi + 1}">
+              <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
+              ${kitImg(p.team, p.pos === 'GK')}
+              <span class="pitch-name">${esc(p.name)}</span>
+              ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+            </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
       </div><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
@@ -4142,7 +4148,7 @@ function viewTeam() {
               ${info(p)}
               ${pic(p)}
               ${nameSpan(p)}
-              ${!gwIsOver(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
+              ${!gwHasStarted(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
             </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}
         </div>`).join('')}
     </div>
@@ -4154,6 +4160,7 @@ function viewTeam() {
           ${info(p)}
           ${pic(p)}
           ${nameSpan(p)}
+          ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
         </div>`).join('')}
     </div>`;
     })()}
@@ -5029,6 +5036,11 @@ function bindAwardsBits() {
   };
   const tm = $('#trmMore');
   if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
+  document.querySelectorAll('[data-trmpos]').forEach(b => b.onclick = () => { trmView.pos = b.dataset.trmpos; render(); });
+  const tc = $('#trmClub');
+  if (tc) tc.onchange = () => { trmView.club = tc.value; render(); };
+  const tsv = $('#trmSev');
+  if (tsv) tsv.onchange = () => { trmView.sev = tsv.value; render(); };
 }
 /* ----- the Treatment Room: league-wide injury desk + fixture quirks -----
    Injury lines ride the official FPL feed (Premier Injuries / Ben Dinnery data);
@@ -5063,12 +5075,29 @@ function treatmentBand(p) {
   if (/unknown return/i.test(news)) return { k: 'unknown', label: 'RETURN UNKNOWN' };
   return { k: 'out', label: p.status === 'n' || p.status === 'u' ? 'UNAVAILABLE' : 'OUT' };
 }
+// treatment room filters (Marc, 1 Aug): club, position, recovery time
+let trmView = { pos: '', club: '', sev: '' };
+const TRM_SEV_BUCKETS = {
+  doubt: ['doubt', 'major-doubt'], out: ['out'], medium: ['medium'],
+  long: ['long', 'unknown'], suspended: ['suspended'],
+};
+const TRM_SEV_LABELS = { doubt: 'Doubtful', out: 'Out', medium: '2–4 weeks', long: 'Long-term', suspended: 'Suspended' };
 function treatmentRoomCard() {
   const ownedBy = {};
   for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
   // owned players: every flag matters; free agents: injuries/doubts/bans only (skip loanees)
-  const flagged = PLAYERS.filter(p => p.status !== 'a' && (ownedBy[p.id] != null || 'ids'.includes(p.status)))
+  const allFlagged = PLAYERS.filter(p => p.status !== 'a' && (ownedBy[p.id] != null || 'ids'.includes(p.status)))
     .sort((a, b) => ((ownedBy[b.id] != null) - (ownedBy[a.id] != null)) || (b.newsAdded || '').localeCompare(a.newsAdded || ''));
+  const flagged = allFlagged.filter(p =>
+    (!trmView.pos || p.pos === trmView.pos)
+    && (!trmView.club || p.club === trmView.club)
+    && (!trmView.sev || TRM_SEV_BUCKETS[trmView.sev].includes(treatmentBand(p).k)));
+  const trmClubs = [...new Set(allFlagged.map(p => p.club))].sort();
+  const filterRow = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:2px 0 10px">
+    ${['', 'GK', 'DF', 'MF', 'FW'].map(ps => `<button class="btn ghost small${trmView.pos === ps ? ' active' : ''}" data-trmpos="${ps}" style="font-size:11px">${ps || 'All'}</button>`).join('')}
+    <select id="trmClub" style="font-size:12px"><option value="">Every club</option>${trmClubs.map(c => `<option value="${esc(c)}" ${trmView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    <select id="trmSev" style="font-size:12px"><option value="">Any recovery time</option>${Object.entries(TRM_SEV_LABELS).map(([k, l]) => `<option value="${k}" ${trmView.sev === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+  </div>`;
   const shown = trmShowAll ? flagged : flagged.slice(0, 10);
   const when = p => p.newsAdded ? `<span class="treatment-updated">Updated ${new Date(p.newsAdded).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : '';
   const rows = shown.map(p => {
@@ -5103,7 +5132,8 @@ function treatmentRoomCard() {
   quirks.sort((a, b) => a.n - b.n);
   return `<div class="card" style="margin-top:14px">
     <h2>The Treatment Room <span class="muted" style="font-weight:400;font-size:12px">who's crocked, league-wide</span></h2>
-    ${rows || '<p class="muted" style="font-size:12.5px">A clean bill of health across the league. Suspicious.</p>'}
+    ${filterRow}
+    ${rows || `<p class="muted" style="font-size:12.5px">${allFlagged.length ? 'Nobody matches those filters. The physio shrugs.' : 'A clean bill of health across the league. Suspicious.'}</p>`}
     ${flagged.length > 10 ? `<button class="btn ghost small" id="trmMore" style="margin-top:8px">${trmShowAll ? 'Show fewer' : `Show all ${flagged.length}`}</button>` : ''}
     <h3 style="margin-top:14px">Fixture desk <span class="muted" style="font-weight:400;font-size:11px">blanks &amp; doubles ahead</span></h3>
     ${quirks.length ? quirks.slice(0, 4).map(q => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap"><span class="tag">GW${q.n}</span>

@@ -29,6 +29,28 @@ after 493714e — review to the branch tip). Functions ARE live.
 - Ham Cup head copy now states the freeze rule ("as the Trough stood when
   the selection window opened, a week before the tie").
 
+**Round 3 of the night (Marc's screenshot: "still shite"):**
+- Duel view bench SYMMETRY: the opponent's bench is no longer a text-chip
+  strip — it renders the SAME .bench-strip/.pitch-chip component as the own
+  bench (kits, order tags, data-pcard, status classes). The stopgap
+  .duel-bench CSS was deleted.
+- LIVE POINTS semantics changed on the My Team page (DF parity, Ben's ask):
+  pitch chips on BOTH duel pitches and the own pitch now switch from fixture
+  chip to points at `gwHasStarted(gw)` (was `gwIsOver(gw)` — points only
+  appeared after the whole GW finished). Bench chips on both sides gain a
+  live `.mu-pts` once started. ATTACK THIS: the own pitch chip is also the
+  tap-to-swap surface — confirm the pts span can't eat taps, and that
+  pre-deadline (upcoming GW) still shows fixture chips everywhere. A
+  scratchpad check (8 checks: symmetry, numbering, pre-kickoff no-points,
+  live pts on every XI + bench chip, pcard tap) passed at 1280px — it is NOT
+  committed; write a durable version into a suite.
+- TREATMENT ROOM FILTERS (Marc): position chips (data-trmpos) + club select
+  (#trmClub) + recovery-time select (#trmSev bucketing treatmentBand keys:
+  doubt/major-doubt | out | medium | long+unknown | suspended). trmView
+  module state; empty-filter message distinguishes "no matches" from "clean
+  bill". Show-all button counts the FILTERED list. Check matchday.smoke D3
+  still probes honestly (it renders with filters at defaults).
+
 ## What shipped
 
 **1. Ham Cup mechanics (the big one — server + client)**
