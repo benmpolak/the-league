@@ -5000,9 +5000,14 @@ function viewDash() {
 /* ----- the Data Room (Marc, 1 Aug): the stats desk gets its own page so the
    dashboard stays clean — awards, treatment room and the fixture quirks desk
    all live here now ----- */
+// Marc's taxonomy (1 Aug screenshots): league data / team data / player data.
+// More desks move in here as the Committee rules on them.
 function viewData() {
+  const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
   return `
+  ${sect('League data')}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
+  ${sect('Player data')}
   ${treatmentRoomCard()}`;
 }
 function bindData() {
