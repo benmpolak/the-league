@@ -2508,7 +2508,7 @@ const NAV_ITEMS = [
   ['directory', 'Club directory', 'Clubs'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Head-to-Head', 'H2H'],
-  ['cup', 'The Monzo Cup', 'Cup'],
+  ['cup', 'Cup competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
   ['fixtures', 'Fixtures', 'Fixtures'],
@@ -5007,7 +5007,10 @@ function viewData() {
   return `
   ${sect('League data')}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
+  ${sect('Team data')}
+  ${troughActivityCard()}
   ${sect('Player data')}
+  ${topPlayersCard()}
   ${treatmentRoomCard()}`;
 }
 function bindData() {
@@ -5765,7 +5768,7 @@ function hamCupCard() {
   if (state.phase !== 'season') return '';
   const hc = state.hamCup;
   const head = `<h2>The Palwin Ham Cup <span class="tag">strictly Trough</span></h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:10px">One random gameweek. Every manager fields an XI drawn ONLY from the unowned — the Trough's finest, like the Milk Cup if the milk had turned. Entirely optional, entirely stupid. Proudly sponsored by Palwin.</p>`;
+    <p class="muted" style="font-size:12.5px;margin-bottom:10px">One random gameweek, late in the season. Every manager fields an XI drawn ONLY from the unowned — <b>as the Trough stood when the selection window opened, a week before the tie</b> — the Trough's finest, like the Milk Cup if the milk had turned. Entirely optional, entirely stupid. Proudly sponsored by Palwin.</p>`;
   // a cancelled cup (tombstone) or a malformed one with no drawn GW both fall
   // back to the "not drawn" state — never crash the Cup view on GAMEWEEKS[undefined]
   if (!hc || hc.status === 'off' || GAMEWEEKS[hc.gw] === undefined) {
@@ -5848,7 +5851,9 @@ function bindCup() {
   if (draw) draw.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the Chairman holds the velvet bag'); return; }
     const cur = currentGwIndex();
-    const from = Math.min(cur + 2, REGULAR_GWS - 1);
+    // Marc (1 Aug): the ham belongs later in the season — the velvet bag only
+    // holds GW20 onwards (still random within that, still before the playoffs)
+    const from = Math.min(Math.max(cur + 2, 19), REGULAR_GWS - 1);
     const gw = from + Math.floor(Math.random() * Math.max(1, REGULAR_GWS - from));
     if (netOn()) {
       serverAct('hamAdmin', { op: 'draw', gw })
@@ -5977,9 +5982,6 @@ function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
     .sort((a, b) => b.pts - a.pts);
-  const allDrafted = [...new Set(state.draft.picks.map(pk => pk.playerId).concat(state.transfers.map(t => t.inId)))]
-    .map(pid => ({ p: PLAYER_BY_ID[pid], pts: playerPoints(pid).pts }))
-    .sort((a, b) => b.pts - a.pts).slice(0, 10);
   const hasPts = ranked.some(r => r.pts !== 0);
   const investigation = hasPts
     ? `<div class="card investigation"><span class="rec"></span><span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</span></div>`
@@ -6043,51 +6045,57 @@ function viewTable() {
       <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
     </div>
     ${investigation}
-    ${tableGwCard()}
-    <div class="card toplist" style="margin-top:24px">
-      <h2>Trough activity <span class="muted" style="font-weight:400;font-size:12px">who can't leave it alone</span></h2>
-      ${(() => {
-        const rows = state.managers.map(m => {
-          const mine = state.transfers.filter(t => t.managerId === m.id);
-          return {
-            id: m.id,
-            signs: mine.filter(t => !t.trade && !t.waiver).length,
-            claims: mine.filter(t => t.waiver).length,
-            trades: mine.filter(t => t.trade).length,
-            total: mine.length,
-          };
-        }).sort((a, b) => b.total - a.total);
-        const max = rows[0]?.total || 0;
-        return `<div style="overflow-x:auto"><table class="pool-table">
-          <thead><tr><th>Manager</th><th class="num">Trough signings</th><th class="num">Waiver claims won</th><th class="num">Trades</th><th class="num">Total moves</th></tr></thead>
-          <tbody>${rows.map((r, i) => `<tr>
-            <td><b>${esc(teamName(r.id))}</b> <span class="muted" style="font-size:11px">${esc(managerName(r.id))}</span>
-              ${max > 0 && i === 0 ? '<span class="tag">&#128055; lives at the Trough</span>' : ''}
-              ${max > 0 && i === rows.length - 1 && r.total === 0 ? '<span class="tag">hasn\'t touched his team</span>' : ''}</td>
-            <td class="num">${r.signs}</td><td class="num">${r.claims}</td><td class="num">${r.trades}</td>
-            <td class="num gold">${r.total}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>`;
-      })()}
-      ${(() => {
-        const counts = {};
-        for (const t of state.transfers) {
-          if (t.trade) continue; // trades aren't the Trough
-          for (const pid of [t.inId, t.outId]) counts[pid] = (counts[pid] || 0) + 1;
-        }
-        const hot = Object.entries(counts).map(([pid, n]) => ({ p: PLAYER_BY_ID[pid], n }))
-          .filter(x => x.p && x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 8);
-        return hot.length ? `<h3 style="margin-top:16px">Hot potatoes &#129364; <span class="muted" style="font-weight:400;font-size:11.5px">most passed through the Trough</span></h3>
-          ${hot.map(({ p, n }) => `<div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${pname(p)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span><span class="sp-pts">${n} moves</span></div>`).join('')}` : '';
-      })()}
-    </div>
-    <div class="card toplist" style="margin-top:24px">
-      <h2>Top players (all drafted &amp; signed)</h2>
-      ${allDrafted.map(({ p, pts }) => `
-        <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
-        <span>${esc(p.name)}</span> <span class="muted" style="font-size:11px">${esc(p.club)}</span>
-        <span class="sp-pts gold">${pts}</span></div>`).join('') || '<span class="muted">Points appear once matches are played and synced.</span>'}
-    </div>`;
+    ${tableGwCard()}`;
+}
+// team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
+function troughActivityCard() {
+  const rows = state.managers.map(m => {
+    const mine = state.transfers.filter(t => t.managerId === m.id);
+    return {
+      id: m.id,
+      signs: mine.filter(t => !t.trade && !t.waiver).length,
+      claims: mine.filter(t => t.waiver).length,
+      trades: mine.filter(t => t.trade).length,
+      total: mine.length,
+    };
+  }).sort((a, b) => b.total - a.total);
+  const max = rows[0]?.total || 0;
+  const counts = {};
+  for (const t of state.transfers) {
+    if (t.trade) continue; // trades aren't the Trough
+    for (const pid of [t.inId, t.outId]) counts[pid] = (counts[pid] || 0) + 1;
+  }
+  const hot = Object.entries(counts).map(([pid, n]) => ({ p: PLAYER_BY_ID[pid], n }))
+    .filter(x => x.p && x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 8);
+  return `<div class="card toplist" style="margin-top:14px">
+    <h2>Trough activity <span class="muted" style="font-weight:400;font-size:12px">who can't leave it alone</span></h2>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Manager</th><th class="num">Trough signings</th><th class="num">Waiver claims won</th><th class="num">Trades</th><th class="num">Total moves</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr>
+        <td><b>${esc(teamName(r.id))}</b> <span class="muted" style="font-size:11px">${esc(managerName(r.id))}</span>
+          ${max > 0 && i === 0 ? '<span class="tag">&#128055; lives at the Trough</span>' : ''}
+          ${max > 0 && i === rows.length - 1 && r.total === 0 ? '<span class="tag">hasn\'t touched his team</span>' : ''}</td>
+        <td class="num">${r.signs}</td><td class="num">${r.claims}</td><td class="num">${r.trades}</td>
+        <td class="num gold">${r.total}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${hot.length ? `<h3 style="margin-top:16px">Hot potatoes &#129364; <span class="muted" style="font-weight:400;font-size:11.5px">most passed through the Trough</span></h3>
+      ${hot.map(({ p, n }) => `<div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${pname(p)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span><span class="sp-pts">${n} moves</span></div>`).join('')}` : ''}
+  </div>`;
+}
+// player data: top scorers among everyone drafted or signed (Data Room, 1 Aug)
+function topPlayersCard() {
+  const allDrafted = [...new Set(state.draft.picks.map(pk => pk.playerId).concat(state.transfers.map(t => t.inId)))]
+    .map(pid => ({ p: PLAYER_BY_ID[pid], pts: playerPoints(pid).pts }))
+    .filter(x => x.p)
+    .sort((a, b) => b.pts - a.pts).slice(0, 10);
+  return `<div class="card toplist" style="margin-top:14px">
+    <h2>Top players (all drafted &amp; signed)</h2>
+    ${allDrafted.map(({ p, pts }) => `
+      <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
+      <span>${esc(p.name)}</span> <span class="muted" style="font-size:11px">${esc(p.club)}</span>
+      <span class="sp-pts gold">${pts}</span></div>`).join('') || '<span class="muted">Points appear once matches are played and synced.</span>'}
+  </div>`;
 }
 // any [data-pitchview] jumps straight to that team's pitch (Lee's ask:
 // every team clickable through to a pitch view, not just a dropdown)
