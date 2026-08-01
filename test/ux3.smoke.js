@@ -8,6 +8,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -59,7 +60,7 @@ const SEED_SEASON = `(() => {
 
   /* ═══════════════ SURPRISE ME ═══════════════ */
   const sCtx = await browser.createBrowserContext();
-  const sp = await newPage(sCtx, 'http://localhost:8125?nosync');
+  const sp = await newPage(sCtx, baseUrl + '?nosync');
 
   /* S1 — first click populates every eligible field (fresh manager) */
   const s1 = await sp.evaluate(() => {
@@ -179,7 +180,7 @@ const SEED_SEASON = `(() => {
   np.on('dialog', d => d.accept());
   await np.setRequestInterception(true);
   np.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
-  await np.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await np.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await np.waitForFunction(() => typeof state !== 'undefined');
   const s7 = await np.evaluate(async () => {
     window.__acts = [];
@@ -249,7 +250,7 @@ const SEED_SEASON = `(() => {
     !s7.afterResolve.open && s7.afterResolve.calls === 2, JSON.stringify(s7.afterResolve));
 
   /* S10 — 320px layout */
-  const s320 = await newPage(sCtx, 'http://localhost:8125?nosync', { width: 320, height: 650 });
+  const s320 = await newPage(sCtx, baseUrl + '?nosync', { width: 320, height: 650 });
   const s10 = await s320.evaluate(() => {
     clubEditor(state.managers[0].id);
     const luck = document.querySelector('#clubLuck');
@@ -261,7 +262,7 @@ const SEED_SEASON = `(() => {
 
   /* ═══════════════ CLUB DIRECTORY ═══════════════ */
   const dCtx = await browser.createBrowserContext();
-  const dp = await newPage(dCtx, 'http://localhost:8125?nosync');
+  const dp = await newPage(dCtx, baseUrl + '?nosync');
   const seeded = await dp.evaluate(SEED_SEASON);
   chk('directory: season seeds cleanly', seeded === 'ok', seeded);
 
@@ -382,7 +383,7 @@ const SEED_SEASON = `(() => {
     JSON.stringify(d9));
 
   /* D2b — once results exist, order = league position (demo has a full season) */
-  const demoP = await newPage(dCtx, 'http://localhost:8125?demo');
+  const demoP = await newPage(dCtx, baseUrl + '?demo');
   const d2b = await demoP.evaluate(() => {
     state.view = 'directory'; render();
     const mids = [...document.querySelectorAll('[data-dirmid]')].map(b => +b.dataset.dirmid);
@@ -394,7 +395,7 @@ const SEED_SEASON = `(() => {
   await demoP.close();
 
   /* D10 — 320px: one column, no overflow */
-  const d320 = await newPage(dCtx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const d320 = await newPage(dCtx, baseUrl + '?demo', { width: 320, height: 650 });
   const d10 = await d320.evaluate(() => {
     state.view = 'directory'; render();
     const cards = [...document.querySelectorAll('.dir-card')];
@@ -608,7 +609,7 @@ const SEED_SEASON = `(() => {
       }
       req.continue();
     });
-    await p.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+    await p.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
     await p.waitForFunction(() => typeof state !== 'undefined' && state.managers.length);
     return { ctx, p };
   };
@@ -657,7 +658,7 @@ const SEED_SEASON = `(() => {
   await c15.ctx.close();
 
   /* G18 — 320px search palette */
-  const g320 = await newPage(dCtx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const g320 = await newPage(dCtx, baseUrl + '?demo', { width: 320, height: 650 });
   const g18 = await g320.evaluate(async () => {
     const home = document.getElementById('homeBtn');
     const homeRect = home.getBoundingClientRect();

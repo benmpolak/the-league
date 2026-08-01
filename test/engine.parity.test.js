@@ -5,6 +5,7 @@
 // Usage: python3 -m http.server 8125 &   node test/engine.parity.test.js
 'use strict';
 const puppeteer = require('puppeteer-core');
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -20,7 +21,7 @@ const chk = (name, ok, detail = '') => {
   });
   const p = await browser.newPage();
   p.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
-  await p.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+  await p.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
   await p.waitForFunction(() => typeof Engine !== 'undefined' && typeof PLAYERS !== 'undefined');
 
   // ---- demo season: full fictional results, real player pool ----

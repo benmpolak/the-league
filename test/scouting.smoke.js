@@ -10,6 +10,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -24,7 +25,7 @@ const chk = (name, ok, detail = '') => {
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
   page.on('dialog', d => d.accept());
-  await page.goto('http://localhost:8125?nosync&scouting-test=1', { waitUntil: 'networkidle2' });
+  await page.goto(baseUrl + '?nosync&scouting-test=1', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof state !== 'undefined' && state.managers.length);
 
   const seeded = await page.evaluate(() => {
@@ -168,7 +169,7 @@ const chk = (name, ok, detail = '') => {
   const mobile = await ctx.newPage();
   mobile.on('pageerror', e => errors.push('320px: ' + e.message));
   await mobile.setViewport({ width: 320, height: 650 });
-  await mobile.goto('http://localhost:8125?demo&nosync&scouting-mobile=1', { waitUntil: 'networkidle2' });
+  await mobile.goto(baseUrl + '?demo&nosync&scouting-mobile=1', { waitUntil: 'networkidle2' });
   await mobile.waitForFunction(() => typeof state !== 'undefined' && state.managers.length);
   const m320 = await mobile.evaluate(() => {
     state.view = 'transfers';

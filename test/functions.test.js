@@ -4,6 +4,9 @@
  * exactly-once runs), lineup validation, commissioner gating. */
 'use strict';
 const T = require('./testenv.js');
+// Direct handle for the scheduled sweep. `onSchedule` exposes `.run`, which
+// lets the emulator suite exercise the real tick body without a cloud clock.
+const Functions = require('../functions/index.js');
 
 const LG = 'the-league-2627';
 const SB = 'the-league-sandbox';
@@ -71,6 +74,108 @@ const SB = 'the-league-sandbox';
   const byPos = (ids, pos) => ids.filter(id => players.find(p => p.id === id)?.pos === pos);
   const owned = new Set([].concat(await squadOf(1), await squadOf(2), await squadOf(3)));
   const freeOf = pos => players.filter(p => p.pos === pos && !owned.has(p.id)).map(p => p.id);
+
+  /* ---------------- Ham Cup window + frozen-pool races ----------------
+   * The old six-GW synthetic calendar could never reach CUP_START, so none of
+   * these server branches had been exercised by the 211 passing assertions. */
+  const hamGw = 20; // GW21: far enough ahead that the normal seven-day window is closed
+  const hamXI = [
+    ...freeOf('GK').slice(0, 1),
+    ...freeOf('DF').slice(0, 3),
+    ...freeOf('MF').slice(0, 4),
+    ...freeOf('FW').slice(0, 3),
+  ];
+  chk('Ham Cup test XI is a real 1-3-4-3 from the Trough', hamXI.length === 11);
+  const hamDraw = await T.mutate(LG, 'hamAdmin', { op: 'draw', gw: hamGw }, tok1);
+  chk('Ham Cup future tie draws inside the synthetic calendar', !hamDraw.error, JSON.stringify(hamDraw.error));
+  const hamClosed = await T.mutate(LG, 'hamEnter', { gw: hamGw, xi: hamXI }, tok2);
+  chk('Ham Cup entry before the seven-day selection window is refused',
+    hamClosed.error?.status === 'FAILED_PRECONDITION' && /has not opened/.test(hamClosed.error?.message || ''), JSON.stringify(hamClosed));
+  chk('non-Chairman cannot force the Ham Cup window open',
+    (await T.mutate(LG, 'hamAdmin', { op: 'open' }, tok2)).error?.status === 'PERMISSION_DENIED');
+  const hamOpen = await T.mutate(LG, 'hamAdmin', { op: 'open' }, tok1);
+  const hamOpenedNode = (await db.ref(`v2/leagues/${LG}/public/hamCup`).get()).val();
+  chk('Chairman early-open stamps the window and freezes the owned-player set',
+    !hamOpen.error && typeof hamOpenedNode?.openedAt === 'number'
+      && Array.isArray(hamOpenedNode?.frozen) && hamOpenedNode.frozen.length === owned.size,
+    JSON.stringify({ error: hamOpen.error, openedAt: hamOpenedNode?.openedAt, frozen: hamOpenedNode?.frozen?.length }));
+
+  // Change ownership after the freeze. The newly signed player was in the
+  // frozen Trough and remains eligible; the newly dropped player was owned at
+  // freeze time and must remain ineligible.
+  const signedAfterFreeze = freeOf('DF')[0];
+  const droppedAfterFreeze = byPos(await squadOf(1), 'DF')[0];
+  await db.ref(`v2/leagues/${LG}/public/transfers`).set([
+    { managerId: 1, outId: droppedAfterFreeze, inId: signedAfterFreeze, gw: 1, t: Date.now(), n: 1 },
+  ]);
+  const frozenEligible = await T.mutate(LG, 'hamEnter', { gw: hamGw, xi: hamXI }, tok2);
+  chk('frozen pool still allows a player signed by a league team after the freeze',
+    !frozenEligible.error, JSON.stringify(frozenEligible.error));
+  const newlyDroppedXI = hamXI.map(id => id === signedAfterFreeze ? droppedAfterFreeze : id);
+  const frozenReject = await T.mutate(LG, 'hamEnter', { gw: hamGw, xi: newlyDroppedXI }, tok3);
+  chk('frozen pool rejects a player newly dropped into the live Trough',
+    frozenReject.error?.status === 'INVALID_ARGUMENT' && /Trough only/.test(frozenReject.error?.message || ''), JSON.stringify(frozenReject));
+
+  // Restore a clean league, then make two managers submit the first entry at
+  // once. Both callbacks begin without `frozen`; RTDB retries must converge on
+  // one snapshot without losing either valid entry.
+  await db.ref(`v2/leagues/${LG}/public`).set(seed);
+  await db.ref(`v2/leagues/${LG}/public/hamCup`).set({ gw: hamGw, drawnAt: Date.now(), openedAt: Date.now(), entries: {} });
+  const [hamRaceA, hamRaceB] = await Promise.all([
+    T.mutate(LG, 'hamEnter', { gw: hamGw, xi: hamXI }, tok2),
+    T.mutate(LG, 'hamEnter', { gw: hamGw, xi: hamXI }, tok3),
+  ]);
+  const hamRaceNode = (await db.ref(`v2/leagues/${LG}/public/hamCup`).get()).val();
+  chk('two simultaneous first Ham entries both land against one frozen snapshot',
+    !hamRaceA.error && !hamRaceB.error
+      && Object.keys(hamRaceNode?.entries || {}).length === 2
+      && Array.isArray(hamRaceNode?.frozen) && hamRaceNode.frozen.length === owned.size,
+    JSON.stringify({ errors: [hamRaceA.error, hamRaceB.error], entries: Object.keys(hamRaceNode?.entries || {}), frozen: hamRaceNode?.frozen?.length }));
+
+  // A redraw and first entry are mutually exclusive: whichever transaction
+  // lands first makes the other retry and refuse rather than moving/erasing XI.
+  await db.ref(`v2/leagues/${LG}/public`).set(seed);
+  await db.ref(`v2/leagues/${LG}/public/hamCup`).set({ gw: hamGw, drawnAt: Date.now(), openedAt: Date.now(), entries: {} });
+  const [hamEntryVsDraw, hamDrawVsEntry] = await Promise.all([
+    T.mutate(LG, 'hamEnter', { gw: hamGw, xi: hamXI }, tok2),
+    T.mutate(LG, 'hamAdmin', { op: 'draw', gw: hamGw + 1 }, tok1),
+  ]);
+  const hamEntryDrawNode = (await db.ref(`v2/leagues/${LG}/public/hamCup`).get()).val();
+  const hamEntryWon = !hamEntryVsDraw.error && !!hamDrawVsEntry.error;
+  const hamDrawWon = !!hamEntryVsDraw.error && !hamDrawVsEntry.error;
+  chk('Ham redraw racing first entry has exactly one winner and never erases/moves the XI',
+    (hamEntryWon && hamEntryDrawNode.gw === hamGw && Object.keys(hamEntryDrawNode.entries || {}).length === 1)
+      || (hamDrawWon && hamEntryDrawNode.gw === hamGw + 1 && Object.keys(hamEntryDrawNode.entries || {}).length === 0),
+    JSON.stringify({ entry: hamEntryVsDraw.error, draw: hamDrawVsEntry.error, cup: hamEntryDrawNode }));
+
+  // Tick freeze racing an ownership change must capture one coherent side of
+  // the transfer, never a hybrid. This invokes the deployed waiverTick body.
+  await db.ref(`v2/leagues/${LG}/public`).set(seed);
+  await db.ref(`v2/leagues/${LG}/public/hamCup`).set({ gw: hamGw, drawnAt: Date.now(), openedAt: Date.now(), entries: {} });
+  const beforeTickOwned = [...owned].sort((a, b) => a - b);
+  const tickIn = freeOf('DF')[0], tickOut = byPos(await squadOf(1), 'DF')[0];
+  const afterTickOwned = beforeTickOwned.filter(id => id !== tickOut).concat(tickIn).sort((a, b) => a - b);
+  const [tickRace] = await Promise.all([
+    Functions.waiverTick.run({}),
+    db.ref(`v2/leagues/${LG}/public/transfers`).set([{ managerId: 1, outId: tickOut, inId: tickIn, gw: 1, t: Date.now(), n: 1 }]),
+  ]);
+  const tickFrozen = ((await db.ref(`v2/leagues/${LG}/public/hamCup/frozen`).get()).val() || []).sort((a, b) => a - b);
+  chk('hourly freeze racing a transfer captures a coherent before-or-after owned set',
+    JSON.stringify(tickFrozen) === JSON.stringify(beforeTickOwned) || JSON.stringify(tickFrozen) === JSON.stringify(afterTickOwned),
+    JSON.stringify({ tickRace, before: beforeTickOwned.length, after: afterTickOwned.length, frozen: tickFrozen.length }));
+
+  // Cancel racing the tick must leave the tombstone in charge; a transaction
+  // seeded from the old cup may not resurrect it with a frozen array.
+  await db.ref(`v2/leagues/${LG}/public`).set(seed);
+  await db.ref(`v2/leagues/${LG}/public/hamCup`).set({ gw: hamGw, drawnAt: Date.now(), openedAt: Date.now(), entries: {} });
+  await Promise.all([
+    Functions.waiverTick.run({}),
+    T.mutate(LG, 'hamAdmin', { op: 'cancel' }, tok1),
+  ]);
+  const cancelledCup = (await db.ref(`v2/leagues/${LG}/public/hamCup`).get()).val();
+  chk('Ham cancel racing the hourly freeze cannot resurrect the cup',
+    cancelledCup?.status === 'off' && cancelledCup.gw == null && !Array.isArray(cancelledCup.frozen), JSON.stringify(cancelledCup));
+  await db.ref(`v2/leagues/${LG}/public`).set(seed);
 
   /* ---------------- lineups ---------------- */
   const sq1 = await squadOf(1);
@@ -640,11 +745,9 @@ const SB = 'the-league-sandbox';
   chk('reject of a landed trade heals to done (the swap already stands)',
     !rReject.error && rReject.result?.status === 'done' && rReject.result?.healed === true, JSON.stringify(rReject));
 
-  /* sol r3/r4: ham draw beyond the fixture calendar is rejected (the entries
-     guard itself is untestable here — the synthetic calendar ends before
-     CUP_START; it is pinned by code review + the round-5 brief) */
+  /* sol r3/r4: a draw beyond the regular-season/canonical calendar is refused. */
   chk('ham draw beyond the fixture calendar rejected',
-    (await T.mutate(LG, 'hamAdmin', { op: 'draw', gw: 10 }, tok1)).error?.status === 'INVALID_ARGUMENT');
+    (await T.mutate(LG, 'hamAdmin', { op: 'draw', gw: 38 }, tok1)).error?.status === 'INVALID_ARGUMENT');
 
   /* ---------------- reset: atomic, canonical, immediately usable ---------------- */
   chk('reset is Chairman-only', (await T.mutate(LG, 'resetLeague', { confirm: 'RESET' }, tok2)).error?.status === 'PERMISSION_DENIED');

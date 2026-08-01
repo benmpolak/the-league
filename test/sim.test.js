@@ -4,6 +4,7 @@
 // Usage: python3 -m http.server 8125 &  then  node test/sim.test.js
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -20,7 +21,7 @@ const check = (label, ok, detail = '') => {
   const pageErrors = [];
   p.on('pageerror', e => pageErrors.push(e.message));
   p.on('dialog', d => d.accept());
-  await p.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+  await p.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
 
   // ---------- 0. hermetic setup: no background syncs, clean clock ----------
   await p.evaluate(() => {
@@ -397,6 +398,7 @@ const check = (label, ok, detail = '') => {
     state.view = 'h2h'; render();
     const html = document.querySelector('#main').innerHTML;
     return {
+      handicaps: H,
       seedsMatch: JSON.stringify(po.seeds) === JSON.stringify(seeds),
       qfsMatch: JSON.stringify(po.qfWinners) === JSON.stringify(qfW),
       semisMatch: JSON.stringify(po.semiWinners) === JSON.stringify(semiW),
@@ -407,6 +409,9 @@ const check = (label, ok, detail = '') => {
   });
   check('playoffs: seeds, QF winners (handicaps), semi winners and champion all agree with independent recompute',
     !po.err && po.seedsMatch && po.qfsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
+  console.log(`INFO  simulated QF handicaps — ${JSON.stringify(po.handicaps)} (zero-boundary path is pinned in demo-night.smoke)`);
+  check('playoff simulation exercised a nonzero QF handicap',
+    po.handicaps.some(h => h > 0), JSON.stringify(po.handicaps));
 
   // no champion may be crowned while any final leg is unsettled (sol 5.6 finding)
   const early = await p.evaluate(() => {

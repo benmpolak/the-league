@@ -4,6 +4,7 @@
 // Usage: python3 -m http.server 8125 (repo root) then node test/dgw.test.js
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let failures = 0;
 const check = (l, ok, d = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${l}${d ? ' — ' + d : ''}`); if (!ok) failures++; };
@@ -41,7 +42,7 @@ const START_RULE = [
   const p = await browser.newPage();
   const errs = [];
   p.on('pageerror', e => errs.push(e.message));
-  await p.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+  await p.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
 
   // ensure default scoring is in force
   await p.evaluate(() => { state.settings.scoring = { ...DEFAULT_SCORING }; });

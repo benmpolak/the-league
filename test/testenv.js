@@ -25,7 +25,10 @@ function genTestData() {
   const now = Date.now();
   const iso = ms => new Date(ms).toISOString();
   const gws = [];
-  for (let n = 1; n <= 6; n++) {
+  // Keep the whole 38-GW calendar available. Ham Cup draws are server-gated
+  // to index 7+, so the old six-week fixture stopped every window/freeze test
+  // at "no such gameweek" and made the emulator suite look greener than it was.
+  for (let n = 1; n <= 38; n++) {
     // GW1 finished, GW2 live (started 2h ago), rest in the future
     const deadline = n === 1 ? iso(now - 4 * 864e5) : n === 2 ? iso(now - 2 * 3600e3) : iso(now + (n - 2) * 864e5);
     const to = n === 1 ? iso(now - 2 * 864e5) : n === 2 ? iso(now + 20 * 3600e3) : iso(now + (n - 1) * 864e5);

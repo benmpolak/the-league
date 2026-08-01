@@ -17,6 +17,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -33,7 +34,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const pageErrors = [];
   p.on('pageerror', e => pageErrors.push(e.message));
   p.on('dialog', d => d.accept());
-  await p.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+  await p.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
   await p.waitForFunction(() => typeof state !== 'undefined');
 
   // hermetic season: frozen clock before GW1, 12 seeded 14-man squads with a
@@ -328,7 +329,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   b.on('pageerror', e => bErrors.push(e.message));
   await b.setRequestInterception(true);
   b.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
-  await b.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await b.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await b.waitForFunction(() => typeof state !== 'undefined');
   await b.evaluate(() => {
     window.__autoConfirm = true;
@@ -430,7 +431,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const cCtx = await browser.createBrowserContext();
   const c = await cCtx.newPage();
   await c.setViewport({ width: 320, height: 650 });
-  await c.goto('http://localhost:8125?nosync', { waitUntil: 'networkidle2' });
+  await c.goto(baseUrl + '?nosync', { waitUntil: 'networkidle2' });
   await c.waitForFunction(() => typeof state !== 'undefined');
   const setup320 = await c.evaluate(() => ({
     phase: state.phase,

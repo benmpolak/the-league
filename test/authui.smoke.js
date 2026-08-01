@@ -7,6 +7,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -22,7 +23,7 @@ const chk = (name, ok, detail = '') => {
   await p.setRequestInterception(true);
   p.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
 
-  await p.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await p.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof state !== 'undefined');
 
   // plant a stale device identity from the PIN era, then bring the stub online
@@ -104,7 +105,7 @@ const chk = (name, ok, detail = '') => {
   p2.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
   await p2.setRequestInterception(true);
   p2.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
-  await p2.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await p2.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p2.waitForFunction(() => typeof state !== 'undefined');
   await p2.evaluate(() => {
     window.WCSync = {

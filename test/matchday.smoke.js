@@ -11,6 +11,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -101,7 +102,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   };
 
   const ctx = await browser.createBrowserContext();
-  const p = await newPage(ctx, 'http://localhost:8125?nosync');
+  const p = await newPage(ctx, baseUrl + '?nosync');
   chk('season seeds cleanly', await p.evaluate(SEED_SEASON) === 'ok');
 
   /* ── N1: before kickoff — projected line, no requirements ── */
@@ -495,7 +496,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   chk('F10: hostile club name renders literally in the form table', f10.literal && !f10.injected && !f10.xss, JSON.stringify(f10));
 
   /* F11: 320px form toggles */
-  const f320 = await newPage(ctx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const f320 = await newPage(ctx, baseUrl + '?demo', { width: 320, height: 650 });
   const f11 = await f320.evaluate(() => {
     state.view = 'table'; render();
     document.querySelector('[data-tblmode="3"]').click();
@@ -507,7 +508,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   await f320.close();
 
   /* ═══════════════ NEXT SIX ═══════════════ */
-  const x = await newPage(ctx, 'http://localhost:8125?demo');
+  const x = await newPage(ctx, baseUrl + '?demo');
   await x.evaluate(() => { window.__wc2 = []; window.WCSync = { call: (...a) => { window.__wc2.push(a); return Promise.resolve({}); } }; });
   const x1 = await x.evaluate(() => {
     state.view = 'team'; render();
@@ -569,7 +570,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   chk('X6: player name in the grid opens the stats card', x6 === true);
 
   /* X7/X8: 320px — grid scrolls inside its container, document doesn't */
-  const x320 = await newPage(ctx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const x320 = await newPage(ctx, baseUrl + '?demo', { width: 320, height: 650 });
   const x78 = await x320.evaluate(() => {
     localStorage.removeItem(`${LS_NS}-next6-open`);
     state.view = 'team'; render();
@@ -596,7 +597,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   chk('X9: Next Six triggered zero WCSync calls', x9 === 0, `${x9}`);
 
   /* ═══════════════ DASHBOARD MOBILE READABILITY ═══════════════ */
-  const dash320 = await newPage(ctx, 'http://localhost:8125?demo', { width: 320, height: 650 });
+  const dash320 = await newPage(ctx, baseUrl + '?demo', { width: 320, height: 650 });
   const dBands = await dash320.evaluate(() => {
     const t0 = new Date(2026, 6, 28, 12).getTime();
     Date.now = () => t0;

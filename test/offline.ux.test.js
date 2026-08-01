@@ -8,6 +8,7 @@
 'use strict';
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -22,7 +23,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   await p.setRequestInterception(true);
   p.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
-  await p.goto('http://localhost:8125/index.html', { waitUntil: 'domcontentloaded' });
+  await p.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof state !== 'undefined');
 
   // stub sync layer: calls are recorded and resolved by hand from the test
