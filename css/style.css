@@ -269,6 +269,12 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .fx .fx-score { font-weight: 800; font-variant-numeric: tabular-nums; padding: 2px 10px; background: var(--card2); border-radius: 7px; white-space: nowrap; }
 .fx.live .fx-score { background: var(--red); color: #fff; }
 .fx .fx-time { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.fx { flex-wrap: wrap; }
+.fx .fx-yt {
+  flex-basis: 100%; text-align: center; font-size: 11.5px; color: var(--muted);
+  text-decoration: none; padding-top: 4px; border-top: 1px dashed var(--line); margin-top: 4px;
+}
+.fx .fx-yt:hover { color: var(--accent); }
 
 /* ---------- settings ---------- */
 /* min(320px, 100%): a 320px phone (272px content box) must collapse the column, not overflow it */
@@ -375,6 +381,8 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .derby-tag { background: #3a1f24; border: 1px solid var(--red); color: #ffb4b2; }
 #kitPreview svg { filter: drop-shadow(0 4px 12px rgba(0,0,0,.5)); }
 [data-pat].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
+[data-board].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
+[data-hampos].active { color: #07120e; background: var(--accent); border-color: var(--accent); }
 /* FM-style gaffer cards in the club office */
 .gaffer-card { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; text-align: left; padding: 9px 10px; }
 .gaffer-card b { font-size: 12px; }
@@ -659,6 +667,11 @@ tr.st-red .pname { color: #ff9c9c; }
 .duel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 .duel-side { min-width: 0; }
 .duel-side h3 { margin-bottom: 8px; }
+.duel-bench { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.duel-bench-chip {
+  font-size: 12px; padding: 3px 8px; background: var(--card2); border: 1px solid var(--line);
+  border-radius: 8px; white-space: nowrap;
+}
 @media (max-width: 980px) { .duel-grid { grid-template-columns: 1fr; } }
 
 /* the Vidiprinter tape */

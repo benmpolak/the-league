@@ -48,7 +48,7 @@ const DEFAULT_SCORING = {
   assist: 3,
   cleanSheet: 4,
   cleanSheetMF: 1,
-  per3Saves: 1,
+  per3Saves: 0, // retired by the Chairman, 1 Aug 2026 — Marc liked it; overruled
   penSave: 5,
   penMiss: -2,
   yellow: -1,
@@ -576,6 +576,7 @@ async function enterDemo() {
   vidiStash = vidiFeed;
   vidiFeed = [
     { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
+    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — the declared Lobus of ${teamName(8)} — has SCORED. Great feet for a big man.` },
     { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
     { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -3` },
     { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
@@ -926,8 +927,14 @@ function kitSvgRaw(k, sponsor, size, uid) {
     : k.pattern === 'sash' ? `<rect x="14" y="-12" width="7" height="64" transform="rotate(30 20 20)"/>`
     : k.pattern === 'halves' ? `<rect x="20" y="0" width="20" height="40"/>`
     : '';
-  const sp = sponsor
-    ? `<text x="20" y="26" text-anchor="middle" font-size="4.6" font-weight="800" font-family="inherit" fill="${k.pattern === 'halves' ? k.c1 : k.c2}" stroke="${k.pattern === 'halves' ? k.c2 : k.c1}" stroke-width="1.1" paint-order="stroke" letter-spacing=".2">${esc(String(sponsor).slice(0, 14))}</text>`
+  // sponsor sits on the chest (x 11.5–28.5): font scales down with name
+  // length and long names compress via textLength so nothing bleeds onto the
+  // sleeves (Marc's "not sized right", 1 Aug)
+  const spTxt = String(sponsor || '').slice(0, 14);
+  const spFs = spTxt.length <= 6 ? 4.6 : spTxt.length <= 10 ? 3.8 : 3.1;
+  const spFit = spTxt.length * spFs * 0.66 > 17 ? ' textLength="17" lengthAdjust="spacingAndGlyphs"' : '';
+  const sp = spTxt
+    ? `<text x="20" y="26" text-anchor="middle" font-size="${spFs}" font-weight="800" font-family="inherit" fill="${k.pattern === 'halves' ? k.c1 : k.c2}" stroke="${k.pattern === 'halves' ? k.c2 : k.c1}" stroke-width="${(spFs * 0.24).toFixed(2)}" paint-order="stroke" letter-spacing=".2"${spFit}>${esc(spTxt)}</text>`
     : '';
   return `<svg class="club-kit" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="${uid}"><path d="${body}"/></clipPath></defs><path d="${body}" fill="${k.c1}"/><g clip-path="url(#${uid})" fill="${k.c2}">${pat}</g><path d="M15 1 Q20 5 25 1 L23 3 Q20 6 17 3 Z" fill="${k.c2}"/><path d="${body}" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/>${sp}</svg>`;
 }
@@ -1537,6 +1544,17 @@ function london20(ms, dayOffset) {
 }
 const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
 const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
+/* Ham Cup selection window: opens 7 days before the tie's first kickoff (or
+ * at the draw / Chairman's early-open if later); the Trough freezes at open */
+const HAM_WINDOW_MS = 7 * 24 * 3600e3;
+const hamTs = v => (typeof v === 'number' ? v : (v ? new Date(v).getTime() : 0));
+function hamOpensAt(hc) {
+  if (!hc || hc.gw == null) return null;
+  if (hc.openedAt) return hamTs(hc.openedAt);
+  const k = gwKicks(hc.gw);
+  const drawn = hamTs(hc.drawnAt);
+  return k ? Math.max(drawn, k.first - HAM_WINDOW_MS) : drawn;
+}
 function nextWaiverRun(afterTs) {
   const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
   let best = null;
@@ -2323,6 +2341,15 @@ function vidiDiff(gwIdx, oldPS, newPS) {
       : benchOf[p.id] != null ? `benched by ${teamName(benchOf[p.id])} (!)` : 'the Trough';
     const haul = now >= 10 && mid != null ? ` (${VIDI_WORDS[now] || now}!!)` : '';
     lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `${bits.join(' · ')} — ${p.name} (${p.club}) — ${who}${haul}` });
+    // the Lobus Klaxon (Marc, 1 Aug): the gag is DELIVERED here — any declared
+    // Lobus scoring sets off the klaxon on the tape, whoever owns him
+    const dg = (s.g || 0) - (o.g || 0);
+    if (dg > 0) {
+      for (const [lmid, lpid] of Object.entries(state.lobus || {})) {
+        if (+lpid !== +pid) continue;
+        lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — the declared Lobus of ${teamName(+lmid)} — has SCORED. Great feet for a big man.` });
+      }
+    }
   }
   vidiPush(lines);
 }
@@ -2475,7 +2502,7 @@ const dealRows = (outs, ins) => `<div class="deal">${
 /* ---------------- views ---------------- */
 const NAV_ITEMS = [
   ['dash', 'Dashboard', 'Home'],
-  ['draft', 'The Console', 'Console'],
+  ['draft', 'The Draft Console', 'Draft Console'],
   ['team', 'My Team', 'My Team'],
   ['club', 'My Club', 'Club'],
   ['directory', 'Club directory', 'Clubs'],
@@ -2483,6 +2510,7 @@ const NAV_ITEMS = [
   ['h2h', 'Head-to-Head', 'H2H'],
   ['cup', 'The Monzo Cup', 'Cup'],
   ['table', 'League Table', 'Table'],
+  ['data', 'The Data Room', 'Data'],
   ['fixtures', 'Fixtures', 'Fixtures'],
   ['rules', 'Rules', 'Rules'],
   ['settings', 'Settings', 'Settings'],
@@ -2499,6 +2527,7 @@ const NAV_ICONS = {
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
   table: navSvg('<path d="M6 20v-8M12 20V5M18 20v-5"/><path d="M4 20h16"/>'),
+  data: navSvg('<path d="M4 19l5-6 4 3 7-9"/><path d="M4 21h16"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="16" r="1.2" fill="currentColor" stroke="none"/>'),
   fixtures: navSvg('<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 10h16M8 3v4M16 3v4"/>'),
   rules: navSvg('<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3Z"/><path d="M5 17a3 3 0 0 1 3-3h10"/>'),
   settings: navSvg('<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'),
@@ -2548,6 +2577,7 @@ function render() {
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
     case 'cup': main.innerHTML = viewCup(); bindCup(); break;
     case 'table': main.innerHTML = viewTable(); bindTable(); break;
+    case 'data': main.innerHTML = viewData(); bindData(); break;
     case 'fixtures': main.innerHTML = viewFixtures(); bindFixtures(); break;
     case 'rules': main.innerHTML = viewRules(); break;
     case 'settings': main.innerHTML = viewSettings(); bindSettings(); break;
@@ -4013,7 +4043,7 @@ function bindPoolTable() {
 }
 
 function viewDraftRecap() {
-  return `<div class="card"><h2>The Console &mdash; draft archive</h2>
+  return `<div class="card"><h2>The Draft Console &mdash; draft archive</h2>
     <p class="muted" style="margin-bottom:12px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
     <div class="pick-log" style="max-height:none">
     ${state.draft.picks.map(pk => {
@@ -4083,6 +4113,10 @@ function viewTeam() {
             <span class="pitch-name">${esc(p.name)}</span>
             ${!gwIsOver(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
           </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}</div>
+        <div class="duel-bench">
+          <span class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em">Bench</span>
+          ${benchFor(oppMid, gw).map((p, bi) => `<span class="duel-bench-chip" data-pcard="${p.id}" style="cursor:pointer"><span class="muted">${bi + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${esc(p.name)}${gwIsOver(gw) || gwHasStarted(gw) ? ` <b>${gwPlayerPoints(p.id, gw)}</b>` : ''}</span>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
+        </div>
       </div><div class="duel-side">
         <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
@@ -4877,7 +4911,9 @@ function installCard(settingsPage = false) {
   const how = a2hsEvent ? ''
     : isIOS() ? `<p class="rules-p" style="font-size:12.5px">On iPhone, in <b>Safari</b>: tap the <b>Share</b> button (square with an up arrow) — or the <b>&#8943; menu</b> by the address bar — then <b>Add to Home Screen</b>. It hides sometimes: scroll down the list, or check <b>View More / Edit Actions</b>. Own icon, full screen, no browser bar.</p>`
     : `<p class="rules-p" style="font-size:12.5px">In Chrome: open the <b>&#8942; menu</b> and choose <b>Add to Home screen / Install app</b> (on desktop it's the install icon in the address bar).</p>`;
-  return `<div class="card" style="margin-bottom:18px"><h2>Get the app &#128241;</h2>
+  return `<div class="card" style="margin-bottom:18px;position:relative">
+    ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsX" title="Dismiss — it lives in Settings" aria-label="Dismiss" style="position:absolute;top:10px;right:10px;padding:2px 9px">&#10005;</button>'}
+    <h2>Get the app &#128241;</h2>
     <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
     ${how}
     <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
@@ -4889,8 +4925,10 @@ function installCard(settingsPage = false) {
 function bindInstall() {
   const go = $('#a2hsGo');
   if (go) go.onclick = installApp;
-  const hide = $('#a2hsHide');
-  if (hide) hide.onclick = () => { localStorage.setItem(A2HS_KEY, '1'); toast('Fine — it lives in Settings if you change your mind'); render(); };
+  for (const id of ['a2hsHide', 'a2hsX']) {
+    const el = $('#' + id);
+    if (el) el.onclick = () => { localStorage.setItem(A2HS_KEY, '1'); toast('Fine — it lives in Settings if you change your mind'); render(); };
+  }
 }
 
 function viewDash() {
@@ -4951,16 +4989,38 @@ function viewDash() {
     <div class="card">
       <h2>Around the league</h2>
       ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
-      <h3 style="margin-top:12px">Top six</h3>
-      ${table.slice(0, 6).map((r, i) => `<div class="lrow" style="font-size:12.5px"><span class="muted">${i + 1}</span> ${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
-      ${myPos > 6 ? `<div class="lrow" style="font-size:12.5px;border-top:1px dashed var(--line)"><span class="muted">${myPos}</span> ${kitSvg(mid)} <b>${esc(teamName(mid))}</b><span style="margin-left:auto" class="gold">${table[myPos - 1].pts}</span></div>` : ''}
+      <h3 style="margin-top:12px">The table</h3>
+      ${table.map((r, i) => `<div class="lrow" style="font-size:12.5px${i === 7 ? ';border-bottom:1px dashed var(--gold, #d4af37);padding-bottom:6px;margin-bottom:4px' : ''}${r.id === mid ? ';background:rgba(45,212,167,.07);border-radius:6px' : ''}"><span class="muted">${i + 1}</span> ${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b><span style="margin-left:auto" class="gold">${r.pts}</span></div>`).join('')}
+      <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
   ${installCard()}
-  ${vidiCard(true)}
-  ${awardsCard()}
-  ${lobusCard()}
+  ${vidiCard(true)}`;
+}
+/* ----- the Data Room (Marc, 1 Aug): the stats desk gets its own page so the
+   dashboard stays clean — awards, treatment room and the fixture quirks desk
+   all live here now ----- */
+function viewData() {
+  return `
+  ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${treatmentRoomCard()}`;
+}
+function bindData() {
+  bindAwardsBits();
+}
+// the awards + treatment desk handlers, shared by whichever page hosts them
+function bindAwardsBits() {
+  const cm = $('#copyMinutes');
+  if (cm) cm.onclick = () => {
+    const last = lastFinalGw();
+    if (last < 0) return;
+    const txt = committeeMinutes(last);
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
+      () => toast('Minutes copied — paste straight into the chat'),
+      () => { window.prompt('Copy the Minutes:', txt); });
+  };
+  const tm = $('#trmMore');
+  if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
 }
 /* ----- the Treatment Room: league-wide injury desk + fixture quirks -----
    Injury lines ride the official FPL feed (Premier Injuries / Ben Dinnery data);
@@ -5122,37 +5182,49 @@ function weeklyAwards(last) {
   const robbed = [...results].sort((a, b) => b.ls - a.ls)[0];
   const hiding = [...results].sort((a, b) => b.margin - a.margin)[0];
   const bench = [...scores].sort((a, b) => b.waste - a.waste)[0];
-  // Marc's awards (ledger #2, #3) — judged over every player who took the pitch
-  const ev = gwEvent(last)?.playerStats || {};
-  const ownerAt = pid => state.managers.find(m => squadAt(m.id, last).some(p => p.id === pid));
-  let handful = null, nffb = null;
-  for (const [pid, s] of Object.entries(ev)) {
-    const p = PLAYER_BY_ID[pid];
-    if (!p) continue;
-    if (p.pos === 'FW') {
-      // goals + cards + penalty involvement, combined. The science is settled.
-      const sc = (s.g || 0) + (s.yc || 0) + (s.rc || 0) + (s.pm || 0);
-      if (sc >= 2 && (!handful || sc > handful.sc)) handful = { p, s, sc };
+  // He's A Handful™ and the No-Footed Full Back retired by Committee order,
+  // 1 Aug 2026 (Marc: "so much in there" — the six that survive are the six)
+  return { hi, lo, jammy, robbed, hiding, bench };
+}
+// the same six awards judged across every settled gameweek — Marc's point:
+// "those 6 are actually good, but it's more useful over the season"
+function seasonAwards() {
+  let hi = null, lo = null, jammy = null, robbed = null, hiding = null, bench = null, finals = 0;
+  for (let i = 0; i < REGULAR_GWS; i++) {
+    if (gwStatus(i) !== 'final') continue;
+    finals++;
+    for (const m of state.managers) {
+      const s = gwManagerPoints(m.id, i);
+      if (!hi || s > hi.s) hi = { id: m.id, s, gw: i };
+      if (!lo || s < lo.s) lo = { id: m.id, s, gw: i };
+      const waste = benchWaste(m.id, i);
+      if (waste > 0 && (!bench || waste > bench.waste)) bench = { id: m.id, waste, gw: i };
     }
-    if (p.pos === 'DF' && (s.min || 0) >= 90 && !s.g && !s.a && !s.cs) {
-      // the full 90, nothing to declare — most minutes wins, which is all of them
-      if (!nffb || (s.min || 0) > (nffb.s.min || 0) || ((s.min || 0) === (nffb.s.min || 0) && p.name < nffb.p.name)) nffb = { p, s };
+    for (const [a, b] of pairingsFor(i)) {
+      const sa = gwManagerPoints(a, i), sb = gwManagerPoints(b, i);
+      if (sa === sb) continue;
+      const w = sa > sb ? a : b, l = sa > sb ? b : a, ws = Math.max(sa, sb), ls = Math.min(sa, sb);
+      if (!jammy || ws < jammy.ws) jammy = { w, ws, gw: i };
+      if (!robbed || ls > robbed.ls) robbed = { l, ls, gw: i };
+      if (!hiding || ws - ls > hiding.margin) hiding = { w, l, ws, ls, margin: ws - ls, gw: i };
     }
   }
-  const handfulBits = h => [h.s.g ? `${h.s.g} goal${h.s.g > 1 ? 's' : ''}` : '', h.s.yc ? `${h.s.yc} yellow${h.s.yc > 1 ? 's' : ''}` : '', h.s.rc ? 'a red' : '', h.s.pm ? 'a missed pen' : ''].filter(Boolean).join(', ');
-  return { hi, lo, jammy, robbed, hiding, bench, handful, nffb, handfulBits, ownerAt };
+  return finals >= 2 ? { hi, lo, jammy, robbed, hiding, bench } : null;
 }
 function awardsCard() {
   const last = lastFinalGw();
   if (last < 0) return '';
-  const { hi, lo, jammy, robbed, hiding, bench, handful, nffb, handfulBits, ownerAt } = weeklyAwards(last);
-  const ownTag = pid => { const o = ownerAt(+pid); return o ? ` <span class="muted">(${esc(teamName(o.id))})</span>` : ' <span class="muted">(the Trough)</span>'; };
+  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
+  const sa = seasonAwards();
   const row = (icon, label, text) => `<div class="award-row"><span class="award-icon" aria-hidden="true">${icon}</span><b class="award-label">${label}</b><span class="award-value">${text}</span></div>`;
+  const gwTag = i => ` <span class="muted">(GW${GAMEWEEKS[i].n})</span>`;
+  const sect = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
   return `<div class="card" style="margin-top:14px">
     <div class="awards-head">
-      <div><h2>GW${GAMEWEEKS[last].n} — The Committee's Awards</h2><p>issued automatically, disputed endlessly</p></div>
+      <div><h2>The Committee's Awards</h2><p>issued automatically, disputed endlessly</p></div>
       <button class="btn ghost small" id="copyMinutes" title="WhatsApp-ready gameweek recap">&#128203; Copy the Minutes</button>
     </div>
+    ${sect(`This gameweek — GW${GAMEWEEKS[last].n}`)}
     <div class="awards-list">
       ${row('&#127942;', 'Manager of the Week', `<b>${esc(teamName(hi.id))}</b> — ${hi.s} points`)}
       ${row('&#129348;', 'The Wooden Spoon', `<b>${esc(teamName(lo.id))}</b> — ${lo.s} points`)}
@@ -5160,36 +5232,26 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
-      ${handful ? row('&#128058;', '&ldquo;He&rsquo;s A Handful&trade;&rdquo;', `<b>${pname(handful.p)}</b> — ${handfulBits(handful)}${ownTag(handful.p.id)}`) : ''}
-      ${nffb ? row('&#129462;', 'No-Footed Full Back', `<b>${pname(nffb.p)}</b> — the full 90, no goal, no assist, no clean sheet. Presented by the Punditry Desk${ownTag(nffb.p.id)}`) : ''}
     </div>
+    ${sa ? `${sect('Season so far')}
+    <div class="awards-list">
+      ${row('&#127942;', 'Highest Score', `<b>${esc(teamName(sa.hi.id))}</b> — ${sa.hi.s} points${gwTag(sa.hi.gw)}`)}
+      ${row('&#129348;', 'Lowest Score', `<b>${esc(teamName(sa.lo.id))}</b> — ${sa.lo.s} points${gwTag(sa.lo.gw)}`)}
+      ${sa.jammy ? row('&#127808;', 'Jammiest Win', `<b>${esc(teamName(sa.jammy.w))}</b> won with just ${sa.jammy.ws}${gwTag(sa.jammy.gw)}`) : ''}
+      ${sa.robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(sa.robbed.l))}</b> scored ${sa.robbed.ls} and still lost${gwTag(sa.robbed.gw)}`) : ''}
+      ${sa.hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(sa.hiding.w))}</b> ${sa.hiding.ws}–${sa.hiding.ls} <b>${esc(teamName(sa.hiding.l))}</b>${gwTag(sa.hiding.gw)}`) : ''}
+      ${sa.bench ? row('&#129681;', 'Bench Tragedy', `<b>${esc(teamName(sa.bench.id))}</b> left ${sa.bench.waste} on the bench${gwTag(sa.bench.gw)}`) : ''}
+    </div>` : ''}
   </div>`;
 }
-/* ----- the Lobus Registry (ledger #1 — one mandatory Lobus each) ----- */
-function lobusCard() {
-  if (state.phase !== 'season') return '';
-  const declared = state.managers.filter(m => state.lobus?.[m.id]);
-  const waiting = state.managers.filter(m => !state.lobus?.[m.id]);
-  const bonus = +state.settings.lobusBonus || 0;
-  const rows = declared.map(m => {
-    const p = PLAYER_BY_ID[state.lobus[m.id]];
-    if (!p) return '';
-    const hon = lobusHonours(m.id);
-    return `<div class="lrow" style="font-size:12.5px">${photoImg(p)} <b>${pname(p)}</b> <span class="muted" style="font-size:11px">${esc(p.club)}</span>
-      <span class="tag">${esc(teamName(m.id))}</span>
-      <span class="muted" style="margin-left:auto;font-size:11.5px">${hon ? `honoured his people &times;${hon}` : 'yet to honour his people'}</span></div>`;
-  }).join('');
-  return `<div class="card" style="margin-top:14px">
-    <h2>The Lobus Registry <span class="muted" style="font-weight:400;font-size:12px">one each, mandatory, sponsored by Ali Daei (108 international goals, the original)</span></h2>
-    ${rows || '<p class="muted" style="font-size:12.5px">No Lobus has been declared. The Committee is patient, but the klaxon is charged.</p>'}
-    ${waiting.length && declared.length ? `<p class="muted" style="font-size:11.5px;margin-top:8px">Yet to declare: ${waiting.map(m => esc(managerName(m.id))).join(', ')}. The Committee waits.</p>` : ''}
-    <p class="muted" style="font-size:10.5px;margin-top:6px">Declare from any of your players' cards — open, declare, regret. Changeable until GW1 kicks off.${bonus ? ` Lobus bonus: <b style="color:var(--text)">+${bonus}</b> any week your starting Lobus scores or assists.` : ' Bonus points: pending Committee approval (Settings).'}</p>
-  </div>`;
-}
+/* ----- the Lobus (ledger #1): the Registry card is GONE (Marc, 1 Aug —
+   "not a fully formed joke"); declarations stay (player card) and the gag is
+   delivered by the LOBUS KLAXON on the Vidiprinter when a declared Lobus
+   scores. lobusHonours feeds the klaxon era's record-keeping. ----- */
 /* ----- the Committee Minutes: one tap, WhatsApp-ready recap ----- */
 function committeeMinutes(last) {
   const g = GAMEWEEKS[last];
-  const { hi, lo, jammy, robbed, hiding, bench, handful, nffb, handfulBits } = weeklyAwards(last);
+  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
   const L = [`\u{1F3C6} THE LEAGUE — GW${g.n} COMMITTEE MINUTES`, '', '*Results*'];
   for (const [a, b] of pairingsFor(last)) {
     const sa = gwManagerPoints(a, last), sb = gwManagerPoints(b, last);
@@ -5204,8 +5266,6 @@ function committeeMinutes(last) {
   if (robbed) L.push(`\u{1F494} Robbed: ${teamName(robbed.l)} scored ${robbed.ls} and still lost`);
   if (hiding) L.push(`\u{1F528} Biggest Hiding: ${teamName(hiding.w)} ${hiding.ws}–${hiding.ls} ${teamName(hiding.l)}`);
   if (bench.waste > 0) L.push(`\u{1FAD1} Bench of the Week: ${teamName(bench.id)} left ${bench.waste} on the bench`);
-  if (handful) L.push(`\u{1F43A} "He's A Handful™": ${handful.p.name} — ${handfulBits(handful)}`);
-  if (nffb) L.push(`\u{1F9B5} No-Footed Full Back: ${nffb.p.name} — the full 90, nothing to declare`);
   const t = h2hStandings(false);
   L.push('', '*The Table*');
   t.slice(0, 4).forEach((r, i) => L.push(`${i + 1}. ${r.team || r.name} — ${r.pts}`));
@@ -5224,17 +5284,7 @@ function bindDash() {
   const ds = $('#dashSignIn');
   if (ds) ds.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
   document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
-  const cm = $('#copyMinutes');
-  if (cm) cm.onclick = () => {
-    const last = lastFinalGw();
-    if (last < 0) return;
-    const txt = committeeMinutes(last);
-    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
-      () => toast('Minutes copied — paste straight into the chat'),
-      () => { window.prompt('Copy the Minutes:', txt); });
-  };
-  const tm = $('#trmMore');
-  if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
+  bindAwardsBits(); // awards/treatment live in the Data Room now, but stay bound if ever re-hosted
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
     showMatchup(a, b, i);
@@ -5243,17 +5293,24 @@ function bindDash() {
 
 /* ----- playoffs (top 8: GW34 handicap quarter-finals, GW35 semis, GW36–38 three-legged final) ----- */
 const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
-const QF_HANDICAPS = [12, 9, 6, 3]; // head start for the higher seed: 1v8, 2v7, 3v6, 4v5
+// QF head start for the higher seed: half the table-points gap between the
+// pair, rounded down, capped at +15 (Committee ruling — replaces the old
+// fixed +12/+9/+6/+3; a tight 4v5 now carries no handicap at all)
+const QF_HANDICAP_CAP = 15;
+const qfHandicap = (ptsHigh, ptsLow) => Math.min(QF_HANDICAP_CAP, Math.floor(Math.max(0, ptsHigh - ptsLow) / 2));
 function playoffState() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') return null;
-  const seeds = standingsBefore(REGULAR_GWS).rows.map(r => r.id).slice(0, 8);
+  const table = standingsBefore(REGULAR_GWS).rows;
+  const seeds = table.map(r => r.id).slice(0, 8);
+  const tablePts = Object.fromEntries(table.map(r => [r.id, r.pts]));
   const qfIdx = REGULAR_GWS;       // GW34
   const semiIdx = REGULAR_GWS + 1; // GW35
   const finalIdx = [REGULAR_GWS + 2, REGULAR_GWS + 3, REGULAR_GWS + 4]; // GW36–38
   const higherSeed = (a, b) => seeds.indexOf(a) < seeds.indexOf(b) ? a : b;
   const qfs = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  const handicaps = qfs.map(([a, b]) => qfHandicap(tablePts[a], tablePts[b]));
   const qfWinners = gwStatus(qfIdx) === 'final' ? qfs.map(([a, b], k) => {
-    const pa = gwManagerPoints(a, qfIdx) + QF_HANDICAPS[k], pb = gwManagerPoints(b, qfIdx);
+    const pa = gwManagerPoints(a, qfIdx) + handicaps[k], pb = gwManagerPoints(b, qfIdx);
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
   }) : null;
   // fixed bracket: winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6
@@ -5274,13 +5331,13 @@ function playoffState() {
     champion = wx > wy ? x : wy > wx ? y
       : cx > cy ? x : cy > cx ? y : higherSeed(x, y);
   }
-  return { seeds, qfs, qfIdx, qfWinners, semis, semiIdx, semiWinners, finalIdx, champion };
+  return { seeds, qfs, handicaps, qfIdx, qfWinners, semis, semiIdx, semiWinners, finalIdx, champion };
 }
 function playoffCard() {
   const po = playoffState();
   if (!po) {
     return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting +${QF_HANDICAPS.join(', +')}. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
+      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting with <b>half the table-points gap</b> between the pair (rounded down, capped at +${QF_HANDICAP_CAP}). Finish miles clear, start miles ahead. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
   }
   const seedNo = id => po.seeds.indexOf(id) + 1;
   const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
@@ -5289,8 +5346,8 @@ function playoffCard() {
       <span class="fx-score">${score}</span>
       <span style="flex:1">${esc(teamName(b))} ${ord(seedNo(b))}</span></div>`;
   const qfRows = po.qfs.map(([a, b], k) => tieRow(a, b,
-    gwStatus(po.qfIdx) === 'upcoming' ? 'GW34' : `${gwManagerPoints(a, po.qfIdx) + QF_HANDICAPS[k]} – ${gwManagerPoints(b, po.qfIdx)}`,
-    QF_HANDICAPS[k])).join('');
+    gwStatus(po.qfIdx) === 'upcoming' ? 'GW34' : `${gwManagerPoints(a, po.qfIdx) + po.handicaps[k]} – ${gwManagerPoints(b, po.qfIdx)}`,
+    po.handicaps[k])).join('');
   const semiRows = po.semis ? po.semis.map(([a, b]) => tieRow(a, b,
     gwStatus(po.semiIdx) === 'upcoming' ? 'GW35' : `${gwManagerPoints(a, po.semiIdx)} – ${gwManagerPoints(b, po.semiIdx)}`)).join('') : '';
   let finalRows = '';
@@ -5595,7 +5652,13 @@ function viewH2H() {
           <td class="num muted">${r.pf}</td><td class="num muted">${r.pa}</td>
           <td class="num gold act">${r.pts}</td>
           <td class="num muted">${managerPoints(r.id)}</td>
-          <td class="num">${i < 4 ? `<span class="gold">+${QF_HANDICAPS[i]}</span>` : i < 8 ? `<span style="color:#e05555">&minus;${QF_HANDICAPS[7 - i]}</span>` : ''}</td>
+          <td class="num">${(() => {
+            if (i >= 8) return '';
+            const k = Math.min(i, 7 - i);
+            const h = qfHandicap(standings[k].pts, standings[7 - k].pts);
+            if (!h) return '<span class="muted">0</span>';
+            return i < 4 ? `<span class="gold">+${h}</span>` : `<span style="color:#e05555">&minus;${h}</span>`;
+          })()}</td>
         </tr>`).join('')}
       </tbody>
     </table>
@@ -5692,7 +5755,7 @@ function viewCup() {
 }
 
 /* ----- the Palwin Ham Cup (ledger #6, Tussie) — Trough players only ----- */
-let hamView = { q: '', sel: null };
+let hamView = { q: '', sel: null, pos: '', club: '' };
 function hamCupCard() {
   if (state.phase !== 'season') return '';
   const hc = state.hamCup;
@@ -5711,24 +5774,47 @@ function hamCupCard() {
   const entries = hc.entries || {};
   const entered = state.managers.filter(m => toArr(entries[m.id]).length === 11);
   if (st === 'upcoming') {
+    const opensAt = hamOpensAt(hc);
+    // entries on the node mean the window already opened somewhere — never
+    // re-close it under them on a clock disagreement
+    const windowOpen = !opensAt || Date.now() >= opensAt || entered.length > 0;
+    if (!windowOpen) {
+      const when = new Date(opensAt).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return `<div class="card" style="margin-top:18px">${head}
+        <p class="rules-p"><b>The tie is drawn: GW${g.n}.</b> The selection window opens <b>${when}</b> — a week before kick-off. At that exact moment the Trough is photographed, and THAT pool is the pool. No early homework.</p>
+        ${(netOn() && isCommissioner()) || !netOn() ? '<button class="btn ghost small" id="hamOpen">Open the window early (Chairman)</button>' : ''}
+        ${(netOn() && isCommissioner()) || !netOn() ? '<button class="btn ghost small" id="hamCancel" style="margin-left:6px">Call the whole thing off</button>' : ''}
+      </div>`;
+    }
+    // local play freezes the pool the first time the open window is seen;
+    // online the server freezes it (hourly tick or first entry)
+    if (!netOn() && !Array.isArray(hc.frozen)) { hc.frozen = [...ownedIdsAt(currentGwIndex())]; save(); }
     const iAm = whoami && whoami !== -1;
-    const owned = ownedIdsAt(currentGwIndex());
+    const owned = Array.isArray(hc.frozen) ? new Set(hc.frozen) : ownedIdsAt(currentGwIndex());
     const mySel = hamView.sel ?? toArr(entries[whoami] || []);
     const free = PLAYERS.filter(p => !owned.has(p.id));
     const q = normName(hamView.q);
     const picked = mySel.map(pid => PLAYER_BY_ID[pid]).filter(Boolean);
-    const cands = free.filter(p => !mySel.includes(p.id) && (!q || normName(p.name).includes(q) || normName(p.club).includes(q)))
+    const cands = free.filter(p => !mySel.includes(p.id)
+        && (!hamView.pos || p.pos === hamView.pos)
+        && (!hamView.club || p.club === hamView.club)
+        && (!q || normName(p.name).includes(q) || normName(p.club).includes(q)))
       .sort((a, b) => rating(b) - rating(a)).slice(0, 30);
+    const hamClubs = [...new Set(free.map(p => p.club))].sort();
     const shape = xiValid(mySel);
     const cnt = xiCounts(mySel);
     const prow = (p, on) => `<div class="lrow" style="font-size:12.5px"><label style="display:flex;gap:8px;align-items:center;cursor:pointer;flex:1">
       <input type="checkbox" data-ham="${p.id}" ${on ? 'checked' : ''}> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
       <span class="muted" style="font-size:11px">${esc(p.club)}</span><span class="muted" style="margin-left:auto;font-size:11px">${metricsFor(p).pts} pts</span></label></div>`;
     return `<div class="card" style="margin-top:18px">${head}
-      <p class="rules-p"><b>The tie is drawn: GW${g.n}.</b> Entries lock at the deadline. ${entered.length}/12 XIs in${entered.length ? ` (${entered.map(m => esc(managerName(m.id))).join(', ')})` : ''}.</p>
+      <p class="rules-p"><b>The tie is drawn: GW${g.n}.</b> The window is open and the Trough is frozen — the pool below is the pool, whatever transfers happen between now and kick-off. Entries lock at the deadline. ${entered.length}/12 XIs in${entered.length ? ` (${entered.map(m => esc(managerName(m.id))).join(', ')})` : ''}.</p>
       ${iAm ? `
       <h3 style="margin-top:12px">Your Ham XI <span class="tag">${mySel.length}/11</span> <span class="muted" style="font-weight:400;font-size:11px">1 GK &middot; 3–5 DF &middot; 2–5 MF &middot; 1–3 FW &middot; picked: ${cnt.GK} GK ${cnt.DF} DF ${cnt.MF} MF ${cnt.FW} FW</span></h3>
       ${picked.map(p => prow(p, true)).join('') || '<p class="muted" style="font-size:12px">Nobody yet. The Trough awaits.</p>'}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:8px 0 2px">
+        ${['', 'GK', 'DF', 'MF', 'FW'].map(ps => `<button class="btn ghost small${hamView.pos === ps ? ' active' : ''}" data-hampos="${ps}" style="font-size:11px">${ps || 'All'}</button>`).join('')}
+        <select id="hamClub" style="font-size:12px;margin-left:auto"><option value="">Every club</option>${hamClubs.map(c => `<option value="${esc(c)}" ${hamView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      </div>
       <input type="text" id="hamQ" placeholder="Search the Trough…" value="${esc(hamView.q)}" style="margin:8px 0;width:100%;box-sizing:border-box">
       ${cands.map(p => prow(p, false)).join('')}
       <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
@@ -5796,6 +5882,23 @@ function bindCup() {
   });
   const hq = $('#hamQ');
   if (hq) { hq.oninput = () => { hamView.q = hq.value; render(); }; }
+  document.querySelectorAll('[data-hampos]').forEach(b => b.onclick = () => { hamView.pos = b.dataset.hampos; render(); });
+  const hClub = $('#hamClub');
+  if (hClub) hClub.onchange = () => { hamView.club = hClub.value; render(); };
+  const hOpen = $('#hamOpen');
+  if (hOpen) hOpen.onclick = () => {
+    if (netOn() && !isCommissioner()) { toast('Only the Chairman opens the window'); return; }
+    if (netOn()) {
+      serverAct('hamAdmin', { op: 'open' })
+        .then(() => toast('The window is OPEN — the Trough is frozen. Pick your ham.'))
+        .catch(() => {});
+      return;
+    }
+    state.hamCup.openedAt = Date.now();
+    state.hamCup.frozen = [...ownedIdsAt(currentGwIndex())];
+    save(); render();
+    toast('The window is OPEN — the Trough is frozen. Pick your ham.');
+  };
   const hs = $('#hamSave');
   if (hs) hs.onclick = () => {
     if (!whoami || whoami === -1) { toast('Sign in first'); return; }
@@ -6035,11 +6138,13 @@ function viewFixtures() {
     ${list.map(f => {
       const live = f.started && !f.finished;
       const score = !f.started ? new Date(f.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''}–${f.as ?? ''}`;
+      const ytq = encodeURIComponent(`${f.home} vs ${f.away} Premier League highlights`);
       return `<div class="fx ${live ? 'live' : ''}">
         <div class="fx-team right"><span>${esc(f.home)}</span>${flagImg(f.home)}</div>
         <span class="fx-score">${score}</span>
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
         <span class="fx-time">${live ? `${f.minutes}'` : (f.finished ? 'FT' : '')}</span>
+        ${f.finished ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654; Highlights</a>` : ''}
       </div>`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
@@ -6072,14 +6177,14 @@ function viewRules() {
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
       <p class="rules-p"><b>GW1–33</b>: regular season, head-to-head every week — everyone plays everyone, nearly three times over. Win 3, draw 1, loss 0.</p>
-      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting <b>+12, +9, +6, +3</b> respectively. Your reward for the regular season.</p>
+      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting on <b>half the table-points gap</b> between the pair (rounded down, capped at +15). Dominate the regular season, carry the cushion; scrape in level, get nothing.</p>
       <p class="rules-p"><b>GW35</b>: semi-finals, one leg — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. No handicaps from here.</p>
       <p class="rules-p"><b>GW36–38</b>: the final, three legs. Most legs won → cumulative points → higher regular-season finish. All other ties: higher seed advances.</p>
       <p class="rules-p"><b>The Monzo League Cup</b>, from GW8: last man standing. Lowest score each gameweek is eliminated; ties roll over.</p>
     </div>
     <div class="card">
       <h2>Scoring</h2>
-      ${Object.keys(DEFAULT_SCORING).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
+      ${Object.keys(DEFAULT_SCORING).filter(k => sc[k] !== 0).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus points. <b>No defensive-contribution (DEFCON) points.</b> Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
       <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>

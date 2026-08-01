@@ -21,7 +21,7 @@
     assist: 3,
     cleanSheet: 4,
     cleanSheetMF: 1,
-    per3Saves: 1,
+    per3Saves: 0, // retired by the Chairman, 1 Aug 2026
     penSave: 5,
     penMiss: -2,
     yellow: -1,

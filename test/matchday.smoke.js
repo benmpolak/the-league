@@ -607,7 +607,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
       treatmentBand({ status: 'i', chance: 0, news: 'Unknown return date' }),
       treatmentBand({ status: 's', chance: 0, news: 'Suspended until 29 Aug' }),
     ];
-    state.view = 'dash'; trmShowAll = true; render();
+    state.view = 'data'; trmShowAll = true; render(); // awards + treatment desk live in the Data Room now
     const awards = [...document.querySelectorAll('.award-row')];
     const treatments = [...document.querySelectorAll('.treatment-row')];
     const firstAward = awards[0];

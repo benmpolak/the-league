@@ -976,22 +976,44 @@ ACTIONS.lobusDeclare = async ({ league, a, data, state, eng }) => {
 };
 
 /* ----- Ham Cup ----- */
+/* The selection window opens 7 days before the cup gameweek's first kickoff
+ * (or at the draw / the Chairman's early-open, whichever is later to arrive),
+ * and the Trough is frozen as of the moment it opens: `frozen` on the cup
+ * node = the OWNED player ids at that instant, and eligibility is judged
+ * against that snapshot, not the live Trough. Entries still lock at kickoff. */
+const HAM_WINDOW_MS = 7 * 24 * 3600e3;
+const hamTs = v => (typeof v === 'number' ? v : (v ? new Date(v).getTime() : 0));
+function hamOpensAt(cup, eng) {
+  if (!cup || !cup.gw) return null;
+  if (cup.openedAt) return hamTs(cup.openedAt);
+  const k = eng.gwKicks(cup.gw);
+  const drawn = hamTs(cup.drawnAt);
+  return k ? Math.max(drawn, k.first - HAM_WINDOW_MS) : drawn;
+}
 ACTIONS.hamEnter = async ({ league, a, data, state, eng, ctx }) => {
   const mid = actingManager(a, data);
   if (!Number.isInteger(data.gw)) throw new HttpsError('invalid-argument', 'entry must name its cup gameweek — refresh the app');
   if (!state.hamCup || state.hamCup.status === 'off' || !state.hamCup.gw) throw new HttpsError('failed-precondition', 'no cup drawn');
   if (eng.gwHasStarted(state.hamCup.gw)) throw new HttpsError('failed-precondition', 'the cup gameweek has kicked off — entries are locked');
+  const opensAt = hamOpensAt(state.hamCup, eng);
+  if (opensAt && Date.now() < opensAt) throw new HttpsError('failed-precondition', 'the selection window has not opened yet — it opens a week before the tie');
   const xi = intArray(data.xi, 'xi', 11);
   if (!eng.xiValid(xi)) throw new HttpsError('invalid-argument', 'XI shape is illegal');
-  const owned = eng.ownedIdsAt(state, eng.currentGwIndex());
+  const frozenSet = Array.isArray(state.hamCup.frozen) ? new Set(state.hamCup.frozen) : null;
+  const owned = frozenSet || eng.ownedIdsAt(state, eng.currentGwIndex());
   if (xi.some(id => owned.has(id))) throw new HttpsError('invalid-argument', 'Ham Cup XIs come from the Trough only');
   if (xi.some(id => !ctx.PLAYER_BY_ID[id] || eng.arrivalLocked(state, ctx.PLAYER_BY_ID[id]))) throw new HttpsError('invalid-argument', 'locked or unknown player');
+  // the first entry after the window opens freezes the pool in the same txn,
+  // so every later entry is judged against the identical snapshot
+  const ownedNow = [...eng.ownedIdsAt(state, eng.currentGwIndex())];
   // entry lands via a txn on the cup node: if the cup was redrawn to a
   // different GW after this device loaded it, the entry refuses instead of
   // silently attaching to the new cup (the gw pin above is mandatory)
   const res = await db().ref(`${leagueBase(league)}/public/hamCup`).transaction(seededObj(state.hamCup, c => {
     if (!c || c.status === 'off' || !c.gw) return;
     if (c.gw !== data.gw) return; // cup changed underneath them
+    if (!Array.isArray(c.frozen)) c.frozen = ownedNow;
+    else if (xi.some(id => c.frozen.includes(id))) return; // pool froze differently underneath them
     (c.entries = c.entries || {})[mid] = xi;
     return c;
   }));
@@ -1002,6 +1024,20 @@ ACTIONS.hamEnter = async ({ league, a, data, state, eng, ctx }) => {
 ACTIONS.hamAdmin = async ({ league, a, data, state, eng, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   if (data.op === 'cancel') { await db().ref(`${leagueBase(league)}/public/hamCup`).set({ status: 'off' }); return { ok: true }; }
+  if (data.op === 'open') {
+    // Chairman opens the selection window early — the pool freezes right here
+    if (!state.hamCup || state.hamCup.status === 'off' || !state.hamCup.gw) throw new HttpsError('failed-precondition', 'no cup drawn');
+    if (eng.gwHasStarted(state.hamCup.gw)) throw new HttpsError('failed-precondition', 'that tie has already kicked off');
+    const ownedNow = [...eng.ownedIdsAt(state, eng.currentGwIndex())];
+    const res = await db().ref(`${leagueBase(league)}/public/hamCup`).transaction(seededObj(state.hamCup, c => {
+      if (!c || c.status === 'off' || !c.gw) return;
+      if (!c.openedAt) c.openedAt = Date.now();
+      if (!Array.isArray(c.frozen)) c.frozen = ownedNow;
+      return c;
+    }));
+    if (!res.committed) throw new HttpsError('failed-precondition', 'no cup to open');
+    return { ok: true };
+  }
   if (data.op === 'draw') {
     const gw = Number(data.gw);
     if (!Number.isInteger(gw) || gw < CUP_START || gw >= Engine.REGULAR_GWS) throw new HttpsError('invalid-argument', 'draw a gameweek between the cup start and the end of the regular season');
@@ -1564,6 +1600,27 @@ exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', re
     await runWaivers('the-league-2627', `sched-${d.id}`, 'schedule').catch(e => {
       errs.push(d.id + ': ' + String(e.message || e).slice(0, 80));
     });
+  }
+  // freeze any drawn Ham Cup whose selection window has opened (idempotent —
+  // the hourly tick pins the pool within the hour; a first entry would pin it
+  // lazily anyway, this just makes the snapshot moment predictable)
+  for (const lg of LEAGUES) {
+    try {
+      const st = await loadState(lg, ctx).catch(() => null);
+      const cup = st && st.hamCup;
+      if (!cup || cup.status === 'off' || !cup.gw || Array.isArray(cup.frozen)) continue;
+      if (ctx.eng.gwHasStarted(cup.gw)) continue; // entries locked anyway
+      const opensAt = hamOpensAt(cup, ctx.eng);
+      if (opensAt == null || Date.now() < opensAt) continue;
+      const ownedNow = [...ctx.eng.ownedIdsAt(st, ctx.eng.currentGwIndex())];
+      await db().ref(`${leagueBase(lg)}/public/hamCup`).transaction(seededObj(cup, c => {
+        if (!c || c.status === 'off' || c.gw !== cup.gw || Array.isArray(c.frozen)) return;
+        c.frozen = ownedNow;
+        return c;
+      }));
+    } catch (e) {
+      errs.push('hamfreeze-' + lg + ': ' + String(e.message || e).slice(0, 80));
+    }
   }
   if (errs.length) throw new Error('waiverTick failures — ' + errs.join(' | ')); // real errors must reach the Scheduler's retry
 });

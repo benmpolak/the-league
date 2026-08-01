@@ -371,9 +371,13 @@ const check = (label, ok, detail = '') => {
     const po = playoffState();
     if (!po) return { err: 'playoffState null after GW38' };
     // independent recompute
-    const seeds = standingsBefore(33).rows.map(r => r.id).slice(0, 8);
+    const table = standingsBefore(33).rows;
+    const seeds = table.map(r => r.id).slice(0, 8);
+    const tp = Object.fromEntries(table.map(r => [r.id, r.pts]));
     const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
-    const H = [12, 9, 6, 3];
+    // handicap = half the table-points gap, rounded down, capped +15
+    const H = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]]
+      .map(([x, y]) => Math.min(15, Math.floor(Math.max(0, tp[x] - tp[y]) / 2)));
     const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
       const px = gwManagerPoints(x, 33) + H[k], py = gwManagerPoints(y, 33);
       return px === py ? hi(x, y) : (px > py ? x : y);

@@ -59,7 +59,7 @@ const AD_BOARDS = [
   { t: 'HIGH PERFORMANCE PODCAST', s: 'what does defeat mean to YOU?', c: '#ffd98a', bg: '#1f1502' },
   { t: 'MGS', s: 'sapere aude, lads', c: '#a9c4e8', bg: '#0a1220' },
   { t: 'VICTORIA PLUMBING', s: 'taps for the treble winners', c: '#b8e0f7', bg: '#081722' },
-  { t: 'INTERLINK RECRUITMENT', s: 'a young graduate in need of opportunity? call us', c: '#c9b8f0', bg: '#140f24' },
+  { t: 'KENDALS', s: 'the Harrods of the north, allegedly', c: '#c9b8f0', bg: '#140f24' },
   { t: 'SLATTERY', s: 'patissier to the playoffs', c: '#e8c9b0', bg: '#1f130a' },
   // Jewish Manchester, past and present - for the lads
   { t: 'TITANICS', s: 'unsinkable since 1912', c: '#b8d4f0', bg: '#0a1420' },
