@@ -2510,7 +2510,7 @@ const NAV_ITEMS = [
   ['cup', 'Cup competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
-  ['fixtures', 'Fixtures', 'Fixtures'],
+  ['fixtures', 'PL fixtures', 'PL fixtures'],
   ['rules', 'Rules', 'Rules'],
   ['settings', 'Settings', 'Settings'],
 ];
