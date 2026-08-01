@@ -511,11 +511,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 /* the fixture chip under each player — Lee: too thin, blends with the pitch */
 .pitch-vs { font-size: 10px; font-weight: 800; color: #f2fbf5; letter-spacing: .03em; text-shadow: 0 1px 3px #000d, 0 0 6px #0008; }
 .mu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mu-grid > * { min-width: 0; }
 /* Lee's scoreboard: the score up top where you look first, not buried in the side headings */
 .mu-scoreline { border-bottom: none; margin: 0 0 4px; font-size: 15px; }
 .mu-scoreline .fx-score { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; padding: 3px 14px; background: var(--card2); border-radius: 7px; white-space: nowrap; }
 .mu-card { max-width: 760px; }
 @media (max-width: 700px) { .mu-grid { grid-template-columns: 1fr; } }
+@media (max-width: 380px) { .mu-pitch .pitch-chip { min-width: 50px; } .mu-pitch { padding: 10px 3px; gap: 6px; } }
 .form-pill { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; font-size: 11px; font-weight: 800; margin-right: 3px; color: #fff; }
 .form-W { background: #2e9e5b; }
 .form-L { background: #d64545; }

@@ -4980,7 +4980,13 @@ function viewDash() {
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
-      <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
+      <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>
+      <div class="mu-grid" style="margin-top:10px">
+        ${pair.map(pmid => `<div>
+          <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
+          ${dashMiniPitch(pmid, cur)}
+        </div>`).join('')}
+      </div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
         <button class="btn small" data-goto="team">Set my lineup</button>
@@ -5333,6 +5339,18 @@ function committeeMinutes(last) {
   L.push('', 'Minutes recorded automatically. Disputes to the group chat, where they will be enjoyed.');
   L.push('https://benmpolak.github.io/the-league/');
   return L.join('\n');
+}
+// the cheeky lineup shot on the dashboard matchup card (Ben, 1 Aug): both
+// XIs as mini pitches, chips open player cards, points live once started
+function dashMiniPitch(mid, gw) {
+  const xi = lineupFor(mid, gw);
+  return `<div style="overflow-x:auto"><div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${
+    xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p && p.pos === pos).map(p => `
+      <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
+        ${kitImg(p.team, p.pos === 'GK')}
+        <span class="pitch-name">${esc(p.name)}</span>
+        ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+      </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div></div>`;
 }
 function bindDash() {
   bindInstall();
