@@ -862,6 +862,24 @@ ACTIONS.readySet = async ({ league, a, data, state }) => {
   return { ok: true };
 };
 
+// draft-night heckling (Marc, 2 Aug): one button, a randomised barb, a
+// cooldown. Self only — the Chairman does not heckle by proxy. The line is
+// stored as an index; the client owns the words.
+ACTIONS.heckle = async ({ league, a, data, state }) => {
+  const mid = a.managerId;
+  if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'heckling is a draft-night art');
+  const line = Number(data.line);
+  if (!Number.isInteger(line) || line < 0 || line > 63) throw new HttpsError('invalid-argument', 'bad heckle');
+  const ref = db().ref(`${leagueBase(league)}/public/heckles/${mid}`);
+  const seedSnap = (await ref.get()).val(); // seed: empty first txn pass must not bypass the cooldown
+  const res = await ref.transaction(seededObj(seedSnap, cur => {
+    if (cur && cur.t && Date.now() - cur.t < 15000) return; // abort — cooldown
+    return { line, t: Date.now() };
+  }));
+  if (!res.committed) throw new HttpsError('resource-exhausted', 'one heckle per 15 seconds — pace yourself');
+  return { ok: true };
+};
+
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
   if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
@@ -1328,7 +1346,7 @@ const IMPORT_ALLOWED = new Set([
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
 // import into a league)
-const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock']);
+const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock', 'heckles']);
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 
@@ -1516,7 +1534,15 @@ async function idemFresh(idemHash) {
   return res.committed;
 }
 const MAIL_TEXT = link => 'Sign in to The League:\n\n' + link + '\n\nThe link is single-use and only works for this email address. If you didn’t ask for it, ignore this.\n\n— The Committee';
-const MAIL_HTML = link => '<p>Sign in to The League:</p><p><a href="' + link + '">Open The League</a></p><p style="color:#666">The link is single-use and only works for this email address. If you didn’t ask for it, ignore this.</p><p>— The Committee</p>';
+// the raw URL appears as copyable text as well as a link: tapping the link
+// opens the DEFAULT browser, which is the wrong place when you're signing in
+// from another browser or the installed app — those need the site's
+// paste-the-link box, and you can't paste what you can't copy (Ben, 2 Aug)
+const MAIL_HTML = link => '<p>Sign in to The League.</p>'
+  + '<p><b>Same browser?</b> Just tap: <a href="' + link + '">Open The League</a></p>'
+  + '<p><b>Different browser or the installed app?</b> Copy the whole link below and paste it into the sign-in box on the site:</p>'
+  + '<p style="word-break:break-all;font-family:monospace;font-size:12px;background:#f2f2f2;padding:10px;border-radius:6px">' + link + '</p>'
+  + '<p style="color:#666">The link is single-use and only works for this email address. If you didn’t ask for it, ignore this.</p><p>— The Committee</p>';
 
 /* Delivery: Gmail SMTP with an app password (no third-party account needed —
  * the league writes from the Chairman's own address). The emulator suites set

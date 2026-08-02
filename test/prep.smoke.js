@@ -191,6 +191,73 @@ const chk = (name, ok, detail = '') => {
   chk('P8 on the night: queue intact, Draft buttons back, autopick takes the prep head',
     p8.queueIntact && p8.draftBtns > 3 && p8.picked === p8.head, JSON.stringify(p8));
 
+  // ---- P8b: heckle button — local heckle flashes and cools down
+  const p8b = await page.evaluate(async () => {
+    const btn = document.getElementById('heckleBtn');
+    if (!btn) return { btn: false };
+    btn.click();
+    await new Promise(r => setTimeout(r, 100));
+    const flash = !!document.querySelector('.heckle-flash');
+    const stamp = state.heckles?.[whoami]?.t;
+    btn.click(); // inside the cooldown — must not restamp
+    const stamp2 = state.heckles?.[whoami]?.t;
+    return { btn: true, flash, stamped: !!stamp, cooled: stamp === stamp2 };
+  });
+  chk('P8b heckle: button fires a flash, cooldown holds', p8b.btn && p8b.flash && p8b.stamped && p8b.cooled, JSON.stringify(p8b));
+
+  // ---- P8e: the Ben Levy DM klaxon fires on a listed sitter
+  const p8e = await page.evaluate(async () => {
+    const dm = PLAYERS.find(p => p.pos === 'MF' && /rice|caicedo|rodri|mac allister|tielemans|enzo fern/i.test((p.full || '') + p.name));
+    if (!dm) return { dm: false };
+    state.draft.picks.push({ n: state.draft.picks.length + 1, managerId: 3, playerId: dm.id });
+    render();
+    await new Promise(r => setTimeout(r, 80));
+    const flash = document.querySelector('.klaxon-flash');
+    return { dm: dm.name, fired: !!flash, label: flash?.textContent?.includes('KLAXON') };
+  });
+  chk('P8e Ben Levy DM klaxon fires on a listed sitter', !!p8e.dm && p8e.fired && p8e.label, JSON.stringify(p8e));
+
+  // ---- P8f: projected points columns are fixture-count aware and optional
+  const p8f = await page.evaluate(() => {
+    state.fixtures = [
+      { gw: 1, home: 'Liverpool', away: 'Everton', date: '2026-08-21', finished: false },
+      { gw: 2, home: 'Arsenal', away: 'Liverpool', date: '2026-08-28', finished: false },
+      { gw: 3, home: 'Liverpool', away: 'Chelsea', date: '2026-09-04', finished: false },
+    ];
+    const p = PLAYERS.find(x => x.team === 'Liverpool' && x.pos === 'MF');
+    const m = metricsFor(p);
+    const one = projPts(p, 1), three = projPts(p, 3);
+    const cols = ALL_STAT_COLS(false).map(c => c.k);
+    return { one, ratio: one > 0 && Math.abs(three - 3 * one) < 0.001, inMenu: cols.includes('xp1') && cols.includes('xp3') && cols.includes('xp6'), inMetrics: typeof m.xp6 === 'number' };
+  });
+  chk('P8f projected points: fixture-count aware, in the column menu', p8f.one > 0 && p8f.ratio && p8f.inMenu && p8f.inMetrics, JSON.stringify(p8f));
+
+  // ---- P8c: fixture-difficulty tints read the new 1–5 strength scale
+  const p8c = await page.evaluate(() => ({
+    hard: fdrCls('Liverpool'), easy: fdrCls('Hull City'), mid: fdrCls('Everton'),
+  }));
+  chk('P8c FDR tints fire on the 26/27 1–5 strength scale',
+    p8c.hard === 'fdr-hard' && p8c.easy === 'fdr-easy' && p8c.mid === '', JSON.stringify(p8c));
+
+  // ---- P8d: the projected playoff bracket lives in the Data Room
+  const p8d = await page.evaluate(() => {
+    state = buildDemoState();
+    state.view = 'data';
+    whoami = state.managers[0].id;
+    render();
+    const card = [...document.querySelectorAll('.card h2')].find(h => h.textContent.includes('Playoff Bracket'));
+    const ties = document.querySelectorAll('.br-tie').length;
+    const seeds = [...document.querySelectorAll('.br-col:first-child .br-seed')].map(e => e.textContent);
+    return {
+      card: !!card, projected: card ? /projected/i.test(card.textContent) : false,
+      ties, hcaps: document.querySelectorAll('.br-hcap').length,
+      topSeed: seeds[0], tbd: document.querySelectorAll('.br-tbd').length,
+    };
+  });
+  chk('P8d projected bracket: 7 ties, seeds from the table, handicaps shown',
+    p8d.card && p8d.projected && p8d.ties === 7 && p8d.topSeed === '1' && p8d.hcaps >= 1 && p8d.tbd === 6,
+    JSON.stringify(p8d));
+
   // ---- P9: signed-out visitor still SEES the list card (with the how-to),
   // but gets no live queue controls
   const p9 = await page.evaluate(() => {

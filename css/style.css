@@ -379,6 +379,40 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 }
 @media (min-width: 981px) { .queue-drawer { display: none; } }
 
+/* the playoff bracket (Data Room) */
+.bracket { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.br-col { display: flex; flex-direction: column; justify-content: space-around; gap: 8px; min-width: 0; }
+.br-stage { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 2px; }
+.br-tie { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: rgba(255,255,255,.02); }
+.br-side { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12.5px; min-width: 0; }
+.br-side + .br-side { border-top: 1px solid var(--line); }
+.br-seed { font-weight: 800; color: var(--muted); font-size: 11px; width: 14px; flex: none; }
+.br-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.br-hcap { flex: none; font-size: 11px; }
+.br-pts { margin-left: auto; font-weight: 800; font-variant-numeric: tabular-nums; }
+.br-won { background: rgba(45,212,167,.10); }
+.br-out { opacity: .55; }
+.br-tbd { font-size: 11.5px; padding: 9px 8px; }
+@media (max-width: 700px) { .bracket { grid-template-columns: 1fr; } }
+
+/* draft-night heckle flashes */
+.heckle-flash {
+  position: fixed; top: 74px; left: 50%; transform: translateX(-50%);
+  z-index: 80; max-width: min(480px, 92vw);
+  background: var(--card); border: 1px solid var(--accent); border-radius: 12px;
+  padding: 10px 16px; font-size: 14px; box-shadow: var(--shadow);
+  animation: heckleIn .25s ease-out;
+}
+.heckle-flash .hk-who { color: var(--accent); font-weight: 800; margin-right: 6px; }
+.heckle-flash.heckle-you {
+  top: 110px; font-size: 19px; font-weight: 700; padding: 16px 22px;
+  border-width: 2px; animation: heckleIn .25s ease-out, heckleShake .5s ease-in-out .25s 2;
+}
+.heckle-flash.klaxon-flash { border-color: #e0a83c; }
+.heckle-flash.klaxon-flash .hk-who { color: #ffd76e; }
+@keyframes heckleIn { from { opacity: 0; transform: translateX(-50%) translateY(-14px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@keyframes heckleShake { 0%, 100% { transform: translateX(-50%); } 25% { transform: translateX(calc(-50% - 6px)); } 75% { transform: translateX(calc(-50% + 6px)); } }
+
 /* stale-save recovery bar */
 .stale-bar {
   position: fixed; top: 0; left: 0; right: 0; z-index: 75;

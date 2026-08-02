@@ -449,6 +449,12 @@ const SB = 'the-league-sandbox';
     && (await db.ref(`v2/leagues/${SB}/public/managers/2/kit/pattern`).get()).val() === 'sash');
   chk('start cleared the ready room', (await db.ref(`v2/leagues/${SB}/public/ready`).get()).val() === null);
   chk('ready room closes once the draft starts', (await T.mutate(SB, 'readySet', { ready: true }, sbTok3)).error?.status === 'FAILED_PRECONDITION');
+  // draft-night heckling: lands, cools down, validates, and is draft-only
+  chk('a heckle lands in public', !(await T.mutate(SB, 'heckle', { line: 3 }, sbTok3)).error
+    && (await db.ref(`v2/leagues/${SB}/public/heckles/3/line`).get()).val() === 3);
+  chk('heckle cooldown: instant second attempt refused',
+    (await T.mutate(SB, 'heckle', { line: 1 }, sbTok3)).error?.status === 'RESOURCE_EXHAUSTED');
+  chk('junk heckle line rejected', (await T.mutate(SB, 'heckle', { line: 999 }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
   chk('out-of-turn pick rejected', (await T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   const [p1, p2] = await Promise.all([
     T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok1),

@@ -97,3 +97,34 @@ const MANAGER_BOARDS = {
     { t: 'BODDINGTONS', s: 'the cream of the gameweek', c: '#fff3a0', bg: '#1c1a05' },
   ],
 };
+
+// Draft-night heckles — one button, a randomised barb, sent to every screen
+// with pride of place on the picker's. Server stores only the line index.
+const HECKLES = [
+  'HURRY UP.',
+  'The clock is not decorative.',
+  'We’ve all got work in the morning.',
+  'He’s googling “good defenders”.',
+  'The Committee notes your dithering.',
+  'Tick tock. Tick tock.',
+  'Your autopick list is right there.',
+  'This is why your team’s like that.',
+  'Somewhere, a waiver claim is aging.',
+  'The pizza went cold an hour ago.',
+  'He’s asking his wife again.',
+  'DF never took this long. Just saying.',
+];
+
+// Player klaxons — commissioned live in the group chat, 2 Aug 2026. Fired
+// when one of these managers drafts a matching player. Names are lowercase
+// substring matches on the player's full name; club and pos are exact.
+const KLAXONS = [
+  { mid: 3, label: '\u{1F4EF} DEFENSIVE MIDFIELDER KLAXON', line: 'Atlético Benfield add another sitter to the collection.',
+    pos: 'MF', names: ['tielemans', 'enzo fern', 'mac allister', 'declan rice', 'xhaka', 'rodri', 'caicedo', 'casemiro', 'ugarte', 'gravenberch', 'palhinha', 'wharton', 'baleba', 'onana'] },
+  { mid: 5, label: '\u{1F4EF} CITY PLAYER KLAXON', line: 'Champagne Khusanova remain constitutionally committed to the project.',
+    club: 'Man City' },
+  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM LOBUS KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
+    names: ['mcburnie'] },
+  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM LOBUS KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
+    club: 'Coventry City', pos: 'FW' },
+];

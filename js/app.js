@@ -216,7 +216,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -455,6 +455,7 @@ function freshState() {
     draftPool: null,       // draft-night snapshot {at, ids: {pid: club}} — anyone outside it is a locked "new arrival"
     windowDraft: null,     // {status: live|done, order, turn, passes, picks} — post-window mini-draft of arrivals
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
+    heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
@@ -638,6 +639,7 @@ function load() {
     if (s && s.draftPool === undefined) s.draftPool = null;
     if (s && s.windowDraft === undefined) s.windowDraft = null;
     if (s && !s.tradeBlock) s.tradeBlock = {};
+    if (s && !s.heckles) s.heckles = {};
     if (s && !s.benchOrders) s.benchOrders = {};
     if (s && !s.lobus) s.lobus = {};
     if (s && !s.ready) s.ready = {};
@@ -737,7 +739,15 @@ function nextOpp(club, gwN) {
   return `${TEAM_BY_NAME[opp]?.short || opp} (${f.home === club ? 'H' : 'A'})`;
 }
 // fixture difficulty at a glance — green means get them on, red means brace
-const fdrCls = opp => { const s = TEAM_BY_NAME[opp]?.str || 1150; return s >= 1240 ? 'fdr-hard' : s <= 1100 ? 'fdr-easy' : ''; };
+// FPL's team strength changed scale at the 26/27 reset: ~1000–1300 before,
+// plain 1–5 now. Read both, or every fixture renders neutral and the "usual
+// fixture tints" legend becomes a lie (Ben, 2 Aug).
+const fdrCls = opp => {
+  const s = TEAM_BY_NAME[opp]?.str || 0;
+  if (!s) return '';
+  if (s > 100) return s >= 1240 ? 'fdr-hard' : s <= 1100 ? 'fdr-easy' : '';
+  return s >= 4 ? 'fdr-hard' : s <= 2 ? 'fdr-easy' : '';
+};
 // coloured fixture chip for the pitch views
 function nextOppHtml(club, gwN) {
   const f = state.fixtures.find(f => f.gw === gwN && (f.home === club || f.away === club));
@@ -2670,6 +2680,8 @@ function render() {
   renderIdentity();
   maybeDrinksBreak();
   broadcastOnPick();
+  renderHeckles();
+  renderKlaxons();
   if (typeof manageWakeLock === 'function') manageWakeLock(); // acquire/release as the draft starts/ends
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -3472,6 +3484,7 @@ function viewDraft() {
       <button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>
       ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
       <button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>
+      <button class="btn ghost small" id="heckleBtn" title="Send the room a randomised barb — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
     </div>
   </div>
   <div class="clock-strip" id="clockStrip" style="display:none">
@@ -3590,6 +3603,57 @@ function autolistRows() {
   }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
 }
 
+/* draft-night heckles: fresh stamps in state.heckles become a flash on every
+   screen, biggest on the device that's actually on the clock */
+function renderHeckles() {
+  if (state.phase !== 'draft') return;
+  const seen = window._hecklesSeen || (window._hecklesSeen = {});
+  for (const [mid, h] of Object.entries(state.heckles || {})) {
+    if (!h || !h.t || h.t <= (seen[mid] || 0)) continue;
+    seen[mid] = h.t;
+    if (Date.now() - h.t > 12000) continue; // page-load catch-up: don't replay old barbs
+    heckleFlash(+mid, h.line);
+  }
+}
+function heckleFlash(mid, line) {
+  const txt = (typeof HECKLES !== 'undefined' && HECKLES[line]) || 'HURRY UP.';
+  const onClock = whoami && whoami !== -1 && currentManagerId() === whoami;
+  const el = document.createElement('div');
+  el.className = 'heckle-flash' + (onClock ? ' heckle-you' : '');
+  el.innerHTML = `<span class="hk-who">${esc(managerName(mid))}</span> &ldquo;${esc(txt)}&rdquo;`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), onClock ? 6000 : 4000);
+}
+
+/* player klaxons — the group chat's commissioned alarms, fired as picks land */
+function renderKlaxons() {
+  if (state.phase !== 'draft' || typeof KLAXONS === 'undefined') return;
+  const picks = state.draft?.picks || [];
+  if (window._klaxSeen == null) { window._klaxSeen = picks.length; return; } // no replay on page load
+  for (let i = window._klaxSeen; i < picks.length; i++) {
+    const pk = picks[i], p = PLAYER_BY_ID[pk.playerId];
+    if (!p) continue;
+    for (const k of KLAXONS) {
+      if (k.mid !== pk.managerId) continue;
+      if (k.club && p.team !== k.club) continue;
+      if (k.pos && p.pos !== k.pos) continue;
+      if (k.names) {
+        const full = ((p.full || '') + ' ' + (p.name || '')).toLowerCase();
+        if (!k.names.some(n => full.includes(n))) continue;
+      }
+      klaxonFlash(k, p);
+    }
+  }
+  window._klaxSeen = picks.length;
+}
+function klaxonFlash(k, p) {
+  const el = document.createElement('div');
+  el.className = 'heckle-flash klaxon-flash';
+  el.innerHTML = `<span class="hk-who">${esc(k.label)}</span> ${esc(p.name)} &mdash; ${esc(k.line)}`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 6500);
+}
+
 function draftOrderStrip() {
   const m = state.managers.length;
   const n = pickNo();
@@ -3615,9 +3679,22 @@ function quotaPills(mid) {
    computed from matchStats. Until then, fall back to FPL's aggregates. */
 const seasonHasStats = () => Object.values(state.matchStats || {}).some(ev => Object.keys(ev.playerStats || {}).length > 0);
 let _metricsCache = new Map(), _metricsKey = '';
+// projected points over the next n gameweeks: per-game expectation × the
+// fixtures actually scheduled — blanks shrink it, doubles swell it
+function projPts(p, n) {
+  if (!state.fixtures?.length || !GAMEWEEKS.length) return 0;
+  const curI = currentGwIndex();
+  const fromN = GAMEWEEKS[curI].n + (gwIsOver(curI) ? 1 : 0);
+  let games = 0;
+  for (const f of state.fixtures) {
+    if (f.finished) continue;
+    if (f.gw >= fromN && f.gw < fromN + n && (f.home === p.team || f.away === p.team)) games++;
+  }
+  return games * playerXp(p);
+}
 function metricsFor(p) {
   const live = seasonHasStats();
-  const key = live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre';
+  const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0);
   if (_metricsKey !== key) { _metricsCache = new Map(); _metricsKey = key; }
   let m = _metricsCache.get(p.id);
   if (m) return m;
@@ -3636,6 +3713,7 @@ function metricsFor(p) {
       ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, f5: 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ppg: ls.ppg || 0, xgi: ls.xgi || 0, price: p.price }
       : { pts: rating(p), apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
   }
+  m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
   _metricsCache.set(p.id, m);
   return m;
 }
@@ -3663,6 +3741,9 @@ const ALL_STAT_COLS = live => [
   { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
   { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(1), cls: ' muted' },
   { k: 'f5', h: 'F5', t: 'Form — average points over the last five gameweeks (league scoring)', v: m => m.f5.toFixed(1) },
+  { k: 'xp1', h: 'P1', t: 'Projected points — next gameweek (per-game expectation × scheduled fixtures)', v: m => m.xp1.toFixed(1), cls: ' muted' },
+  { k: 'xp3', h: 'P3', t: 'Projected points — next three gameweeks (blanks and doubles counted)', v: m => m.xp3.toFixed(1), cls: ' muted' },
+  { k: 'xp6', h: 'P6', t: 'Projected points — next six gameweeks (blanks and doubles counted)', v: m => m.xp6.toFixed(1), cls: ' muted' },
   { k: 'gw', h: 'GW', t: 'Points this gameweek', v: m => m.gw },
   { k: 'ppg', h: 'PPG', t: live ? 'League points per appearance' : 'FPL points per game, last season', v: m => m.ppg.toFixed(1) },
   { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
@@ -3712,7 +3793,7 @@ const SCOUT_PRESETS = [
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
   { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '' };
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
@@ -4097,6 +4178,17 @@ function bindDraft() {
   };
   const iq = $('#interceptQ');
   if (iq) iq.onclick = () => iq.classList.toggle('open');
+  const hk = $('#heckleBtn');
+  if (hk) hk.onclick = () => {
+    if (netOn() && (!whoami || whoami === -1)) { toast('Sign in to heckle. Rules are rules.'); return; }
+    const line = Math.floor(Math.random() * (typeof HECKLES !== 'undefined' ? HECKLES.length : 1));
+    if (netOn()) { serverAct('heckle', { line }).catch(() => {}); return; }
+    const mid = whoami || state.managers[0].id;
+    const last = state.heckles?.[mid]?.t || 0;
+    if (Date.now() - last < 15000) { toast('One heckle per 15 seconds — pace yourself.'); return; }
+    state.heckles = { ...(state.heckles || {}), [mid]: { line, t: Date.now() } };
+    save(); render();
+  };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
@@ -5293,10 +5385,63 @@ function viewDash() {
    all live here now ----- */
 // Marc's taxonomy (1 Aug screenshots): league data / team data / player data.
 // More desks move in here as the Committee rules on them.
+/* the live playoff bracket (Marc, 2 Aug — Data Room, league data): projected
+   from the current table all season (seeds + points-based QF handicaps firm
+   up as the table does), then the real thing once GW33 settles */
+function bracketCard() {
+  const po = playoffState();
+  const rows = standingsBefore(REGULAR_GWS).rows;
+  const seeds = po ? po.seeds : rows.slice(0, 8).map(r => r.id);
+  if (seeds.length < 8) return '';
+  const tablePts = Object.fromEntries(rows.map(r => [r.id, r.pts]));
+  const qfs = po ? po.qfs : [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  const hcaps = po ? po.handicaps : qfs.map(([a, b]) => qfHandicap(tablePts[a] || 0, tablePts[b] || 0));
+  const seedNo = id => seeds.indexOf(id) + 1;
+  const box = (a, b, { hcap = 0, score = null, winner = null, labelA = '', labelB = '' } = {}) =>
+    `<div class="br-tie">${[a, b].map((id, j) => id == null
+      ? `<div class="br-side br-tbd muted">${j ? labelB : labelA}</div>`
+      : `<div class="br-side${winner != null ? (winner === id ? ' br-won' : ' br-out') : ''}">
+          <span class="br-seed">${seedNo(id)}</span>${kitSvg(id, 15)}<span class="br-name">${esc(teamName(id))}</span>
+          ${j === 0 && hcap ? `<span class="gold br-hcap" title="Head start — half the table-points gap between the pair, capped +${QF_HANDICAP_CAP}">+${hcap}</span>` : ''}
+          ${score ? `<span class="br-pts">${score[j]}</span>` : ''}
+        </div>`).join('')}</div>`;
+  const qfCol = qfs.map((pair, k) => {
+    const sc = po && gwStatus(po.qfIdx) !== 'upcoming'
+      ? [gwManagerPoints(pair[0], po.qfIdx) + hcaps[k], gwManagerPoints(pair[1], po.qfIdx)] : null;
+    return box(pair[0], pair[1], { hcap: hcaps[k], score: sc, winner: po?.qfWinners ? po.qfWinners[k] : null });
+  }).join('');
+  const semiPairs = po?.semis || [[null, null], [null, null]];
+  const semiScore = po?.semis && gwStatus(po.semiIdx) !== 'upcoming'
+    ? po.semis.map(([a, b]) => [gwManagerPoints(a, po.semiIdx), gwManagerPoints(b, po.semiIdx)]) : null;
+  const semiCol = semiPairs.map((pair, k) => box(pair[0], pair[1], {
+    score: semiScore ? semiScore[k] : null,
+    winner: po?.semiWinners ? po.semiWinners[k] : null,
+    labelA: k === 0 ? 'Winner 1v8' : 'Winner 2v7', labelB: k === 0 ? 'Winner 4v5' : 'Winner 3v6',
+  })).join('');
+  let finalBox;
+  if (po?.semiWinners) {
+    const [x, y] = po.semiWinners;
+    const played = po.finalIdx.filter(i => gwStatus(i) !== 'upcoming');
+    const agg = played.reduce((t, i) => [t[0] + gwManagerPoints(x, i), t[1] + gwManagerPoints(y, i)], [0, 0]);
+    finalBox = box(x, y, { score: played.length ? agg : null, winner: po.champion });
+  } else finalBox = box(null, null, { labelA: 'SF winner', labelB: 'SF winner' });
+  return `<div class="card"><h2>The Playoff Bracket${po ? '' : ' <span class="tag">projected</span>'}</h2>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">${po
+      ? 'Top eight. Handicap quarter-finals, fixed bracket, three-legged final. Ties: higher seed.'
+      : `If the season ended today &mdash; seeds from the table, quarter-final head starts = half the points gap (capped +${QF_HANDICAP_CAP}). Firms up as the table does; the real thing kicks off GW34.`}</p>
+    <div class="bracket">
+      <div class="br-col"><p class="br-stage">Quarter-finals &middot; GW34</p>${qfCol}</div>
+      <div class="br-col"><p class="br-stage">Semi-finals &middot; GW35</p>${semiCol}</div>
+      <div class="br-col"><p class="br-stage">The Final &middot; GW36&ndash;38</p>${finalBox}
+        ${po?.champion ? `<p style="text-align:center;margin-top:8px;font-size:15px">&#127942; <b>${esc(teamName(po.champion))}</b></p>` : ''}</div>
+    </div></div>`;
+}
+
 function viewData() {
   const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
   return `
   ${sect('League data')}
+  ${bracketCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${sect('Team data')}
   ${troughActivityCard()}
@@ -6470,7 +6615,7 @@ function viewRules() {
       <p class="rules-p">Twelve managers. One snake draft over all ${PLAYERS.length} Premier League players — order reverses every round. Est. 2015; this is season twelve.</p>
       <p class="rules-p">Squads of <b>${state.settings.squadSize}</b>, flexible make-up: ${['GK', 'DF', 'MF', 'FW'].map(p => `${posMin[p]}–${posMax[p]} ${p}`).join(', ')}. <b>No club cap.</b> Tussie may draft the entire City team by GW30. That is his right.</p>
       <p class="rules-p"><b>Starting XI:</b> pick 11 from your ${state.settings.squadSize} each gameweek — 1 GK, 3–5 DF, 2–5 MF, 1–3 FW. <b>Only starters score.</b> Lineups lock at the FPL deadline.</p>
-      <p class="rules-p"><b>Forgot to set it?</b> Last week's XI carries over (or a best XI is auto-picked). Nobody scores nil for being on holiday.</p>
+      <p class="rules-p"><b>Forgot to set it?</b> Your last saved XI carries over, minus anyone you've since sold (repaired to a legal shape if needed). A best XI is auto-picked only if you've never set one at all. Nobody scores nil for being on holiday.</p>
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
       <p class="rules-p"><b>GW1–33</b>: regular season, head-to-head every week — everyone plays everyone, nearly three times over. Win 3, draw 1, loss 0.</p>
@@ -7183,6 +7328,11 @@ setTimeout(() => tryAutoWaivers(), 4000);
 if (state.phase === 'season') {
   const stale = !state.lastSync || (Date.now() - new Date(state.lastSync).getTime()) > 20 * 60 * 1000;
   if (stale || anyMatchLive() || !Object.keys(state.matchStats || {}).length) syncNow(false);
+} else if (!state.fixtures?.length) {
+  // setup + draft: the scouting floor's Vs column and the draft room's
+  // fixture bits need the schedule too, and saves never persist it — without
+  // this the pre-season console showed a fixture section with nothing in it
+  syncNow(false);
 }
 // stale-build watchdog: long-lived tabs and home-screen installs reload
 // themselves when a new version ships (never mid-draft — draft night is sacred)
