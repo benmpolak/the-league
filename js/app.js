@@ -5030,8 +5030,11 @@ function viewDash() {
           ${next.map(({ k, opp }) => `<div class="lrow" style="font-size:12.5px"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${kitSvg(opp)} <b>${esc(teamName(opp))}</b> <span class="muted" style="margin-left:auto;font-size:11px">${esc(managerName(opp))}</span></div>`).join('')}` : '';
       })()}
       ${news.length ? `<h3 style="margin-top:12px">Latest moves</h3>
-        ${news.map(t => `<div class="move-row"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span>
-          <span class="move-txt"><b>${esc(teamName(t.managerId))}</b> &middot; ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></span></div>`).join('')}` : ''}
+        ${news.map(t => {
+          const nm = pid => esc(PLAYER_BY_ID[pid]?.name || 'unknown'); // plain text — links inside a truncating one-liner are unreachable anyway
+          return `<div class="move-row"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span>
+          <span class="move-txt"><b>${esc(teamName(t.managerId))}</b> &middot; ${nm(t.outId)} <span class="muted">→</span> <b>${nm(t.inId)}</b></span></div>`;
+        }).join('')}` : ''}
     </div>`}
     <div class="card">
       <h2>The table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
@@ -5738,7 +5741,7 @@ function viewH2H() {
       : '<span class="tag">upcoming</span>';
     return `
     <div class="card" style="margin-bottom:12px">
-      <h2 style="display:flex;align-items:center;gap:10px">GW${g.n} Matches ${tag}
+      <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">GW${g.n} Matches ${tag}
         <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
           <button class="btn ghost small" id="gwPrev" ${i === 0 ? 'disabled' : ''}>&#8249; Previous</button>
           <span class="tag">${g.n}</span>
