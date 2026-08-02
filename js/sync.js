@@ -87,6 +87,10 @@ let authEpoch = 0;
 function attachUserRead(user, epoch, path, deliver, label, attempt = 0) {
   const off = onValue(ref(db, path), snap => deliver(snap.val()), err => {
     console.warn(`[sync] ${label} read error`, err);
+    // surface it: the identity card shows this so a stuck user can literally
+    // read us the reason instead of us guessing at their console
+    window._lastSyncErr = { label, code: String(err?.code || err?.message || err), t: Date.now() };
+    window.onSyncReadError?.(label);
     if (epoch !== authEpoch || auth.currentUser?.uid !== user.uid) return;
     if (attempt >= 5) { console.warn(`[sync] ${label} read gave up after ${attempt + 1} tries`); return; }
     setTimeout(() => {

@@ -377,7 +377,9 @@ function applySharedSnapshot(data) {
     showCeremony(); // stamps "seen" itself, at the END — never at open
   }
 };
-window.onSyncConnection = up => { syncConnected = up; renderSyncArea(); };
+window.onSyncConnection = up => { syncConnected = up; renderSyncArea(); if (document.getElementById('whoOverlay')) renderIdentity(); };
+// a failed private/membership read updates the open identity card's tech line
+window.onSyncReadError = () => { if (document.getElementById('whoOverlay')) renderIdentity(); };
 
 /* ----- auth + private data (v2) ----- */
 let _pendingPrivate;
@@ -2702,9 +2704,16 @@ function renderIdentity() {
   ov.className = 'overlay';
   if (netOn() && authUser && !membership) {
     // signed in with an email the league doesn't know
+    // the tech line turns a stuck user's device into the diagnostic probe:
+    // "connection DOWN" = transport (home-wifi filters break the database
+    // websocket); a permission code = rules/identity; neither = still waiting
+    const err = window._lastSyncErr;
+    const conn = syncConnected ? 'live' : 'DOWN';
     ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
       <h2>Who let you in?</h2>
-      <p class="muted" style="font-size:13px;margin-bottom:14px">You're signed in as <b>${esc(authUser.email || 'unknown')}</b> but this device hasn't linked you to a manager. If that email is the one the Chairman registered, it's usually a hiccup &mdash; reload and it sorts itself. If it's a different email, sign out and use the registered one.</p>
+      <p class="muted" style="font-size:13px;margin-bottom:10px">You're signed in as <b>${esc(authUser.email || 'unknown')}</b> but this device hasn't linked you to a manager. If that email is the one the Chairman registered, it's usually a hiccup &mdash; reload and it sorts itself. If it's a different email, sign out and use the registered one.</p>
+      ${!syncConnected ? `<p style="font-size:12.5px;margin-bottom:10px;color:#ffd76e">&#9888; The live connection to the league isn't establishing &mdash; that's a network problem, not a sign-in problem. Filtered wifi (work/home DNS filters) can block it: try a phone hotspot or another network.</p>` : ''}
+      <p class="muted" style="font-size:11px;margin-bottom:12px">Tech: ${esc(window.WCSync?.league || '?')} &middot; connection ${conn} &middot; ${err ? esc(`${err.label} read: ${err.code}`) : 'no read errors logged'}</p>
       <div style="display:flex;gap:8px">
         <button class="btn small" id="whoReload" style="flex:1">&#8635; Reload</button>
         <button class="btn ghost small" id="whoSignOut" style="flex:1">Sign out</button>
