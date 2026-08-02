@@ -3059,7 +3059,7 @@ function viewSetup() {
         <input type="number" min="11" max="20" id="squadSize" aria-label="Squad size" value="${state.settings.squadSize}" style="width:60px">
         <label style="font-size:12px;color:var(--muted);font-weight:700;margin-left:10px">PICK TIMER</label>
         <select id="pickTimer" aria-label="Pick timer">
-          ${[0, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — autopick at zero' : 'Off'}</option>`).join('')}
+          ${[0, 10, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — autopick at zero' : 'Off'}</option>`).join('')}
         </select>
       </div>
       <div class="setup-total" id="setupTotal"></div>
