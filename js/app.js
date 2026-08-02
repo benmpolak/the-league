@@ -2615,9 +2615,10 @@ const NAV_ICONS = {
 // the four daily-use tabs, in Ben's order — everything else lives under More
 const SEASON_PRIMARY_NAV = ['team', 'h2h', 'table', 'transfers'];
 const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
-// pre-draft the app is mostly a waiting room, but the club office, rules and
-// settings are already worth visiting — so those three get a bar
-const SETUP_NAV = new Set(['club', 'rules', 'settings']);
+// pre-draft the app is mostly a waiting room, but the scouting floor (the
+// Draft Console's pre-season face), club office, rules and settings are
+// already worth visiting — so those four get a bar
+const SETUP_NAV = new Set(['draft', 'club', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
@@ -2641,7 +2642,8 @@ function render() {
   if (state.phase === 'setup' && !SETUP_NAV.has(state.view)) { main.innerHTML = viewSetup(); bindSetup(); renderIdentity(); return; }
   if (state.phase === 'setup') {
     // pre-draft, only the setup-bar views resolve; everything else is the room
-    if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
+    if (state.view === 'draft') { main.innerHTML = viewDraftPrep(); bindDraftPrep(); }
+    else if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
     else if (state.view === 'rules') { main.innerHTML = viewRules(); }
     else { main.innerHTML = viewSettings(); bindSettings(); }
     renderIdentity();
@@ -2798,7 +2800,7 @@ function renderNav() {
     nav.classList.remove('draft-nav');
     nav.classList.add('setup-nav');
     nav.innerHTML = NAV_ITEMS.filter(([id]) => SETUP_NAV.has(id)).map(([id, label, short]) =>
-      `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}">${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${short || label}</span></button>`).join('');
+      `<button type="button" data-view="${id}" class="${state.view === id ? 'active' : ''}">${NAV_ICONS[id] || ''}<span class="nav-lbl-full">${label}</span><span class="nav-lbl-short">${id === 'draft' ? 'Draft' : (short || label)}</span></button>`).join('');
     nav.querySelectorAll('button[data-view]').forEach(b => b.onclick = () => { state.view = b.dataset.view; save(); render(); });
     return;
   }
@@ -2940,6 +2942,17 @@ function readyRoomCard() {
 }
 
 /* ----- setup ----- */
+// waiting-room signpost to the scouting floor — the whole point of opening
+// the app before draft night
+function prepCard() {
+  const n = whoami && whoami !== -1 ? toArr(state.autolists?.[whoami]).length : 0;
+  return `<div class="card" style="text-align:center">
+    <h2>The scouting floor is open</h2>
+    <p class="rules-p">${n ? `Your autopick list has <b>${n}</b> name${n === 1 ? '' : 's'} on it.` : 'Browse the pool, &#9733; star your targets and rank your autopick list before the night.'} If your draft clock ever hits zero, the top available name on your list goes in.</p>
+    <button class="btn" id="prepGo" style="margin-top:10px">Open the Draft Console</button>
+  </div>`;
+}
+
 function viewSetup() {
   const m = state.managers;
   const { posMin, posMax } = state.settings;
@@ -2958,6 +2971,7 @@ function viewSetup() {
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
       ${foundingCard()}
+      ${prepCard()}
       ${readyRoomCard()}
       ${installCard(true)}
     </div>`;
@@ -2970,6 +2984,7 @@ function viewSetup() {
       <p>Twelve managers. One snake draft. Every player in the Premier League.<br>Est. 2015. Minutes kept by the Committee.</p>
     </div>
     ${foundingCard()}
+    ${prepCard()}
     ${readyRoomCard()}
     <div class="card">
       <h2>Managers</h2>
@@ -3021,6 +3036,8 @@ function bindSetup() {
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
   if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
+  const pg = $('#prepGo');
+  if (pg) pg.onclick = () => { state.view = 'draft'; save(); render(); };
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
@@ -3405,7 +3422,6 @@ function viewDraft() {
   const n = pickNo();
   const round = Math.floor(n / state.managers.length) + 1;
   const taken = draftedIds();
-  const teamsOpts = [...TEAMS].sort((a, b) => a.name.localeCompare(b.name)).map(t => `<option value="${esc(t.name)}" ${poolFilter.team === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
 
   // personal state: is it MY pick, and if not, how many picks until it is?
   const iAmUp = netOn() && whoami && whoami !== -1 && mid === whoami;
@@ -3446,15 +3462,8 @@ function viewDraft() {
   </div>
   <div class="order-strip">${draftOrderStrip()}</div>
   <div class="draft-layout">
-    <div class="card">
-      <div class="pool-controls">
-        <input type="text" id="poolQ" placeholder="Search ${PLAYERS.length - taken.size} available players…" value="${esc(poolFilter.q)}">
-        <select id="poolTeam"><option value="">All clubs</option>${teamsOpts}</select>
-        <select id="poolPos">
-          <option value="">All positions</option>
-          ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${poolFilter.pos === p ? 'selected' : ''}>${p}</option>`).join('')}
-        </select>
-      </div>
+    <div class="card" id="poolCard">
+      ${poolControlsHtml(PLAYERS.length - taken.size)}
       ${poolTable()}
     </div>
     <div class="draft-side">
@@ -3482,29 +3491,81 @@ function viewDraft() {
       </div>
     </div>
   </div>
-  ${whoami && whoami !== -1 ? `
+  ${queueDrawerHtml()}`;
+}
+
+// the pre-season Draft Console: same pool, same queue, no clock. The lads do
+// their homework here and the list is waiting when the real board opens.
+function viewDraftPrep() {
+  const canQueue = whoami && whoami !== -1;
+  return `
+  <div class="card" style="margin-bottom:14px">
+    <h2>The Draft Console &mdash; scouting floor</h2>
+    <p class="rules-p">The draft hasn&rsquo;t started. Until it does, this is where the homework happens: browse the pool, &#9733; star your targets and put them in order. On the night your list doubles as a shortlist &mdash; and if your clock ever hits zero, the top available name on it goes in automatically.</p>
+    ${!canQueue && netOn() ? '<p class="muted" style="margin-top:8px">Sign in (top right) to build your list &mdash; it saves to your account and will be waiting on draft night.</p>' : ''}
+  </div>
+  ${canQueue ? `<div class="draft-layout">
+    <div class="card" id="poolCard">
+      ${poolControlsHtml(PLAYERS.length)}
+      ${poolTable()}
+    </div>
+    <div class="draft-side">
+      <div class="card">
+        <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
+        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Star players in the pool to add them, then order with the arrows.</p>
+        ${autolistRows()}
+      </div>
+    </div>
+  </div>` : `<div class="card" id="poolCard">
+      ${poolControlsHtml(PLAYERS.length)}
+      ${poolTable()}
+    </div>`}
+  ${queueDrawerHtml()}`;
+}
+function bindDraftPrep() { bindPoolControls(); }
+
+// shared by the live console and the scouting floor
+function poolControlsHtml(availableCount) {
+  const teamsOpts = [...TEAMS].sort((a, b) => a.name.localeCompare(b.name)).map(t => `<option value="${esc(t.name)}" ${poolFilter.team === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  return `<div class="pool-controls">
+    <input type="text" id="poolQ" placeholder="Search ${availableCount} available players…" value="${esc(poolFilter.q)}">
+    <select id="poolTeam"><option value="">All clubs</option>${teamsOpts}</select>
+    <select id="poolPos">
+      <option value="">All positions</option>
+      ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${poolFilter.pos === p ? 'selected' : ''}>${p}</option>`).join('')}
+    </select>
+  </div>`;
+}
+function queueDrawerHtml() {
+  if (!whoami || whoami === -1) return '';
+  return `
   <button class="btn queue-fab" id="queueFab">&#9733; Queue <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></button>
   <div class="queue-drawer${window._queueOpen ? ' open' : ''}" id="queueDrawer">
     <h2 style="display:flex;align-items:center">My autopick queue <span class="tag" style="margin-left:8px">${toArr(state.autolists?.[whoami]).length}</span>
       <button class="btn ghost small" id="queueClose" style="margin-left:auto">&#10005;</button></h2>
     <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist — the clock takes the top available name. Star players in the pool to add them.</p>
     ${autolistRows()}
-  </div>` : ''}`;
+  </div>`;
 }
 
 /* one ranked queue, rendered in the sidebar and the phone drawer alike —
    with a warning where autopick would have to skip a name */
 function autolistRows() {
-  return toArr(state.autolists?.[whoami]).map((pid, k) => {
+  const list = toArr(state.autolists?.[whoami]);
+  return list.map((pid, k) => {
     const p = PLAYER_BY_ID[pid];
     if (!p) return '';
-    const gone = draftedIds().has(pid);
-    const wontFit = !gone && !canPick(whoami, p);
+    // pre-draft nobody is gone and every squad is empty — the flags only mean
+    // something once the board is live
+    const live = state.phase === 'draft';
+    const gone = live && draftedIds().has(pid);
+    const wontFit = live && !gone && !canPick(whoami, p);
     return `<div class="lrow qrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
       ${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
       <span style="margin-left:auto;display:flex;gap:4px">
-        ${k > 0 ? `<button class="btn ghost small" data-autoup="${k}">&#9650;</button>` : ''}
+        <button class="btn ghost small" data-autoup="${k}" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
+        <button class="btn ghost small" data-autodown="${k}" ${k === list.length - 1 ? 'disabled' : ''}>&#9660;</button>
         <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
       </span></div>`;
   }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
@@ -3755,7 +3816,7 @@ function paintScoutCompare() {
     b.innerHTML = on ? '&#10003; Comparing' : 'Compare';
   });
   let fab = document.getElementById('scoutCompareFab');
-  if (state.phase === 'setup' || !scoutCompare.length) {
+  if (!scoutCompare.length) {
     fab?.remove();
     const ov = document.getElementById('scoutCompareOverlay');
     if (ov) closeOv(ov);
@@ -3826,8 +3887,11 @@ function showScoutCompare(addHistory = true) {
 let bulkQueueIds = new Set();
 
 function poolTable() {
-  const taken = draftedIds();
-  const mid = currentManagerId();
+  // on the scouting floor (setup phase) there is no board yet: nobody is
+  // taken, nobody is on the clock, and the Draft button stays away
+  const live = state.phase === 'draft';
+  const taken = live ? draftedIds() : new Set();
+  const mid = live ? currentManagerId() : null;
   let rows = PLAYERS.filter(p => !taken.has(p.id));
   if (poolFilter.q) {
     const q = normName(poolFilter.q);
@@ -3870,7 +3934,7 @@ function poolTable() {
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td class="act" style="white-space:nowrap"><button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>${compareButtonHtml(p.id)}${canQueue ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap">${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${canQueue ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -3998,11 +4062,7 @@ function bindDraft() {
     }
     save(); render();
   };
-  const q = $('#poolQ');
-  q.oninput = () => { poolFilter.q = q.value; poolFilter.limit = 60; refreshPool(); };
-  $('#poolTeam').onchange = e => { poolFilter.team = e.target.value; poolFilter.limit = 60; refreshPool(); };
-  $('#poolPos').onchange = e => { poolFilter.pos = e.target.value; poolFilter.limit = 60; refreshPool(); };
-  bindPoolTable();
+  bindPoolControls();
   $('#undoPick').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can undo a pick'); return; }
     if (netOn()) { serverAct('draftAdmin', { op: 'undo', expectedCount: state.draft.picks.length }).catch(() => {}); return; }
@@ -4013,10 +4073,6 @@ function bindDraft() {
   };
   const iq = $('#interceptQ');
   if (iq) iq.onclick = () => iq.classList.toggle('open');
-  const qf = $('#queueFab'), qd = $('#queueDrawer');
-  if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };
-  const qc = $('#queueClose');
-  if (qc) qc.onclick = () => { window._queueOpen = false; qd?.classList.remove('open'); };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
@@ -4028,8 +4084,21 @@ function bindDraft() {
     autoPick();
   };
 }
+// pool-controls + queue drawer bindings, shared by the live console and the
+// pre-season scouting floor
+function bindPoolControls() {
+  const q = $('#poolQ');
+  q.oninput = () => { poolFilter.q = q.value; poolFilter.limit = 60; refreshPool(); };
+  $('#poolTeam').onchange = e => { poolFilter.team = e.target.value; poolFilter.limit = 60; refreshPool(); };
+  $('#poolPos').onchange = e => { poolFilter.pos = e.target.value; poolFilter.limit = 60; refreshPool(); };
+  bindPoolTable();
+  const qf = $('#queueFab'), qd = $('#queueDrawer');
+  if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };
+  const qc = $('#queueClose');
+  if (qc) qc.onclick = () => { window._queueOpen = false; qd?.classList.remove('open'); };
+}
 function refreshPool() {
-  const card = document.querySelector('.draft-layout .card');
+  const card = document.getElementById('poolCard');
   card.querySelector('.pool-wrap')?.remove();
   card.querySelector('.pool-table')?.remove();
   card.querySelector('.show-more')?.remove();
@@ -4040,9 +4109,10 @@ function refreshPool() {
 }
 function bindPoolTable() {
   bindScoutDesk('draft', refreshPool);
+  const takenNow = () => state.phase === 'draft' ? draftedIds() : new Set();
   const updateBulkQueue = () => {
     const add = document.querySelector('[data-bulk-add]');
-    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !draftedIds().has(id));
+    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !takenNow().has(id));
     if (add) {
       add.disabled = !selected.length;
       add.textContent = `Add ${selected.length || ''} to queue`;
@@ -4063,7 +4133,7 @@ function bindPoolTable() {
   const bulkAdd = document.querySelector('[data-bulk-add]');
   if (bulkAdd) bulkAdd.onclick = () => {
     if (!whoami || whoami === -1) return;
-    const taken = draftedIds();
+    const taken = takenNow();
     const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !taken.has(id));
     const current = toArr(state.autolists?.[whoami]);
     const fresh = selected.filter(id => !current.includes(id));
@@ -4101,7 +4171,13 @@ function bindPoolTable() {
   });
   document.querySelectorAll('[data-autoup]').forEach(b => b.onclick = () => {
     const k = +b.dataset.autoup, arr = [...toArr(state.autolists?.[whoami])];
+    if (k < 1) return;
     [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setAutolist(whoami, arr);
+  });
+  document.querySelectorAll('[data-autodown]').forEach(b => b.onclick = () => {
+    const k = +b.dataset.autodown, arr = [...toArr(state.autolists?.[whoami])];
+    if (k >= arr.length - 1) return;
+    [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setAutolist(whoami, arr);
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   bindColToggle(refreshPool);
@@ -4461,7 +4537,7 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20 };
+let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false };
 function viewTransfers() {
   const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
   const cur = currentGwIndex();
@@ -4560,7 +4636,17 @@ function viewTransfers() {
         <span style="margin-left:auto">${bm === mid
           ? `<button class="btn ghost small" data-unblock="${p.id}">Delist</button>`
           : `<button class="btn small" data-blocktrade="${bm}:${p.id}">Make an offer</button>`}</span>
-      </div>`).join('') : '<p class="muted" style="font-size:12.5px">Nobody’s listed anyone. Open your player cards and put someone on the block.</p>'}
+      </div>`).join('') : '<p class="muted" style="font-size:12.5px">Nobody’s listed anyone. Listing is a gesture, not a rule — every player is technically available.</p>'}
+      ${mid && mid !== -1 ? `<div style="margin-top:10px">
+        <button class="btn ghost small" id="blockAdd">${transfersView.blockPick ? 'Never mind' : '&#128276; List one of my players'}</button>
+        ${transfersView.blockPick ? `<div style="margin-top:8px">
+          <p class="muted" style="font-size:11.5px;margin-bottom:6px">Tap a player to invite offers. Delist any time — no obligation to accept anything.</p>
+          ${managerSquad(mid).filter(p => !blockList(mid).includes(p.id)).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `<div class="lrow" style="font-size:12.5px">
+            <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
+            <button class="btn small" data-blockpick="${p.id}" style="margin-left:auto">List</button>
+          </div>`).join('') || '<p class="muted" style="font-size:12px">Your whole squad is already on the block. Bold strategy.</p>'}
+        </div>` : ''}
+      </div>` : ''}
     </div>
     <div class="card">
       <h2>Trade desk</h2>
@@ -4888,7 +4974,18 @@ function bindTransfers() {
     setTradeStatus(tr.id, 'withdrawn')
       .then(ok => toast(ok ? 'Offer withdrawn. Never happened.' : 'Too late — the offer already moved.'));
   });
-  // trade block: delist your own, make an offer for theirs
+  // trade block: list your own straight from the card (Marc 2 Aug — the
+  // player-card route was invisible once the block had names on it),
+  // delist your own, make an offer for theirs
+  const ba = $('#blockAdd');
+  if (ba) ba.onclick = () => { transfersView.blockPick = !transfersView.blockPick; render(); };
+  document.querySelectorAll('[data-blockpick]').forEach(b => b.onclick = () => {
+    if (!actGuard(mid, 'trade block')) return;
+    const p = PLAYER_BY_ID[+b.dataset.blockpick];
+    transfersView.blockPick = false;
+    toggleBlock(mid, +b.dataset.blockpick);
+    toast(`${p.name} is on the block. Offers invited.`);
+  });
   document.querySelectorAll('[data-unblock]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'trade block')) return;
     toggleBlock(mid, +b.dataset.unblock);
@@ -6823,7 +6920,7 @@ function gsRowsHtml(players, ownerOf) {
     return `<div class="gs-row" data-pcard="${p.id}" role="button" tabindex="0">
       ${photoImg(p)}
       <div class="gs-main">
-        <span class="gs-name">${esc(p.name)} ${natFlag(p)} ${statusChip(p)}</span>
+        <span class="gs-name"><span class="gs-nm">${esc(p.name)}</span> ${natFlag(p)} ${statusChip(p)}</span>
         <span class="gs-sub muted">${esc(p.club)} &middot; <span class="pos-badge pos-${p.pos}">${p.pos}</span></span>
         <span class="gs-sub">${ownLabel}</span>
       </div>

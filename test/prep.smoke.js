@@ -1,0 +1,218 @@
+/* Pre-draft scouting floor (Marc's ask, 2 Aug): build and order your autopick
+ * list BEFORE draft night, from the setup-phase Draft Console — DF parity
+ * ("If your clock expires, Draft Fantasy selects the first valid player in
+ * your auto-pick list", usable as a shortlist).
+ *
+ * Honesty rules:
+ * - every negative assertion (no Draft buttons pre-draft) sits next to a
+ *   positive one on the same surface (stars/pool rows ARE there);
+ * - the carry-through check ends with a REAL local autoPick() taking the
+ *   queue head, not just markup survival;
+ * - reload persistence is checked against a fresh page load, not the same DOM.
+ *
+ * Usage: python3 -m http.server 8125 &   node test/prep.smoke.js */
+'use strict';
+const puppeteer = require('puppeteer-core');
+const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
+
+let pass = 0, fail = 0;
+const chk = (name, ok, detail = '') => {
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+  if (ok) pass++; else fail++;
+};
+
+(async () => {
+  const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
+  const errors = [];
+  const ctx = await browser.createBrowserContext();
+  const page = await ctx.newPage();
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('dialog', d => d.accept());
+  await page.goto(baseUrl + '?nosync&prep-test=1', { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => typeof state !== 'undefined' && state.managers.length);
+
+  // ---- P1: setup phase exposes the Draft Console tab + waiting-room signpost
+  const p1 = await page.evaluate(() => {
+    window.__autoConfirm = true;
+    state = freshState();
+    state.view = 'home';
+    whoami = state.managers[0].id;
+    localStorage.setItem(WHO_KEY, whoami);
+    state.autolists[whoami] = [];
+    render();
+    const tabs = [...document.querySelectorAll('#nav button[data-view]')].map(b => b.dataset.view);
+    return { phase: state.phase, tabs, prepGo: !!document.getElementById('prepGo') };
+  });
+  chk('P1 setup nav carries the Draft Console + waiting room signposts it',
+    p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.length === 4 && p1.prepGo,
+    JSON.stringify(p1));
+
+  // ---- P2: signpost opens the scouting floor — pool without Draft buttons
+  await page.click('#prepGo');
+  const p2 = await page.evaluate(() => ({
+    view: state.view,
+    pool: !!document.getElementById('poolCard'),
+    rows: document.querySelectorAll('.pool-table tbody tr').length,
+    stars: document.querySelectorAll('[data-auto]').length,
+    checks: document.querySelectorAll('[data-bulk-pid]').length,
+    draftBtns: document.querySelectorAll('[data-pick]').length,
+    clock: !!document.querySelector('.on-clock'),
+    hash: location.hash,
+  }));
+  chk('P2 scouting floor: pool + stars + bulk, no Draft buttons, no clock',
+    p2.view === 'draft' && p2.pool && p2.rows > 3 && p2.stars > 3 && p2.checks > 3 &&
+    p2.draftBtns === 0 && !p2.clock && p2.hash === '#draft',
+    JSON.stringify(p2));
+
+  // ---- P3: star two players -> ranked queue in added order
+  const p3 = await page.evaluate(() => {
+    const stars = [...document.querySelectorAll('[data-auto]')];
+    const ids = stars.slice(0, 2).map(b => +b.dataset.auto);
+    stars[0].click();
+    const second = document.querySelector(`[data-auto="${ids[1]}"]`); // re-render replaced nodes
+    second.click();
+    return { ids, list: toArr(state.autolists[whoami]), rows: document.querySelectorAll('.qrow').length };
+  });
+  chk('P3 starring builds the ranked list in added order',
+    p3.list.length === 2 && p3.list[0] === p3.ids[0] && p3.list[1] === p3.ids[1] && p3.rows >= 2,
+    JSON.stringify(p3));
+
+  // ---- P4: reorder with the arrows; ends disabled
+  const p4 = await page.evaluate(() => {
+    const before = [...toArr(state.autolists[whoami])];
+    const firstUp = document.querySelector('[data-autoup="0"]');
+    const lastDown = document.querySelector(`[data-autodown="${before.length - 1}"]`);
+    document.querySelector('[data-autodown="0"]').click();
+    const after = [...toArr(state.autolists[whoami])];
+    document.querySelector('[data-autoup="1"]').click();
+    return {
+      endsDisabled: firstUp?.disabled && lastDown?.disabled,
+      swapped: after[0] === before[1] && after[1] === before[0],
+      restored: JSON.stringify(toArr(state.autolists[whoami])) === JSON.stringify(before),
+    };
+  });
+  chk('P4 arrows reorder both ways, end buttons disabled',
+    p4.endsDisabled && p4.swapped && p4.restored, JSON.stringify(p4));
+
+  // ---- P5: bulk select-page -> add to queue works pre-draft
+  const p5 = await page.evaluate(() => {
+    const before = toArr(state.autolists[whoami]).length;
+    document.querySelector('[data-bulk-all]').click();
+    const add = document.querySelector('[data-bulk-add]');
+    const enabled = add && !add.disabled;
+    add.click();
+    return { enabled, before, after: toArr(state.autolists[whoami]).length };
+  });
+  chk('P5 bulk add fills the queue pre-draft (no draft-state crash)',
+    p5.enabled && p5.after > p5.before + 10, JSON.stringify(p5));
+
+  // ---- P6: compare works on the scouting floor
+  const p6 = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('[data-compare]')].slice(0, 2);
+    btns.forEach(b => b.click());
+    return { fab: !!document.getElementById('scoutCompareFab'), n: scoutCompare.length };
+  });
+  chk('P6 player comparison available pre-draft', p6.fab && p6.n === 2, JSON.stringify(p6));
+  await page.evaluate(() => { scoutCompare = []; paintScoutCompare(); });
+
+  // ---- P7: the list survives a reload (fresh page, saved local state)
+  const savedList = await page.evaluate(() => { save(); return toArr(state.autolists[whoami]); });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => typeof state !== 'undefined' && state.managers.length);
+  const p7 = await page.evaluate(() => ({
+    phase: state.phase, view: state.view,
+    list: toArr(state.autolists[whoami]),
+    rows: document.querySelectorAll('.qrow').length,
+  }));
+  chk('P7 list + scouting floor survive a reload',
+    p7.phase === 'setup' && p7.view === 'draft' && p7.rows > 10 &&
+    JSON.stringify(p7.list) === JSON.stringify(savedList),
+    `rows=${p7.rows} list=${p7.list.length}/${savedList.length}`);
+
+  // ---- P8: draft night — the prep list drives the real autopick
+  const p8 = await page.evaluate(() => {
+    window.__autoConfirm = true;
+    const head = toArr(state.autolists[whoami])[0];
+    state.phase = 'draft';
+    state.view = 'draft';
+    state.settings.pickTimer = 0;
+    state.draft.order = state.managers.map(m => m.id); // whoami picks first
+    render();
+    const queueIntact = document.querySelectorAll('.qrow').length > 10;
+    const draftBtns = document.querySelectorAll('[data-pick]').length;
+    autoPick();
+    return { head, queueIntact, draftBtns, picked: state.draft.picks[0]?.playerId };
+  });
+  chk('P8 on the night: queue intact, Draft buttons back, autopick takes the prep head',
+    p8.queueIntact && p8.draftBtns > 3 && p8.picked === p8.head, JSON.stringify(p8));
+
+  // ---- P9: spectator (not signed in) gets a read-only pool, no queue surface
+  const p9 = await page.evaluate(() => {
+    state = freshState();
+    state.view = 'draft';
+    whoami = null;
+    localStorage.removeItem(WHO_KEY);
+    render();
+    return {
+      rows: document.querySelectorAll('.pool-table tbody tr').length,
+      stars: document.querySelectorAll('[data-auto]').length,
+      checks: document.querySelectorAll('[data-bulk-pid]').length,
+      fab: !!document.getElementById('queueFab'),
+    };
+  });
+  chk('P9 spectator sees the pool but no queue controls',
+    p9.rows > 3 && p9.stars === 0 && p9.checks === 0 && !p9.fab, JSON.stringify(p9));
+
+  // ---- same-session group-chat fixes (Marc + Toby, 2 Aug) ----
+
+  // P10: trade block — list YOUR OWN player straight from the block card
+  const p10 = await page.evaluate(() => {
+    state = buildDemoState();
+    state.view = 'transfers';
+    transfersView.tab = 'trades';
+    whoami = state.managers[0].id;
+    localStorage.setItem(WHO_KEY, whoami);
+    render();
+    const addBtn = document.getElementById('blockAdd');
+    if (!addBtn) return { addBtn: false };
+    addBtn.click();
+    const rows = document.querySelectorAll('[data-blockpick]').length;
+    const before = toArr(state.tradeBlock?.[whoami]).length;
+    const first = document.querySelector('[data-blockpick]');
+    const pid = +first.dataset.blockpick;
+    first.click();
+    const after = toArr(state.tradeBlock?.[whoami]);
+    const delist = !!document.querySelector(`[data-unblock="${pid}"]`);
+    return { addBtn: true, rows, before, listed: after.includes(pid), grew: after.length === before + 1, delist, pickerClosed: !document.querySelector('[data-blockpick]') };
+  });
+  chk('P10 own player listable from the Trade Block card, delist appears',
+    p10.addBtn && p10.rows > 10 && p10.listed && p10.grew && p10.delist && p10.pickerClosed,
+    JSON.stringify(p10));
+
+  // P11: search palette — flag emoji never clipped mid-glyph by the name ellipsis
+  await page.setViewport({ width: 320, height: 700, isMobile: true, hasTouch: true });
+  const p11 = await page.evaluate(() => {
+    openPlayerSearch();
+    const q = document.getElementById('gsq');
+    q.value = 'tonali';
+    q.dispatchEvent(new Event('input'));
+    const flags = [...document.querySelectorAll('.gs-name .nat-flag')];
+    if (!flags.length) return { flags: 0 };
+    const bad = flags.filter(f => {
+      const fr = f.getBoundingClientRect(), pr = f.parentElement.getBoundingClientRect();
+      return fr.width < 10 || fr.right > pr.right + 0.5;
+    }).length;
+    const nm = !!document.querySelector('.gs-name .gs-nm');
+    document.getElementById('searchOverlay')?.remove();
+    return { flags: flags.length, bad, nm };
+  });
+  chk('P11 search flags laid out whole at 320px (no half-Italy Algeria)',
+    p11.flags > 0 && p11.bad === 0 && p11.nm, JSON.stringify(p11));
+
+  chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
+
+  await browser.close();
+  console.log(`\nprep.smoke: ${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

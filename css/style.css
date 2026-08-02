@@ -629,7 +629,7 @@ tr.st-red .pname { color: #ff9c9c; }
   .nav-more-menu button.active { color: var(--accent); background: var(--card2, rgba(255,255,255,.04)); }
   .nav-more-menu .nav-dot { position: static; margin-top: -2px; }
   .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .nav.setup-nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .nav.setup-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
   .home-btn {
     width: auto; min-width: 110px; height: 44px; min-height: 44px;
@@ -840,7 +840,12 @@ tr.st-red .pname { color: #ff9c9c; }
 .gs-row:hover, .gs-row:focus-visible { background: rgba(255,255,255,.05); }
 .gs-row .headshot { width: 34px; height: 44px; flex-shrink: 0; object-fit: cover; }
 .gs-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
-.gs-name { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the NAME ellipsizes; the flag + status chip sit outside the clip. An
+   overflow:hidden across a composed flag emoji slices it mid-glyph — half of
+   Italy reads as Algeria (Marc, 2 Aug) */
+.gs-name { font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.gs-name .gs-nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs-name .nat-flag, .gs-name .tag { flex: none; }
 .gs-sub { font-size: 11px; }
 .gs-stats { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; flex-shrink: 0; font-size: 11px; }
 .gs-act { flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
