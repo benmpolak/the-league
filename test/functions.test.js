@@ -61,6 +61,10 @@ const SB = 'the-league-sandbox';
   const seed = T.buildSeedState(players, 3);
   const imp = await T.mutate(LG, 'importState', { state: seed }, tok1);
   chk('commissioner imports league state', !imp.error, JSON.stringify(imp.error));
+  const mockImport = await T.mutate(LG, 'importState', { state: { ...seed, mock: { gw: 1, phase: 'live', seed: 7, t: Date.now() } } }, tok1);
+  chk('REAL-league callable import silently drops a sandbox mock flag',
+    !mockImport.error && (await T.rest('GET', `v2/leagues/${LG}/public/mock`, { owner: true })).val == null,
+    JSON.stringify(mockImport.error));
   chk('non-commissioner cannot import', (await T.mutate(LG, 'importState', { state: seed }, tok2)).error?.status === 'PERMISSION_DENIED');
 
   const db = T.initAdmin().database();
@@ -462,12 +466,14 @@ const SB = 'the-league-sandbox';
   // draft-night heckling: lands, cools down, validates, and is draft-only
   chk('a heckle lands in public', !(await T.mutate(SB, 'heckle', { line: 3 }, sbTok3)).error
     && (await db.ref(`v2/leagues/${SB}/public/heckles/3/line`).get()).val() === 3);
-  chk('heckle cooldown: instant second attempt refused',
-    (await T.mutate(SB, 'heckle', { line: 1 }, sbTok3)).error?.status === 'RESOURCE_EXHAUSTED');
+  chk('heckle cooldown cannot be bypassed by alternating line to custom text',
+    (await T.mutate(SB, 'heckle', { text: 'different payload shape' }, sbTok3)).error?.status === 'RESOURCE_EXHAUSTED');
   chk('junk heckle line rejected', (await T.mutate(SB, 'heckle', { line: 999 }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
   // custom words (mock-draft round): stored cleaned, empty refused
   chk('custom heckle text lands', !(await T.mutate(SB, 'heckle', { text: '  GET ON WITH IT  ' }, sbTok2)).error
     && (await db.ref(`v2/leagues/${SB}/public/heckles/2/text`).get()).val() === 'GET ON WITH IT');
+  chk('heckle cooldown cannot be bypassed by alternating custom text to line',
+    (await T.mutate(SB, 'heckle', { line: 2 }, sbTok2)).error?.status === 'RESOURCE_EXHAUSTED');
   chk('empty custom heckle refused', (await T.mutate(SB, 'heckle', { text: '   ' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('out-of-turn pick rejected', (await T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   const [p1, p2] = await Promise.all([
@@ -895,6 +901,34 @@ const SB = 'the-league-sandbox';
   await T.mutate(SB, 'mockMatchday', { op: 'off' }, sbTok1);
   chk('switch-off clears the chamber node',
     (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val() === null);
+
+  // Review pins: the mock clock must win over stale commissioner controls, and
+  // racing switch-off must never let a signing inherit the pretend next GW.
+  const mockSeason = T.buildSeedState(players, 3);
+  const mockOwned = new Set(mockSeason.draft.picks.map(p => p.playerId));
+  const mockOut = mockSeason.draft.picks.find(p => p.managerId === 2
+    && players.find(x => x.id === p.playerId)?.pos === 'DF').playerId;
+  const mockIn = players.find(p => p.pos === 'DF' && !mockOwned.has(p.id)).id;
+  mockSeason.waiverMeta.control = 'open';
+  await T.mutate(SB, 'importState', { state: mockSeason }, sbTok1);
+  await T.mutate(SB, 'mockMatchday', { op: 'live', gw: 3 }, sbTok1);
+  const forcedOpenSign = await T.mutate(SB, 'troughSign', { inId: mockIn, outId: mockOut }, sbTok2);
+  chk('live Simulation Chamber closes the trough even if manual control was left open',
+    forcedOpenSign.error?.status === 'FAILED_PRECONDITION', JSON.stringify(forcedOpenSign));
+
+  let raceShifted = 0;
+  for (let i = 0; i < 8; i++) {
+    const round = T.buildSeedState(players, 3);
+    await T.mutate(SB, 'importState', { state: round }, sbTok1);
+    await T.mutate(SB, 'mockMatchday', { op: 'live', gw: 3 }, sbTok1);
+    const [off, sign] = await Promise.all([
+      T.mutate(SB, 'mockMatchday', { op: 'off' }, sbTok1),
+      T.mutate(SB, 'troughSign', { inId: mockIn, outId: mockOut }, sbTok2),
+    ]);
+    if (!off.error && !sign.error && sign.result?.tgw === 4) raceShifted++;
+  }
+  chk('troughSign racing mock-off never lands in the pretend next gameweek',
+    raceShifted === 0, `shifted=${raceShifted}/8`);
 
   server.close();
   run.done();

@@ -100,6 +100,13 @@ delete bare.autolists;
 const v2Bare = transformToV2(bare, {});
 check('no claims/autolists needs no uid map', Object.keys(v2Bare.private).length === 0);
 
+// A legacy/emulator export is an administrator-controlled input, but it still
+// must not be able to plant the sandbox-only clock in the default REAL target.
+const legacyWithMock = { ...bare, mock: { gw: 3, phase: 'live', seed: 7, t: 123 } };
+const migratedWithMock = transformToV2(legacyWithMock, {});
+check('migration drops a sandbox-only mock flag before writing the REAL league',
+  migratedWithMock.public.mock == null, JSON.stringify(migratedWithMock.public.mock));
+
 // ---------- report redaction ----------
 const report = buildReport(legacy, v2, uidMap, result, { mode: 'DRY-RUN', source: 'fixture', targetLeague: 'the-league-2627' });
 check('report says pins dropped with count', report.includes('pins: dropped (3 entries)'));

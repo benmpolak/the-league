@@ -46,6 +46,8 @@ const T = require('./testenv.js');
 
   /* ---- no client writes, even as the commissioner's own uid ---- */
   chk('A (commissioner) cannot write public', [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/public/phase`, { token: tokA, body: 'setup' })).status));
+  chk('A cannot bypass the heckle function by writing public/heckles directly',
+    [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/public/heckles/1`, { token: tokA, body: { text: '<img src=x>', t: Date.now() } })).status));
   chk('A cannot write own private directly', [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/private/${members[1].uid}/autolist`, { token: tokA, body: [1] })).status));
   chk('A cannot write B private', [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/private/${members[2].uid}/autolist`, { token: tokA, body: [1] })).status));
   chk('A cannot write membership (role self-promotion)', [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/server/membership/${members[1].uid}/role`, { token: tokA, body: 'commissioner' })).status));

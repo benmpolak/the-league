@@ -95,6 +95,18 @@ const runRestore = args => runScript(RESTORE, args);
   const wrong2 = runRestore([v2Snap, '--schema', 'legacy', '--league', LG, '--yes']);
   chk('v2 snapshot declared as legacy refused', wrong2.code === 1 && /V2 snapshot/.test(wrong2.out), wrong2.out.slice(0, 200));
 
+  // A sandbox disaster-recovery snapshot must never be restorable over the
+  // real league while its Simulation Chamber flag is present. Unlike the
+  // callable import path, restore uses Admin SDK and replaces the whole v2
+  // tree, so this is the last line of defence against mock-locking production.
+  const mockV2File = path.join(tmp(), 'sandbox-with-mock.json');
+  const mockV2 = JSON.parse(fs.readFileSync(v2Snap, 'utf8'));
+  mockV2.public.mock = { gw: 1, phase: 'live', seed: 7, t: Date.now() };
+  fs.writeFileSync(mockV2File, JSON.stringify(mockV2));
+  const mockIntoReal = runRestore([mockV2File, '--schema', 'v2', '--league', LG, '--yes']);
+  chk('REAL-league restore refuses a v2 snapshot carrying public.mock',
+    mockIntoReal.code === 1 && /mock|Simulation Chamber/i.test(mockIntoReal.out), mockIntoReal.out.slice(0, 300));
+
   /* valid restores land in exactly the declared tree */
   await db.ref(`leagues/${LG}`).set(null);
   await db.ref(`v2/leagues/${LG}`).set(null);
