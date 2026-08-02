@@ -5001,6 +5001,20 @@ function viewDash() {
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
       ${(() => {
+        const lastRes = [];
+        for (let k = cur; k >= 0 && lastRes.length < 3; k--) {
+          if (gwStatus(k) !== 'final') continue;
+          const pr = pairingsFor(k).find(x => x.includes(mid));
+          if (!pr) continue;
+          const opp = pr[0] === mid ? pr[1] : pr[0];
+          const my = gwManagerPoints(mid, k), th = gwManagerPoints(opp, k);
+          lastRes.push({ k, opp, my, th, r: my > th ? 'W' : my < th ? 'L' : 'D' });
+        }
+        const badge = r => r === 'W' ? '<b style="color:#3fb96d">W</b>' : r === 'L' ? '<b style="color:#e05555">L</b>' : '<b class="muted">D</b>';
+        return lastRes.length ? `<h3 style="margin-top:12px">Last three</h3>
+          ${lastRes.map(({ k, opp, my, th, r }) => `<div class="lrow" style="font-size:12.5px;cursor:pointer" data-mu="${mid}:${opp}:${k}" title="Tap for the matchup"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${badge(r)} <b>${my}&ndash;${th}</b> <span class="muted">v</span> ${kitSvg(opp)} ${esc(teamName(opp))}</div>`).join('')}` : '';
+      })()}
+      ${(() => {
         const next = [];
         for (let k = cur + 1; k < REGULAR_GWS && next.length < 3; k++) {
           const pr = pairingsFor(k).find(x => x.includes(mid));
