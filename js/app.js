@@ -3504,22 +3504,22 @@ function viewDraftPrep() {
     <p class="rules-p">The draft hasn&rsquo;t started. Until it does, this is where the homework happens: browse the pool, &#9733; star your targets and put them in order. On the night your list doubles as a shortlist &mdash; and if your clock ever hits zero, the top available name on it goes in automatically.</p>
     ${!canQueue && netOn() ? '<p class="muted" style="margin-top:8px">Sign in (top right) to build your list &mdash; it saves to your account and will be waiting on draft night.</p>' : ''}
   </div>
-  ${canQueue ? `<div class="draft-layout">
+  <div class="draft-layout">
     <div class="card" id="poolCard">
       ${poolControlsHtml(PLAYERS.length)}
       ${poolTable()}
     </div>
     <div class="draft-side">
       <div class="card queue-card">
-        <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
+        <h2>My autopick list${canQueue ? ` <span class="tag">${toArr(state.autolists?.[whoami]).length}</span>` : ''}</h2>
+        ${canQueue ? `
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Drag players from the pool into this list and drag to reorder (or use &#9734; and the arrows).</p>
-        ${autolistRows()}
+        ${autolistRows()}` : `
+        <p class="muted" style="font-size:12.5px">Your ranked draft-night list lives here &mdash; drag players across from the pool, reorder them, and if your clock ever hits zero the top available name goes in.</p>
+        <p style="font-size:12.5px;margin-top:8px"><b>${netOn() ? 'Sign in (top right) to start yours.' : 'Claim your team to start yours.'}</b></p>`}
       </div>
     </div>
-  </div>` : `<div class="card" id="poolCard">
-      ${poolControlsHtml(PLAYERS.length)}
-      ${poolTable()}
-    </div>`}
+  </div>
   ${queueDrawerHtml()}`;
 }
 function bindDraftPrep() { bindPoolControls(); }

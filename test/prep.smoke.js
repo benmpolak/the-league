@@ -191,22 +191,28 @@ const chk = (name, ok, detail = '') => {
   chk('P8 on the night: queue intact, Draft buttons back, autopick takes the prep head',
     p8.queueIntact && p8.draftBtns > 3 && p8.picked === p8.head, JSON.stringify(p8));
 
-  // ---- P9: spectator (not signed in) gets a read-only pool, no queue surface
+  // ---- P9: signed-out visitor still SEES the list card (with the how-to),
+  // but gets no live queue controls
   const p9 = await page.evaluate(() => {
     state = freshState();
     state.view = 'draft';
     whoami = null;
     localStorage.removeItem(WHO_KEY);
     render();
+    const qc = document.querySelector('.queue-card');
     return {
       rows: document.querySelectorAll('.pool-table tbody tr').length,
       stars: document.querySelectorAll('[data-auto]').length,
       checks: document.querySelectorAll('[data-bulk-pid]').length,
       fab: !!document.getElementById('queueFab'),
+      card: !!qc,
+      pitch: qc ? /start yours/.test(qc.textContent) : false,
+      qrows: document.querySelectorAll('.qrow').length,
     };
   });
-  chk('P9 spectator sees the pool but no queue controls',
-    p9.rows > 3 && p9.stars === 0 && p9.checks === 0 && !p9.fab, JSON.stringify(p9));
+  chk('P9 signed-out visitor sees the list card + pitch, no live controls',
+    p9.rows > 3 && p9.stars === 0 && p9.checks === 0 && !p9.fab && p9.card && p9.pitch && p9.qrows === 0,
+    JSON.stringify(p9));
 
   // ---- same-session group-chat fixes (Marc + Toby, 2 Aug) ----
 
