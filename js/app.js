@@ -6946,10 +6946,9 @@ function viewTable() {
           : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr>'}</thead>
         <tbody>
         ${rowsData.map((m, i) => {
-          // "under Committee review" leader tag removed (Ben, 2 Aug: old
-          // Calciopoli reference, not required)
-          const commTag = form || !hasPts ? '' :
-            i === rowsData.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
+          // table gag tags all retired (Marc/Ben, 2 Aug: "committee fraud
+          // nonsense" — under-review, investigation and Chumpionship alike)
+          const commTag = '';
           const qfCell = form ? '' : (() => {
             if (i >= 8) return '<td class="num"></td>';
             const k = Math.min(i, 7 - i);
