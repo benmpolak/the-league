@@ -554,6 +554,12 @@ function buildDemoState() {
     { id: 1, from: 5, to: 8, text: 'Tussie holds first refusal on any City player Marc drops, in perpetuity.', t: Date.now(), gw: 0 },
     { id: 2, from: 3, to: 9, text: 'The Haaland curse shall not be mentioned before 9pm on matchdays.', t: Date.now(), gw: 0 },
   ];
+  // a bit of market history so "Around the league" has its last-5 snapshot
+  s.transfers = [2, 5, 7, 9, 11].map((mid, k) => {
+    const sq = demoSquad(mid);
+    const out = sq[sq.length - 1 - k], inP = freeAll[20 + k * 3];
+    return out && inP ? { managerId: mid, outId: out.id, inId: inP.id, gw: 1, n: 1, t: Date.now() - (5 - k) * 3600e3, ...(k === 1 ? { waiver: true } : k === 3 ? { trade: true } : {}) } : null;
+  }).filter(Boolean);
   s.tradeBlock = { 2: [s.draft.picks.find(pk => pk.managerId === 2).playerId] };
   return s;
 }
