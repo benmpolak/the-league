@@ -328,6 +328,15 @@ const SB = 'the-league-sandbox';
   chk('junk kit pattern rejected', (await T.mutate(SB, 'clubSet', { kit: { pattern: 'tartan', c1: '#123456', c2: '#abcdef' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
   chk('one-character name rejected', (await T.mutate(SB, 'clubSet', { team: 'X' }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
   chk('self-rivalry rejected', (await T.mutate(SB, 'clubSet', { rival: 2 }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('multiple rivals land, first mirrored to the legacy field', !(await T.mutate(SB, 'clubSet', { rivals: [1, 3] }, sbTok2)).error
+    && JSON.stringify((await T.rest('GET', `v2/leagues/${SB}/public/managers/1/rivals`, { owner: true })).val) === '[1,3]'
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/rival`, { owner: true })).val === 1);
+  chk('four rivals rejected', (await T.mutate(SB, 'clubSet', { rivals: [1, 3, 4, 5] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('self among rivals rejected', (await T.mutate(SB, 'clubSet', { rivals: [1, 2] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('rivals clear to null both fields', !(await T.mutate(SB, 'clubSet', { rivals: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/rivals`, { owner: true })).val == null
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/rival`, { owner: true })).val == null);
+  await T.mutate(SB, 'clubSet', { rivals: [1, 3] }, sbTok2); // re-declare: the round-trip below asserts both fields
   chk('empty clubSet rejected', (await T.mutate(SB, 'clubSet', {}, sbTok2)).error?.status === 'INVALID_ARGUMENT');
   chk('non-commissioner cannot restyle another club', (await T.mutate(SB, 'clubSet', { team: 'Hijacked FC', asManager: 3 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   chk('sponsor clears to null', !(await T.mutate(SB, 'clubSet', { sponsor: null }, sbTok2)).error
@@ -372,7 +381,8 @@ const SB = 'the-league-sandbox';
     && (await db.ref(`v2/leagues/${SB}/public/managers/1/stadium`).get()).val() === 'The Rec'
     && (await db.ref(`v2/leagues/${SB}/public/managers/1/gaffer`).get()).val() === GC - 1
     && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/boards`).get()).val()) === JSON.stringify([BC - 1])
-    && (await db.ref(`v2/leagues/${SB}/public/managers/1/rival`).get()).val() === 1);
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/rival`).get()).val() === 1
+    && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/rivals`).get()).val()) === '[1,3]');
   chk('import still rejects a junk manager key', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map(m => ({ ...m, chef: 1 })) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects an out-of-catalogue gaffer', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, gaffer: GC }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects a rival outside the roster', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, rival: 55 }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');

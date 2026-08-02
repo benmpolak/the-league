@@ -940,6 +940,7 @@ async function managerMerge(league, state, mid, up) {
     // validated on the request's snapshot can vanish under a concurrent
     // import, leaving a ghost rivalry (sol club-office r2 P1)
     if (up.rival != null && !arr.some(m => m && m.id === up.rival)) return;
+    if (up.rivals) up.rivals = up.rivals.filter(r => arr.some(m => m && m.id === r)) || null;
     arr[i] = { ...arr[i], ...up };
     return arr;
   }));
@@ -961,10 +962,22 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
     const s = data.sponsor === null ? '' : cleanText(data.sponsor, 20).trim();
     up.sponsor = s || null;
   }
-  if (data.rival !== undefined) {
-    // declared rivalry — your derby. Mutuality is not required; that's the joke.
+  if (data.rivals !== undefined) {
+    // multiple declared rivals (Ben, 2 Aug) — up to three, no self, roster only.
+    // Mutuality is still not required; that's still the joke.
+    if (data.rivals === null) { up.rivals = null; up.rival = null; }
+    else {
+      const arr = toArr(data.rivals).map(Number);
+      if (arr.length > 3 || new Set(arr).size !== arr.length) throw new HttpsError('invalid-argument', 'up to three distinct rivals');
+      if (arr.some(r => !Number.isInteger(r) || r === mid || !state.managers.some(x => x.id === r))) throw new HttpsError('invalid-argument', 'a rival must be another of the twelve');
+      up.rivals = arr.length ? arr : null;
+      up.rival = arr.length ? arr[0] : null; // stale clients still read the single field
+    }
+  } else if (data.rival !== undefined) {
+    // legacy single-rival clients — still honoured, mirrored into the array
     if (data.rival !== null && (!state.managers.some(x => x.id === data.rival) || data.rival === mid)) throw new HttpsError('invalid-argument', 'a rival must be another of the twelve');
     up.rival = data.rival;
+    up.rivals = data.rival === null ? null : [data.rival];
   }
   if (data.stadium !== undefined) up.stadium = cleanStadium(data.stadium);
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
@@ -1428,7 +1441,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
     // club identity fields travel with the manager — a backup taken after a
     // founding must restore, and the pre-draft start once exported them too
     // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'gaffer', 'boards'].includes(k)) importError(`manager key "${k}"`);
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'boards'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     // stadium shares the office's 40-char contract; old longer backups are
@@ -1445,6 +1458,11 @@ ACTIONS.importState = async ({ league, a, data }) => {
   }
   for (const m of managers) {
     if (m.rival != null && (!midSeen.has(m.rival) || m.rival === m.id)) importError('manager rival');
+    if (m.rivals != null) {
+      m.rivals = toArr(m.rivals).map(Number);
+      if (m.rivals.length > 3 || new Set(m.rivals).size !== m.rivals.length
+        || m.rivals.some(r => !midSeen.has(r) || r === m.id)) importError('manager rivals');
+    }
   }
   if (s.settings != null) cleanSettingsSection(s.settings);
   const arrayCaps = { transfers: 5000, trades: 1000, covenants: 500 };

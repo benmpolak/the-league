@@ -972,9 +972,16 @@ function kitSvgRaw(k, sponsor, size, uid) {
 function teamTag(mid) { return `${kitSvg(mid)} ${esc(teamName(mid))}`; }
 // declared rivalries: mutual = a clásico, one-sided = a derby only one of them
 // believes in (which is funnier)
-function rivalOf(mid) { return state.managers.find(x => x.id === mid)?.rival || null; }
+function rivalOf(mid) { return rivalsOf(mid)[0] || null; }
+// all declared rivals — the multi-rival array first, the legacy single second
+function rivalsOf(mid) {
+  const m = state.managers.find(x => x.id === mid);
+  if (!m) return [];
+  const arr = toArr(m.rivals).filter(x => x !== mid);
+  return arr.length ? arr : (m.rival && m.rival !== mid ? [m.rival] : []);
+}
 function derbyTag(a, b) {
-  const ab = rivalOf(a) === b, ba = rivalOf(b) === a;
+  const ab = rivalsOf(a).includes(b), ba = rivalsOf(b).includes(a);
   if (ab && ba) return '<span class="tag derby-tag">&#128293; EL CL&Aacute;SICO</span>';
   if (ab || ba) return `<span class="tag derby-tag" title="Declared by ${esc(teamName(ab ? a : b))}. ${esc(teamName(ab ? b : a))} remains unaware.">&#128293; derby (one&#8209;sided)</span>`;
   return '';
@@ -1015,7 +1022,7 @@ function clubEditor(mid) {
   // nothing — drop them here so they can't eat a slot of the three
   const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
   const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rival: rivalOf(mid), stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer };
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer };
   const stock = AD_BOARDS.map(b => b.t);
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -1028,7 +1035,7 @@ function clubEditor(mid) {
   };
   // extras open when any is already chosen — a founder editing their boards
   // shouldn't have to hunt for them behind a closed drawer
-  const extrasOpen = draft.boards.length || draft.gaffer != null || draft.rival != null;
+  const extrasOpen = draft.boards.length || draft.gaffer != null || draft.rivals.length;
   ov.innerHTML = `<div class="card club-office" role="dialog" aria-modal="true" aria-label="The club office" style="max-width:460px;width:94%">
     <h2>The club office</h2>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
@@ -1075,11 +1082,10 @@ function clubEditor(mid) {
         <button class="btn ghost small" id="gafferOwn">Make one up…</button>
         <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
       </div>
-      <label class="muted" style="font-size:11px">BIGGEST RIVAL — declare your derby. They don't get a say.</label>
-      <select id="clubRival" style="width:100%;margin:4px 0 14px">
-        <option value="">No declared rival (coward)</option>
-        ${state.managers.filter(x => x.id !== mid).map(x => `<option value="${x.id}"${draft.rival === x.id ? ' selected' : ''}>${esc(x.team || x.name)} — ${esc(x.name)}</option>`).join('')}
-      </select>
+      <label class="muted" style="font-size:11px">RIVALS — declare up to three derbies. They don't get a say.</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:4px 0 14px">
+        ${state.managers.filter(x => x.id !== mid).map(x => `<label style="font-size:12px;display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-rival="${x.id}" ${draft.rivals.includes(x.id) ? 'checked' : ''}> ${esc(x.team || x.name)}</label>`).join('')}
+      </div>
     </details>
     <div class="club-actions">
       <button class="btn ghost" id="clubCancel" style="flex:1">Cancel</button>
@@ -1115,7 +1121,11 @@ function clubEditor(mid) {
     paint();
   };
   spOwn.oninput = () => { touched.add('sponsor'); draft.sponsor = spOwn.value.trim(); paint(); };
-  ov.querySelector('#clubRival').onchange = e => { draft.rival = e.target.value ? +e.target.value : null; };
+  ov.querySelectorAll('[data-rival]').forEach(cb => cb.onchange = () => {
+    const id = +cb.dataset.rival;
+    if (cb.checked && draft.rivals.length >= 3) { cb.checked = false; toast('Three rivals is enough hatred for anyone.'); return; }
+    draft.rivals = cb.checked ? [...draft.rivals, id] : draft.rivals.filter(r => r !== id);
+  });
   ov.querySelector('#clubStadium').oninput = e => { touched.add('stadium'); draft.stadium = e.target.value; };
   ov.querySelectorAll('[data-gaffer]').forEach(b => b.onclick = () => { touched.add('gaffer'); draft.gaffer = +b.dataset.gaffer; paint(); });
   ov.querySelector('#gafferNone').onclick = () => { touched.add('gaffer'); draft.gaffer = null; paint(); toast('The dugout stands empty.'); };
@@ -1200,7 +1210,7 @@ function clubEditor(mid) {
       const cnl = ov.querySelector('#clubCancel');
       saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
-        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) });
+        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) });
       } catch {
         saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
         return; // serverAct already toasted why
@@ -1211,7 +1221,7 @@ function clubEditor(mid) {
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rival: draft.rival, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
     localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
@@ -1344,8 +1354,8 @@ function supportersMood(mid) {
 function clubProfileHtml(mid, { editable = false } = {}) {
   const m = state.managers.find(x => x.id === mid);
   const g = gafferFor(mid);
-  const myRival = rivalOf(mid);
-  const enemies = state.managers.filter(x => x.rival === mid && x.id !== mid);
+  const myRivals = rivalsOf(mid);
+  const enemies = state.managers.filter(x => x.id !== mid && rivalsOf(x.id).includes(mid));
   const boards = (m?.boards || []).map(i => AD_BOARDS[i]).filter(Boolean);
   const mood = supportersMood(mid);
   const recRows = clubRecordsHtml(mid);
@@ -1373,8 +1383,8 @@ function clubProfileHtml(mid, { editable = false } = {}) {
   </div>
   <div class="card" style="margin-top:14px">
     <h2>Rivalries</h2>
-    ${myRival ? `<p style="font-size:13px">Declared: <b>${teamTag(myRival)}</b> ${derbyTag(mid, myRival)}</p>` : '<p class="muted">No declared rival. The dropdown calls this cowardice.</p>'}
-    ${enemies.map(x => `<p style="font-size:12.5px" class="muted">${teamTag(x.id)} has declared YOU.${myRival === x.id ? '' : ' You remain officially unaware.'}</p>`).join('')}
+    ${myRivals.length ? myRivals.map(r => `<p style="font-size:13px">Declared: <b>${teamTag(r)}</b> ${derbyTag(mid, r)}</p>`).join('') : '<p class="muted">No declared rivals. The office calls this cowardice.</p>'}
+    ${enemies.map(x => `<p style="font-size:12.5px" class="muted">${teamTag(x.id)} has declared YOU.${myRivals.includes(x.id) ? '' : ' You remain officially unaware.'}</p>`).join('')}
   </div>
   ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
 }
@@ -1412,7 +1422,7 @@ function viewDirectory() {
   const cards = directoryOrder().map(mid => {
     const m = state.managers.find(x => x.id === mid);
     const mood = supportersMood(mid);
-    const myRival = rivalOf(mid);
+    const dirRivals = rivalsOf(mid);
     const opened = !!m?.kit; // server-backed: clubSet always saves a kit
     return `<button type="button" class="dir-card" data-dirmid="${mid}" aria-label="${esc(teamName(mid))} — club profile">
       <div class="dir-kit">${kitSvg(mid, 44, true)}</div>
@@ -1422,7 +1432,7 @@ function viewDirectory() {
         ${sponsorFor(mid) ? `<span class="muted dir-line">Principal partner: ${esc(sponsorFor(mid))}</span>` : ''}
         ${gafferFor(mid) ? `<span class="dir-line">${gafferChip(mid)}</span>` : ''}
         <span class="dir-line"><span class="tag" style="font-size:10.5px">&#128227; ${esc(mood.t)}</span></span>
-        ${myRival ? `<span class="dir-line" style="font-size:11px">Rival: ${teamTag(myRival)} ${derbyTag(mid, myRival)}</span>` : ''}
+        ${dirRivals.length ? `<span class="dir-line" style="font-size:11px">Rival${dirRivals.length === 1 ? '' : 's'}: ${dirRivals.map(r => `${teamTag(r)} ${derbyTag(mid, r)}`).join(' ')}</span>` : ''}
         ${opened ? '' : '<span class="muted dir-line" style="font-style:italic">Office unopened</span>'}
       </div>
     </button>`;
@@ -5377,8 +5387,103 @@ function viewDash() {
       <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
+  ${programmeCard()}
   ${installCard()}
   ${vidiCard(true)}`;
+}
+
+/* ----- The Matchday Programme (Marc + Ben, 2 Aug): preview and review
+   ARTICLES on the Dashboard. The preview goes to print only once the teams
+   are locked (first kick-off); the review publishes when the week settles.
+   Prose is deterministic — seeded phrase pools, same article every render. */
+function programmeCard() {
+  if (state.phase !== 'season' || !state.draft.picks.length) return '';
+  const cur = currentGwIndex();
+  const pick = (arr, seed) => arr[seed % arr.length];
+  const masthead = (edition, gwN) => `<p class="prog-mast">The League Gazette &middot; ${edition} &middot; GW${gwN}</p>`;
+  if (gwUnderway(cur) && gwStatus(cur) !== 'final') {
+    const art = previewArticle(cur, pick);
+    if (art) return `<div class="card prog-card"><h2>The Matchday Programme</h2>${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}</div>`;
+  }
+  const last = lastFinalGw();
+  if (last >= 0) {
+    return `<div class="card prog-card"><h2>The Matchday Programme</h2>${masthead('review edition', GAMEWEEKS[last].n)}${reviewArticle(last, pick)}
+      <p class="muted" style="font-size:11px;margin-top:8px">The GW${GAMEWEEKS[Math.min(cur, REGULAR_GWS - 1)].n} matchday edition goes to print when the teams are locked.</p></div>`;
+  }
+  return `<div class="card prog-card"><h2>The Matchday Programme</h2>
+    <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
+}
+function previewArticle(i, pick) {
+  const d = gwPreviewData(i);
+  if (!d) return '';
+  const { rows, motw, notes, recent } = d;
+  const pct = Math.round(motw.p * 100);
+  const fav = pct >= 50 ? motw.a : motw.b;
+  const dog = fav === motw.a ? motw.b : motw.a;
+  const favPct = Math.max(pct, 100 - pct);
+  const opener = pick([
+    `The teamsheets are in, the gates are locked, and all roads lead to ${stadium(motw.a)}.`,
+    'Twelve teamsheets, no excuses left. The Committee has read them all and drawn its conclusions.',
+    'Lineups locked across the league, and the presses have been busy overnight.',
+  ], i);
+  const verdict = pick([
+    `The numbers make it ${teamName(fav)}'s to lose at ${favPct}% — and the numbers have been wrong before, as the group chat will happily remind them.`,
+    `${teamName(fav)} start at ${favPct}%, which historically guarantees nothing by Saturday teatime.`,
+    `${teamName(fav)} are favourites at ${favPct}%; ${teamName(dog)} have been written off before and dined out on it.`,
+  ], i + 1);
+  const motwNotes = notes(motw).join(' ');
+  const rest = rows.filter(r => r !== motw).map(r => {
+    const p2 = Math.round(r.p * 100);
+    const f2 = p2 >= 50 ? r.a : r.b, u2 = f2 === r.a ? r.b : r.a;
+    return `${teamName(f2)} are ${Math.max(p2, 100 - p2)}% favourites against ${teamName(u2)} (${r.sa}–${r.sb} on projection)`;
+  });
+  const troughLine = recent.length
+    ? ` In the transfer columns: ${recent.map(t => `${managerName(t.managerId)} ${t.trade ? 'traded for' : 'signed'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(', ')}.`
+    : '';
+  const closer = pick([
+    'Projections courtesy of the algorithm. Liability courtesy of no one.',
+    'The Committee reminds all twelve managers that confidence is not a defence.',
+    'Kick-off imminent. Silence your rivals, not your phone.',
+  ], i + 2);
+  return `<div class="prog-art">
+    <p class="prog-lead">${esc(opener)} <b>${esc(teamName(motw.a))}</b> meet <b>${esc(teamName(motw.b))}</b> in the Matchup of the Week, ${motw.sa}&ndash;${motw.sb} on projection. ${esc(verdict)}</p>
+    ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
+    <p>Elsewhere: ${esc(rest.join('; '))}.${esc(troughLine)}</p>
+    <p class="muted" style="font-size:12px">${esc(closer)}</p>
+  </div>`;
+}
+function reviewArticle(last, pick) {
+  const aw = weeklyAwards(last);
+  const results = pairingsFor(last).map(([a, b]) => ({ a, b, sa: gwManagerPoints(a, last), sb: gwManagerPoints(b, last) }));
+  if (!results.length) return '';
+  const { hi, lo, jammy, robbed, hiding, bench } = aw;
+  const lead = hiding && hiding.margin >= 15
+    ? pick([
+      `${teamName(hiding.w)} did not so much beat ${teamName(hiding.l)} as dismantle them, ${hiding.ws}–${hiding.ls} — a scoreline the Committee has filed under "hidings, biggest".`,
+      `The week belonged to ${teamName(hiding.w)}, who put ${hiding.ws} on ${teamName(hiding.l)} and showed no remorse afterwards.`,
+    ], last)
+    : pick([
+      `${teamName(hi.id)} topped the week with ${hi.s} points and have been insufferable since.`,
+      `A week of fine margins, and nobody's were finer than ${teamName(hi.id)}'s ${hi.s}.`,
+    ], last);
+  const resLine = results.map(r => r.sa === r.sb
+    ? `${teamName(r.a)} ${r.sa}–${r.sb} ${teamName(r.b)} (a draw nobody enjoyed)`
+    : `${teamName(r.sa > r.sb ? r.a : r.b)} beat ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`).join('; ');
+  const awardBits = [];
+  if (lo) awardBits.push(`the Wooden Spoon goes to ${teamName(lo.id)} (${lo.s})`);
+  if (jammy) awardBits.push(`${teamName(jammy.w)} take Jammiest Win, victorious with just ${jammy.ws}`);
+  if (robbed) awardBits.push(`${teamName(robbed.l)} were Robbed, scoring ${robbed.ls} and losing anyway`);
+  if (bench && bench.waste > 0) awardBits.push(`${teamName(bench.id)} left ${bench.waste} on the bench, which the Committee notes without comment`);
+  const table = h2hStandings();
+  const tableLine = table.length && table.some(r => r.p > 0)
+    ? `The table now reads: ${teamName(table[0].id)} top on ${table[0].pts}, ${teamName(table[table.length - 1].id)} bottom and briefing against the fixture list.`
+    : '';
+  return `<div class="prog-art">
+    <p class="prog-lead">${esc(lead)}</p>
+    <p>The full card: ${esc(resLine)}.</p>
+    ${awardBits.length ? `<p>In dispatches: ${esc(awardBits.join('; '))}.</p>` : ''}
+    ${tableLine ? `<p>${esc(tableLine)}</p>` : ''}
+  </div>`;
 }
 /* ----- the Data Room (Marc, 1 Aug): the stats desk gets its own page so the
    dashboard stays clean — awards, treatment room and the fixture quirks desk
@@ -6021,7 +6126,7 @@ function gwPreviewData(i) {
   const anyPlayed = table.some(r => r.p > 0);
   const rows = pairs.map(([a, b]) => {
     const sa = projectedGwScore(a, i), sb = projectedGwScore(b, i);
-    return { a, b, sa, sb, p: liveWinProb(a, b, i), riv: rivalryFor(a, b, i) };
+    return { a, b, sa, sb, p: liveWinProb(a, b, i), riv: rivalryFor(a, b, i) || (rivalsOf(a).includes(b) || rivalsOf(b).includes(a) ? 'Derby day — a declared rivalry.' : null) };
   });
   // matchup of the week: a rivalry if one is on, else the tightest projection
   const motw = [...rows].sort((x, y) => (y.riv ? 1 : 0) - (x.riv ? 1 : 0) || Math.abs(x.sa - x.sb) - Math.abs(y.sa - y.sb))[0];
@@ -6776,7 +6881,7 @@ function viewSettings() {
         <button class="btn ghost" id="demoBtn2">Demo mode — preview with fake results</button>
         <button class="btn ghost" id="exportBtn">Export league file (backup)</button>
         <label class="btn ghost" style="text-align:center;cursor:pointer">Import league file<input type="file" id="importFile" accept=".json" style="display:none"></label>
-        <button class="btn danger" id="resetBtn">Reset everything</button>
+        ${!netOn() || isCommissioner() ? '<button class="btn danger" id="resetBtn">Reset everything</button>' : ''}
       </div>
       <p class="muted" style="font-size:12px;margin-top:10px">Backups only — the league syncs live on its own, no files to pass around. Export drops a snapshot to your device; import restores one if it all goes wrong.</p>
       <h3 style="margin-top:18px">Sign-in</h3>
@@ -6800,7 +6905,7 @@ function viewSettings() {
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
       <p class="rules-p">&sect;4 Waivers follow the fixtures: 8pm after the gameweek, 8pm before the next. Reverse table order. The Trough takes the rest.</p>
-      <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, knitty-grittys nearer the time, as is tradition.</p>
+      <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
       <p class="rules-p">&sect;6 Every manager declares one (1) Lobus. The klaxon is ceremonial until the Committee says otherwise.</p>
       <p class="rules-p">&sect;7 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
       <p class="rules-p">&sect;8 The hydration break is inviolable.</p>
@@ -6894,7 +6999,9 @@ function bindSettings() {
       } catch { toast('That file doesn’t look like a league export'); }
     });
   };
-  $('#resetBtn').onclick = () => {
+  const rb = $('#resetBtn'); // hidden for non-commissioners online (Marc, 2 Aug:
+  // a visible "Reset everything" reads as "anyone can" — server refuses anyway)
+  if (rb) rb.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can reset the league'); return; }
     if (confirm('Wipe the league, draft and all scores — for EVERYONE?')) {
       if (netOn()) { serverAct('resetLeague', { confirm: 'RESET' }).catch(() => {}); return; }

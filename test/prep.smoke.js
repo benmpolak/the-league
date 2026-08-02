@@ -258,6 +258,36 @@ const chk = (name, ok, detail = '') => {
     p8d.card && p8d.projected && p8d.ties === 7 && p8d.topSeed === '1' && p8d.hcaps >= 1 && p8d.tbd === 6,
     JSON.stringify(p8d));
 
+  // ---- P8g: the Matchday Programme prints an article on the demo dashboard
+  const p8g = await page.evaluate(() => {
+    state.view = 'dash';
+    render();
+    const card = document.querySelector('.prog-card');
+    const art = card?.querySelector('.prog-art');
+    return {
+      card: !!card, mast: !!card?.querySelector('.prog-mast'),
+      words: art ? art.textContent.trim().split(/\s+/).length : 0,
+      edition: card?.querySelector('.prog-mast')?.textContent || '',
+    };
+  });
+  chk('P8g Matchday Programme prints a real article on the dashboard',
+    p8g.card && p8g.mast && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
+
+  // ---- P8h: multiple rivals — mutual clásico, one-sided mockery, legacy field honoured
+  const p8h = await page.evaluate(() => {
+    const [m1, m2, m3, m4] = state.managers;
+    m1.rivals = [m2.id, m3.id]; m2.rivals = [m1.id]; m3.rivals = null; m3.rival = null;
+    m4.rival = m1.id; m4.rivals = null;
+    return {
+      both: rivalsOf(m1.id).length === 2,
+      clasico: /CL/.test(derbyTag(m1.id, m2.id)),
+      oneSided: /one/.test(derbyTag(m1.id, m3.id)),
+      legacy: rivalsOf(m4.id)[0] === m1.id && /one/.test(derbyTag(m4.id, m1.id)),
+    };
+  });
+  chk('P8h multi-rivals: clásico both ways, one-sided mocked, legacy single honoured',
+    p8h.both && p8h.clasico && p8h.oneSided && p8h.legacy, JSON.stringify(p8h));
+
   // ---- P9: signed-out visitor still SEES the list card (with the how-to),
   // but gets no live queue controls
   const p9 = await page.evaluate(() => {

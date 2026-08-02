@@ -379,6 +379,13 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 }
 @media (min-width: 981px) { .queue-drawer { display: none; } }
 
+/* The Matchday Programme */
+.prog-mast { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; margin: -2px 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.prog-art p { font-size: 13.5px; line-height: 1.55; margin: 0 0 10px; }
+.prog-art p:last-child { margin-bottom: 0; }
+.prog-art .prog-lead { font-size: 14.5px; }
+.prog-art .prog-lead::first-letter { font-size: 26px; font-weight: 800; color: var(--accent); float: left; line-height: 1; padding: 2px 6px 0 0; }
+
 /* the playoff bracket (Data Room) */
 .bracket { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .br-col { display: flex; flex-direction: column; justify-content: space-around; gap: 8px; min-width: 0; }

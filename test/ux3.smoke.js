@@ -69,7 +69,8 @@ const SEED_SEASON = `(() => {
     delete m.kit; delete m.sponsor; delete m.boards; delete m.gaffer; delete m.stadium;
     clubEditor(m.id);
     const ov = document.querySelector('.club-office').closest('.overlay');
-    const before = { stadium: ov.querySelector('#clubStadium').value, name: ov.querySelector('#clubName').value, rival: ov.querySelector('#clubRival').value };
+    const rivalState = () => [...ov.querySelectorAll('[data-rival]')].filter(c => c.checked).map(c => c.dataset.rival).join(',');
+    const before = { stadium: ov.querySelector('#clubStadium').value, name: ov.querySelector('#clubName').value, rival: rivalState() };
     ov.querySelector('#clubLuck').click();
     return {
       before,
@@ -81,7 +82,7 @@ const SEED_SEASON = `(() => {
       boards: [...ov.querySelectorAll('[data-board].active')].map(b => +b.dataset.board),
       gaffers: [...ov.querySelectorAll('[data-gaffer].active')].length,
       name: ov.querySelector('#clubName').value,
-      rival: ov.querySelector('#clubRival').value,
+      rival: rivalState(),
     };
   });
   chk('S1: surprise fills kit pattern, colours, sponsor, boards, gaffer, stadium',
