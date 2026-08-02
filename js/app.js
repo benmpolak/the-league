@@ -3581,6 +3581,10 @@ function poolControlsHtml(availableCount) {
       <option value="">All positions</option>
       ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${poolFilter.pos === p ? 'selected' : ''}>${p}</option>`).join('')}
     </select>
+    ${state.phase === 'draft' ? `<select id="poolScope" title="Show drafted players too — dimmed, with who took them">
+      <option value="avail" ${poolFilter.scope !== 'all' ? 'selected' : ''}>Available</option>
+      <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>Everyone (incl. drafted)</option>
+    </select>` : ''}
   </div>`;
 }
 function queueDrawerHtml() {
@@ -3609,7 +3613,7 @@ function autolistRows() {
     const wontFit = live && !gone && !canPick(whoami, p);
     return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
-      ${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
+      ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
       <span style="margin-left:auto;display:flex;gap:4px">
         <button class="btn ghost small" data-autoup="${k}" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
         <button class="btn ghost small" data-autodown="${k}" ${k === list.length - 1 ? 'disabled' : ''}>&#9660;</button>
@@ -4009,7 +4013,8 @@ function poolTable() {
   const live = state.phase === 'draft';
   const taken = live ? draftedIds() : new Set();
   const mid = live ? currentManagerId() : null;
-  let rows = PLAYERS.filter(p => !taken.has(p.id));
+  const showGone = live && poolFilter.scope === 'all';
+  let rows = showGone ? [...PLAYERS] : PLAYERS.filter(p => !taken.has(p.id));
   if (poolFilter.q) {
     const q = normName(poolFilter.q);
     rows = rows.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -4047,14 +4052,17 @@ function poolTable() {
     </tr></thead>
     <tbody>
       ${rows.map(p => `
-      <tr class="${statusClass(p)}"${canQueue ? ` draggable="true" data-drag="${p.id}"` : ''}>
+      <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
         ${canQueue ? `<td class="bulk-check"><input type="checkbox" data-bulk-pid="${p.id}" aria-label="Select ${esc(p.name)} for the autopick queue" ${bulkQueueIds.has(p.id) ? 'checked' : ''}></td>` : ''}
         <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${esc(p.full)}</div></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td class="act" style="white-space:nowrap">${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap">${taken.has(p.id) ? (() => {
+          const pk = state.draft.picks.find(x => x.playerId === p.id);
+          return pk ? `<span class="tag gone-tag" title="Pick ${pk.n}">#${pk.n} ${esc(teamName(pk.managerId))}</span>` : '<span class="tag gone-tag">GONE</span>';
+        })() : `${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}`}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -4222,6 +4230,8 @@ function bindPoolControls() {
   q.oninput = () => { poolFilter.q = q.value; poolFilter.limit = 60; refreshPool(); };
   $('#poolTeam').onchange = e => { poolFilter.team = e.target.value; poolFilter.limit = 60; refreshPool(); };
   $('#poolPos').onchange = e => { poolFilter.pos = e.target.value; poolFilter.limit = 60; refreshPool(); };
+  const psc = $('#poolScope');
+  if (psc) psc.onchange = e => { poolFilter.scope = e.target.value; poolFilter.limit = 60; refreshPool(); };
   bindPoolTable();
   const qf = $('#queueFab'), qd = $('#queueDrawer');
   if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };

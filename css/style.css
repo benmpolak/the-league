@@ -353,6 +353,9 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 /* the autopick queue drawer: sidebar content, reachable by thumb mid-draft */
 .queue-fab { display: none; }
 .warn-tag { background: rgba(212,160,23,.18); color: #ffd76e; border: none; }
+tr.gone-row td { opacity: .45; }
+tr.gone-row td.act { opacity: .8; }
+.gone-tag { background: rgba(224,85,85,.16); color: #ff9c9c; border: none; white-space: nowrap; }
 .qrow { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; padding: 5px 0; min-width: 0; }
 .ready-row { border-bottom: 1px solid rgba(38,50,80,.5); padding: 8px 0; }
 .ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
