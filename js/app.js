@@ -216,7 +216,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -456,6 +456,7 @@ function freshState() {
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
+    mock: null,            // {gw, phase: 'live'|'final', seed, t} — the Simulation Chamber (sandbox-only mock matchday)
     ready: {},             // pre-draft roll call {managerId: {t, self}} — cleared by reset
     fixtures: [],
     matchStats: {},        // 'gw{n}' -> { gw, label, date, final, playerStats: {pid:{min,st,sub,g,a,cs,gc,og,ps,pm,yc,rc,sv}} }
@@ -639,6 +640,7 @@ function load() {
     if (s && !s.lobus) s.lobus = {};
     if (s && !s.ready) s.ready = {};
     if (s && s.hamCup === undefined) s.hamCup = null;
+    if (s && s.mock === undefined) s.mock = null;
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
     if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
     if (s && !s.settings.posMax) s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
@@ -813,7 +815,7 @@ function liveWinProb(a, b, i) {
    requirement maths lives nowhere else. */
 function matchNeeds(a, b, i, pov = null) {
   const A = teamOutlook(a, i), B = teamOutlook(b, i);
-  const st = gwStatus(i) === 'final' ? 'final' : gwHasStarted(i) ? 'live' : 'pre';
+  const st = gwStatus(i) === 'final' ? 'final' : gwUnderway(i) ? 'live' : 'pre';
   const gwN = GAMEWEEKS[i].n;
   const remaining = mid => effectiveXI(mid, i).xi
     .map(pid => PLAYER_BY_ID[pid])
@@ -2271,6 +2273,11 @@ function gwStatus(i) {
   if (gwHasStarted(i)) return 'underway';
   return 'upcoming';
 }
+// display truth for "is this gameweek under way": the clock says so, OR stats
+// exist for it (the demo and the sandbox Simulation Chamber both produce
+// stats before the real kickoff date). Locks and transfer maths must keep
+// using the time-based gwHasStarted — this is for showing points, only.
+function gwUnderway(i) { const st = gwStatus(i); return st === 'live' || st === 'final' || gwHasStarted(i); }
 function h2hStandings(includeLive = false) {
   const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, name: m.name, team: m.team, p: 0, w: 0, d: 0, l: 0, pts: 0, pf: 0, pa: 0 }]));
   for (let i = 0; i < REGULAR_GWS; i++) {
@@ -2358,6 +2365,73 @@ function vidiDiff(gwIdx, oldPS, newPS) {
   }
   vidiPush(lines);
 }
+/* ----- the Simulation Chamber (sandbox-only): a pretend matchday for the
+   lads' real drafted teams. The Chairman kicks it off; every device derives
+   IDENTICAL stats from the shared {gw, phase, seed, t} flag (deterministic
+   LCG per player), so no stat payload ever syncs. 'live' plays out over ~20
+   minutes — points tick up, the vidiprinter clatters, the klaxon can fire —
+   then 'final' settles it. The real league has no such lever: the server
+   action hard-refuses outside the-league-sandbox. ----- */
+const MOCK_LIVE_MS = 20 * 60e3;
+function mockRnd(seed) { let s = (seed >>> 0) || 1; return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648; }
+function mockGwStats(gwIdx, seed, frac) {
+  const ps = {};
+  const featured = new Set();
+  for (const m of state.managers) for (const p of squadAt(m.id, gwIdx)) featured.add(p.id);
+  for (const arr of Object.values(state.hamCup?.entries || {})) for (const pid of toArr(arr)) featured.add(+pid);
+  for (const pid of featured) {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) continue;
+    const rnd = mockRnd(seed * 7919 + pid * 104729);
+    if (rnd() < 0.07) continue; // didn't feature this week
+    const started = rnd() < 0.85;
+    const late = !started;
+    const mins = Math.round(90 * frac * (late ? 0.3 : 1));
+    if (!mins) continue;
+    const s = { min: mins, st: started ? 1 : 0, sub: late ? 1 : 0, g: 0, a: 0, cs: 0, gc: 0, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 };
+    const atk = p.pos === 'FW' ? 0.32 : p.pos === 'MF' ? 0.20 : p.pos === 'DF' ? 0.07 : 0.01;
+    for (let e = 0; e < 3; e++) {
+      const at = rnd(), roll = rnd(), roll2 = rnd(); // event slot: lands once the sim reaches its minute
+      if (at >= frac) continue;
+      if (roll < atk) s.g++;
+      else if (roll2 < 0.20) s.a++;
+    }
+    if (rnd() < 0.10 && rnd() < frac) s.yc = 1;
+    if (p.pos === 'GK') s.sv = Math.floor(rnd() * 6 * frac);
+    if (frac >= 1 && p.pos !== 'FW' && rnd() < 0.33) s.cs = 1;
+    ps[pid] = s;
+  }
+  return ps;
+}
+let mockPrevPS = null, mockMemo = '', mockGwKeyApplied = null;
+// returns true when the overlay changed (callers may re-render)
+function applyMock() {
+  if (!SANDBOX || demoMode) return false;
+  const mk = state.mock;
+  if (!mk || mk.gw == null || !GAMEWEEKS[mk.gw]) {
+    // chamber switched off — remove only what WE injected, never real stats
+    if (mockGwKeyApplied && String(state.matchStats[mockGwKeyApplied]?.label || '').includes('simulation')) {
+      delete state.matchStats[mockGwKeyApplied];
+      mockGwKeyApplied = null; mockPrevPS = null; mockMemo = '';
+      return true;
+    }
+    return false;
+  }
+  const final = mk.phase === 'final';
+  const frac = final ? 1 : Math.max(0.04, Math.min(1, (Date.now() - hamTs(mk.t)) / MOCK_LIVE_MS));
+  const gwKey = `gw${GAMEWEEKS[mk.gw].n}`;
+  const memo = `${mk.gw}:${mk.phase}:${mk.seed}:${final ? 'F' : Math.floor(frac * 40)}`;
+  if (memo === mockMemo && state.matchStats[gwKey]?.label?.includes('simulation')) return false;
+  mockMemo = memo;
+  const ps = mockGwStats(mk.gw, +mk.seed || 1, frac);
+  if (mockPrevPS && state.phase === 'season') { try { vidiDiff(mk.gw, mockPrevPS, ps); } catch { /* the tape can miss a beat */ } }
+  mockPrevPS = ps;
+  state.matchStats[gwKey] = { gw: mk.gw, label: `GW${GAMEWEEKS[mk.gw].n} — simulation`, date: GAMEWEEKS[mk.gw].from, final, playerStats: ps };
+  mockGwKeyApplied = gwKey;
+  return true;
+}
+// the live sim advances on its own — nudge the page along once a minute
+setInterval(() => { if (SANDBOX && !demoMode && state.mock?.phase === 'live') { if (applyMock()) render(); } }, 60e3);
 function vidiCard(compact = false) {
   const live = anyMatchLive();
   if (!vidiFeed.length && !live) return '';
@@ -2547,6 +2621,7 @@ const SETUP_NAV = new Set(['club', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
+  applyMock(); // sandbox Simulation Chamber overlay — no-op everywhere else
   // keep keyboard focus across re-renders (remote updates land mid-typing)
   const ae = document.activeElement;
   const focusId = ae && ae.id && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') ? ae.id : null;
@@ -4098,13 +4173,13 @@ function viewTeam() {
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
       return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side">
-        <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
+        <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         ${adStrip(oppMid * 37 + gw, 3, oppMid)}
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
-            ${!gwHasStarted(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
+            ${!gwUnderway(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
           </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}</div>
         <div class="bench-strip">
           <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
@@ -4113,11 +4188,11 @@ function viewTeam() {
               <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
               ${kitImg(p.team, p.pos === 'GK')}
               <span class="pitch-name">${esc(p.name)}</span>
-              ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+              ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
             </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
       </div><div class="duel-side">
-        <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwHasStarted(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
+        <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
     ${(() => {
       // browsing someone else's team: every chip opens the player card.
@@ -4141,7 +4216,7 @@ function viewTeam() {
               ${info(p)}
               ${pic(p)}
               ${nameSpan(p)}
-              ${!gwHasStarted(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
+              ${!gwUnderway(gw) ? `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>` : `<span class="pitch-vs">${gwPlayerPoints(p.id, gw)} pts</span>`}
             </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}
         </div>`).join('')}
     </div>
@@ -4153,7 +4228,7 @@ function viewTeam() {
           ${info(p)}
           ${pic(p)}
           ${nameSpan(p)}
-          ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+          ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
         </div>`).join('')}
     </div>`;
     })()}
@@ -4942,7 +5017,7 @@ function viewDash() {
   const cur = currentGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
-  const started = gwHasStarted(cur);
+  const started = gwUnderway(cur); // display truth — a simulated GW counts
   const my = started ? gwManagerPoints(mid, cur) : projectedGwScore(mid, cur);
   const their = opp ? (started ? gwManagerPoints(opp, cur) : projectedGwScore(opp, cur)) : 0;
   const pct = pair ? Math.round(liveWinProb(pair[0], pair[1], cur) * 100) : null;
@@ -5360,7 +5435,7 @@ function dashMiniPitch(mid, gw) {
       <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
-        ${gwHasStarted(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
       </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div></div>`;
 }
 function bindDash() {
@@ -6415,10 +6490,45 @@ function viewSettings() {
       <p class="rules-p">&sect;8 The hydration break is inviolable.</p>
       <p class="rules-p muted" style="font-style:italic">Amendments require a Committee majority and will be ignored regardless. Full rules on the Rules page.</p>
     </div>
+    ${SANDBOX && (!netOn() || isCommissioner()) ? (() => {
+      const mk = state.mock;
+      const cur = currentGwIndex();
+      const gw = mk?.gw ?? cur;
+      const stateLine = !mk ? 'The chamber is dark. No simulation running.'
+        : mk.phase === 'live' ? `GW${GAMEWEEKS[mk.gw].n} is being simulated LIVE — points land over ~20 minutes. Watch the dashboard.`
+        : `GW${GAMEWEEKS[mk.gw].n} simulation is at FULL TIME — table, awards and results all count it.`;
+      return `<div class="card" style="border-color:var(--gold,#d4af37)">
+      <h2>The Simulation Chamber <span class="tag">sandbox only</span></h2>
+      <p class="muted" style="font-size:12.5px">Pretend matchday for the real drafted squads — every device sees identical made-up stats. ${esc(stateLine)}</p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+        <select id="mockGw" style="font-size:12px">${GAMEWEEKS.slice(0, REGULAR_GWS).map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n}</option>`).join('')}</select>
+        <button class="btn small" id="mockLive">&#9654; Kick off (live)</button>
+        <button class="btn small" id="mockFinal">Full time</button>
+        <button class="btn ghost small" id="mockOff">Switch it off</button>
+      </div>
+      <p class="muted" style="font-size:10.5px;margin-top:6px">Then: drops go to waivers, lodge claims, and Run Waivers Now on the Transfers page plays the part of Tuesday 8pm. The real league has no such chamber.</p>
+    </div>`;
+    })() : ''}
   </div>`;
 }
 function bindSettings() {
   bindInstall();
+  // the Simulation Chamber (sandbox-only; server refuses everywhere else)
+  const mockAct = op => {
+    const gw = +($('#mockGw')?.value ?? currentGwIndex());
+    if (netOn()) {
+      serverAct('mockMatchday', { op, gw })
+        .then(() => toast(op === 'off' ? 'The chamber goes dark.' : op === 'live' ? `GW${GAMEWEEKS[gw].n} KICKS OFF — entirely imaginary, fiercely contested.` : `FULL TIME in the simulation. The results stand (in here).`))
+        .catch(() => {});
+      return;
+    }
+    state.mock = op === 'off' ? null : { gw, phase: op, seed: (state.mock?.gw === gw ? state.mock.seed : Math.floor(Math.random() * 999983)), t: state.mock?.gw === gw && state.mock?.phase === 'live' && op === 'live' ? state.mock.t : Date.now() };
+    applyMock(); save(); render();
+  };
+  for (const [id, op] of [['mockLive', 'live'], ['mockFinal', 'final'], ['mockOff', 'off']]) {
+    const el = $('#' + id);
+    if (el) el.onclick = () => mockAct(op);
+  }
   document.querySelectorAll('[data-score]').forEach(inp => inp.onchange = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner changes scoring'); render(); return; }
     if (netOn()) {

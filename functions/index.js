@@ -1063,6 +1063,31 @@ ACTIONS.hamAdmin = async ({ league, a, data, state, eng, ctx }) => {
   throw new HttpsError('invalid-argument', 'unknown op');
 };
 
+/* ----- the Simulation Chamber (sandbox ONLY) -----
+ * Stores the tiny {gw, phase, seed, t} flag; every client derives identical
+ * pretend stats from it locally. The seed is pinned per gameweek so live →
+ * full-time follows one consistent story; re-kicking a live sim keeps its
+ * clock. Hard-refused outside the sandbox league — the real league's results
+ * come from the FPL wire or not at all. */
+ACTIONS.mockMatchday = async ({ league, a, data }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  if (league !== 'the-league-sandbox') throw new HttpsError('failed-precondition', 'the Simulation Chamber only exists in the sandbox');
+  const ref = db().ref(`${leagueBase(league)}/public/mock`);
+  if (data.op === 'off') { await ref.set(null); return { ok: true }; }
+  if (!['live', 'final'].includes(data.op)) throw new HttpsError('invalid-argument', 'unknown op');
+  const gw = Number(data.gw);
+  if (!Number.isInteger(gw) || gw < 0 || gw >= Engine.REGULAR_GWS) throw new HttpsError('invalid-argument', 'no such gameweek');
+  const cur = (await ref.get()).val();
+  const sameGw = cur && cur.gw === gw;
+  await ref.set({
+    gw,
+    phase: data.op,
+    seed: sameGw ? cur.seed : (Date.now() % 999983) || 1,
+    t: sameGw && cur.phase === 'live' && data.op === 'live' ? cur.t : Date.now(),
+  });
+  return { ok: true };
+};
+
 /* ----- commissioner desk ----- */
 const POS_KEYS = ['GK', 'DF', 'MF', 'FW'];
 // squadSize + posMin + posMax must describe a squad that can actually exist
@@ -1300,8 +1325,10 @@ const IMPORT_ALLOWED = new Set([
   'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup',
   'claims', 'autolists',
 ]);
-// legacy-export debris: silently dropped, never imported
-const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready']);
+// legacy-export debris: silently dropped, never imported ('mock' = the
+// sandbox Simulation Chamber flag — a pretend matchday must never ride an
+// import into a league)
+const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock']);
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 

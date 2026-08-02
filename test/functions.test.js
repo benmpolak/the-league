@@ -856,6 +856,26 @@ const SB = 'the-league-sandbox';
   await T.mutate(LG, 'draftAutopick', {}, tok1).catch(() => {});
   await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
 
+  /* ----- the Simulation Chamber: sandbox-only mock matchday flag ----- */
+  chk('Simulation Chamber refuses the REAL league even for the Chairman',
+    (await T.mutate(LG, 'mockMatchday', { op: 'final', gw: 3 }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  chk('Simulation Chamber is Chairman-only in the sandbox',
+    (await T.mutate(SB, 'mockMatchday', { op: 'live', gw: 3 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  const mkLive = await T.mutate(SB, 'mockMatchday', { op: 'live', gw: 3 }, sbTok1);
+  const mkNode1 = (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val();
+  chk('Chairman kicks off a live sim: {gw, phase, seed, t} lands',
+    !mkLive.error && mkNode1?.gw === 3 && mkNode1?.phase === 'live' && Number.isInteger(mkNode1?.seed) && typeof mkNode1?.t === 'number',
+    JSON.stringify({ e: mkLive.error, mkNode1 }));
+  await T.mutate(SB, 'mockMatchday', { op: 'final', gw: 3 }, sbTok1);
+  const mkNode2 = (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val();
+  chk('full time keeps the same seed — one consistent story from live to final',
+    mkNode2?.phase === 'final' && mkNode2?.seed === mkNode1?.seed, JSON.stringify(mkNode2));
+  chk('Simulation Chamber refuses a gameweek outside the regular season',
+    (await T.mutate(SB, 'mockMatchday', { op: 'live', gw: 99 }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  await T.mutate(SB, 'mockMatchday', { op: 'off' }, sbTok1);
+  chk('switch-off clears the chamber node',
+    (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val() === null);
+
   server.close();
   run.done();
 })().catch(e => { console.error(e); process.exit(1); });
