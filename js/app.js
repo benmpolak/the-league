@@ -3801,9 +3801,11 @@ function bindScoutDesk(surface, rerender) {
 }
 
 let scoutCompare = [];
+// label lives in its own span so phones can swap it for a glyph (the full
+// word made the sticky action column wide enough to bury the player cell)
 const compareButtonHtml = pid => {
   const on = scoutCompare.includes(pid);
-  return `<button class="btn ghost small${on ? ' compare-on' : ''}" data-compare="${pid}" aria-pressed="${on}" title="${on ? 'Remove from comparison' : 'Add to comparison'}">${on ? '&#10003; Comparing' : 'Compare'}</button>`;
+  return `<button class="btn ghost small${on ? ' compare-on' : ''}" data-compare="${pid}" aria-pressed="${on}" title="${on ? 'Remove from comparison' : 'Add to comparison'}"><span class="cmp-txt">${on ? '&#10003; Comparing' : 'Compare'}</span></button>`;
 };
 function compareOwner(pid) {
   return state.managers.find(m => managerSquad(m.id).some(p => p.id === pid));
@@ -3813,7 +3815,7 @@ function paintScoutCompare() {
     const on = scoutCompare.includes(+b.dataset.compare);
     b.classList.toggle('compare-on', on);
     b.setAttribute('aria-pressed', String(on));
-    b.innerHTML = on ? '&#10003; Comparing' : 'Compare';
+    b.innerHTML = `<span class="cmp-txt">${on ? '&#10003; Comparing' : 'Compare'}</span>`;
   });
   let fab = document.getElementById('scoutCompareFab');
   if (!scoutCompare.length) {
@@ -3929,7 +3931,7 @@ function poolTable() {
       ${rows.map(p => `
       <tr class="${statusClass(p)}">
         ${canQueue ? `<td class="bulk-check"><input type="checkbox" data-bulk-pid="${p.id}" aria-label="Select ${esc(p.name)} for the autopick queue" ${bulkQueueIds.has(p.id) ? 'checked' : ''}></td>` : ''}
-        <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${esc(p.full)}</div></div></div></td>
+        <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${esc(p.full)}</div></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
@@ -4629,7 +4631,7 @@ function viewTransfers() {
   if (tab === 'trades') {
     const block = state.managers.flatMap(m => blockList(m.id).map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid] })).filter(x => x.p));
     return `${head}<div class="card" style="margin-bottom:14px">
-      <h2>The Trade Block <span class="muted" style="font-weight:400;font-size:12px">publicly up for grabs — make an offer</span></h2>
+      <h2>The Transfer List <span class="muted" style="font-weight:400;font-size:12px">publicly up for grabs — make an offer</span></h2>
       ${block.length ? block.map(({ mid: bm, p }) => `<div class="lrow" style="font-size:12.5px">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
         <b style="margin-left:6px">${esc(teamName(bm))}</b>
@@ -4644,7 +4646,7 @@ function viewTransfers() {
           ${managerSquad(mid).filter(p => !blockList(mid).includes(p.id)).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `<div class="lrow" style="font-size:12.5px">
             <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
             <button class="btn small" data-blockpick="${p.id}" style="margin-left:auto">List</button>
-          </div>`).join('') || '<p class="muted" style="font-size:12px">Your whole squad is already on the block. Bold strategy.</p>'}
+          </div>`).join('') || '<p class="muted" style="font-size:12px">Your whole squad is already transfer-listed. Bold strategy.</p>'}
         </div>` : ''}
       </div>` : ''}
     </div>
@@ -4848,7 +4850,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td><div class="pcell">${photoImg(p)}<div><div class="pname">${esc(p.name)} ${natFlag(p)}</div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; on the block</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
@@ -4980,14 +4982,14 @@ function bindTransfers() {
   const ba = $('#blockAdd');
   if (ba) ba.onclick = () => { transfersView.blockPick = !transfersView.blockPick; render(); };
   document.querySelectorAll('[data-blockpick]').forEach(b => b.onclick = () => {
-    if (!actGuard(mid, 'trade block')) return;
+    if (!actGuard(mid, 'transfer list')) return;
     const p = PLAYER_BY_ID[+b.dataset.blockpick];
     transfersView.blockPick = false;
     toggleBlock(mid, +b.dataset.blockpick);
-    toast(`${p.name} is on the block. Offers invited.`);
+    toast(`${p.name} is on the transfer list. Offers invited.`);
   });
   document.querySelectorAll('[data-unblock]').forEach(b => b.onclick = () => {
-    if (!actGuard(mid, 'trade block')) return;
+    if (!actGuard(mid, 'transfer list')) return;
     toggleBlock(mid, +b.dataset.unblock);
   });
   document.querySelectorAll('[data-blocktrade]').forEach(b => b.onclick = () => {
@@ -6806,10 +6808,10 @@ function showPlayerCard(pid) {
       });
     } else {
       const listed = blockList(whoami).includes(pid);
-      btn(listed ? 'Take off the trade block' : '&#128276; Put on the trade block', () => {
+      btn(listed ? 'Take off the transfer list' : '&#128276; Put on the transfer list', () => {
         ov.remove();
         toggleBlock(whoami, pid);
-        toast(listed ? `${p.name} quietly delisted.` : `${p.name} is on the block. Offers invited.`);
+        toast(listed ? `${p.name} quietly delisted.` : `${p.name} is on the transfer list. Offers invited.`);
       }, true);
       // one mandatory Lobus per manager (ledger #1) — changeable until GW1 kicks off
       const myLob = state.lobus?.[whoami];

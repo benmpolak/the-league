@@ -212,8 +212,25 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 }
 .pool-table tr:hover td.act { background: var(--card2); }
 .pcell { display: flex; align-items: center; gap: 10px; }
-.pcell .pname { font-weight: 600; }
+.pcell > div:last-child { min-width: 0; }
+/* the NAME ellipsizes in its own span; the flag sits outside the clip so it
+   can never render half-Italy-as-Algeria (Marc, 2 Aug) */
+.pcell .pname { font-weight: 600; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pcell .pname .pn-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcell .pname .nat-flag { flex: none; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
+/* phones: cap the player cell so name + flag stop short of the sticky
+   action column instead of sliding underneath it (Marc's screenshot — a
+   display-zoomed iPhone put the Sign overlay on top of Tonali's flag), and
+   compare goes icon-only so the action column stops being a third of the
+   screen. max-width must sit on .pcell — table auto-layout ignores it on td */
+@media (max-width: 700px) {
+  /* 192px ≈ sticky action column + cell padding at its widest (trough) —
+     leaves the whole name+flag visible at scroll 0 even on a 320px screen */
+  .pool-table td.pcol .pcell { max-width: calc(100vw - 192px); }
+  .pool-table .act .cmp-txt { display: none; }
+  .pool-table .act [data-compare]::before { content: '\2942'; font-size: 14px; }
+}
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .show-more { text-align: center; padding: 14px; }
 

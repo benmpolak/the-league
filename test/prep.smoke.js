@@ -166,7 +166,7 @@ const chk = (name, ok, detail = '') => {
 
   // ---- same-session group-chat fixes (Marc + Toby, 2 Aug) ----
 
-  // P10: trade block — list YOUR OWN player straight from the block card
+  // P10: transfer list — list YOUR OWN player straight from the card
   const p10 = await page.evaluate(() => {
     state = buildDemoState();
     state.view = 'transfers';
@@ -186,7 +186,7 @@ const chk = (name, ok, detail = '') => {
     const delist = !!document.querySelector(`[data-unblock="${pid}"]`);
     return { addBtn: true, rows, before, listed: after.includes(pid), grew: after.length === before + 1, delist, pickerClosed: !document.querySelector('[data-blockpick]') };
   });
-  chk('P10 own player listable from the Trade Block card, delist appears',
+  chk('P10 own player listable from the Transfer List card, delist appears',
     p10.addBtn && p10.rows > 10 && p10.listed && p10.grew && p10.delist && p10.pickerClosed,
     JSON.stringify(p10));
 
@@ -209,6 +209,20 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P11 search flags laid out whole at 320px (no half-Italy Algeria)',
     p11.flags > 0 && p11.bad === 0 && p11.nm, JSON.stringify(p11));
+
+  // P11b: trough pool at 320 — flag leads the name and clears the sticky action column
+  const p11b = await page.evaluate(() => {
+    transfersView = { ...transfersView, tab: 'trough', scope: 'free' };
+    state.view = 'transfers'; render();
+    const flag = document.querySelector('.pool-table .nat-flag');
+    if (!flag) return { flag: false };
+    const fr = flag.getBoundingClientRect();
+    const act = flag.closest('tr').querySelector('td.act').getBoundingClientRect();
+    const txt = flag.closest('.pname').querySelector('.pn-txt');
+    return { flag: true, clear: fr.right < act.left, first: fr.left <= txt.getBoundingClientRect().left, w: fr.width };
+  });
+  chk('P11b trough flags lead the name and clear the sticky Sign column at 320px',
+    p11b.flag && p11b.clear && p11b.first && p11b.w > 10, JSON.stringify(p11b));
 
   chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 
