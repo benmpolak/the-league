@@ -4981,7 +4981,7 @@ function viewDash() {
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
       <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>
-      <div class="mu-grid" style="margin-top:10px">
+      <div class="mu-grid dash-mu" style="margin-top:10px">
         ${pair.map(pmid => `<div>
           <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
           ${dashMiniPitch(pmid, cur)}
