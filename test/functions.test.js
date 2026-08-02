@@ -465,6 +465,10 @@ const SB = 'the-league-sandbox';
   chk('heckle cooldown: instant second attempt refused',
     (await T.mutate(SB, 'heckle', { line: 1 }, sbTok3)).error?.status === 'RESOURCE_EXHAUSTED');
   chk('junk heckle line rejected', (await T.mutate(SB, 'heckle', { line: 999 }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  // custom words (mock-draft round): stored cleaned, empty refused
+  chk('custom heckle text lands', !(await T.mutate(SB, 'heckle', { text: '  GET ON WITH IT  ' }, sbTok2)).error
+    && (await db.ref(`v2/leagues/${SB}/public/heckles/2/text`).get()).val() === 'GET ON WITH IT');
+  chk('empty custom heckle refused', (await T.mutate(SB, 'heckle', { text: '   ' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('out-of-turn pick rejected', (await T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   const [p1, p2] = await Promise.all([
     T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok1),

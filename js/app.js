@@ -89,32 +89,6 @@ const COMMITTEE_QUOTES = [
 ];
 const committeeSays = () => `The Committee: “${COMMITTEE_QUOTES[Math.floor(Math.random() * COMMITTEE_QUOTES.length)]}”`;
 
-const INTERCEPTS = [
-  '{name} is on the clock. The group chat has already moved on to discussing his mistake.',
-  'Eleven managers watch {name} type… stop typing… and type again.',
-  '{name} has three tabs open and none of them are helping.',
-  'Sources close to {name} confirm the plan was abandoned two picks ago.',
-  'The autodraft list watches {name} silently. Judging. (RIP Lints.)',
-  '{name} once spent ten years on the waiting list for this. Worth it, apparently.',
-  'A £4.0 defender trembles somewhere as {name} deliberates.',
-  '{name} is consulting the same podcast as everyone else. The edge is imaginary.',
-  'Committee reminder for {name}: it’s only a game and doesn’t really matter BUT—',
-  '{name} hesitates. Somewhere, Blanky mutters that it’s all irrelevant post GW10.',
-];
-const interceptFor = (n, name) =>
-  INTERCEPTS[n % INTERCEPTS.length].replaceAll('{name}', name);
-
-const WEEKLY_MINUTES = [
-  'COMMITTEE MINUTES — {L} tops the table and has already drafted the acceptance speech. {B} has enquired about the Chumpionship. The Chumpionship no longer exists.',
-  'COMMITTEE MINUTES — {L}’s form is noted “with suspicion”. {B}’s ROI per gameweek has been recalculated and it’s upsetting.',
-  'COMMITTEE MINUTES — {L} claims it’s all about process. {B} claims it’s all irrelevant post GW10. One of them is coping.',
-  'COMMITTEE MINUTES — the waiting list (est. wait: 10 years) has submitted a formal complaint that {B} is wasting a seat.',
-  'COMMITTEE MINUTES — {L} has been reported to the Committee for competence. {B} remains under no such suspicion.',
-];
-const investigationLine = (L, B) => {
-  const day = new Date().getDate();
-  return WEEKLY_MINUTES[day % WEEKLY_MINUTES.length].replaceAll('{L}', L).replaceAll('{B}', B);
-};
 
 /* ---------------- gameweeks ---------------- */
 // Generated from the FPL API — a gameweek runs from its deadline to the next one's
@@ -137,7 +111,15 @@ const gwHasStarted = i => Date.now() > new Date(gwFrom(i)).getTime();
 // played. A Tuesday waiver run happens inside the just-finished GW's window,
 // so its signings must count for the NEXT gameweek, or they'd retroactively
 // rescore a settled result (the worst bug a 12-year league could have).
-const transferGw = () => { const c = currentGwIndex(); return Math.min(c + (gwHasStarted(c) ? 1 : 0), GAMEWEEKS.length - 1); };
+const transferGw = () => {
+  const c = currentGwIndex();
+  let g = c + (gwHasStarted(c) ? 1 : 0);
+  // a Simulation Chamber matchday counts as "being played" — deals land next GW
+  const mk = state.mock;
+  if (mk && mk.gw != null && GAMEWEEKS[mk.gw]
+    && (mk.phase === 'live' || (mk.phase === 'final' && lastWaiverRun() < hamTs(mk.t)))) g = Math.max(g, mk.gw + 1);
+  return Math.min(g, GAMEWEEKS.length - 1);
+};
 // stats for a gameweek land under key 'gw{n}' — no date-window matching needed
 const gwEvent = i => state.matchStats[`gw${GAMEWEEKS[i].n}`];
 // round robin (circle method): 11 unique rounds for 12 managers, repeated three times
@@ -758,7 +740,38 @@ function nextOppHtml(club, gwN) {
 // clickable player name — opens the stats card, usable in any text row
 const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}</span>` : '?';
 // expected points next gameweek: FPL's own projection, then points-per-game, then a guess
-const playerXp = p => (p.xp > 0 ? p.xp : p.ppg > 0 ? p.ppg : p.pts > 0 ? p.pts / 38 : lastSeasonOf(p)?.ppg || p.price / 4);
+/* Projections in OUR currency (Marc, mock night: "Garner projected top MF" —
+   FPL's carried-forward ppg pays bonus + defensive-contribution points this
+   league doesn't score). Rebuild expected points from raw stats under league
+   scoring; once real gameweeks exist, blend toward the live league ppg. */
+function leagueArchivePpg(p) {
+  const sc = (state.settings && state.settings.scoring) || DEFAULT_SCORING;
+  const ls = lastSeasonOf(p);
+  const src = ls && ls.mp ? ls : (!FPL_WIPED && p.mp ? { mp: p.mp, g: p.g || 0, a: p.a || 0, cs: p.cs || 0 } : null);
+  if (!src) return 0;
+  const apps = src.mp / 90;
+  if (apps < 3) return 0; // too small a sample to call a projection
+  const csPts = p.pos === 'GK' || p.pos === 'DF' ? (sc.cleanSheet ?? 4) : p.pos === 'MF' ? (sc.cleanSheetMF ?? 1) : 0;
+  const pts = apps * ((sc.appearanceStart ?? 2) * 0.85) // some of those apps were sub outings
+    + src.g * (sc['goal' + p.pos] ?? 4) + src.a * (sc.assist ?? 3) + (src.cs || 0) * csPts
+    + (p.pos === 'GK' ? apps * 0.5 : 0)                  // save/pen-save points, roughly
+    - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0); // goals-conceded drag, roughly
+  return Math.max(0.5, pts / apps);
+}
+const playerXp = p => {
+  // NB: metricsFor() calls this (via projPts) mid-build — going back through
+  // metricsFor here would recurse. playerPoints() is the safe primitive.
+  const arch = leagueArchivePpg(p);
+  if (seasonHasStats()) {
+    const { pts, agg } = playerPoints(p.id);
+    if (agg.app > 0) {
+      const ppg = pts / agg.app;
+      const w = Math.min(1, agg.app / 6); // trust the real season more each week
+      return ppg * w + (arch || ppg) * (1 - w);
+    }
+  }
+  return arch > 0 ? arch : (p.ppg > 0 ? p.ppg * 0.75 : p.price / 4);
+};
 const projectedGwScore = (mid, gwIdx) =>
   Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => t + playerXp(PLAYER_BY_ID[pid]), 0));
 // waiver/deadline times shown in the reader's OWN timezone — a UK league does
@@ -1615,8 +1628,14 @@ function waiverRunDue() {
   }
   return false;
 }
-// Trough state under auto control — closed during play, reopens post-waivers
+// Trough state under auto control — closed during play, reopens post-waivers.
+// A Simulation Chamber matchday closes it on the mock clock (mirrors engine.js).
 function troughWindow() {
+  const mk = state.mock;
+  if (mk && mk.gw != null) {
+    if (mk.phase === 'live') return { open: false, until: null, why: 'the gameweek is underway (simulation)' };
+    if (mk.phase === 'final' && lastWaiverRun() < hamTs(mk.t)) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run (simulation)' };
+  }
   const t = Date.now();
   let cur = -1;
   for (let g = 0; g < GAMEWEEKS.length; g++) {
@@ -2396,34 +2415,112 @@ function vidiDiff(gwIdx, oldPS, newPS) {
    action hard-refuses outside the-league-sandbox. ----- */
 const MOCK_LIVE_MS = 20 * 60e3;
 function mockRnd(seed) { let s = (seed >>> 0) || 1; return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648; }
+/* Real scorelines first, player stats second (Ben, mock night: "annoyed me
+   that in the test they didn't make up real game scores"). Each fixture gets a
+   deterministic score with goal minutes; player stats are then derived FROM the
+   scoreline — goals sum to the team's total, clean sheets exist only when the
+   opponent actually failed to score, conceded counts match, and the patched
+   fixtures make win-prob "still to play" honest (Toby's 38–28 "11 v 11" bar). */
+function mockScorelines(gwIdx, seed) {
+  const gwN = GAMEWEEKS[gwIdx].n;
+  const score = rnd => { const r = rnd(); return r < 0.28 ? 0 : r < 0.62 ? 1 : r < 0.85 ? 2 : r < 0.96 ? 3 : 4; };
+  const teams = {}, fixtures = [];
+  for (const f of state.fixtures.filter(x => x.gw === gwN)) {
+    const rnd = mockRnd(seed * 6151 + (f.id || 0) * 30011);
+    const hs = score(rnd), as = score(rnd);
+    const ht = Array.from({ length: hs }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
+    const at = Array.from({ length: as }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
+    fixtures.push({ f, ht, at });
+    teams[f.home] = { times: ht, oppTimes: at };
+    teams[f.away] = { times: at, oppTimes: ht };
+  }
+  return { teams, fixtures };
+}
 function mockGwStats(gwIdx, seed, frac) {
   const ps = {};
   const featured = new Set();
   for (const m of state.managers) for (const p of squadAt(m.id, gwIdx)) featured.add(p.id);
   for (const arr of Object.values(state.hamCup?.entries || {})) for (const pid of toArr(arr)) featured.add(+pid);
+  const { teams } = mockScorelines(gwIdx, seed);
+  const haveFixtures = Object.keys(teams).length > 0;
+  const elapsed = Math.round(90 * frac);
+  // pass 1: who featured, and for how long
+  const roster = []; // {p, started, mins}
   for (const pid of featured) {
     const p = PLAYER_BY_ID[pid];
     if (!p) continue;
+    if (haveFixtures && !teams[p.team]) continue; // blank GW for his club — didn't play, honestly
     const rnd = mockRnd(seed * 7919 + pid * 104729);
-    if (rnd() < 0.07) continue; // didn't feature this week
+    if (rnd() < 0.07) continue; // left out this week
     const started = rnd() < 0.85;
-    const late = !started;
-    const mins = Math.round(90 * frac * (late ? 0.3 : 1));
-    if (!mins) continue;
-    const s = { min: mins, st: started ? 1 : 0, sub: late ? 1 : 0, g: 0, a: 0, cs: 0, gc: 0, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 };
-    const atk = p.pos === 'FW' ? 0.32 : p.pos === 'MF' ? 0.20 : p.pos === 'DF' ? 0.07 : 0.01;
-    for (let e = 0; e < 3; e++) {
-      const at = rnd(), roll = rnd(), roll2 = rnd(); // event slot: lands once the sim reaches its minute
-      if (at >= frac) continue;
-      if (roll < atk) s.g++;
-      else if (roll2 < 0.20) s.a++;
+    const mins = started ? elapsed : Math.max(0, elapsed - 60); // subs enter on the hour
+    if (!mins) continue; // not on the pitch yet — no stat line
+    roster.push({ p, rnd, started, mins });
+  }
+  const byTeam = {};
+  for (const r of roster) (byTeam[r.p.team] = byTeam[r.p.team] || []).push(r);
+  // pass 2: hand each team's ACTUAL goals to plausible scorers (or to an
+  // unlisted teammate — not every Premier League goal is owned in this league)
+  const goalW = { FW: 5, MF: 3, DF: 1, GK: 0.05 };
+  const credit = {}; // pid -> {g:[times], a:[times]}
+  for (const [team, sl] of Object.entries(teams)) {
+    const squad = byTeam[team] || [];
+    const rnd = mockRnd(seed * 13007 + team.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 251);
+    for (const t of sl.times) {
+      const pool = squad.filter(r => r.started || t > 60); // late subs can't score early goals
+      const tw = pool.reduce((a, r) => a + goalW[r.p.pos], 0);
+      // roughly: the more of the XI this league owns, the likelier the scorer is owned
+      if (pool.length && rnd() < Math.min(0.85, 0.25 + pool.length * 0.08)) {
+        let pickAt = rnd() * tw;
+        const scorer = pool.find(r => (pickAt -= goalW[r.p.pos]) <= 0) || pool[pool.length - 1];
+        (credit[scorer.p.id] = credit[scorer.p.id] || { g: [], a: [] }).g.push(t);
+        const helpers = pool.filter(r => r !== scorer && r.p.pos !== 'GK');
+        if (helpers.length && rnd() < 0.6) {
+          const h = helpers[Math.floor(rnd() * helpers.length)];
+          (credit[h.p.id] = credit[h.p.id] || { g: [], a: [] }).a.push(t);
+        }
+      }
     }
+  }
+  // pass 3: the stat lines, consistent with the scoreboard so far
+  for (const { p, rnd, started, mins } of roster) {
+    const sl = teams[p.team];
+    const conceded = sl ? sl.oppTimes.filter(t => t <= elapsed).length : 0;
+    const cr = credit[p.id] || { g: [], a: [] };
+    const s = {
+      min: mins, st: started ? 1 : 0, sub: started ? 0 : 1,
+      g: cr.g.filter(t => t <= elapsed).length,
+      a: cr.a.filter(t => t <= elapsed).length,
+      cs: sl && conceded === 0 && elapsed >= 60 && mins >= 60 ? 1 : 0,
+      gc: conceded, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0,
+    };
     if (rnd() < 0.10 && rnd() < frac) s.yc = 1;
-    if (p.pos === 'GK') s.sv = Math.floor(rnd() * 6 * frac);
-    if (frac >= 1 && p.pos !== 'FW' && rnd() < 0.33) s.cs = 1;
-    ps[pid] = s;
+    if (p.pos === 'GK') s.sv = Math.min(9, Math.floor(rnd() * 4 * frac) + (conceded ? 1 : 0));
+    ps[p.id] = s;
   }
   return ps;
+}
+// the pretend scoreboard goes on the real fixture list (and comes off it
+// cleanly) — matchNeeds/win-prob read fixtures, so the mock must feed them
+let mockFxSaved = null;
+function patchMockFixtures(mk, frac, final) {
+  const { fixtures } = mockScorelines(mk.gw, +mk.seed || 1);
+  const elapsed = Math.round(90 * frac);
+  mockFxSaved = mockFxSaved || {};
+  for (const { f, ht, at } of fixtures) {
+    if (!(f.id in mockFxSaved)) mockFxSaved[f.id] = { hs: f.hs, as: f.as, started: f.started, finished: f.finished, minutes: f.minutes };
+    f.hs = ht.filter(t => t <= elapsed).length;
+    f.as = at.filter(t => t <= elapsed).length;
+    f.started = true; f.finished = !!final; f.minutes = elapsed;
+  }
+}
+function unpatchMockFixtures() {
+  if (!mockFxSaved) return;
+  for (const f of state.fixtures) {
+    const sv = mockFxSaved[f.id];
+    if (sv) Object.assign(f, sv);
+  }
+  mockFxSaved = null;
 }
 let mockPrevPS = null, mockMemo = '', mockGwKeyApplied = null;
 // returns true when the overlay changed (callers may re-render)
@@ -2432,6 +2529,7 @@ function applyMock() {
   const mk = state.mock;
   if (!mk || mk.gw == null || !GAMEWEEKS[mk.gw]) {
     // chamber switched off — remove only what WE injected, never real stats
+    unpatchMockFixtures();
     if (mockGwKeyApplied && String(state.matchStats[mockGwKeyApplied]?.label || '').includes('simulation')) {
       delete state.matchStats[mockGwKeyApplied];
       mockGwKeyApplied = null; mockPrevPS = null; mockMemo = '';
@@ -2442,6 +2540,8 @@ function applyMock() {
   const final = mk.phase === 'final';
   const frac = final ? 1 : Math.max(0.04, Math.min(1, (Date.now() - hamTs(mk.t)) / MOCK_LIVE_MS));
   const gwKey = `gw${GAMEWEEKS[mk.gw].n}`;
+  // fixtures re-patch every pass — a feed sync can silently replace the array
+  patchMockFixtures(mk, frac, final);
   const memo = `${mk.gw}:${mk.phase}:${mk.seed}:${final ? 'F' : Math.floor(frac * 40)}`;
   if (memo === mockMemo && state.matchStats[gwKey]?.label?.includes('simulation')) return false;
   mockMemo = memo;
@@ -3033,14 +3133,17 @@ function viewSetup() {
     ${prepCard()}
     ${readyRoomCard()}
     <div class="card">
-      <h2>Managers</h2>
+      <h2>Managers &amp; draft order</h2>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The list below IS the draft order — first listed picks first. Drag rows (or use the arrows) to set it, or shuffle it and let the envelopes decide.</p>
       ${m.map((mg, i) => `
-        <div class="mgr-row">
-          <span class="mgr-num">${i + 1}</span>
+        <div class="mgr-row" data-mgrdrag="${i}">
+          <span class="mgr-num" draggable="true" title="Drag to reorder" style="cursor:grab">${i + 1}</span>
           <input type="text" maxlength="24" placeholder="Manager ${i + 1} name" data-mgr="${mg.id}" value="${esc(mg.name)}">
           <input type="text" maxlength="28" placeholder="Team name" data-mgrteam="${mg.id}" value="${esc(mg.team || '')}">
           <button class="btn ghost small" data-mgrup="${i}" ${i === 0 ? 'disabled' : ''} title="Move up the draft order">&#9650;</button>
+          <button class="btn ghost small" data-mgrdn="${i}" ${i === m.length - 1 ? 'disabled' : ''} title="Move down the draft order">&#9660;</button>
         </div>`).join('')}
+      <button class="btn ghost small" id="shuffleOrder" style="margin-top:8px">&#127922; Shuffle the order</button>
       <p class="muted" style="font-size:11.5px;margin-top:8px">First manager listed is the commissioner. Team names pulled from the archive — correct as you see fit.</p>
     </div>
     <div class="card">
@@ -3064,8 +3167,8 @@ function viewSetup() {
       </div>
       <div class="setup-total" id="setupTotal"></div>
     </div>
-    <button class="btn" id="startDraft" style="padding:14px;font-size:16px">Randomise order &amp; start the draft</button>
-    <button class="btn ghost" id="startDraftOrdered" style="padding:12px">Start in the order listed above</button>
+    <button class="btn" id="startDraftOrdered" style="padding:14px;font-size:16px">Start the draft &mdash; in the order listed</button>
+    <button class="btn ghost" id="startDraft" style="padding:12px">Shuffle the order &amp; start</button>
     <button class="btn ghost" id="demoBtn">Have a look around first — demo a finished season</button>
   </div>`;
 }
@@ -3110,6 +3213,37 @@ function bindSetup() {
     const i = +b.dataset.mgrup;
     [state.managers[i - 1], state.managers[i]] = [state.managers[i], state.managers[i - 1]];
     render();
+  });
+  document.querySelectorAll('[data-mgrdn]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.mgrdn;
+    if (i >= state.managers.length - 1) return;
+    [state.managers[i], state.managers[i + 1]] = [state.managers[i + 1], state.managers[i]];
+    render();
+  });
+  const sh = $('#shuffleOrder');
+  if (sh) sh.onclick = () => {
+    state.managers.sort(() => Math.random() - 0.5);
+    toast('Order shuffled. What you see is what you draft.');
+    render();
+  };
+  // drag a manager row to a new slot by its number handle (Marc, mock night:
+  // set the order by hand) — the handle drags so the name inputs still select
+  document.querySelectorAll('[data-mgrdrag]').forEach(row => {
+    const handle = row.querySelector('.mgr-num');
+    if (handle) handle.ondragstart = e => { e.dataTransfer.setData('text/mgr', row.dataset.mgrdrag); e.dataTransfer.effectAllowed = 'move'; };
+    row.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+    row.ondrop = e => {
+      e.preventDefault();
+      const from = +e.dataTransfer.getData('text/mgr');
+      if (Number.isNaN(from)) return;
+      const rect = row.getBoundingClientRect();
+      let to = +row.dataset.mgrdrag + (e.clientY > rect.top + rect.height / 2 ? 1 : 0);
+      if (from < to) to--;
+      if (from === to) return;
+      const [mv] = state.managers.splice(from, 1);
+      state.managers.splice(to, 0, mv);
+      render();
+    };
   });
   const startDraft = randomise => {
     // only the Chairman pulls this trigger — sign in first if the device hasn't
@@ -3203,7 +3337,7 @@ function showCeremony() {
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
     { h: '&#127884; THE PARADE OF CLUBS', p: '', parade: true },
     { h: '&#127908; Main stage', p: 'Coldplay perform Viva la Vida in its 9-minute extended ceremony arrangement. Chris Martin has been told this is a twelve-man WhatsApp league that left its old website over £145. He says every revolution is beautiful.' },
-    { h: '&#129309; The draw', p: 'The Committee shuffles the envelopes. The order is random. The complaints will not be.' },
+    { h: '&#129309; The draw', p: 'The Committee opens the envelopes. The order is final. The complaints will not be.' },
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
@@ -3229,7 +3363,6 @@ function showCeremony() {
         <button class="btn ghost small" id="cerSkip" title="Reserved for Ian">Skip ceremony (Ian's button)</button>
       </div></div>`;
     if (s.parade) {
-      playSound('sting');
       let f = 0;
       const nations = TEAMS;
       const showFlag = () => {
@@ -3266,6 +3399,9 @@ function drinksBreakAt(n) {
   if (n === Math.round(2 * t / 3)) return DRINKS_COPY[1];
   return null;
 }
+// a proper break, not a pit stop (Marc, mock night: "slightly too quick") —
+// the button unlocks after a 2-minute anthem countdown; the Chairman ends it.
+const DRINKS_BREAK_MS = 120000;
 function maybeDrinksBreak() {
   const ov = $('#drinksBreak');
   const n = pickNo();
@@ -3278,9 +3414,21 @@ function maybeDrinksBreak() {
   el.innerHTML = `<div class="card" style="max-width:480px;width:92%;text-align:center">
     <div style="font-size:46px;margin-bottom:8px">&#127866;</div>
     <h2>${drinksBreakAt(n)}</h2>
-    <button class="btn" id="breakDone" style="margin-top:16px">Back to the Console</button></div>`;
+    <p class="muted" style="font-size:12.5px;margin-top:10px">&#127928; Now playing over the tannoy: <b>Livin' on a Prayer</b> — Bon Jovi. Committee anthem, non-negotiable, requested by the Chairman himself.</p>
+    <button class="btn" id="breakDone" style="margin-top:16px" disabled>Back to the Console</button></div>`;
   document.body.appendChild(el);
-  $('#breakDone').onclick = () => {
+  playSound('bonjovi');
+  const opened = Date.now();
+  const bd = $('#breakDone');
+  const tick = setInterval(() => {
+    if (!document.body.contains(bd)) { clearInterval(tick); return; }
+    const left = Math.max(0, DRINKS_BREAK_MS - (Date.now() - opened));
+    if (!left) { bd.disabled = false; bd.textContent = 'Back to the Console'; clearInterval(tick); return; }
+    bd.textContent = `Halfway there… ${Math.floor(left / 60000)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}`;
+  }, 500);
+  bd.onclick = () => {
+    if (bd.disabled) return;
+    if (netOn() && !isCommissioner()) { toast('The Chairman calls everyone back in. Enjoy the break.'); return; }
     if (netOn()) { serverAct('draftAdmin', { op: 'breakDone', round: n }).catch(() => {}); return; }
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     state.draft.breaksDone = [...(state.draft.breaksDone || []), n];
@@ -3361,37 +3509,15 @@ function pundComment(pk) {
     `${p.name} at pick ${pk.n}. The Trough nods approvingly. Sticking with 2-1.`,
   ]) };
 }
-const CLUB_FACTS = {
- "Arsenal": "Once went a whole season unbeaten. Mentions it roughly once per whole season.",
- "Aston Villa": "One of the twelve founders of the Football League — the meeting was a Villa director's idea. They invented this, technically.",
- "Bournemouth": "The stadium holds about 11,000 people. There are secondary schools with more pupils.",
- "Brentford": "Famously had a pub on all four corners of their old ground. The new ground has a Wetherspoons-shaped hole in its heart.",
- "Brighton": "Nearly dropped out of the Football League in 1997. Now sells midfielders for £100m and it's considered a business model.",
- "Burnley": "Town of about 75,000 — among the smallest ever to win the top flight. Twice.",
- "Chelsea": "Signed so many players they ran out of squad numbers and loaned an entire second squad to Europe. Amortisation is a lifestyle.",
- "Crystal Palace": "The original Crystal Palace burned down in 1936. The football has occasionally matched it.",
- "Everton": "Spent more seasons in the top flight than anyone. Ben would like this noted formally in the minutes.",
- "Fulham": "Craven Cottage has an actual cottage in the corner. It's listed. The football is not.",
- "Leeds": "Under Bielsa, players were weighed daily and murderball was legal. Some of them are still running.",
- "Liverpool": "The anthem is from a 1945 musical. The bench mob knows all the words.",
- "Man City": "The 115 charges have their own Wikipedia page, several podcasts, and a defence bill bigger than most squads. The Committee declines to comment.",
- "Man Utd": "The scoreboard clock at Old Trafford has been showing 'time since last title' in the away end's heads for years.",
- "Newcastle": "Alan Shearer scored 206 goals for them and won nothing. The city named a stand, a statue and several children after him anyway.",
- "Nott'm Forest": "Won back-to-back European Cups with a manager who called himself 'in the top one'. Correctly.",
- "Sunderland": "'Til I Die has more Netflix seasons than they have recent top-half finishes. Both numbers are climbing.",
- "Spurs": "Invented the phrase 'it's the hope that kills you' in spirit, if not in law.",
- "West Ham": "Claim to have won the 1966 World Cup. Three players and a captain — the maths is theirs.",
- "Wolves": "In the 1950s they were unofficial champions of the world under floodlights. The Black Country remembers.",
-};
 
 function punditAva(pd) { return `<span class="pundit-ava ${pd.cls}" title="${pd.name}">${pd.init}</span>`; }
 function punditryDesk() {
   const recent = [...state.draft.picks].slice(-3).reverse();
+  // club trivia lines cut at the mock draft (Marc: funny, but too much space)
   const lines = recent.length ? recent.map(pk => {
     const c = pundComment(pk);
     const pd = PUNDITS[c.who];
-    const fact = CLUB_FACTS[PLAYER_BY_ID[pk.playerId].team];
-    return `<div class="pundit-line">${punditAva(pd)}<div><b>${pd.name}</b><p>${esc(c.line)}</p>${fact ? `<p class="country-fact">&#127757; ${esc(PLAYER_BY_ID[pk.playerId].team)}: ${esc(fact)}</p>` : ''}</div></div>`;
+    return `<div class="pundit-line">${punditAva(pd)}<div><b>${pd.name}</b><p>${esc(c.line)}</p></div></div>`;
   }).join('') : `<div class="pundit-line">${punditAva(PUNDITS.prutton)}<div><b>${PUNDITS.prutton.name}</b><p>Welcome to draft night, live and exclusive. Alongside me: Big Al, who's been here since the gallops; Jamie, who has literally never been more excited; and Ally, who loves all ${PLAYERS.length} players equally. Twelve managers, one title, and somewhere out there, a Lobus. I'm predicting 2-1.</p></div></div>`;
   return `<div class="card">
     <h2>The Punditry Desk <span class="tag">LIVE on Sky Sports The Console</span></h2>
@@ -3436,6 +3562,18 @@ function playSound(kind) {
       const g = c.createGain(); g.gain.value = 0.12;
       src.connect(f).connect(g).connect(c.destination); src.start();
       tone(c, 523, 0.1, 0.15); tone(c, 659, 0.25, 0.15); tone(c, 784, 0.4, 0.4, { gain: 0.09 });
+    } else if (kind === 'bonjovi') {
+      // Livin' on a Prayer, chorus, tannoy arrangement — the drinks-break
+      // anthem, commissioned by the Chairman mid-mock-draft. Synthesized like
+      // everything else here; Jon Bon Jovi was unavailable for licensing.
+      const N = { G4: 392, A4: 440, B4: 494, D5: 587 };
+      const riff = [
+        ['G4', 0, .28], ['A4', .3, .28], ['B4', .62, .55],          // whoa-oh-oh
+        ['B4', 1.35, .18], ['B4', 1.56, .18], ['A4', 1.77, .18], ['G4', 1.98, .18], ['A4', 2.2, .5], // we're half way there
+        ['G4', 2.95, .28], ['A4', 3.25, .28], ['D5', 3.57, .6],     // whoa-OH
+        ['B4', 4.25, .18], ['A4', 4.46, .18], ['G4', 4.67, .18], ['A4', 4.9, .7], // livin' on a prayer
+      ];
+      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'sawtooth', gain: 0.05 });
     } else if (kind === 'trombone') {
       // the universal sound of a bad decision
       tone(c, 466, 0, 0.25, { type: 'sawtooth', gain: 0.06, slideTo: 440 });
@@ -3448,19 +3586,30 @@ function playSound(kind) {
     }
   } catch { /* no audio available */ }
 }
-let seenPicks = null;
-function broadcastOnPick() {
-  const n = state.draft.picks.length;
-  if (seenPicks === null) { seenPicks = n; return; }
-  if (state.phase === 'draft' && n > seenPicks) {
-    const c = pundComment(state.draft.picks[n - 1]);
-    playSound(c.sound || 'sting');
-  }
-  seenPicks = n;
-}
+// pick-by-pick broadcast audio SACKED by the Chairman at the mock draft
+// (2 Aug: "will tell it to sack the noises"). The punditry desk still writes;
+// it just no longer parps. Do not re-add a sting per pick.
+function broadcastOnPick() {}
 
 /* ----- the console (draft) ----- */
 let poolFilter = { q: '', team: '', pos: '', sort: 'pts', limit: 60 };
+// which squad the side panel shows: yours, or the man on the clock's (Ben +
+// Marc, mock night: both, clearly labelled, yours first)
+let draftSquadTab = 'mine';
+function squadPanelHtml() {
+  const meValid = netOn() && whoami && whoami !== -1;
+  const showMid = meValid && draftSquadTab === 'mine' ? whoami : currentManagerId();
+  if (showMid == null) return '<span class="muted">No one on the clock.</span>';
+  const tabs = meValid ? `<div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn small ${draftSquadTab === 'mine' ? '' : 'ghost'}" data-sqtab="mine">My squad</button>
+      <button class="btn small ${draftSquadTab === 'clock' ? '' : 'ghost'}" data-sqtab="clock">On the clock</button>
+    </div>` : '';
+  return `${tabs}<h2>${esc(managerName(showMid))}'s squad${meValid && showMid === whoami ? ' <span class="tag">you</span>' : ''}</h2>
+    <div class="quota-bar">${quotaPills(showMid)}</div>
+    ${managerSquad(showMid).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `
+      <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}</div>
+    `).join('') || '<span class="muted">No picks yet</span>'}`;
+}
 
 function viewDraft() {
   if (state.phase === 'season') return viewDraftRecap();
@@ -3481,9 +3630,12 @@ function viewDraft() {
     }
     return null;
   })();
+  // the big board: whose pick it is must be readable from across the room
+  // (Ben, mock night: "it needs to be clearer that it's your pick — the names
+  // are too small"). The group-chat intercept strip died for the space.
   const whoLine = iAmUp
-    ? `<span style="color:var(--accent)">YOU'RE ON THE CLOCK</span>`
-    : `${esc(managerName(mid))} is on the clock${picksUntilMine ? ` &middot; <span style="color:var(--text)">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
+    ? `<span class="oc-label" style="color:var(--accent)">&#9201; YOUR PICK</span><span class="oc-name" style="color:var(--accent)">${esc(managerName(mid))}, you're on the clock</span>`
+    : `<span class="oc-label">ON THE CLOCK</span><span class="oc-name">${esc(managerName(mid))}</span>${picksUntilMine ? `<span class="oc-sub">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
   return `
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
     <div class="who">${whoLine}</div>
@@ -3493,13 +3645,12 @@ function viewDraft() {
       const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
       return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
     })()}</div>
-    <div class="intercept" id="interceptQ" title="Tap for the full quote"><span class="rec"></span><span class="int-q">LIVE FROM THE GROUP CHAT &mdash; &ldquo;${esc(interceptFor(n, managerName(mid)))}&rdquo;</span></div>
     <div class="oc-btns">
       ${state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
-      <button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>
+      ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
       ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
       <button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>
-      <button class="btn ghost small" id="heckleBtn" title="Send the room a randomised barb — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
+      <button class="btn ghost small" id="heckleBtn" title="Random barb, your own words, or a player recommendation — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
     </div>
   </div>
   <div class="clock-strip" id="clockStrip" style="display:none">
@@ -3519,12 +3670,8 @@ function viewDraft() {
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Drag players across, or &#9734; them in the pool.</p>
         ${autolistRows()}
       </div>` : ''}
-      <div class="card side-squad">
-        <h2>${esc(managerName(mid))}'s squad</h2>
-        <div class="quota-bar">${quotaPills(mid)}</div>
-        ${managerSquad(mid).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `
-          <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}</div>
-        `).join('') || '<span class="muted">No picks yet</span>'}
+      <div class="card side-squad" id="sideSquad">
+        ${squadPanelHtml()}
       </div>
       ${punditryDesk()}
       <div class="card">
@@ -3538,7 +3685,8 @@ function viewDraft() {
       </div>
     </div>
   </div>
-  ${queueDrawerHtml()}`;
+  ${queueDrawerHtml()}
+  ${squadDrawerHtml()}`;
 }
 
 // the pre-season Draft Console: same pool, same queue, no clock. The lads do
@@ -3599,6 +3747,18 @@ function queueDrawerHtml() {
   </div>`;
 }
 
+// phones: the squad panel scrolls miles below the pool, so it gets its own
+// drawer next to the queue's (Toby, mock night: "def need easy access to your squad")
+function squadDrawerHtml() {
+  if (state.phase !== 'draft') return '';
+  return `
+  <button class="btn ghost squad-fab" id="squadFab">&#128101; Squads</button>
+  <div class="queue-drawer${window._squadOpen ? ' open' : ''}" id="squadDrawer">
+    <div class="side-squad">${squadPanelHtml()}</div>
+    <button class="btn ghost small" id="squadClose" style="width:100%;margin-top:10px">Close</button>
+  </div>`;
+}
+
 /* one ranked queue, rendered in the sidebar and the phone drawer alike —
    with a warning where autopick would have to skip a name */
 function autolistRows() {
@@ -3631,17 +3791,78 @@ function renderHeckles() {
     if (!h || !h.t || h.t <= (seen[mid] || 0)) continue;
     seen[mid] = h.t;
     if (Date.now() - h.t > 12000) continue; // page-load catch-up: don't replay old barbs
-    heckleFlash(+mid, h.line);
+    heckleFlash(+mid, h);
   }
 }
-function heckleFlash(mid, line) {
-  const txt = (typeof HECKLES !== 'undefined' && HECKLES[line]) || 'HURRY UP.';
+function heckleFlash(mid, h) {
+  const txt = (h && typeof h.text === 'string' && h.text.trim())
+    || (typeof HECKLES !== 'undefined' && HECKLES[h?.line]) || 'HURRY UP.';
   const onClock = whoami && whoami !== -1 && currentManagerId() === whoami;
   const el = document.createElement('div');
   el.className = 'heckle-flash' + (onClock ? ' heckle-you' : '');
   el.innerHTML = `<span class="hk-who">${esc(managerName(mid))}</span> &ldquo;${esc(txt)}&rdquo;`;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), onClock ? 6000 : 4000);
+}
+
+/* the heckle desk (Marc, mock night): random barb, your own words, or a
+   player recommendation for the man on the clock. One channel, one cooldown. */
+function sendHeckle(payload) {
+  if (netOn()) { serverAct('heckle', payload).catch(() => {}); return; }
+  const mid = whoami || state.managers[0].id;
+  const last = state.heckles?.[mid]?.t || 0;
+  if (Date.now() - last < 15000) { toast('One heckle per 15 seconds — pace yourself.'); return; }
+  state.heckles = { ...(state.heckles || {}), [mid]: { ...payload, t: Date.now() } };
+  save(); render();
+}
+function heckleSheet() {
+  if ($('#heckleSheet')) return;
+  const taken = draftedIds();
+  const avail = PLAYERS.filter(p => !taken.has(p.id))
+    .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 300);
+  const onClockName = managerName(currentManagerId());
+  const ov = document.createElement('div');
+  ov.id = 'heckleSheet';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card" style="max-width:440px;width:92%">
+    <h2>&#128227; The heckle desk</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:10px">Lands on every screen, biggest on ${esc(onClockName)}'s. One per 15 seconds.</p>
+    <button class="btn" id="hkRandom" style="width:100%">&#127922; Random barb</button>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <input type="text" id="hkText" maxlength="90" placeholder="Or write your own…" style="flex:1;min-width:0">
+      <button class="btn ghost" id="hkSend">Send</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <input type="text" id="hkRec" list="hkRecList" placeholder="Or recommend ${esc(onClockName)} a player…" style="flex:1;min-width:0">
+      <datalist id="hkRecList">${avail.map(p => `<option value="${esc(p.name)} (${esc(p.club)})"></option>`).join('')}</datalist>
+      <button class="btn ghost" id="hkRecSend">Suggest</button>
+    </div>
+    <button class="btn ghost small" id="hkCancel" style="width:100%;margin-top:10px">Never mind</button>
+  </div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.onclick = e => { if (e.target === ov) close(); };
+  $('#hkCancel').onclick = close;
+  $('#hkRandom').onclick = () => {
+    sendHeckle({ line: Math.floor(Math.random() * (typeof HECKLES !== 'undefined' ? HECKLES.length : 1)) });
+    close();
+  };
+  $('#hkSend').onclick = () => {
+    const t = $('#hkText').value.trim();
+    if (!t) { toast('An empty heckle is just staring.'); return; }
+    sendHeckle({ text: t.slice(0, 90) });
+    close();
+  };
+  $('#hkText').onkeydown = e => { if (e.key === 'Enter') $('#hkSend').click(); };
+  $('#hkRecSend').onclick = () => {
+    const raw = $('#hkRec').value.trim();
+    if (!raw) { toast('Pick a player to push.'); return; }
+    const nm = raw.replace(/\s*\(.*\)\s*$/, '');
+    const p = avail.find(x => x.name === nm) || avail.find(x => normName(x.name) === normName(nm));
+    const text = p ? `recommends ${p.name} (${p.club}). No agenda whatsoever.` : `recommends "${raw.slice(0, 50)}". Spelling his own recommendation wrong, but go on.`;
+    sendHeckle({ text: text.slice(0, 90) });
+    close();
+  };
 }
 
 /* player klaxons — the group chat's commissioned alarms, fired as picks land */
@@ -4191,7 +4412,8 @@ function bindDraft() {
     save(); render();
   };
   bindPoolControls();
-  $('#undoPick').onclick = () => {
+  const up = $('#undoPick'); // rendered for the Chairman only (Marc, mock night)
+  if (up) up.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can undo a pick'); return; }
     if (netOn()) { serverAct('draftAdmin', { op: 'undo', expectedCount: state.draft.picks.length }).catch(() => {}); return; }
     state.draft.picks.pop();
@@ -4199,19 +4421,16 @@ function bindDraft() {
     if (state.settings.pickTimer) state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
     save(); render();
   };
-  const iq = $('#interceptQ');
-  if (iq) iq.onclick = () => iq.classList.toggle('open');
   const hk = $('#heckleBtn');
   if (hk) hk.onclick = () => {
     if (netOn() && (!whoami || whoami === -1)) { toast('Sign in to heckle. Rules are rules.'); return; }
-    const line = Math.floor(Math.random() * (typeof HECKLES !== 'undefined' ? HECKLES.length : 1));
-    if (netOn()) { serverAct('heckle', { line }).catch(() => {}); return; }
-    const mid = whoami || state.managers[0].id;
-    const last = state.heckles?.[mid]?.t || 0;
-    if (Date.now() - last < 15000) { toast('One heckle per 15 seconds — pace yourself.'); return; }
-    state.heckles = { ...(state.heckles || {}), [mid]: { line, t: Date.now() } };
-    save(); render();
+    heckleSheet();
   };
+  document.querySelectorAll('[data-sqtab]').forEach(b => b.onclick = () => { draftSquadTab = b.dataset.sqtab; render(); });
+  const sf = $('#squadFab'), sd = $('#squadDrawer');
+  if (sf) sf.onclick = () => { window._squadOpen = !window._squadOpen; sd?.classList.toggle('open', window._squadOpen); };
+  const sc = $('#squadClose');
+  if (sc) sc.onclick = () => { window._squadOpen = false; sd?.classList.remove('open'); };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
     // strictly the on-clock manager's call — their list, their pick. The
@@ -4740,6 +4959,20 @@ function viewTransfers() {
     ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
     <span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>
   </div>`;
+  // your own squad, always in view while you deal (Ben, mock night: "i dont
+  // like that you cant see your team on the transfer page")
+  const mySquadCard = (() => {
+    if (netOn() && (!whoami || whoami === -1)) return '';
+    const sq = squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
+    if (!sq.length) return '';
+    return `<details class="card" style="margin-bottom:14px" ${window._trSquadOpen ? 'open' : ''} id="trMySquad">
+      <summary style="cursor:pointer;font-weight:800">&#128101; ${esc(teamName(mid))} — my squad <span class="tag">${sq.length}</span> <span class="muted" style="font-weight:400;font-size:11.5px">tap to ${window._trSquadOpen ? 'hide' : 'view'}</span></summary>
+      <div class="quota-bar" style="margin:8px 0 4px">${quotaPills(mid)}</div>
+      <div class="side-squad">${sq.map(p => `
+        <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}<span class="muted" style="margin-left:auto;font-size:11px">${metricsFor(p).pts} pts</span></div>`).join('')}
+      </div>
+    </details>`;
+  })();
   if (tab === 'trough') {
     const wd = state.windowDraft;
     const arrivals = lockedArrivals();
@@ -4772,6 +5005,7 @@ function viewTransfers() {
       wdCard = `<div class="card" style="margin-bottom:14px">
         <h2>The Window <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
         <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough.</p>
+        <p style="font-size:12px;margin-top:6px"><b>In the holding pen:</b> ${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `${pname(p)} <span class="muted">(${esc(p.club)})</span>`).join(' · ')}${arrivals.length > 15 ? ` <span class="muted">+${arrivals.length - 15} more</span>` : ''}</p>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wdStart">Start the Window Draft</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
@@ -4781,12 +5015,16 @@ function viewTransfers() {
     const ctl = waiverControl();
     const claims = myClaims(mid);
     const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+    const tw = troughWindow();
+    // the state of play, spelled out (mock night: "it just doesn't know when
+    // players go on waivers") — closed window means EVERYONE free is claim-only
     const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
-      : `<span class="tag">waivers process ${fmtWhen(nextRun)}</span>`;
+      : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
+      : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span>`;
     const claimRows = claims.map((c, k) => `
-      <div class="lrow" style="font-size:12.5px">
-        <span class="muted">#${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+      <div class="lrow claim-row" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
+        <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
           <button class="btn ghost small" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
@@ -4794,7 +5032,7 @@ function viewTransfers() {
           <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
-    return `${head}${wdCard}<div class="card">
+    return `${head}${mySquadCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Pick your <b>player out</b>, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
@@ -4819,7 +5057,7 @@ function viewTransfers() {
   }
   if (tab === 'trades') {
     const block = state.managers.flatMap(m => blockList(m.id).map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid] })).filter(x => x.p));
-    return `${head}<div class="card" style="margin-bottom:14px">
+    return `${head}${mySquadCard}<div class="card" style="margin-bottom:14px">
       <h2>The Transfer List <span class="muted" style="font-weight:400;font-size:12px">publicly up for grabs — make an offer</span></h2>
       ${block.length ? block.map(({ mid: bm, p }) => `<div class="lrow" style="font-size:12.5px">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
@@ -4992,6 +5230,26 @@ function bindTransfers() {
     if (k >= arr.length - 1) return;
     [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setClaims(mid, arr);
   });
+  // drag a claim to its new priority slot (Ben, mock night) — buttons stay for thumbs
+  document.querySelectorAll('[data-cdrag]').forEach(row => {
+    row.ondragstart = e => { e.dataTransfer.setData('text/claim', row.dataset.cdrag); e.dataTransfer.effectAllowed = 'move'; };
+    row.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+    row.ondrop = e => {
+      e.preventDefault();
+      const from = +e.dataTransfer.getData('text/claim');
+      if (Number.isNaN(from) || !actGuard(mid, 'waiver claims')) return;
+      const rect = row.getBoundingClientRect();
+      let to = +row.dataset.cdrag + (e.clientY > rect.top + rect.height / 2 ? 1 : 0);
+      if (from < to) to--;
+      const arr = [...myClaims(mid)];
+      if (from === to || from < 0 || from >= arr.length) return;
+      const [mv] = arr.splice(from, 1);
+      arr.splice(Math.max(0, Math.min(to, arr.length)), 0, mv);
+      setClaims(mid, arr);
+    };
+  });
+  const msq = $('#trMySquad');
+  if (msq) msq.ontoggle = () => { window._trSquadOpen = msq.open; };
   // Chairman's office
   const rw = $('#runWaivers');
   if (rw) rw.onclick = () => { if (confirm('Run waivers now for everyone? Claims resolve in reverse table order and the Trough opens.')) processWaivers(true); };
@@ -5008,7 +5266,9 @@ function bindTransfers() {
       const claimedIds = new Set(myClaims(mid).map(c => c.in));
       const ownedBy = {};
       for (const mm of state.managers) for (const sp of squadAt(mm.id, cur)) ownedBy[sp.id] = mm.id;
-      let pool = transfersView.scope === 'all' ? [...PLAYERS] : PLAYERS.filter(p => !owned.has(p.id));
+      let pool = transfersView.scope === 'all' ? [...PLAYERS]
+        : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
+        : PLAYERS.filter(p => !owned.has(p.id));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -5016,6 +5276,10 @@ function bindTransfers() {
       const live = seasonHasStats();
       const cols = STAT_COLS(live);
       pool.sort(metricSort(s));
+      const twNow = troughWindow();
+      const clearsTxt = !twNow.open
+        ? (twNow.until ? `clears ${fmtWhen(twNow.until)}` : 'clears when waivers run')
+        : `clears ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}`;
       const total = pool.length;
       const shown = pool.slice(0, transfersView.limit);
       const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
@@ -5039,7 +5303,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ' · <span class="muted">on waivers</span>' : ''}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
@@ -5055,10 +5319,13 @@ function bindTransfers() {
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
         <span style="width:8px"></span>
-        <button class="btn small ${transfersView.scope !== 'all' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
+        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
+        <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
         ${colToggleHtml(live)}
-      </div>` + (shown.length ? table : '<span class="muted">The Trough is empty. Somehow.</span>');
+      </div>` + (shown.length ? table
+        : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
+        : '<span class="muted">The Trough is empty. Somehow.</span>');
       const clubSel = results.querySelector('#trClub');
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
       results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
@@ -5143,7 +5410,12 @@ function bindTransfers() {
       body: dealRows(tGet(tr).map(id => PLAYER_BY_ID[id]), tGive(tr).map(id => PLAYER_BY_ID[id]))
         + (tr.terms ? `<p style="font-size:13px;margin:8px 0 0">Side-terms: <i>${esc(tr.terms)}</i></p>` : ''),
       yes: 'Accept &amp; execute',
-      note: 'Executes instantly — both squads swap on confirm. No takebacks.',
+      // Toby (mock night): a mid-GW trade lands NEXT gameweek — the deal
+      // executes now, the players swap in from the first unstarted GW. Say so.
+      note: (() => {
+        const tgw = transferGw(), cur2 = currentGwIndex();
+        return `Executes instantly — both squads swap on confirm${tgw !== cur2 ? `. This gameweek has kicked off, so the incoming players are in from GW${GAMEWEEKS[tgw].n} — locked XIs don't change` : ''}. No takebacks.`;
+      })(),
     })) return;
     respondTrade(tr.id, true);
   });
@@ -5411,12 +5683,42 @@ function viewDash() {
    ARTICLES on the Dashboard. The preview goes to print only once the teams
    are locked (first kick-off); the review publishes when the week settles.
    Prose is deterministic — seeded phrase pools, same article every render. */
+/* early-season storylines (Ben, mock night): whose draft class is delivering,
+   who's dealing well in the Trough, best pick-ups — the Gazette keeps receipts */
+function draftClassTable() {
+  if (!state.draft.picks.length) return [];
+  return state.managers.map(m => {
+    const picks = state.draft.picks.filter(pk => pk.managerId === m.id).map(pk => PLAYER_BY_ID[pk.playerId]).filter(Boolean);
+    let pts = 0, star = null, starPts = -1;
+    for (const p of picks) {
+      const v = playerPoints(p.id).pts;
+      pts += v;
+      if (v > starPts) { star = p; starPts = v; }
+    }
+    return { mid: m.id, pts, star, starPts };
+  }).sort((a, b) => b.pts - a.pts);
+}
+function bestPickups(uptoGw) {
+  const out = [];
+  for (const t of state.transfers) {
+    if (t.trade || t.windowDraft) continue;
+    const p = PLAYER_BY_ID[t.inId];
+    if (!p) continue;
+    let pts = 0;
+    for (let g = t.gw; g <= uptoGw; g++) pts += gwPlayerPoints(t.inId, g);
+    out.push({ mid: t.managerId, p, pts, waiver: !!t.waiver });
+  }
+  return out.sort((a, b) => b.pts - a.pts);
+}
+// the deadline has passed once the GW's own deadline stamp is behind us —
+// Marc's ruling: the matchday edition prints AT the deadline, not at kick-off
+const gwDeadlinePassed = i => GAMEWEEKS[i] && new Date(GAMEWEEKS[i].from).getTime() <= Date.now();
 function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
   const cur = currentGwIndex();
   const pick = (arr, seed) => arr[seed % arr.length];
   const masthead = (edition, gwN) => `<p class="prog-mast">The League Gazette &middot; ${edition} &middot; GW${gwN}</p>`;
-  if (gwUnderway(cur) && gwStatus(cur) !== 'final') {
+  if ((gwDeadlinePassed(cur) || gwUnderway(cur)) && gwStatus(cur) !== 'final') {
     const art = previewArticle(cur, pick);
     if (art) return `<div class="card prog-card"><h2>The Matchday Programme</h2>${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}</div>`;
   }
@@ -5477,6 +5779,10 @@ function previewArticle(i, pick) {
   const troughLine = recent.length
     ? ` The transfer columns note ${recent.slice(-3).map(t => `${managerName(t.managerId)} ${t.trade ? 'trading for' : 'signing'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(', ')} — moves that will look either shrewd or desperate by Monday.`
     : '';
+  const dc = i < 10 ? draftClassTable() : [];
+  const draftLine = dc.length >= 2 && dc[0].pts > 0
+    ? ` Draft-class watch: ${teamName(dc[0].mid)}'s August board still tops the charts (${dc[0].pts} banked); ${teamName(dc[dc.length - 1].mid)}'s is being described, generously, as "a project".`
+    : '';
   const closer = pick([
     'Projections by the algorithm; consequences by the group chat.',
     'The Committee wishes all twelve managers the fortune they deserve. Exactly that much.',
@@ -5486,7 +5792,7 @@ function previewArticle(i, pick) {
     <p class="prog-lead">${esc(lead)}</p>
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
-    <p><b>Around the grounds:</b> ${esc(grounds.join('; '))}.${esc(troughLine)}</p>
+    <p><b>Around the grounds:</b> ${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }
@@ -5532,10 +5838,53 @@ function reviewArticle(last, pick) {
     const gap = top.pts - (second?.pts || 0);
     tableLine = `${teamName(top.id)} lead the table${gap > 0 ? ` by ${gap}` : ' on tiebreak'}; at the other end ${teamName(bottom.id)} prop everyone up. The playoff line: ${teamName(eighth.id)} in, ${teamName(ninth.id)} out, ${eighth.pts - ninth.pts <= 3 ? 'and barely a cigarette paper between them' : 'with work to do'}.`;
   }
+  // the vidiprinter's greatest hits (Ben, mock night: "sat on bench and stuff
+  // like that is what goes in the matchweek review")
+  const moments = [];
+  let benchStar = null;
+  for (const m of state.managers) {
+    const xi = new Set(lineupFor(m.id, last));
+    for (const p of squadAt(m.id, last)) {
+      if (xi.has(p.id)) continue;
+      const v = gwPlayerPoints(p.id, last);
+      if (!benchStar || v > benchStar.pts) benchStar = { mid: m.id, p, pts: v };
+    }
+  }
+  if (benchStar && benchStar.pts >= 8) moments.push(`${benchStar.p.name} scored ${benchStar.pts} on ${teamName(benchStar.mid)}'s bench, into the void, for nobody`);
+  const ev = gwEvent(last)?.playerStats || {};
+  const ownedBy = {};
+  for (const m of state.managers) for (const p of squadAt(m.id, last)) ownedBy[p.id] = m.id;
+  for (const [pid, s] of Object.entries(ev)) {
+    const p = PLAYER_BY_ID[pid], om = ownedBy[pid];
+    if (!p || om == null) continue;
+    if ((s.g || 0) >= 3) moments.push(`a ${p.name} hat-trick for ${teamName(om)}`);
+    else if ((s.g || 0) === 2) moments.push(`a ${p.name} brace for ${teamName(om)}`);
+    if (s.rc) moments.push(`${p.name} sent off on ${teamName(om)} duty`);
+    if (s.ps) moments.push(`a ${p.name} penalty save for ${teamName(om)}`);
+    if (s.og) moments.push(`${p.name} scoring at the wrong end for ${teamName(om)}`);
+    if (moments.length >= 5) break;
+  }
+  const momentsLine = moments.length ? `The vidiprinter will remember: ${moments.slice(0, 4).join('; ')}.` : '';
+  // early-season receipts: the draft revisited + Trough dealings (Ben's ask)
+  let draftPara = '';
+  if (last < 10) {
+    const dc = draftClassTable();
+    if (dc.length >= 2 && dc[0].pts > 0) {
+      const top = dc[0], flop = dc[dc.length - 1];
+      draftPara = pick([
+        `The draft, revisited: ${teamName(top.mid)}'s class of August leads the way on ${top.pts} points${top.star ? `, ${top.star.name} doing the heavy lifting` : ''}, while ${teamName(flop.mid)}'s board (${flop.pts}) is aging like milk in the sun.`,
+        `Draft report: ${teamName(top.mid)} drafted the field (${top.pts} and counting${top.star ? `, led by ${top.star.name}` : ''}); ${teamName(flop.mid)} would like the record to show it's early days (${flop.pts}).`,
+      ], last + 7);
+      const pu = bestPickups(last).filter(x => x.pts > 0)[0];
+      if (pu) draftPara += ` In the Trough, ${managerName(pu.mid)}'s ${pu.waiver ? 'waiver swoop for' : 'free signing of'} ${pu.p.name} — ${pu.pts} point${pu.pts === 1 ? '' : 's'} since — is the market's deal to beat.`;
+    }
+  }
   return `<div class="prog-art">
     <p class="prog-lead">${esc(lead)}${esc(starLine)}</p>
     <p><b>The full card:</b> ${esc(card)}.</p>
     ${awardBits.length ? `<p><b>In dispatches:</b> ${esc(awardBits.join('; '))}.</p>` : ''}
+    ${momentsLine ? `<p>${esc(momentsLine)}</p>` : ''}
+    ${draftPara ? `<p>${esc(draftPara)}</p>` : ''}
     ${tableLine ? `<p>${esc(tableLine)}</p>` : ''}
   </div>`;
 }
@@ -6554,9 +6903,7 @@ function viewTable() {
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
     .sort((a, b) => b.pts - a.pts);
   const hasPts = ranked.some(r => r.pts !== 0);
-  const investigation = hasPts
-    ? `<div class="card investigation"><span class="rec"></span><span><b>INVESTIGATION UPDATE</b> &mdash; ${esc(investigationLine(ranked[0].name, ranked[ranked.length - 1].name))}</span></div>`
-    : '';
+  // INVESTIGATION UPDATE card removed (Ben, 2 Aug: old Calciopoli gag, goes)
   // Lee (twice): the FULL table must be the first thing this page shows, and
   // the dense H2H-table look beats the big expandable rows. Fixtures and the
   // investigation gag moved below; tap a row for the points breakdown.
@@ -6599,8 +6946,9 @@ function viewTable() {
           : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr>'}</thead>
         <tbody>
         ${rowsData.map((m, i) => {
+          // "under Committee review" leader tag removed (Ben, 2 Aug: old
+          // Calciopoli reference, not required)
           const commTag = form || !hasPts ? '' :
-            i === 0 ? '<span class="tag">&#128269; under Committee review</span>' :
             i === rowsData.length - 1 ? '<span class="tag">&#129379; Chumpionship form (abolished)</span>' : '';
           const qfCell = form ? '' : (() => {
             if (i >= 8) return '<td class="num"></td>';
@@ -6634,8 +6982,7 @@ function viewTable() {
       </table>
       </div>
       <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
-    </div>
-    ${investigation}`;
+    </div>`;
 }
 // team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
 function troughActivityCard() {

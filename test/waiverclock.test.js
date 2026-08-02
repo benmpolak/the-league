@@ -78,5 +78,23 @@ chk('manual control suppresses scheduled dueness',
 const bare = Engine.make({ players: [], gameweeks: GWS, fixtures: [], lastSeasonByCode: {}, now: () => NOW });
 chk('no fixtures: trough open, nothing due', bare.troughWindow(S).open === true && bare.waiverSchedule().length === 0);
 
+/* ---- the Simulation Chamber drives the SAME rules on its mock clock (mock
+   night, 2 Aug: Marc trough-signed mid-"gameweek" because only real time was
+   consulted — never again) ---- */
+NOW = iso('2026-08-10T09:00:00Z'); // real clock: pre-season, trough would be open
+const mockLive = state({ mock: { gw: 0, phase: 'live', seed: 7, t: iso('2026-08-10T08:50:00Z') } });
+chk('mock LIVE closes the trough even though real time says pre-season',
+  eng.troughWindow(mockLive).open === false && /simulation/.test(eng.troughWindow(mockLive).why));
+const mockFT = state({ mock: { gw: 0, phase: 'final', seed: 7, t: iso('2026-08-10T08:50:00Z') } });
+chk('mock FULL TIME keeps the trough shut awaiting the waiver run',
+  eng.troughWindow(mockFT).open === false && /awaiting/.test(eng.troughWindow(mockFT).why));
+const mockRan = state({ mock: { gw: 0, phase: 'final', seed: 7, t: iso('2026-08-10T08:50:00Z') },
+  waiverMeta: { lastRun: '2026-08-10T09:05:00Z', control: 'auto' } });
+chk('a waiver run AFTER mock full time reopens the trough',
+  eng.troughWindow(mockRan).open === true);
+chk('mock LIVE pushes transfers to the NEXT gameweek (no mid-sim landings)',
+  eng.transferGw(mockLive) === 1 && eng.transferGw(state({})) === 0,
+  `mock=${eng.transferGw(mockLive)} plain=${eng.transferGw(state({}))}`);
+
 console.log(`\n[waiverclock] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

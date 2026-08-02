@@ -191,19 +191,39 @@ const chk = (name, ok, detail = '') => {
   chk('P8 on the night: queue intact, Draft buttons back, autopick takes the prep head',
     p8.queueIntact && p8.draftBtns > 3 && p8.picked === p8.head, JSON.stringify(p8));
 
-  // ---- P8b: heckle button — local heckle flashes and cools down
+  // ---- P8b: heckle desk — sheet opens, random barb flashes, cooldown holds,
+  // custom text goes through verbatim (mock-draft round: sheet replaced the
+  // one-shot button)
   const p8b = await page.evaluate(async () => {
     const btn = document.getElementById('heckleBtn');
     if (!btn) return { btn: false };
     btn.click();
+    const sheet = !!document.getElementById('heckleSheet');
+    document.getElementById('hkRandom')?.click();
     await new Promise(r => setTimeout(r, 100));
     const flash = !!document.querySelector('.heckle-flash');
     const stamp = state.heckles?.[whoami]?.t;
-    btn.click(); // inside the cooldown — must not restamp
+    btn.click(); // sheet again, inside the cooldown — send must not restamp
+    document.getElementById('hkRandom')?.click();
     const stamp2 = state.heckles?.[whoami]?.t;
-    return { btn: true, flash, stamped: !!stamp, cooled: stamp === stamp2 };
+    const closed = !document.getElementById('heckleSheet');
+    return { btn: true, sheet, flash, stamped: !!stamp, cooled: stamp === stamp2, closed };
   });
-  chk('P8b heckle: button fires a flash, cooldown holds', p8b.btn && p8b.flash && p8b.stamped && p8b.cooled, JSON.stringify(p8b));
+  chk('P8b heckle desk: sheet opens, barb flashes, cooldown holds', p8b.btn && p8b.sheet && p8b.flash && p8b.stamped && p8b.cooled && p8b.closed, JSON.stringify(p8b));
+  // custom words render escaped through the flash
+  const p8hx = await page.evaluate(async () => {
+    state.heckles = {}; window._hecklesSeen = {};
+    document.querySelectorAll('.heckle-flash').forEach(el => el.remove()); // p8b's flash may still be up
+    document.getElementById('heckleBtn')?.click();
+    const inp = document.getElementById('hkText');
+    if (!inp) return { inp: false };
+    inp.value = 'GET ON WITH IT <b>x</b>';
+    document.getElementById('hkSend')?.click();
+    await new Promise(r => setTimeout(r, 100));
+    const fl = document.querySelector('.heckle-flash');
+    return { inp: true, fired: !!fl, text: fl?.textContent || '', safe: !fl?.querySelector('b') };
+  });
+  chk('P8hx custom heckle: text lands, HTML stays escaped', p8hx.inp && p8hx.fired && p8hx.text.includes('GET ON WITH IT') && p8hx.safe, JSON.stringify(p8hx));
 
   // ---- P8e: the Ben Levy DM klaxon fires on a listed sitter
   const p8e = await page.evaluate(async () => {

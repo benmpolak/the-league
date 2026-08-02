@@ -614,7 +614,7 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   // that survives the replay (sol r5)
   const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out), t: Date.now() + Math.random() })); // fractional part: same-millisecond lodgings still get distinct identities
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
-  const tgw = eng.transferGw();
+  const tgw = eng.transferGw(state);
   const squad = eng.squadAt(state, a.managerId, tgw);
   const squadIds = new Set(squad.map(p => p.id));
   for (const c of claims) {
@@ -636,7 +636,7 @@ ACTIONS.troughSign = async ({ league, a, data, ctx, state, eng }) => {
   if (!inP || !outP) throw new HttpsError('invalid-argument', 'unknown player');
   if (eng.arrivalLocked(state, inP)) throw new HttpsError('failed-precondition', 'locked until the Window Draft');
   if (eng.onWaiversCheck ? eng.onWaiversCheck(state, inP) : onWaiversServer(state, inP, eng)) throw new HttpsError('failed-precondition', 'player is on waivers — lodge a claim instead');
-  const tgw = eng.transferGw();
+  const tgw = eng.transferGw(state);
   if (eng.ownedIdsAt(state, tgw).has(inP.id)) throw new HttpsError('failed-precondition', 'already owned');
   const squad = eng.squadAt(state, mid, tgw);
   if (!squad.some(p => p.id === outP.id)) throw new HttpsError('failed-precondition', 'that player is not yours to drop');
@@ -665,7 +665,7 @@ ACTIONS.tradePropose = async ({ league, a, data, ctx, state, eng }) => {
   if (new Set(give).size !== give.length || new Set(get).size !== get.length || give.some(id => get.includes(id))) {
     throw new HttpsError('invalid-argument', 'a trade can’t repeat a player'); // dupes corrupt both squad sizes on execution
   }
-  const tgw = eng.transferGw();
+  const tgw = eng.transferGw(state);
   const mine = eng.squadIdsGiven(state, from, state.transfers, tgw);
   const theirs = eng.squadIdsGiven(state, to, state.transfers, tgw);
   if (!give.every(id => mine.has(id)) || !get.every(id => theirs.has(id))) throw new HttpsError('failed-precondition', 'players not owned by the right sides');
@@ -692,7 +692,7 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
   if (!['accept', 'reject', 'withdraw'].includes(action)) throw new HttpsError('invalid-argument', 'unknown action');
   const give = toArr(trade.give).length ? toArr(trade.give) : [trade.give].filter(Boolean);
   const get = toArr(trade.get).length ? toArr(trade.get) : [trade.get].filter(Boolean);
-  const tgw = eng.transferGw();
+  const tgw = eng.transferGw(state);
   const finishEarly = status => db().ref(`${base}/public/trades`).transaction(seeded(state.trades, arr => {
     const t = arr.find(x => x.id === trade.id);
     if (t) t.status = status;
@@ -863,18 +863,28 @@ ACTIONS.readySet = async ({ league, a, data, state }) => {
 };
 
 // draft-night heckling (Marc, 2 Aug): one button, a randomised barb, a
-// cooldown. Self only — the Chairman does not heckle by proxy. The line is
-// stored as an index; the client owns the words.
+// cooldown. Self only — the Chairman does not heckle by proxy. Stock barbs are
+// stored as an index (the client owns the words); custom text (Marc's follow-up,
+// same night) is stored verbatim, cleaned, and ONLY ever rendered escaped.
 ACTIONS.heckle = async ({ league, a, data, state }) => {
   const mid = a.managerId;
   if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'heckling is a draft-night art');
-  const line = Number(data.line);
-  if (!Number.isInteger(line) || line < 0 || line > 63) throw new HttpsError('invalid-argument', 'bad heckle');
+  let entry = null;
+  if (data.text !== undefined) {
+    if (typeof data.text !== 'string') throw new HttpsError('invalid-argument', 'bad heckle');
+    const text = cleanText(data.text, 90).trim();
+    if (!text) throw new HttpsError('invalid-argument', 'an empty heckle is just staring');
+    entry = { text };
+  } else {
+    const line = Number(data.line);
+    if (!Number.isInteger(line) || line < 0 || line > 63) throw new HttpsError('invalid-argument', 'bad heckle');
+    entry = { line };
+  }
   const ref = db().ref(`${leagueBase(league)}/public/heckles/${mid}`);
   const seedSnap = (await ref.get()).val(); // seed: empty first txn pass must not bypass the cooldown
   const res = await ref.transaction(seededObj(seedSnap, cur => {
     if (cur && cur.t && Date.now() - cur.t < 15000) return; // abort — cooldown
-    return { line, t: Date.now() };
+    return { ...entry, t: Date.now() };
   }));
   if (!res.committed) throw new HttpsError('resource-exhausted', 'one heckle per 15 seconds — pace yourself');
   return { ok: true };
@@ -1240,7 +1250,7 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
       const inP = ctx.PLAYER_BY_ID[Number(data.inId)], outP = ctx.PLAYER_BY_ID[Number(data.outId)];
       if (!inP || !outP) { deny = { code: 'invalid-argument', msg: 'unknown player' }; return; }
       if (!eng.isArrival(s, inP)) { deny = { code: 'failed-precondition', msg: 'the Window Draft is for new arrivals only' }; return; }
-      const tgw = eng.transferGw();
+      const tgw = eng.transferGw(s);
       if (eng.ownedIdsAt(s, tgw).has(inP.id)) { deny = { code: 'failed-precondition', msg: 'already owned' }; return; }
       const squad = eng.squadAt(s, onClock, tgw);
       if (!squad.some(p => p.id === outP.id)) { deny = { code: 'failed-precondition', msg: 'not yours to drop' }; return; }

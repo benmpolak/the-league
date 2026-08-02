@@ -59,8 +59,19 @@
     }
     const gwIsOver = i => GAMEWEEKS[i].finished || now() > new Date(GAMEWEEKS[i].to).getTime();
     const gwHasStarted = i => now() > new Date(gwFrom(i)).getTime();
-    // transfers NEVER land in a gameweek already being played (no retroactive rescoring)
-    const transferGw = () => { const c = currentGwIndex(); return Math.min(c + (gwHasStarted(c) ? 1 : 0), GAMEWEEKS.length - 1); };
+    // transfers NEVER land in a gameweek already being played (no retroactive
+    // rescoring). A Simulation Chamber matchday counts as "being played" too —
+    // pass state so a mock GW pushes deals to the next one, like the real thing.
+    const transferGw = (state) => {
+      const c = currentGwIndex();
+      let g = c + (gwHasStarted(c) ? 1 : 0);
+      const mk = state && state.mock;
+      if (mk && mk.gw != null && GAMEWEEKS[mk.gw]) {
+        const mkT = typeof mk.t === 'number' ? mk.t : 0;
+        if (mk.phase === 'live' || (mk.phase === 'final' && lastWaiverRun(state) < mkT)) g = Math.max(g, mk.gw + 1);
+      }
+      return Math.min(g, GAMEWEEKS.length - 1);
+    };
     const gwEvent = (state, i) => GAMEWEEKS[i] ? state.matchStats[`gw${GAMEWEEKS[i].n}`] : null;
     function gwStatus(state, i) {
       const ev = gwEvent(state, i);
@@ -372,8 +383,17 @@
       return waiverSchedule().some(d => d.at > lr);
     }
     /* Trough state under auto control: closed from 90 min before a gameweek's
-     * first fixture; reopens only once that gameweek's post-run has executed. */
+     * first fixture; reopens only once that gameweek's post-run has executed.
+     * A Simulation Chamber matchday (sandbox only) closes it on the mock clock —
+     * the mock-waivers rehearsal must behave like the real thing (2 Aug: Marc
+     * trough-signed mid-"gameweek" because only real time was consulted). */
     function troughWindow(state) {
+      const mk = state.mock;
+      if (mk && mk.gw != null) {
+        const mkT = typeof mk.t === 'number' ? mk.t : 0;
+        if (mk.phase === 'live') return { open: false, until: null, why: 'the gameweek is underway (simulation)' };
+        if (mk.phase === 'final' && lastWaiverRun(state) < mkT) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run (simulation)' };
+      }
       const t = now();
       let cur = -1;
       for (let g = 0; g < GAMEWEEKS.length; g++) {
@@ -407,7 +427,7 @@
      *   strippedLineups— {mid: newXiArray} lineups with the out-player removed */
     function resolveWaivers(state, runStart) {
       const cur = currentGwIndex();
-      const tgw = transferGw();
+      const tgw = transferGw(state);
       const work = {
         ...state,
         transfers: [...state.transfers],
