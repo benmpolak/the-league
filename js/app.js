@@ -5552,7 +5552,9 @@ function viewData() {
   ${troughActivityCard()}
   ${sect('Player data')}
   ${topPlayersCard()}
-  ${treatmentRoomCard()}`;
+  ${treatmentRoomCard()}
+  ${sect('The archive')}
+  ${recordBookCards()}`;
 }
 function bindData() {
   bindAwardsBits();
@@ -6737,7 +6739,7 @@ function viewRules() {
       <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
       <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
-      <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Knitty-grittys confirmed nearer the time, as is tradition.</p>
+      <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Nitty-gritty confirmed nearer the time, as is tradition.</p>
       <p class="rules-p"><b>Trades:</b> player-for-player swaps between managers, agreed in the group, any time until the playoff lock. Doesn't use your waiver turn.</p>
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>
     </div>
@@ -6750,8 +6752,7 @@ function viewRules() {
       <p class="rules-p">Stats sync automatically from the official FPL feed (goals land within ~15 minutes on matchdays). The commissioner (${esc(managerName(state.managers[0]?.id))}) settles disputes, can act for absent managers, and adjusts points if the feed errs.</p>
       <p class="rules-p muted" style="font-style:italic">All decisions are final. Complaints may be lodged in the group chat, where they will be enjoyed. — The Committee</p>
     </div>
-  </div>
-  ${recordBookCards()}`;
+  </div>`;
 }
 
 /* ----- the Record Book — mined from Draft Fantasy before the lights went out ----- */
