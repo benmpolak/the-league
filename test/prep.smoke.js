@@ -95,6 +95,50 @@ const chk = (name, ok, detail = '') => {
   chk('P4 arrows reorder both ways, end buttons disabled',
     p4.endsDisabled && p4.swapped && p4.restored, JSON.stringify(p4));
 
+  // ---- P4b: drag a pool player into the queue card (synthetic HTML5 DnD)
+  const p4b = await page.evaluate(() => {
+    const before = [...toArr(state.autolists[whoami])];
+    const tr = [...document.querySelectorAll('tr[data-drag]')].find(t => !before.includes(+t.dataset.drag));
+    const pid = +tr.dataset.drag;
+    const started = typeof tr.ondragstart === 'function';
+    const dt = new DataTransfer();
+    dt.setData('text/plain', `pool:${pid}`);
+    document.querySelector('.queue-card').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    const after = toArr(state.autolists[whoami]);
+    return { started, pid, appended: after[after.length - 1] === pid && after.length === before.length + 1 };
+  });
+  chk('P4b dragging a pool player into the list appends him',
+    p4b.started && p4b.appended, JSON.stringify(p4b));
+
+  // ---- P4c: drag a queue row onto the top row's upper half -> moves to #1
+  const p4c = await page.evaluate(() => {
+    const before = [...toArr(state.autolists[whoami])];
+    const rows = document.querySelectorAll('.queue-card [data-qdrag]');
+    const target = rows[0], r = target.getBoundingClientRect();
+    const dt = new DataTransfer();
+    dt.setData('text/plain', `queue:${before.length - 1}`);
+    target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientY: r.top + 1 }));
+    const after = toArr(state.autolists[whoami]);
+    return { moved: after[0] === before[before.length - 1], intact: after.length === before.length };
+  });
+  chk('P4c dragging the last queue row onto the top slot reorders to #1',
+    p4c.moved && p4c.intact, JSON.stringify(p4c));
+
+  // ---- P4d: the star is a toggle — second tap removes, filled state shown
+  const p4d = await page.evaluate(() => {
+    const head = toArr(state.autolists[whoami])[0];
+    const btn = document.querySelector(`[data-auto="${head}"]`);
+    const filled = btn && btn.classList.contains('star-on');
+    btn.click();
+    const after = toArr(state.autolists[whoami]);
+    const btn2 = document.querySelector(`[data-auto="${head}"]`);
+    const cleared = btn2 && !btn2.classList.contains('star-on');
+    btn2.click(); // put him back for the later checks
+    return { filled, removed: !after.includes(head), cleared };
+  });
+  chk('P4d star toggles: filled when listed, second tap removes',
+    p4d.filled && p4d.removed && p4d.cleared, JSON.stringify(p4d));
+
   // ---- P5: bulk select-page -> add to queue works pre-draft
   const p5 = await page.evaluate(() => {
     const before = toArr(state.autolists[whoami]).length;

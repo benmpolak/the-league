@@ -3467,9 +3467,9 @@ function viewDraft() {
       ${poolTable()}
     </div>
     <div class="draft-side">
-      ${whoami && whoami !== -1 ? `<div class="card">
+      ${whoami && whoami !== -1 ? `<div class="card queue-card">
         <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
-        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Star players in the pool to add them.</p>
+        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Drag players across, or &#9734; them in the pool.</p>
         ${autolistRows()}
       </div>` : ''}
       <div class="card side-squad">
@@ -3510,9 +3510,9 @@ function viewDraftPrep() {
       ${poolTable()}
     </div>
     <div class="draft-side">
-      <div class="card">
+      <div class="card queue-card">
         <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
-        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Star players in the pool to add them, then order with the arrows.</p>
+        <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Drag players from the pool into this list and drag to reorder (or use &#9734; and the arrows).</p>
         ${autolistRows()}
       </div>
     </div>
@@ -3560,7 +3560,7 @@ function autolistRows() {
     const live = state.phase === 'draft';
     const gone = live && draftedIds().has(pid);
     const wontFit = live && !gone && !canPick(whoami, p);
-    return `<div class="lrow qrow" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
+    return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
       ${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
       <span style="margin-left:auto;display:flex;gap:4px">
@@ -3907,6 +3907,9 @@ function poolTable() {
   const total = rows.length;
   rows = rows.slice(0, poolFilter.limit);
   const canQueue = whoami && whoami !== -1;
+  // signed-out on the live site: stars still SHOW (dimmed) and tapping one
+  // explains — an invisible feature reads as a broken one (Ben, 2 Aug)
+  const showStar = canQueue || netOn();
   const visibleIds = rows.map(p => p.id);
   const selected = [...bulkQueueIds].filter(id => !taken.has(id));
   return `
@@ -3929,14 +3932,14 @@ function poolTable() {
     </tr></thead>
     <tbody>
       ${rows.map(p => `
-      <tr class="${statusClass(p)}">
+      <tr class="${statusClass(p)}"${canQueue ? ` draggable="true" data-drag="${p.id}"` : ''}>
         ${canQueue ? `<td class="bulk-check"><input type="checkbox" data-bulk-pid="${p.id}" aria-label="Select ${esc(p.name)} for the autopick queue" ${bulkQueueIds.has(p.id) ? 'checked' : ''}></td>` : ''}
         <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${esc(p.full)}</div></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
-        <td class="act" style="white-space:nowrap">${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${canQueue ? `<button class="btn ghost small" data-auto="${p.id}" title="Add to my autopick list">&#9734;</button>` : ''}</td>
+        <td class="act" style="white-space:nowrap">${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -4161,10 +4164,10 @@ function bindPoolTable() {
     makePick(pid);
   });
   document.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => {
-    if (!whoami || whoami === -1) return;
+    if (!whoami || whoami === -1) { toast('Sign in (top right) to build your autopick list'); return; }
     const pid = +b.dataset.auto;
     const list = toArr(state.autolists?.[whoami]);
-    if (list.includes(pid)) { toast('Already on your list'); return; }
+    if (list.includes(pid)) { setAutolist(whoami, list.filter(x => x !== pid)); toast(`${PLAYER_BY_ID[pid].name} off the list.`); return; }
     setAutolist(whoami, [...list, pid]);
     toast(`${PLAYER_BY_ID[pid].name} added to your autopick list`);
   });
@@ -4183,8 +4186,58 @@ function bindPoolTable() {
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   bindColToggle(refreshPool);
+  bindQueueDnD();
   const sm = $('#showMore');
   if (sm) sm.onclick = () => { poolFilter.limit += 100; refreshPool(); };
+}
+
+/* drag & drop: drag a pool row into the queue card to add (drop on a row to
+   insert there), drag queue rows to reorder. The star and arrow buttons stay
+   as the phone path — HTML5 DnD is a laptop luxury, and draft night is
+   laptops. Property-assigned handlers so re-binding on refresh is idempotent. */
+function bindQueueDnD() {
+  if (!whoami || whoami === -1) return;
+  document.querySelectorAll('tr[data-drag]').forEach(tr => {
+    tr.ondragstart = e => {
+      e.dataTransfer.setData('text/plain', `pool:${tr.dataset.drag}`);
+      e.dataTransfer.effectAllowed = 'copy';
+    };
+  });
+  document.querySelectorAll('[data-qdrag]').forEach(row => {
+    row.ondragstart = e => {
+      e.dataTransfer.setData('text/plain', `queue:${row.dataset.qdrag}`);
+      e.dataTransfer.effectAllowed = 'move';
+    };
+  });
+  document.querySelectorAll('.queue-card').forEach(zone => {
+    zone.ondragover = e => { e.preventDefault(); zone.classList.add('drop-hot'); };
+    zone.ondragleave = () => zone.classList.remove('drop-hot');
+    zone.ondrop = e => {
+      e.preventDefault(); zone.classList.remove('drop-hot');
+      const d = e.dataTransfer.getData('text/plain');
+      if (!d || !whoami || whoami === -1) return;
+      const arr = [...toArr(state.autolists?.[whoami])];
+      const over = e.target.closest ? e.target.closest('[data-qdrag]') : null;
+      let at = arr.length;
+      if (over) {
+        const r = over.getBoundingClientRect();
+        at = +over.dataset.qdrag + (e.clientY > r.top + r.height / 2 ? 1 : 0);
+      }
+      if (d.startsWith('pool:')) {
+        const pid = +d.slice(5);
+        if (!PLAYER_BY_ID[pid]) return;
+        if (arr.includes(pid)) { toast(`${PLAYER_BY_ID[pid].name} is already on your list`); return; }
+        arr.splice(at, 0, pid);
+      } else if (d.startsWith('queue:')) {
+        const k = +d.slice(6);
+        if (!(k >= 0 && k < arr.length) || !Number.isInteger(k)) return;
+        const [pid] = arr.splice(k, 1);
+        if (at > k) at--;
+        arr.splice(at, 0, pid);
+      } else return;
+      setAutolist(whoami, arr);
+    };
+  });
 }
 
 function viewDraftRecap() {
