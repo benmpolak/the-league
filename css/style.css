@@ -519,6 +519,11 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 /* the dashboard's lineup shot stacks: the matchup column is too narrow for
    two readable pitches side by side */
 .dash-mu { grid-template-columns: 1fr; }
+/* Latest moves rows: tag + one truncating line, never wraps (.lrow has no
+   base flex rule — do not reuse it for anything that must stay on one line) */
+.move-row { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 12.5px; }
+.move-row .tag { flex: none; }
+.move-row .move-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Lee's scoreboard: the score up top where you look first, not buried in the side headings */
 .mu-scoreline { border-bottom: none; margin: 0 0 4px; font-size: 15px; }
 .mu-scoreline .fx-score { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; padding: 3px 14px; background: var(--card2); border-radius: 7px; white-space: nowrap; }

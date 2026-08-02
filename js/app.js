@@ -554,7 +554,7 @@ function buildDemoState() {
     { id: 1, from: 5, to: 8, text: 'Tussie holds first refusal on any City player Marc drops, in perpetuity.', t: Date.now(), gw: 0 },
     { id: 2, from: 3, to: 9, text: 'The Haaland curse shall not be mentioned before 9pm on matchdays.', t: Date.now(), gw: 0 },
   ];
-  // a bit of market history so "Around the league" has its last-5 snapshot
+  // a bit of market history so the dashboard's Latest-moves snapshot shows
   s.transfers = [2, 5, 7, 9, 11].map((mid, k) => {
     const sq = demoSquad(mid);
     const out = sq[sq.length - 1 - k], inP = freeAll[20 + k * 3];
@@ -5029,11 +5029,12 @@ function viewDash() {
         return next.length ? `<h3 style="margin-top:12px">Next three</h3>
           ${next.map(({ k, opp }) => `<div class="lrow" style="font-size:12.5px"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${kitSvg(opp)} <b>${esc(teamName(opp))}</b> <span class="muted" style="margin-left:auto;font-size:11px">${esc(managerName(opp))}</span></div>`).join('')}` : '';
       })()}
+      ${news.length ? `<h3 style="margin-top:12px">Latest moves</h3>
+        ${news.map(t => `<div class="move-row"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span>
+          <span class="move-txt"><b>${esc(teamName(t.managerId))}</b> &middot; ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></span></div>`).join('')}` : ''}
     </div>`}
     <div class="card">
-      <h2>Around the league</h2>
-      ${news.length ? news.map(t => `<div class="lrow" style="font-size:12.5px"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span> <b>${esc(teamName(t.managerId))}</b> ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b></div>`).join('') : '<p class="muted" style="font-size:12.5px">No moves yet.</p>'}
-      <h3 style="margin-top:12px">The table <span class="muted" style="font-weight:400;font-size:11px">win 3 &middot; draw 1</span></h3>
+      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
       <div style="overflow-x:auto"><table class="pool-table">
         <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
         <tbody>

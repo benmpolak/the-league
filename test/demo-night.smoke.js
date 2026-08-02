@@ -164,7 +164,7 @@ const chk = (name, ok, detail = '') => {
     state.view = 'table'; render();
     const tableText = document.querySelector('#main').innerText;
     state.view = 'dash'; render();
-    const around = [...document.querySelectorAll('#main .card')].find(c => c.querySelector('h2')?.textContent.includes('Around the league'));
+    const around = [...document.querySelectorAll('#main .card')].find(c => c.querySelector('h2')?.textContent.includes('The table'));
     // the dashboard table is a real pool-table now (Ben: DF-style W/D/L)
     const dashRows = around ? [...around.querySelectorAll('tbody tr')] : [];
     return {
