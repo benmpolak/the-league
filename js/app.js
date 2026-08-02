@@ -3065,7 +3065,6 @@ function showCeremony() {
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
     { h: '&#127884; THE PARADE OF CLUBS', p: '', parade: true },
     { h: '&#127908; Main stage', p: 'Coldplay perform Viva la Vida in its 9-minute extended ceremony arrangement. Chris Martin has been told this is a twelve-man WhatsApp league that left its old website over £145. He says every revolution is beautiful.' },
-    { h: '&#127930; The anthems', p: 'The stadium now rises for a full and unabridged rendition of North London Forever. Marc weeps openly. Ian has been located attempting to leave the venue. Stewards have returned him to his seat.', anthem: true },
     { h: '&#129309; The draw', p: 'The Committee shuffles the envelopes. The order is random. The complaints will not be.' },
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
@@ -3111,18 +3110,6 @@ function showCeremony() {
       };
       showFlag();
       paradeTimer = setInterval(showFlag, 900);
-    }
-    // the anthem takes the stage and plays on through the draw and the reveal
-    if (s.anthem && !$('#cerPlayer')) {
-      const player = document.createElement('div');
-      player.id = 'cerPlayer';
-      player.style.cssText = 'width:100%;border-radius:12px;overflow:hidden;box-shadow:var(--shadow)';
-      player.innerHTML = `<iframe width="100%" height="200" style="display:block;border:0"
-        src="https://www.youtube-nocookie.com/embed/wjCJv4W4kvw?autoplay=1&rel=0&playsinline=1"
-        title="Louis Dunford — The Angel (North London Forever)"
-        allow="autoplay; encrypted-media" allowfullscreen></iframe>
-        <div style="background:var(--card2);font-size:11px;color:var(--muted);padding:6px 10px;text-align:center">Louis Dunford &mdash; The Angel (North London Forever). If your phone blocks autoplay, tap play. Ian: volume stays up.</div>`;
-      $('#cerStage').appendChild(player);
     }
     $('#cerNext').onclick = () => { i++; show(); };
     $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
