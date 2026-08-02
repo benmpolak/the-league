@@ -1633,8 +1633,8 @@ function waiverRunDue() {
 function troughWindow() {
   const mk = state.mock;
   if (mk && mk.gw != null) {
-    if (mk.phase === 'live') return { open: false, until: null, why: 'the gameweek is underway (simulation)' };
-    if (mk.phase === 'final' && lastWaiverRun() < hamTs(mk.t)) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run (simulation)' };
+    if (mk.phase === 'live') return { open: false, until: null, mock: true, why: 'the gameweek is underway (simulation)' };
+    if (mk.phase === 'final' && lastWaiverRun() < hamTs(mk.t)) return { open: false, until: null, mock: true, why: 'awaiting the post-gameweek waiver run (simulation)' };
   }
   const t = Date.now();
   let cur = -1;
@@ -1652,10 +1652,12 @@ function troughWindow() {
 }
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
+  const tw = troughWindow();
+  if (tw.mock) return true; // the chamber's clock beats every manual control
   const ctl = waiverControl();
   if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  if (!troughWindow().open) return true;
+  if (!tw.open) return true;
   // recently dropped players wait for the next processing
   for (const t of state.transfers) {
     if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
@@ -2084,7 +2086,9 @@ function appearancePts(sc, s, played) {
   return starts * sc.appearanceStart + (played - starts) * sc.appearanceSub;
 }
 function statPoints(player, s, skipAppearance) {
-  const sc = state.settings.scoring;
+  // partial scoring objects (old saves, hand-edited settings) must never make
+  // NaN — every missing key falls back to the canon table (sol mock-night P3)
+  const sc = { ...DEFAULT_SCORING, ...(state.settings.scoring || {}) };
   // double gameweek: score each fixture on its own and sum (goals-conceded per
   // 2 per match, saves per 3 per match); appearance is settled ONCE from the
   // start count + fixtures actually played — fx rows carry minutes only
@@ -2501,14 +2505,22 @@ function mockGwStats(gwIdx, seed, frac) {
   return ps;
 }
 // the pretend scoreboard goes on the real fixture list (and comes off it
-// cleanly) — matchNeeds/win-prob read fixtures, so the mock must feed them
+// cleanly) — matchNeeds/win-prob read fixtures, so the mock must feed them.
+// A feed sync can replace the array mid-mock with FRESHER truth (a real
+// result landing): object identity tells us which fixtures we've already
+// patched, so replaced objects get their new values remembered before we
+// paint over them (sol mock-night P1: the old code restored stale scores).
 let mockFxSaved = null;
+let mockFxPatched = new WeakSet();
 function patchMockFixtures(mk, frac, final) {
   const { fixtures } = mockScorelines(mk.gw, +mk.seed || 1);
   const elapsed = Math.round(90 * frac);
   mockFxSaved = mockFxSaved || {};
   for (const { f, ht, at } of fixtures) {
-    if (!(f.id in mockFxSaved)) mockFxSaved[f.id] = { hs: f.hs, as: f.as, started: f.started, finished: f.finished, minutes: f.minutes };
+    if (!mockFxPatched.has(f)) {
+      mockFxSaved[f.id] = { hs: f.hs, as: f.as, started: f.started, finished: f.finished, minutes: f.minutes };
+      mockFxPatched.add(f);
+    }
     f.hs = ht.filter(t => t <= elapsed).length;
     f.as = at.filter(t => t <= elapsed).length;
     f.started = true; f.finished = !!final; f.minutes = elapsed;
@@ -2521,20 +2533,25 @@ function unpatchMockFixtures() {
     if (sv) Object.assign(f, sv);
   }
   mockFxSaved = null;
+  mockFxPatched = new WeakSet();
 }
 let mockPrevPS = null, mockMemo = '', mockGwKeyApplied = null;
+let mockEvSaved = {}; // real matchStats events that synced mid-mock, by gwKey
 // returns true when the overlay changed (callers may re-render)
 function applyMock() {
   if (!SANDBOX || demoMode) return false;
   const mk = state.mock;
   if (!mk || mk.gw == null || !GAMEWEEKS[mk.gw]) {
-    // chamber switched off — remove only what WE injected, never real stats
+    // chamber switched off — remove only what WE injected, never real stats.
+    // A REAL event that synced mid-mock was stashed; it goes back now.
     unpatchMockFixtures();
     if (mockGwKeyApplied && String(state.matchStats[mockGwKeyApplied]?.label || '').includes('simulation')) {
-      delete state.matchStats[mockGwKeyApplied];
-      mockGwKeyApplied = null; mockPrevPS = null; mockMemo = '';
+      if (mockEvSaved[mockGwKeyApplied]) state.matchStats[mockGwKeyApplied] = mockEvSaved[mockGwKeyApplied];
+      else delete state.matchStats[mockGwKeyApplied];
+      mockGwKeyApplied = null; mockPrevPS = null; mockMemo = ''; mockEvSaved = {};
       return true;
     }
+    mockEvSaved = {};
     return false;
   }
   const final = mk.phase === 'final';
@@ -2548,6 +2565,10 @@ function applyMock() {
   const ps = mockGwStats(mk.gw, +mk.seed || 1, frac);
   if (mockPrevPS && state.phase === 'season') { try { vidiDiff(mk.gw, mockPrevPS, ps); } catch { /* the tape can miss a beat */ } }
   mockPrevPS = ps;
+  // a REAL event for this gameweek that synced in while the chamber runs is
+  // feed truth — stash it so switch-off restores it instead of deleting
+  const existing = state.matchStats[gwKey];
+  if (existing && !String(existing.label || '').includes('simulation')) mockEvSaved[gwKey] = existing;
   state.matchStats[gwKey] = { gw: mk.gw, label: `GW${GAMEWEEKS[mk.gw].n} — simulation`, date: GAMEWEEKS[mk.gw].from, final, playerStats: ps };
   mockGwKeyApplied = gwKey;
   return true;
@@ -3418,7 +3439,11 @@ function maybeDrinksBreak() {
     <button class="btn" id="breakDone" style="margin-top:16px" disabled>Back to the Console</button></div>`;
   document.body.appendChild(el);
   playSound('bonjovi');
-  const opened = Date.now();
+  // the countdown survives refreshes/re-renders — stored per break, so a
+  // reload at 1:59 doesn't hold the room another two minutes (sol mock-night)
+  const breakKey = `${LS_NS}-break-${n}-${state.draftPool?.at || 0}`;
+  let opened = +localStorage.getItem(breakKey) || 0;
+  if (!opened) { opened = Date.now(); try { localStorage.setItem(breakKey, opened); } catch { /* private mode */ } }
   const bd = $('#breakDone');
   const tick = setInterval(() => {
     if (!document.body.contains(bd)) { clearInterval(tick); return; }
@@ -3840,7 +3865,8 @@ function heckleSheet() {
     <button class="btn ghost small" id="hkCancel" style="width:100%;margin-top:10px">Never mind</button>
   </div>`;
   document.body.appendChild(ov);
-  const close = () => ov.remove();
+  pushOvState(); // phone Back closes the sheet, not the tab behind it
+  const close = () => closeOv(ov);
   ov.onclick = e => { if (e.target === ov) close(); };
   $('#hkCancel').onclick = close;
   $('#hkRandom').onclick = () => {
@@ -3961,7 +3987,10 @@ function metricsFor(p) {
 const TEAM_SHORT_BY_NAME = Object.fromEntries(TEAMS.map(t => [t.name, t.short]));
 let _fxCache = new Map(), _fxKey = '';
 function nextFx(team) {
-  const key = String((state.fixtures || []).length);
+  // the chamber patches fixtures' finished flags, so the cache must turn over
+  // when the mock starts, advances phase, or switches off (sol mock-night P2)
+  const mk = state.mock;
+  const key = String((state.fixtures || []).length) + (mk && mk.gw != null ? `:mk${mk.gw}:${mk.phase}` : ':off');
   if (_fxKey !== key) { _fxCache = new Map(); _fxKey = key; }
   if (_fxCache.has(team)) return _fxCache.get(team);
   const f = (state.fixtures || []).find(x => !x.finished && (x.home === team || x.away === team));

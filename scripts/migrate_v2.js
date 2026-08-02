@@ -54,7 +54,10 @@ const LEGACY_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'trans
   'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'pins', 'adjustments',
   'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup'];
 const PRIVATE_KEYS = ['claims', 'autolists'];
-const DROPPED_KEYS = ['pins'];
+// pins are dead by design; mock/heckles/ready are ephemera that must never
+// ride a migration into the real league (the Simulation Chamber flag would
+// lock the trough and shift transfer gameweeks — sol mock-night P0)
+const DROPPED_KEYS = ['pins', 'mock', 'heckles', 'ready'];
 
 /* ---------------- pure transform layer (exported, used by the test) ---------------- */
 

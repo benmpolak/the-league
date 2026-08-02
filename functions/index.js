@@ -645,12 +645,16 @@ ACTIONS.troughSign = async ({ league, a, data, ctx, state, eng }) => {
   await stripLineup(league, state, mid, tgw, outP.id);
   return { ok: true, tgw };
 };
-// mirror of app.js onWaivers() — Committee fixture-window model
+// mirror of app.js onWaivers() — Committee fixture-window model. The chamber's
+// mock clock outranks EVERY manual control: a stale "open" override must not
+// let signings through mid-simulation (sol mock-night P1).
 function onWaiversServer(state, p, eng) {
+  const tw = eng.troughWindow(state);
+  if (tw.mock) return true;
   const ctl = eng.waiverControl(state);
   if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  if (!eng.troughWindow(state).open) return true;
+  if (!tw.open) return true;
   for (const t of state.transfers) if (t.outId === p.id && (t.t || 0) > eng.lastWaiverRun(state)) return true;
   return false;
 }

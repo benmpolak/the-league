@@ -243,7 +243,9 @@
       return starts * sc.appearanceStart + (played - starts) * sc.appearanceSub;
     }
     function statPoints(scoring, player, s, skipAppearance) {
-      const sc = scoring;
+      // missing keys default to the canon table — a partial scoring object
+      // must degrade to defaults, never to NaN (sol mock-night P3)
+      const sc = { ...DEFAULT_SCORING, ...(scoring || {}) };
       // double gameweek: score per fixture and sum; appearance settled once here
       if (s && s.fx && s.fx.length > 1) {
         const played = s.fx.filter(f => (f.min || 0) > 0).length;
@@ -391,8 +393,11 @@
       const mk = state.mock;
       if (mk && mk.gw != null) {
         const mkT = typeof mk.t === 'number' ? mk.t : 0;
-        if (mk.phase === 'live') return { open: false, until: null, why: 'the gameweek is underway (simulation)' };
-        if (mk.phase === 'final' && lastWaiverRun(state) < mkT) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run (simulation)' };
+        // mock:true marks these closures as chamber-driven — callers must let
+        // them outrank manual waiver controls (a stale "open" is not a licence
+        // to sign mid-simulation)
+        if (mk.phase === 'live') return { open: false, until: null, mock: true, why: 'the gameweek is underway (simulation)' };
+        if (mk.phase === 'final' && lastWaiverRun(state) < mkT) return { open: false, until: null, mock: true, why: 'awaiting the post-gameweek waiver run (simulation)' };
       }
       const t = now();
       let cur = -1;

@@ -102,6 +102,14 @@ async function main() {
   }
   const schemaErr = checkSchema(args.schema, data);
   if (schemaErr) { console.error(`REFUSING: ${schemaErr}`); process.exit(1); }
+  // The Simulation Chamber flag is sandbox-only. Restore replaces the whole
+  // tree with Admin rights, so this is the last line of defence: a sandbox
+  // snapshot restored over a real league would lock the trough shut and shift
+  // every transfer a gameweek (sol mock-night P0).
+  if (args.schema === 'v2' && args.league !== 'the-league-sandbox' && isObj(data.public) && data.public.mock != null) {
+    console.error('REFUSING: snapshot carries a Simulation Chamber flag (public.mock) — sandbox-only. Delete public.mock from the file, or restore to the-league-sandbox.');
+    process.exit(1);
+  }
 
   const dbPath = args.schema === 'v2' ? `v2/leagues/${args.league}` : `leagues/${args.league}`;
   const keys = isObj(data) ? Object.keys(data).sort().join(', ') : typeof data;
