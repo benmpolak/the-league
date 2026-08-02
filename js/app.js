@@ -2704,8 +2704,9 @@ function renderIdentity() {
     // signed in with an email the league doesn't know
     ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
       <h2>Who let you in?</h2>
-      <p class="muted" style="font-size:13px;margin-bottom:14px">${esc(authUser.email || 'This email')} isn't on the Committee's list. If you're one of the twelve, talk to the Chairman.</p>
+      <p class="muted" style="font-size:13px;margin-bottom:14px">You're signed in as <b>${esc(authUser.email || 'unknown')}</b> but this device hasn't linked you to a manager. If that email is the one the Chairman registered, it's usually a hiccup &mdash; reload and it sorts itself. If it's a different email, sign out and use the registered one.</p>
       <div style="display:flex;gap:8px">
+        <button class="btn small" id="whoReload" style="flex:1">&#8635; Reload</button>
         <button class="btn ghost small" id="whoSignOut" style="flex:1">Sign out</button>
         <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
       </div>
@@ -2756,6 +2757,8 @@ function renderIdentity() {
   if (wc) wc.onclick = () => { forceIdentity = false; ov.remove(); };
   const so = ov.querySelector('#whoSignOut');
   if (so) so.onclick = () => window.WCSync ? window.WCSync.auth.signOut() : toast('Can’t reach the league right now — try a refresh');
+  const wr = ov.querySelector('#whoReload');
+  if (wr) wr.onclick = () => location.reload();
   const rs = ov.querySelector('#whoResend');
   if (rs) rs.onclick = () => { linkSentTo = null; renderIdentity(); };
   const form = ov.querySelector('#whoEmailForm');
@@ -2860,8 +2863,11 @@ function renderSyncArea() {
   }
   if (syncOn()) {
     bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Offline — the league is read-only until you reconnect'}" title="${syncConnected ? 'Live sync: connected' : 'Offline — the league is read-only until you reconnect'}">&#9679;</span>`);
-    const who = whoami === -1 ? 'Spectating' : (whoami ? esc(managerName(whoami)) : 'Sign in');
-    const whoTitle = netOn() ? (authUser ? 'Signed in — tap to sign out' : 'Sign in') : 'Switch who this device acts as';
+    // signed in but membership never landed: SAY so — a pill reading "Sign in"
+    // while the account is authenticated reads as a broken app (Ben, 2 Aug)
+    const stuck = netOn() && authUser && !whoami;
+    const who = whoami === -1 ? 'Spectating' : (whoami ? esc(managerName(whoami)) : (stuck ? '&#9888; Not recognised' : 'Sign in'));
+    const whoTitle = netOn() ? (stuck ? `Signed in as ${esc(authUser.email || 'unknown')} but not linked to a manager yet — tap for options` : authUser ? 'Signed in — tap to sign out' : 'Sign in') : 'Switch who this device acts as';
     bits.push(`<button class="tag" id="whoBtn" style="cursor:pointer" title="${whoTitle}">${who}</button>`);
   }
   if (state.phase === 'season') {
@@ -2889,7 +2895,11 @@ function renderSyncArea() {
     if (netOn()) {
       spectating = false;
       localStorage.removeItem(SPECT_KEY);
-      if (authUser) {
+      if (authUser && !whoami) {
+        // signed in but unrecognised — open the diagnostic card, not a
+        // sign-out confirm that looks like nothing happened
+        forceIdentity = true; render();
+      } else if (authUser) {
         if (confirm('Sign out of the league on this device?')) window.WCSync?.auth.signOut();
       } else {
         // force the overlay: in the setup phase it doesn't appear on its own,

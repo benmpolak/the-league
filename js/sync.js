@@ -77,18 +77,38 @@ onValue(ref(db, `${base}/public`), snap => window.onSharedSnapshot?.(snap.val())
   err => console.warn('[sync] read error', err));
 onValue(ref(db, '.info/connected'), snap => window.onSyncConnection?.(!!snap.val()));
 
-// per-user private data (autolist + blind claims) and membership follow auth state
+// per-user private data (autolist + blind claims) and membership follow auth
+// state. A Firebase onValue that errors once (token/connection race right
+// after a link sign-in) is CANCELLED silently and never retries — which
+// leaves someone signed in but never recognised. So an errored listener
+// re-attaches itself with backoff instead of dying.
 let detachers = [];
+let authEpoch = 0;
+function attachUserRead(user, epoch, path, deliver, label, attempt = 0) {
+  const off = onValue(ref(db, path), snap => deliver(snap.val()), err => {
+    console.warn(`[sync] ${label} read error`, err);
+    if (epoch !== authEpoch || auth.currentUser?.uid !== user.uid) return;
+    if (attempt >= 5) { console.warn(`[sync] ${label} read gave up after ${attempt + 1} tries`); return; }
+    setTimeout(() => {
+      if (epoch !== authEpoch || auth.currentUser?.uid !== user.uid) return;
+      // refresh the token first — a stale/unpropagated token is the usual culprit
+      auth.currentUser.getIdToken(true).catch(() => {}).then(() => {
+        if (epoch !== authEpoch || auth.currentUser?.uid !== user.uid) return;
+        detachers.push(attachUserRead(user, epoch, path, deliver, label, attempt + 1));
+      });
+    }, 2000 * (attempt + 1));
+  });
+  return off;
+}
 onAuthStateChanged(auth, user => {
   for (const off of detachers) off();
   detachers = [];
+  authEpoch++;
   if (user) {
-    detachers.push(onValue(ref(db, `${base}/private/${user.uid}`),
-      snap => window.onPrivateSnapshot?.(snap.val()),
-      err => console.warn('[sync] private read error', err)));
-    detachers.push(onValue(ref(db, `${base}/server/membership/${user.uid}`),
-      snap => window.onMembershipSnapshot?.(snap.val()),
-      err => console.warn('[sync] membership read error', err)));
+    detachers.push(attachUserRead(user, authEpoch, `${base}/private/${user.uid}`,
+      v => window.onPrivateSnapshot?.(v), 'private'));
+    detachers.push(attachUserRead(user, authEpoch, `${base}/server/membership/${user.uid}`,
+      v => window.onMembershipSnapshot?.(v), 'membership'));
   } else {
     window.onPrivateSnapshot?.(null);
     window.onMembershipSnapshot?.(null);
