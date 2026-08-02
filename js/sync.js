@@ -11,6 +11,12 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFunctions, connectFunctionsEmulator, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js';
 
+// A stale "websockets failed here once" flag makes the SDK start on the
+// long-polling fallback FOREVER — which this server 503s. One old wifi blip
+// bricked a browser for good (Ben, 2 Aug, two hours of forensics). Always
+// clear it: websocket-first every boot; in-session fallback still works.
+try { localStorage.removeItem('firebase:previous_websocket_failure'); } catch { /* storage-less contexts */ }
+
 const app = initializeApp({
   apiKey: 'AIzaSyCe9-VZep_3_2BWRPj9TMY0OLSbT8XxPk4',
   authDomain: 'calciopoli-wc26.firebaseapp.com',

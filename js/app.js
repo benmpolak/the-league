@@ -2789,7 +2789,12 @@ function renderIdentity() {
   const so = ov.querySelector('#whoSignOut');
   if (so) so.onclick = () => window.WCSync ? window.WCSync.auth.signOut() : toast('Can’t reach the league right now — try a refresh');
   const wr = ov.querySelector('#whoReload');
-  if (wr) wr.onclick = () => location.reload();
+  if (wr) wr.onclick = () => {
+    // clear the SDK's remembered-websocket-failure flag too — a stale one
+    // forces the dead long-polling route and survives normal reloads
+    try { localStorage.removeItem('firebase:previous_websocket_failure'); } catch { /* fine */ }
+    location.reload();
+  };
   const rs = ov.querySelector('#whoResend');
   if (rs) rs.onclick = () => { linkSentTo = null; renderIdentity(); };
   const form = ov.querySelector('#whoEmailForm');
@@ -5417,38 +5422,61 @@ function previewArticle(i, pick) {
   const d = gwPreviewData(i);
   if (!d) return '';
   const { rows, motw, notes, recent } = d;
+  const table = h2hStandings();
+  const posOf = Object.fromEntries(table.map((r, k) => [r.id, k + 1]));
+  const played = table.some(r => r.p > 0);
+  const pos = id => played ? `${ord(posOf[id])}` : null;
   const pct = Math.round(motw.p * 100);
   const fav = pct >= 50 ? motw.a : motw.b;
   const dog = fav === motw.a ? motw.b : motw.a;
   const favPct = Math.max(pct, 100 - pct);
-  const opener = pick([
-    `The teamsheets are in, the gates are locked, and all roads lead to ${stadium(motw.a)}.`,
-    'Twelve teamsheets, no excuses left. The Committee has read them all and drawn its conclusions.',
-    'Lineups locked across the league, and the presses have been busy overnight.',
+  const keyMan = mid => lineupFor(mid, i).map(id => PLAYER_BY_ID[id]).filter(Boolean)
+    .sort((a, b) => playerXp(b) - playerXp(a))[0];
+  const ka = keyMan(motw.a), kb = keyMan(motw.b);
+  const stakes = played
+    ? (Math.abs(posOf[motw.a] - posOf[motw.b]) <= 2
+      ? `with ${pos(motw.a)} hosting ${pos(motw.b)}, the table says this one matters and for once the table is right`
+      : `${pos(motw.a)} against ${pos(motw.b)} — a mismatch on paper, and paper has embarrassed people all season`)
+    : 'the first exchanges of a season twelve men have waited all summer for';
+  const lead = pick([
+    `All roads lead to ${stadium(motw.a)}, where ${teamName(motw.a)} host ${teamName(motw.b)} — ${stakes}.`,
+    `The Committee has stamped ${teamName(motw.a)} v ${teamName(motw.b)} as the tie of the round: ${stakes}.`,
+    `One fixture stands above the rest this week: ${teamName(motw.a)} against ${teamName(motw.b)} at ${stadium(motw.a)}, ${stakes}.`,
   ], i);
-  const verdict = pick([
-    `The numbers make it ${teamName(fav)}'s to lose at ${favPct}% — and the numbers have been wrong before, as the group chat will happily remind them.`,
-    `${teamName(fav)} start at ${favPct}%, which historically guarantees nothing by Saturday teatime.`,
-    `${teamName(fav)} are favourites at ${favPct}%; ${teamName(dog)} have been written off before and dined out on it.`,
+  const numbers = pick([
+    `The projections make it ${motw.sa}–${motw.sb} and hand ${teamName(fav)} a ${favPct}% chance — numbers ${managerName(dog)} will treat with the contempt they possibly deserve.`,
+    `On expected points it's ${motw.sa}–${motw.sb}, ${favPct}% in ${teamName(fav)}'s favour. ${teamName(dog)} have read worse forecasts and won.`,
   ], i + 1);
+  const men = ka && kb
+    ? ` ${ka.name} (${playerXp(ka).toFixed(1)} expected) carries the home hopes; ${kb.name} (${playerXp(kb).toFixed(1)}) the away ones.`
+    : '';
+  const ga = gafferFor(motw.a), gb = gafferFor(motw.b);
+  const dugouts = ga && gb ? ` In the dugouts, ${ga.t} against ${gb.t} — no handshake confirmed.` : '';
   const motwNotes = notes(motw).join(' ');
-  const rest = rows.filter(r => r !== motw).map(r => {
+  const grounds = rows.filter(r => r !== motw).map((r, k) => {
     const p2 = Math.round(r.p * 100);
     const f2 = p2 >= 50 ? r.a : r.b, u2 = f2 === r.a ? r.b : r.a;
-    return `${teamName(f2)} are ${Math.max(p2, 100 - p2)}% favourites against ${teamName(u2)} (${r.sa}–${r.sb} on projection)`;
+    const m2 = Math.max(p2, 100 - p2);
+    return pick([
+      `${teamName(f2)} should have too much for ${teamName(u2)} (${m2}%)`,
+      `${teamName(u2)} will fancy the upset against ${teamName(f2)}, the numbers (${m2}% against) will not`,
+      `${teamName(f2)} and ${teamName(u2)} looks tight enough to ruin somebody's Sunday (${m2}–${100 - m2})`,
+      `${teamName(f2)} are ${m2}% favourites over ${teamName(u2)}, projected ${r.sa}–${r.sb}`,
+    ], i * 7 + k);
   });
   const troughLine = recent.length
-    ? ` In the transfer columns: ${recent.map(t => `${managerName(t.managerId)} ${t.trade ? 'traded for' : 'signed'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(', ')}.`
+    ? ` The transfer columns note ${recent.slice(-3).map(t => `${managerName(t.managerId)} ${t.trade ? 'trading for' : 'signing'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(', ')} — moves that will look either shrewd or desperate by Monday.`
     : '';
   const closer = pick([
-    'Projections courtesy of the algorithm. Liability courtesy of no one.',
-    'The Committee reminds all twelve managers that confidence is not a defence.',
-    'Kick-off imminent. Silence your rivals, not your phone.',
-  ], i + 2);
+    'Projections by the algorithm; consequences by the group chat.',
+    'The Committee wishes all twelve managers the fortune they deserve. Exactly that much.',
+    'Lineups lock at kick-off. Regret locks in shortly afterwards.',
+  ], i + 3);
   return `<div class="prog-art">
-    <p class="prog-lead">${esc(opener)} <b>${esc(teamName(motw.a))}</b> meet <b>${esc(teamName(motw.b))}</b> in the Matchup of the Week, ${motw.sa}&ndash;${motw.sb} on projection. ${esc(verdict)}</p>
+    <p class="prog-lead">${esc(lead)}</p>
+    <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
-    <p>Elsewhere: ${esc(rest.join('; '))}.${esc(troughLine)}</p>
+    <p><b>Around the grounds:</b> ${esc(grounds.join('; '))}.${esc(troughLine)}</p>
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }
@@ -5457,31 +5485,47 @@ function reviewArticle(last, pick) {
   const results = pairingsFor(last).map(([a, b]) => ({ a, b, sa: gwManagerPoints(a, last), sb: gwManagerPoints(b, last) }));
   if (!results.length) return '';
   const { hi, lo, jammy, robbed, hiding, bench } = aw;
-  const lead = hiding && hiding.margin >= 15
+  // the star turn: best single scorer across every scored XI this week
+  let star = null;
+  for (const m of state.managers) for (const pid of lineupFor(m.id, last)) {
+    const pts = gwPlayerPoints(pid, last);
+    if (!star || pts > star.pts) star = { p: PLAYER_BY_ID[pid], pts, mid: m.id };
+  }
+  const lead = hiding && hiding.margin >= 18
     ? pick([
-      `${teamName(hiding.w)} did not so much beat ${teamName(hiding.l)} as dismantle them, ${hiding.ws}–${hiding.ls} — a scoreline the Committee has filed under "hidings, biggest".`,
-      `The week belonged to ${teamName(hiding.w)}, who put ${hiding.ws} on ${teamName(hiding.l)} and showed no remorse afterwards.`,
+      `${teamName(hiding.w)} did not so much beat ${teamName(hiding.l)} as dismantle them — ${hiding.ws}–${hiding.ls}, a margin the Committee has filed under "hidings, biggest" and ${managerName(hiding.l)} has filed under "never mention again".`,
+      `The week belonged to ${teamName(hiding.w)}, who put ${hiding.ws} points on ${teamName(hiding.l)} and celebrated with the quiet dignity of a man who has already screenshotted the score.`,
     ], last)
     : pick([
-      `${teamName(hi.id)} topped the week with ${hi.s} points and have been insufferable since.`,
-      `A week of fine margins, and nobody's were finer than ${teamName(hi.id)}'s ${hi.s}.`,
+      `${teamName(hi.id)} topped the week with ${hi.s} points — a total assembled ${hiding ? `while ${teamName(hiding.l)} were shipping ${hiding.ws} elsewhere` : 'with minimal fuss and maximal smugness'}.`,
+      `A week of fine margins, and none finer than ${teamName(hi.id)}'s ${hi.s} — enough for the points, the bragging rights, and an insufferable Monday.`,
     ], last);
-  const resLine = results.map(r => r.sa === r.sb
+  const starLine = star && star.pts > 0
+    ? ` The individual honours go to ${star.p.name}, whose ${star.pts} points for ${teamName(star.mid)} were the week's outstanding shift.`
+    : '';
+  const card = results.map((r, k) => r.sa === r.sb
     ? `${teamName(r.a)} ${r.sa}–${r.sb} ${teamName(r.b)} (a draw nobody enjoyed)`
-    : `${teamName(r.sa > r.sb ? r.a : r.b)} beat ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`).join('; ');
+    : pick([
+      `${teamName(r.sa > r.sb ? r.a : r.b)} saw off ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
+      `${teamName(r.sa > r.sb ? r.a : r.b)} edged ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
+      `${teamName(r.sa > r.sb ? r.a : r.b)} beat ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
+    ], last * 5 + k)).join('; ');
   const awardBits = [];
   if (lo) awardBits.push(`the Wooden Spoon goes to ${teamName(lo.id)} (${lo.s})`);
-  if (jammy) awardBits.push(`${teamName(jammy.w)} take Jammiest Win, victorious with just ${jammy.ws}`);
-  if (robbed) awardBits.push(`${teamName(robbed.l)} were Robbed, scoring ${robbed.ls} and losing anyway`);
-  if (bench && bench.waste > 0) awardBits.push(`${teamName(bench.id)} left ${bench.waste} on the bench, which the Committee notes without comment`);
+  if (jammy && jammy.ws < (hi?.s || 99)) awardBits.push(`${teamName(jammy.w)} take Jammiest Win, victorious with just ${jammy.ws}`);
+  if (robbed) awardBits.push(`${teamName(robbed.l)} were Robbed — ${robbed.ls} points and nothing to show for it`);
+  if (bench && bench.waste > 0) awardBits.push(`${teamName(bench.id)} left ${bench.waste} on the bench, which the Committee records without comment but with an eyebrow`);
   const table = h2hStandings();
-  const tableLine = table.length && table.some(r => r.p > 0)
-    ? `The table now reads: ${teamName(table[0].id)} top on ${table[0].pts}, ${teamName(table[table.length - 1].id)} bottom and briefing against the fixture list.`
-    : '';
+  let tableLine = '';
+  if (table.length && table.some(r => r.p > 0)) {
+    const top = table[0], second = table[1], eighth = table[7], ninth = table[8], bottom = table[table.length - 1];
+    const gap = top.pts - (second?.pts || 0);
+    tableLine = `${teamName(top.id)} lead the table${gap > 0 ? ` by ${gap}` : ' on tiebreak'}; at the other end ${teamName(bottom.id)} prop everyone up. The playoff line: ${teamName(eighth.id)} in, ${teamName(ninth.id)} out, ${eighth.pts - ninth.pts <= 3 ? 'and barely a cigarette paper between them' : 'with work to do'}.`;
+  }
   return `<div class="prog-art">
-    <p class="prog-lead">${esc(lead)}</p>
-    <p>The full card: ${esc(resLine)}.</p>
-    ${awardBits.length ? `<p>In dispatches: ${esc(awardBits.join('; '))}.</p>` : ''}
+    <p class="prog-lead">${esc(lead)}${esc(starLine)}</p>
+    <p><b>The full card:</b> ${esc(card)}.</p>
+    ${awardBits.length ? `<p><b>In dispatches:</b> ${esc(awardBits.join('; '))}.</p>` : ''}
     ${tableLine ? `<p>${esc(tableLine)}</p>` : ''}
   </div>`;
 }
