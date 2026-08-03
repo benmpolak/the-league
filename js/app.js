@@ -5006,6 +5006,25 @@ function viewTransfers() {
       </div>
     </details>`;
   })();
+  // trough tab: the squad as a pitch, not a list — tap the man who makes way
+  // (Ben: "you should see your squad as a lineup pitch style rather than list")
+  const myPitchCard = (() => {
+    if (netOn() && (!whoami || whoami === -1)) return '';
+    const sq = squadAt(mid, cur);
+    if (!sq.length) return '';
+    return `<div class="card" style="margin-bottom:14px">
+      <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
+      <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
+      <div class="pitch mu-pitch">
+        ${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${sq.filter(p => p.pos === pos).map(p => `
+          <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+            ${kitImg(p.team, p.pos === 'GK')}
+            <span class="pitch-name">${esc(p.name)}</span>
+            <span class="pitch-vs">${metricsFor(p).pts} pts</span>
+          </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}
+      </div>
+    </div>`;
+  })();
   if (tab === 'trough') {
     const wd = state.windowDraft;
     const arrivals = lockedArrivals();
@@ -5068,15 +5087,11 @@ function viewTransfers() {
           <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
-    return `${head}${mySquadCard}${wdCard}<div class="card">
+    return `${head}${myPitchCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Pick your <b>player out</b>, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
       ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
-      <select id="trOut" style="width:100%;margin:8px 0;max-width:420px">
-        <option value="">Player out…</option>
-        ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
-      </select>
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
@@ -5248,7 +5263,7 @@ function bindTransfers() {
     });
   });
   // --- waivers & the Trough ---
-  const out = $('#trOut'), search = $('#trSearch'), results = $('#trResults');
+  const search = $('#trSearch'), results = $('#trResults');
   // claim list management (withdraw / reprioritise)
   document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
@@ -5290,9 +5305,16 @@ function bindTransfers() {
   const rw = $('#runWaivers');
   if (rw) rw.onclick = () => { if (confirm('Run waivers now for everyone? Claims resolve in reverse table order and the Trough opens.')) processWaivers(true); };
   ['open', 'closed', 'auto'].forEach(m => { const b = $(`#ctl${m[0].toUpperCase()}${m.slice(1)}`); if (b) b.onclick = () => setWaiverControl(m); });
-  if (out) {
+  if (results) {
     const cur = currentGwIndex();
-    out.onchange = () => { transfersView.out = +out.value || null; renderTrResults(); };
+    // tap a chip on the pitch to pick who makes way; tap again to change your
+    // mind — the class flips in place so the search box keeps its text
+    document.querySelectorAll('[data-trout]').forEach(chip => chip.onclick = () => {
+      const pid = +chip.dataset.trout;
+      transfersView.out = transfersView.out === pid ? null : pid;
+      document.querySelectorAll('[data-trout]').forEach(c => c.classList.toggle('sel', +c.dataset.trout === transfersView.out));
+      renderTrResults();
+    });
     search.oninput = renderTrResults;
     function renderTrResults() {
       const q = normName(search.value || '');
@@ -5319,7 +5341,7 @@ function bindTransfers() {
       const total = pool.length;
       const shown = pool.slice(0, transfersView.limit);
       const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
-        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — choose a player out above to unlock signing and claiming. Tap a column to sort.</div>';
+        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — tap a player on your pitch above to unlock signing and claiming. Tap a column to sort.</div>';
       const table = `
       <div style="overflow-x:auto">
       <table class="pool-table">
@@ -5941,7 +5963,9 @@ function bracketCard() {
   const rows = standingsBefore(REGULAR_GWS).rows;
   const seeds = po ? po.seeds : rows.slice(0, 8).map(r => r.id);
   if (seeds.length < 8) return '';
-  const tablePts = Object.fromEntries(rows.map(r => [r.id, r.pts]));
+  // handicaps come off the H2H table Points (3 a win), NOT overall fantasy
+  // points (Marc, 3 Aug: "+11 in the bracket — it's using points not Points")
+  const tablePts = Object.fromEntries(rows.map(r => [r.id, r.h2h]));
   const qfs = po ? po.qfs : [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
   const hcaps = po ? po.handicaps : qfs.map(([a, b]) => qfHandicap(tablePts[a] || 0, tablePts[b] || 0));
   const seedNo = id => seeds.indexOf(id) + 1;
@@ -6331,7 +6355,8 @@ function playoffState() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') return null;
   const table = standingsBefore(REGULAR_GWS).rows;
   const seeds = table.map(r => r.id).slice(0, 8);
-  const tablePts = Object.fromEntries(table.map(r => [r.id, r.pts]));
+  // H2H table Points, not overall fantasy points (Marc's "+11" bracket bug)
+  const tablePts = Object.fromEntries(table.map(r => [r.id, r.h2h]));
   const qfIdx = REGULAR_GWS;       // GW34
   const semiIdx = REGULAR_GWS + 1; // GW35
   const finalIdx = [REGULAR_GWS + 2, REGULAR_GWS + 3, REGULAR_GWS + 4]; // GW36–38

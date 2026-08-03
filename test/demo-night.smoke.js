@@ -349,7 +349,9 @@ const chk = (name, ok, detail = '') => {
     window.__demoNightOrig = { standingsBefore, gwStatus, gwManagerPoints, h2hStandings };
     const ids = state.managers.map(m => m.id);
     const pts = [40, 30, 20, 11, 10, 9, 8, 0, 0, 0, 0, 0];
-    const rows = ids.map((id, i) => ({ ...state.managers[i], id, pts: pts[i], p: 33, w: 0, d: 0, l: 0, pf: 0, pa: 0 }));
+    // pts doubles as h2h: h2hStandings rows carry table Points in .pts, while
+    // standingsBefore rows carry them in .h2h — the bracket reads .h2h
+    const rows = ids.map((id, i) => ({ ...state.managers[i], id, pts: pts[i], h2h: pts[i], p: 33, w: 0, d: 0, l: 0, pf: 0, pa: 0 }));
     standingsBefore = () => ({ rows, anyFinal: true });
     h2hStandings = () => rows;
     let qfFinal = false;

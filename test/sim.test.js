@@ -374,9 +374,9 @@ const check = (label, ok, detail = '') => {
     // independent recompute
     const table = standingsBefore(33).rows;
     const seeds = table.map(r => r.id).slice(0, 8);
-    const tp = Object.fromEntries(table.map(r => [r.id, r.pts]));
+    const tp = Object.fromEntries(table.map(r => [r.id, r.h2h]));
     const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
-    // handicap = half the table-points gap, rounded down, capped +15
+    // handicap = half the H2H table-points gap (3 a win), rounded down, capped +15
     const H = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]]
       .map(([x, y]) => Math.min(15, Math.floor(Math.max(0, tp[x] - tp[y]) / 2)));
     const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
