@@ -196,8 +196,11 @@ function verifyMigration(legacy, v2, uidMap) {
     ok: settingsMissing.length === 0,
   });
 
+  // compare against the source MINUS everything the transform deliberately
+  // drops — otherwise a snapshot carrying ephemera (mock/heckles/ready) fails
+  // round-trip and the migration refuses instead of migrating clean
   const srcMinusPins = { ...legacy };
-  delete srcMinusPins.pins;
+  for (const k of DROPPED_KEYS) delete srcMinusPins[k];
   const rebuilt = inverseTransform(v2, uidMap);
   const srcJson = canonicalJson(srcMinusPins);
   const rtJson = canonicalJson(rebuilt);
@@ -239,7 +242,10 @@ function buildReport(legacy, v2, uidMap, result, meta) {
   const unexpected = Object.keys(legacy).filter(k => !LEGACY_KEYS.includes(k));
   if (unexpected.length) {
     L.push('');
-    L.push(`WARNING unexpected legacy keys (copied to public verbatim): ${unexpected.join(', ')}`);
+    const dropped = unexpected.filter(k => DROPPED_KEYS.includes(k));
+    const copied = unexpected.filter(k => !DROPPED_KEYS.includes(k));
+    if (dropped.length) L.push(`WARNING unexpected legacy keys (sandbox-only ephemera, DROPPED): ${dropped.join(', ')}`);
+    if (copied.length) L.push(`WARNING unexpected legacy keys (copied to public verbatim): ${copied.join(', ')}`);
   }
   L.push('');
   L.push('verification (source vs transformed):');
@@ -254,7 +260,7 @@ function buildReport(legacy, v2, uidMap, result, meta) {
   }
   if (!countEntries(v2.private)) L.push('  (none)');
   L.push('');
-  L.push('round-trip (v2 -> legacy, pins omitted both sides):');
+  L.push('round-trip (v2 -> legacy, dropped keys omitted both sides):');
   L.push(`  deep-equal: ${result.roundTripOk ? 'OK' : 'FAIL'}`);
   L.push(`  sha256 source     : ${result.srcSha}`);
   L.push(`  sha256 round-trip : ${result.rtSha}`);

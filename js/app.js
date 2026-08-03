@@ -2510,6 +2510,10 @@ function mockGwStats(gwIdx, seed, frac) {
 // result landing): object identity tells us which fixtures we've already
 // patched, so replaced objects get their new values remembered before we
 // paint over them (sol mock-night P1: the old code restored stale scores).
+// ⚠️ IDENTITY-DEPENDENT (sol r2 P3): this only works because syncNow parses
+// fresh JSON, so every sync makes NEW fixture objects. If a future refactor
+// ever mutates fixture objects in place instead, the saved values go stale
+// again — keep syncs replace-not-mutate, or rethink this capture.
 let mockFxSaved = null;
 let mockFxPatched = new WeakSet();
 function patchMockFixtures(mk, frac, final) {
@@ -5047,7 +5051,10 @@ function viewTransfers() {
     const tw = troughWindow();
     // the state of play, spelled out (mock night: "it just doesn't know when
     // players go on waivers") — closed window means EVERYONE free is claim-only
-    const status = ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
+    // the chamber outranks manual controls in ENFORCEMENT, so it must outrank
+    // them here too — "THROWN OPEN" during a live mock was a lie (sol r2 P2)
+    const status = tw.mock ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is claim-only until the run</span>`
+      : ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
       : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span>`;
@@ -5656,7 +5663,11 @@ function viewDash() {
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
-      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.'}</p>
+      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${(() => {
+        const tw = troughWindow();
+        if (tw.mock) return `Trough shut — ${tw.why}.`; // the sim outranks manual controls (sol r2 P2)
+        return waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.';
+      })()}</p>
       ${(() => {
         const lastRes = [];
         for (let k = cur; k >= 0 && lastRes.length < 3; k--) {
