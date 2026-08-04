@@ -219,6 +219,10 @@ const check = (label, ok, detail = '') => {
     const startMF = xi.map(id => PLAYER_BY_ID[id]).find(x => x.pos === 'MF' && ps[x.id]);
     if (!startMF) return { skip: true };
     delete ps[startMF.id]; // he never played
+    // he must be the ONLY absent starter — other natural no-shows would eat
+    // the first bench slot before him (bit us when the league-currency rating
+    // reshuffled the sim draft and fringe players reached starting XIs)
+    for (const id of xi) if (id !== startMF.id) ps[id] = ps[id] || { min: 90, st: 1, sub: 0, g: 0, a: 0, cs: 0, gc: 1, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 };
     // both outfield bench players played; order the WORSE one first
     const bench = benchFor(mid, gw).filter(x => x.pos !== 'GK');
     for (const bp of bench) ps[bp.id] = ps[bp.id] || { min: 90, st: 1, sub: 0, g: 0, a: 0, cs: 0, gc: 1, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 };

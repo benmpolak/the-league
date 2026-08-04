@@ -48,7 +48,29 @@
 
     const lastSeasonOf = p => LS_BY_CODE[p.code];
     const FPL_WIPED = PLAYERS.reduce((t, p) => t + (p.pts || 0), 0) < 2000;
-    const rating = p => p.rating || lastSeasonOf(p)?.pts || 0;
+    // the board's rating = last season rescored in THE LEAGUE's currency
+    // (Committee, UAT night: FPL totals pay bonus + defensive-contribution
+    // points this league doesn't). Fixed DEFAULT_SCORING so autopick ranks
+    // identically to the client board — js/app.js rating() mirrors this.
+    const _ratingCache = new Map();
+    const rating = p => {
+      let r = _ratingCache.get(p.id);
+      if (r == null) {
+        const ls = lastSeasonOf(p);
+        const src = ls && ls.mp ? ls : (!FPL_WIPED && p.mp ? { mp: p.mp, g: p.g || 0, a: p.a || 0, cs: p.cs || 0 } : null);
+        if (!src) r = 0;
+        else {
+          const apps = src.mp / 90;
+          const csPts = p.pos === 'GK' || p.pos === 'DF' ? DEFAULT_SCORING.cleanSheet : p.pos === 'MF' ? DEFAULT_SCORING.cleanSheetMF : 0;
+          r = Math.max(0, Math.round(apps * DEFAULT_SCORING.appearanceStart * 0.85
+            + src.g * DEFAULT_SCORING['goal' + p.pos] + src.a * DEFAULT_SCORING.assist + (src.cs || 0) * csPts
+            + (p.pos === 'GK' ? apps * 0.5 : 0)
+            - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0)));
+        }
+        _ratingCache.set(p.id, r);
+      }
+      return r;
+    };
 
     /* ---- gameweek clock ---- */
     const gwFrom = i => GAMEWEEKS[i].from;

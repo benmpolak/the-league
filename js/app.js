@@ -459,7 +459,23 @@ function save() {
   } catch (e) { console.warn('[save]', e); }
 }
 // last season's FPL points (falls back to price until the new season's data rolls in)
-const rating = p => p.rating || lastSeasonOf(p)?.pts || 0;
+// the board's rating = last season's total in THE LEAGUE's currency (Marc +
+// Toby, UAT night: "based on our scoring system… no save points, bonus points
+// etc" — the feed's own rating/pts fields carry FPL bonus + defensive-
+// contribution points this league does not pay, which had Elliot Anderson
+// tenth on the board). Cached per player; cache drops if scoring is edited.
+// Fixed DEFAULT_SCORING currency (not the live editable scoring) so the
+// board ranks identically on client and server — engine.js mirrors this.
+const _ratingCache = new Map();
+const rating = p => {
+  let r = _ratingCache.get(p.id);
+  if (r == null) {
+    const src = leagueSeasonSrc(p);
+    r = src ? Math.max(0, Math.round(leaguePtsFrom(src, p.pos, DEFAULT_SCORING))) : 0;
+    _ratingCache.set(p.id, r);
+  }
+  return r;
+};
 
 /* ---------------- demo mode ---------------- */
 function buildDemoState() {
@@ -744,19 +760,26 @@ const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}<
    FPL's carried-forward ppg pays bonus + defensive-contribution points this
    league doesn't score). Rebuild expected points from raw stats under league
    scoring; once real gameweeks exist, blend toward the live league ppg. */
-function leagueArchivePpg(p) {
-  const sc = (state.settings && state.settings.scoring) || DEFAULT_SCORING;
+function leagueSeasonSrc(p) {
   const ls = lastSeasonOf(p);
-  const src = ls && ls.mp ? ls : (!FPL_WIPED && p.mp ? { mp: p.mp, g: p.g || 0, a: p.a || 0, cs: p.cs || 0 } : null);
+  if (ls && ls.mp) return ls;
+  return (!FPL_WIPED && p.mp) ? { mp: p.mp, g: p.g || 0, a: p.a || 0, cs: p.cs || 0 } : null;
+}
+function leaguePtsFrom(src, pos, scFixed) {
+  const sc = scFixed || (state.settings && state.settings.scoring) || DEFAULT_SCORING;
+  const apps = src.mp / 90;
+  const csPts = pos === 'GK' || pos === 'DF' ? (sc.cleanSheet ?? 4) : pos === 'MF' ? (sc.cleanSheetMF ?? 1) : 0;
+  return apps * ((sc.appearanceStart ?? 2) * 0.85) // some of those apps were sub outings
+    + src.g * (sc['goal' + pos] ?? 4) + src.a * (sc.assist ?? 3) + (src.cs || 0) * csPts
+    + (pos === 'GK' ? apps * 0.5 : 0)                  // save/pen-save points, roughly
+    - (pos === 'GK' || pos === 'DF' ? apps * 0.55 : 0); // goals-conceded drag, roughly
+}
+function leagueArchivePpg(p) {
+  const src = leagueSeasonSrc(p);
   if (!src) return 0;
   const apps = src.mp / 90;
   if (apps < 3) return 0; // too small a sample to call a projection
-  const csPts = p.pos === 'GK' || p.pos === 'DF' ? (sc.cleanSheet ?? 4) : p.pos === 'MF' ? (sc.cleanSheetMF ?? 1) : 0;
-  const pts = apps * ((sc.appearanceStart ?? 2) * 0.85) // some of those apps were sub outings
-    + src.g * (sc['goal' + p.pos] ?? 4) + src.a * (sc.assist ?? 3) + (src.cs || 0) * csPts
-    + (p.pos === 'GK' ? apps * 0.5 : 0)                  // save/pen-save points, roughly
-    - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0); // goals-conceded drag, roughly
-  return Math.max(0.5, pts / apps);
+  return Math.max(0.5, leaguePtsFrom(src, p.pos) / apps);
 }
 const playerXp = p => {
   // NB: metricsFor() calls this (via projPts) mid-build — going back through
@@ -3396,7 +3419,7 @@ const FLAG_BEARERS = {
   'Brighton': 'the ghost of a future £100m midfielder, currently 17',
   'Burnley': 'Sean Dyche, gravel voice audible over the PA',
   'Chelsea': 'Roman Abramovich’s lawyers, waving from a safe distance',
-  'Coventry City': 'the last remaining Special, playing Ghost Town at a parade, which nobody thought through',
+  'Coventry City': 'Richard Keys, hairy hands gripping the pole. Would you smash it? The flag. The flag',
   'Crystal Palace': 'the entire Holmesdale Fanatics drum section',
   'Everton': 'Duncan Ferguson, escorting two burglars he has made friends with',
   'Fulham': 'Hugh Grant, apologising charmingly',
@@ -4106,7 +4129,7 @@ const ALL_STAT_COLS = live => [
   { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
   // Marc, UAT night: DF had a "rating" so new arrivals aren't buried at 0 pts —
   // this is the board's own blend (metricSort's rating tiebreak sorts it)
-  { k: 'rate', h: 'Rate', t: 'The board’s rating — blends last season with this one, so new signings rank instead of hiding at zero', v: (m, p) => Math.round(rating(p)) },
+  { k: 'rate', h: 'Rate', t: 'The board’s rating — last season rescored under THE LEAGUE’s rules (no bonus, no defensive-contribution points), so new signings rank instead of hiding at zero', v: (m, p) => Math.round(rating(p)) },
 ];
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
