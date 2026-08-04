@@ -95,6 +95,12 @@ chk('a waiver run AFTER mock full time reopens the trough',
 chk('mock LIVE pushes transfers to the NEXT gameweek (no mid-sim landings)',
   eng.transferGw(mockLive) === 1 && eng.transferGw(state({})) === 0,
   `mock=${eng.transferGw(mockLive)} plain=${eng.transferGw(state({}))}`);
+chk('mock FULL TIME still clamps transfers after its waiver run has completed',
+  eng.transferGw(mockRan) === 1,
+  `mock-final-post-run=${eng.transferGw(mockRan)}`);
+chk('switching the chamber off releases the clamp byte-for-byte to the real calendar',
+  eng.transferGw({ ...mockRan, mock: null }) === eng.transferGw(state({})),
+  `off=${eng.transferGw({ ...mockRan, mock: null })} plain=${eng.transferGw(state({}))}`);
 
 console.log(`\n[waiverclock] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

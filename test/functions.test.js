@@ -923,6 +923,18 @@ const SB = 'the-league-sandbox';
   chk('live Simulation Chamber closes the trough even if manual control was left open',
     forcedOpenSign.error?.status === 'FAILED_PRECONDITION', JSON.stringify(forcedOpenSign));
 
+  // Exact UAT corruption repro: the mock is final and its waiver run has
+  // completed after mock.t. The Trough may reopen, but the mounted mock must
+  // still keep every transfer out of the settled simulated gameweek.
+  await T.mutate(SB, 'mockMatchday', { op: 'final', gw: 3 }, sbTok1);
+  const finalMock = (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val();
+  await db.ref(`v2/leagues/${SB}/public/waiverMeta`).set({
+    control: 'open', lastRun: new Date(finalMock.t + 1000).toISOString(),
+  });
+  const postRunSign = await T.mutate(SB, 'troughSign', { inId: mockIn, outId: mockOut }, sbTok2);
+  chk('post-run signing under a still-mounted final mock lands at mock GW+1 (UAT Donnarumma repro)',
+    !postRunSign.error && postRunSign.result?.tgw === 4, JSON.stringify(postRunSign));
+
   let raceShifted = 0;
   for (let i = 0; i < 8; i++) {
     const round = T.buildSeedState(players, 3);
