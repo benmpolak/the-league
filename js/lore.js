@@ -139,12 +139,19 @@ const HECKLES = [
 // when one of these managers drafts a matching player. Names are lowercase
 // substring matches on the player's full name; club and pos are exact.
 const KLAXONS = [
+  // "should be for EVERY dmc drafted" (Ben, UAT night) — the feed carries no
+  // role field, so the register below is the league's official DMC taxonomy.
+  // Committee amendments to the register are accepted in the group chat.
   { mid: 3, label: '\u{1F4EF} DEFENSIVE MIDFIELDER KLAXON', line: 'Atlético Benfield add another sitter to the collection.',
-    pos: 'MF', names: ['tielemans', 'enzo fern', 'mac allister', 'declan rice', 'xhaka', 'rodri', 'caicedo', 'casemiro', 'ugarte', 'gravenberch', 'palhinha', 'wharton', 'baleba', 'onana'] },
+    pos: 'MF', names: ['tielemans', 'enzo fern', 'mac allister', 'declan rice', 'xhaka', 'rodri', 'caicedo', 'casemiro', 'ugarte',
+      'gravenberch', 'palhinha', 'wharton', 'baleba', 'onana', 'anderson', 'gomes', 'bruno guimar', 'lokonga', 'ndidi',
+      'douglas luiz', 'wieffer', 'veiga', 'garner', 'berge', 'yarmoliuk', 'mubama', 'endo', 'lavia', 'mangala', 'soucek'] },
   { mid: 5, label: '\u{1F4EF} CITY PLAYER KLAXON', line: 'Champagne Khusanova remain constitutionally committed to the project.',
     club: 'Man City' },
-  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM LOBUS KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
+  // "same for promoted alex singer klaxon" — ANY player from the promoted
+  // three counts now, not just Coventry forwards
+  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
     names: ['mcburnie'] },
-  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM LOBUS KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
-    club: 'Coventry City', pos: 'FW' },
+  { mid: 6, label: '\u{1F4EF} PROMOTED TEAM KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
+    clubs: ['Coventry City', 'Hull City', 'Ipswich Town'] },
 ];

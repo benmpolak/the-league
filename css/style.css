@@ -1001,3 +1001,13 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .n6-fx { display: block; font-size: 11px; white-space: nowrap; }
 .n6-blank { color: var(--muted); opacity: .5; }
 .n6-double .n6-fx:first-child { margin-bottom: 2px; }
+
+/* the draft-room personal strip (sol UX #4) — pinned low, never over the board */
+.draft-strip {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 8px;
+  z-index: 62; max-width: min(560px, 96vw); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; background: var(--card); border: 1px solid var(--line);
+  border-radius: 20px; padding: 6px 14px; font-size: 12px; box-shadow: var(--shadow);
+  cursor: pointer;
+}
+@media (max-width: 700px) { .draft-strip { bottom: 56px; font-size: 11px; max-width: 96vw; } }

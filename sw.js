@@ -14,7 +14,7 @@ const LEGACY = ['the-league-shell-v1', 'the-league-shell-v2']; // pre-prefix nam
 const SHELL = [
   './', './index.html', './css/style.css',
   './js/hostguard.js', './js/data.js', './js/history25.js', './js/lore.js',
-  './js/engine.js', './js/app.js', './js/sync.js',
+  './js/engine.js', './js/app.js', './js/gazette.js', './js/sync.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png',
 ];
 

@@ -37,7 +37,9 @@ const FPL_WIPED = PLAYERS.reduce((t, p) => t + (p.pts || 0), 0) < 2000;
 const POS_ORDER = { GK: 0, DF: 1, MF: 2, FW: 3 };
 const POS_LABEL = { GK: 'Goalkeepers', DF: 'Defenders', MF: 'Midfielders', FW: 'Forwards' };
 // how many players outrank you on last season's points — used for pundit judgement
-const ratingRank = r => PLAYERS.filter(x => (x.rating ?? 0) > r).length;
+// rank against the BOARD's rating (league currency) — the feed's own .rating
+// field is FPL-flavoured and no longer the truth (Committee, UAT night)
+const ratingRank = r => PLAYERS.filter(x => rating(x) > r).length;
 
 // Our established scoring table: no bonus points and no defensive-contribution
 // (DEFCON) points. Yes, a goalkeeper goal really is 10.
@@ -1102,7 +1104,7 @@ function clubEditor(mid) {
   // shouldn't have to hunt for them behind a closed drawer
   const extrasOpen = draft.boards.length || draft.gaffer != null || draft.assistant != null || draft.rivals.length;
   ov.innerHTML = `<div class="card club-office" role="dialog" aria-modal="true" aria-label="The club office" style="max-width:460px;width:94%">
-    <h2>The club office</h2>
+    <h2>The club office${whoami && mid !== whoami ? ` <span class="tag live-tag">acting for ${esc(teamName(mid))}</span>` : ''}</h2>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
       <div id="kitPreview" style="flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
@@ -1930,12 +1932,12 @@ function proposeTrade(from, to, give, get, terms = '') {
   if (!give.length || give.length !== get.length) { toast('Trades swap the same number of players each way'); return; }
   if (netOn()) {
     serverAct('tradePropose', { to, give, get, terms: terms.slice(0, 200), ...(from !== whoami && { asManager: from }) })
-      .then(() => toast(`Trade proposed to ${managerName(to)}. Their move.`)).catch(() => {});
+      .then(() => toast(`Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.`)).catch(() => {});
     return;
   }
   const offer = { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() };
   txnArray('trades', arr => [...arr, offer])
-    .then(ok => toast(ok ? `Trade proposed to ${managerName(to)}. Their move.` : 'Proposal didn’t send — check connection and try again'));
+    .then(ok => toast(ok ? `Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.` : 'Proposal didn’t send — check connection and try again'));
 }
 // flip one trade's status, transaction-safe, only if it's still pending
 const setTradeStatus = (id, status) =>
@@ -2834,6 +2836,34 @@ window.addEventListener('popstate', () => {
    decision routes through here — a mis-tap must never move a player.
    Back button / backdrop tap = cancel. Test harnesses set
    window.__autoConfirm to sail straight through. */
+/* ----- transaction receipts (sol UX #1): after the deal, the paperwork —
+   who came, who went, which gameweek it counts from, what it does to your
+   XI, and where to go next. Same overlay language as everything else. ----- */
+function receiptSheet({ title, inP, outP, gw, note = '', mid = whoami }) {
+  const wasStarting = outP && mid && lineupFor(mid, gw).includes(outP.id);
+  const impact = !outP ? ''
+    : wasStarting ? `${esc(outP.name)} was in your GW${GAMEWEEKS[gw].n} XI — pick his replacement on My Team.`
+    : `Your XI is untouched — ${esc(outP.name)} was on the bench.`;
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card" style="max-width:420px;width:94%" role="dialog" aria-label="Receipt">
+    <h2>${esc(title)}</h2>
+    ${dealRows(outP ? [outP] : [], inP ? [inP] : [])}
+    <p style="font-size:12.5px;margin-top:8px">Counts from <b>GW${GAMEWEEKS[gw].n}</b>.${impact ? ` ${impact}` : ''}</p>
+    ${note ? `<p class="muted" style="font-size:12px">${note}</p>` : ''}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn ghost small" id="rcSquad" style="flex:1">View squad</button>
+      <button class="btn ghost small" id="rcHist" style="flex:1">History</button>
+      <button class="btn small" id="rcDone" style="flex:1">Done</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const done = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) done(); };
+  ov.querySelector('#rcDone').onclick = done;
+  ov.querySelector('#rcSquad').onclick = () => { done(); state.view = 'team'; if (mid) teamView.mid = mid; save(); render(); };
+  ov.querySelector('#rcHist').onclick = () => { done(); state.view = 'transfers'; transfersView.tab = 'history'; save(); render(); };
+}
 function confirmSheet({ title, body = '', yes = 'Confirm', note = '' }) {
   if (window.__autoConfirm) return Promise.resolve(true);
   return new Promise(resolve => {
@@ -3875,6 +3905,7 @@ function squadPanelHtml() {
         <option value="">Anyone&hellip;</option>
         ${state.managers.map(mm => `<option value="${mm.id}" ${draftSquadTab === mm.id ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}
       </select>
+      <button class="btn ghost small" data-allboards>All boards</button>
     </div>`;
   return `${tabs}<h2>${esc(managerName(showMid))}'s squad${meValid && showMid === whoami ? ' <span class="tag">you</span>' : ''}</h2>
     <div class="quota-bar">${quotaPills(showMid)}</div>
@@ -3883,6 +3914,30 @@ function squadPanelHtml() {
     `).join('') || '<span class="muted">No picks yet</span>'}`;
 }
 
+// every board at once (Ben, UAT night: "I'd like a function where I can see
+// everyone's squad so far — even if it's out the way") — read-only, live
+function allBoardsSheet() {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  const board = m => {
+    const sq = managerSquad(m.id).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
+    return `<div style="min-width:0">
+      <div style="font-weight:800;font-size:12.5px;margin-bottom:2px">${kitSvg(m.id, 14)} ${esc(m.team || m.name)} <span class="muted" style="font-weight:400">${sq.length}</span></div>
+      ${sq.map(p => `<div style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span class="pos-badge pos-${p.pos}" style="font-size:8.5px">${p.pos}</span> ${esc(p.name)}</div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}
+    </div>`;
+  };
+  ov.innerHTML = `<div class="card" style="max-width:720px;width:96%;max-height:88vh;overflow-y:auto">
+    <h2>Every board so far</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px">
+      ${state.managers.map(board).join('')}
+    </div>
+    <div style="text-align:center;margin-top:12px"><button class="btn small" id="abClose">Back to the room</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#abClose').onclick = () => closeOv(ov);
+}
 function viewDraft() {
   if (state.phase === 'season') return viewDraftRecap();
   const mid = currentManagerId();
@@ -3937,7 +3992,7 @@ function viewDraft() {
       ${poolTable()}
     </div>
     <div class="draft-side">
-      ${whoami && whoami !== -1 ? `<div class="card queue-card">
+      ${whoami && whoami !== -1 ? `<div class="card queue-card" id="queueCard">
         <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Drag players across, or &#9734; them in the pool.</p>
         ${autolistRows()}
@@ -3945,7 +4000,7 @@ function viewDraft() {
       <div class="card side-squad" id="sideSquad">
         ${squadPanelHtml()}
       </div>
-      <div class="card">
+      <div class="card" id="pickHistCard">
         <h2>Pick history</h2>
         <div class="pick-log">
           ${[...state.draft.picks].reverse().slice(0, 40).map(pk => {
@@ -3957,6 +4012,25 @@ function viewDraft() {
       ${punditryDesk()}
     </div>
   </div>
+  ${(() => {
+    // the personal strip (sol UX #4): my turn, my shape, my queue — one line,
+    // pinned above the nav on phones, never covering the board
+    if (!netOn() || !whoami || whoami === -1 || state.phase !== 'draft') return '';
+    const c = posCount(whoami);
+    const need = ['GK', 'DF', 'MF', 'FW'].map(pos => {
+      const short = Math.max(0, state.settings.posMin[pos] - c[pos]);
+      return short ? `${short} ${pos}` : null;
+    }).filter(Boolean);
+    const sz = c.GK + c.DF + c.MF + c.FW;
+    const slots = state.settings.squadSize - sz;
+    const q = toArr(state.autolists?.[whoami]).map(id => PLAYER_BY_ID[id]).filter(p => p && !draftedIds().has(p.id)).slice(0, 3);
+    const turn = iAmUp ? 'YOU ARE ON THE CLOCK' : picksUntilMine != null ? `your pick in ${picksUntilMine}` : 'order pending';
+    return `<div class="draft-strip" id="draftStrip" title="Tap for your full queue">
+      <b>${turn}</b>
+      <span class="muted">&middot; ${slots} slot${slots === 1 ? '' : 's'}${need.length ? `, must draft ${esc(need.join(', '))}` : ''}</span>
+      ${q.length ? `<span class="muted">&middot; queue: ${q.map(p => esc(p.name)).join(', ')}</span>` : ''}
+    </div>`;
+  })()}
   ${queueDrawerHtml()}
   ${squadDrawerHtml()}`;
 }
@@ -3977,7 +4051,7 @@ function viewDraftPrep() {
       ${poolTable()}
     </div>
     <div class="draft-side">
-      <div class="card queue-card">
+      <div class="card queue-card" id="queueCard">
         <h2>My autopick list${canQueue ? ` <span class="tag">${toArr(state.autolists?.[whoami]).length}</span>` : ''}</h2>
         ${canQueue ? `
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Drag players from the pool into this list and drag to reorder (or use &#9734; and the arrows).</p>
@@ -4149,9 +4223,16 @@ function renderKlaxons() {
     // every pick flashes up for everyone else (Toby, UAT: "I didn't see who
     // Wilko picked without scrolling") — your own pick you already know about
     if (!(whoami && pk.managerId === whoami)) pickFlash(pk, p);
+    // surprises get a reaction (Ben: "if someone random is drafted in early
+    // rounds") — a board-rank shock in the first five rounds flashes for all
+    const shockRound = Math.ceil(pk.n / state.managers.length);
+    if (shockRound <= 5 && ratingRank(rating(p)) > 200) {
+      klaxonFlash({ label: '\u{1F4EF} SHOCK PICK', line: `Round ${shockRound}?! The board had him nowhere near this. The room needs a minute.` }, p);
+    }
     for (const k of KLAXONS) {
       if (k.mid !== pk.managerId) continue;
       if (k.club && p.team !== k.club) continue;
+      if (k.clubs && !k.clubs.includes(p.team)) continue;
       if (k.pos && p.pos !== k.pos) continue;
       if (k.names) {
         const full = ((p.full || '') + ' ' + (p.name || '')).toLowerCase();
@@ -4718,6 +4799,7 @@ function bindDraft() {
   };
   document.querySelectorAll('[data-sqtab]').forEach(b => b.onclick = () => { draftSquadTab = b.dataset.sqtab; render(); });
   document.querySelectorAll('#sqAnyone').forEach(s => s.onchange = () => { draftSquadTab = +s.value || 'clock'; render(); });
+  document.querySelectorAll('[data-allboards]').forEach(b => b.onclick = allBoardsSheet);
   const sf = $('#squadFab'), sd = $('#squadDrawer');
   if (sf) sf.onclick = () => { window._squadOpen = !window._squadOpen; sd?.classList.toggle('open', window._squadOpen); };
   const sc = $('#squadClose');
@@ -4747,6 +4829,8 @@ function bindPoolControls() {
   if (qf) qf.onclick = () => { window._queueOpen = !window._queueOpen; qd?.classList.toggle('open', window._queueOpen); };
   const qc = $('#queueClose');
   if (qc) qc.onclick = () => { window._queueOpen = false; qd?.classList.remove('open'); };
+  const dstrip = $('#draftStrip');
+  if (dstrip) dstrip.onclick = () => { window._queueOpen = true; qd?.classList.add('open'); };
 }
 function refreshPool() {
   const card = document.getElementById('poolCard');
@@ -5214,7 +5298,7 @@ function bindTeam() {
       }
       saveLineup(mid, gw, xi);
       save(); render();
-      toast(`Saved. ${gwHasStarted(gw) ? 'This gameweek is locked though.' : `Locks ${fmtWhen(gwFrom(gw))}.`}`);
+      toast(`Lineup saved — nothing else needed before ${fmtWhen(gwFrom(gw))}.${gwHasStarted(gw) ? ' (This gameweek is already locked though.)' : ''}`);
     });
   }
   const so = $('#showOpp');
@@ -5271,7 +5355,7 @@ function bindTeam() {
     saveLineup(mid, gw, xi2);
     teamView.pitchSel = null;
     save(); render();
-    toast(`Saved. ${gwHasStarted(gw) ? 'This gameweek is locked though.' : `Locks ${fmtWhen(gwFrom(gw))}.`}`);
+    toast(`Lineup saved — nothing else needed before ${fmtWhen(gwFrom(gw))}.${gwHasStarted(gw) ? ' (This gameweek is already locked though.)' : ''}`);
   };
   const pitchGuard = () => {
     if (!demoMode && gwHasStarted(gw)) { toast('Lineup is locked for this gameweek'); return false; }
@@ -5333,9 +5417,14 @@ function viewTransfers() {
   const tabs = [['trough', 'The Trough & Waivers'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
   const tab = transfersView.tab;
   const pendingIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid).length;
+  // ONE lens statement for the whole hub (sol product review #2): every deal
+  // on these pages — signings, claims, trades, window picks — lands in the
+  // same gameweek, and the pages say so out loud
+  const tgwHub = transferGw();
   const head = `<div class="team-controls card">
     ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
     <span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>
+    <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
   </div>`;
   // your own squad, always in view while you deal (Ben, mock night: "i dont
   // like that you cant see your team on the transfer page")
@@ -5407,6 +5496,7 @@ function viewTransfers() {
         <h2>The Window Draft <span class="tag live-tag"><span class="rec"></span>LIVE</span> <span class="muted" style="font-weight:400;font-size:12px">new arrivals only &middot; snakes backwards from the last pick &middot; a full lap of passes ends it</span></h2>
         <div class="order-strip" style="margin:8px 0">${lapOrd.map(id => `<span class="order-chip ${id === actor ? 'now' : ''}">${esc(managerName(id))}</span>`).join('<span class="muted" style="align-self:center">›</span>')}<span class="tag" style="margin-left:10px">Lap ${lap + 1}${lap % 2 ? ' (reversed)' : ''}</span></div>
         <p style="font-size:13px"><b>${esc(managerName(actor))}</b> is on the clock. Sign one of the new arrivals (someone goes out), or pass.</p>
+        ${canActFor(actor) && whoami && whoami !== actor ? `<p class="tag live-tag" style="display:inline-block">ACTING AS ${esc(teamName(actor))} — every move here is theirs, not yours</p>` : ''}
         ${canActFor(actor) ? `
         <select id="wdOut" style="width:100%;max-width:420px;margin:8px 0;display:block">
           <option value="">Player out…</option>
@@ -5414,7 +5504,7 @@ function viewTransfers() {
         </select>` : `<p class="muted" style="font-size:12px">Lean on them in the group chat.</p>`}
         <div class="pick-log" style="max-height:320px">
           ${[...arrivals].sort(metricSort('pts')).map(p => `<div class="lrow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} ${statusChip(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
-            <button class="btn small" style="margin-left:auto" data-wdin="${p.id}" ${canActFor(actor) ? '' : `disabled title="It's ${esc(managerName(actor))}'s turn"`}>Sign</button></div>`).join('') || '<span class="muted">No arrivals left.</span>'}
+            <button class="btn small ${canActFor(actor) ? '' : 'dim'}" style="margin-left:auto" data-wdin="${p.id}" ${canActFor(actor) ? '' : `data-why="It's ${esc(managerName(actor))}'s turn — lean on them in the group chat" title="It's ${esc(managerName(actor))}'s turn"`}>Sign</button></div>`).join('') || '<span class="muted">No arrivals left.</span>'}
         </div>
         <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           ${canActFor(actor) ? `<button class="btn ghost small" id="wdPass">Pass</button>` : ''}
@@ -5559,7 +5649,8 @@ function viewTransfers() {
       <span class="tag">${kindOf(t)}</span>
       <b style="min-width:120px">${esc(teamName(t.managerId))}</b>
       ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b>
-    </div>`).join('');
+      <button class="btn ghost small" data-rc="${t.n}" style="margin-left:auto;font-size:10px;padding:1px 7px">report card</button>
+    </div><div class="rc-slot" data-rcslot="${t.n}" style="display:none;border-left:2px solid var(--line);margin:0 0 6px 8px;padding-left:8px"></div>`).join('');
     const fbtn = (k, label) => `<button class="btn small ${hf === k ? '' : 'ghost'}" data-histkind="${k}">${label}</button>`;
     return `${head}<div class="card"><h2>Every move, on the record</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${fbtn('', 'All')}${fbtn('trough', 'Trough')}${fbtn('waiver', 'Waivers')}${fbtn('trade', 'Trades')}${fbtn('window', 'Window')}</div>
@@ -5622,6 +5713,7 @@ function bindTransfers() {
     wdAdvance(true);
   };
   document.querySelectorAll('[data-wdin]').forEach(b => b.onclick = async () => {
+    if (b.dataset.why) { toast(b.dataset.why); return; } // tap-to-explain (sol #4)
     const actor = wdActor();
     if (!actGuard(actor, 'window draft')) return;
     const outId = +($('#wdOut')?.value || 0);
@@ -5637,7 +5729,7 @@ function bindTransfers() {
     })) return;
     if (netOn()) {
       serverAct('windowDraft', { op: 'pick', inId: inP.id, outId, expectedTurn: state.windowDraft?.turn || 0 })
-        .then(() => toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`))
+        .then(() => receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: transferGw(), mid: actor, note: 'The snake moves on.' }))
         .catch(() => {});
       return;
     }
@@ -5652,7 +5744,7 @@ function bindTransfers() {
         state.lineups[actor][tgw] = lu.filter(id => id !== outId);
         pushShared(`lineups/${actor}/${tgw}`, state.lineups[actor][tgw]);
       }
-      toast(`${inP.name} signed in the Window Draft. ${PLAYER_BY_ID[outId]?.name} makes way.`);
+      receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: transferGw(), mid: actor, note: 'The snake moves on.' });
       wdAdvance(false, { mid: actor, in: inP.id, out: outId });
     });
   });
@@ -5663,6 +5755,15 @@ function bindTransfers() {
   const trOut = $('#trOut');
   if (trOut) trOut.onchange = () => { transfersView.out = +trOut.value || null; render(); };
   document.querySelectorAll('[data-histkind]').forEach(b => b.onclick = () => { transfersView.histKind = b.dataset.histkind; render(); });
+  document.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => {
+    const slot = document.querySelector(`[data-rcslot="${b.dataset.rc}"]`);
+    if (!slot) return;
+    if (slot.style.display === 'none') {
+      const t = state.transfers.find(x => x.n === +b.dataset.rc);
+      slot.innerHTML = t ? reportCardHtml(t) : '';
+      slot.style.display = '';
+    } else slot.style.display = 'none';
+  });
   // claim list management (withdraw / reprioritise)
   document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
@@ -5765,7 +5866,7 @@ function bindTransfers() {
           const m = metricsFor(p);
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
-            : `<button class="btn small ${waiv || locked ? 'ghost' : ''}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `disabled title="${why}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+            : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
@@ -5806,6 +5907,7 @@ function bindTransfers() {
       const showAll = results.querySelector('#trAll');
       if (showAll) showAll.onclick = () => { transfersView.limit = 9999; renderTrResults(); };
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = async () => {
+        if (b.dataset.why) { toast(b.dataset.why); return; } // tap-to-explain (sol #4)
         if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = transfersView.out;
         const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
@@ -5818,7 +5920,8 @@ function bindTransfers() {
           })) return;
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
-          toast(`Claim lodged: ${inP.name}. Resolves when waivers run.`);
+          receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid,
+            note: `Blind claim #${myClaims(mid).length} on your list — resolves ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
           return;
         }
         const tgw = transferGw();
@@ -5834,7 +5937,7 @@ function bindTransfers() {
           serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) })
             .then(r => {
               transfersView.out = null;
-              toast(`${inP.name} signed from the Trough${r.tgw !== cur ? ` — in for GW${GAMEWEEKS[r.tgw].n}` : ''}. First come, first served.`);
+              receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: r.tgw, mid, note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
             }).catch(() => {});
           return;
         }
@@ -5854,7 +5957,7 @@ function bindTransfers() {
           }
           transfersView.out = null;
           save(); render();
-          toast(`${inP.name} signed from the Trough${tgw !== cur ? ` — in for GW${GAMEWEEKS[tgw].n}` : ''}. First come, first served.`);
+          receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: tgw, mid, note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
         });
       });
     }
@@ -6142,9 +6245,209 @@ function viewDash() {
       <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
+  ${latestBusinessCard()}
   ${programmeCard()}
   ${installCard()}
   ${vidiCard(true)}`;
+}
+/* ----- The Record Book, current season (sol follow-up #2): computed from
+   settled truth only, tie-safe, deterministic. "Since records began" is
+   reserved for marks the 25/26 archive can genuinely arbitrate; everything
+   else says "this season". ----- */
+function seasonRecordsNow(uptoGw) {
+  const settled = [];
+  for (let i = 0; i <= uptoGw && i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
+  if (!settled.length) return [];
+  const recs = [];
+  const better = { max: (a, b) => a > b, min: (a, b) => a < b };
+  const scan = (key, label, dir, iter, fmt) => {
+    let best = null, holders = [];
+    iter((value, meta) => {
+      if (value == null) return;
+      if (best == null || better[dir](value, best)) { best = value; holders = [meta]; }
+      else if (value === best) holders.push(meta);
+    });
+    if (best != null) recs.push({ key, label, value: best, holders, fmt: fmt || (v => String(v)) });
+  };
+  const eachResult = cb => {
+    for (const g of settled) for (const [a, b] of pairingsFor(g)) {
+      const sa = gwManagerPoints(a, g), sb = gwManagerPoints(b, g);
+      cb(g, a, b, sa, sb); cb(g, b, a, sb, sa);
+    }
+  };
+  scan('hi', 'Highest weekly score', 'max', emit => eachResult((g, m, o, s) => emit(s, { mid: m, gw: g, opp: o })));
+  scan('lo', 'Lowest weekly score', 'min', emit => eachResult((g, m, o, s) => emit(s, { mid: m, gw: g, opp: o })));
+  scan('margin', 'Biggest winning margin', 'max', emit => eachResult((g, m, o, s, so) => { if (s > so) emit(s - so, { mid: m, gw: g, opp: o }); }));
+  scan('defeat', 'Most points in defeat', 'max', emit => eachResult((g, m, o, s, so) => { if (s < so) emit(s, { mid: m, gw: g, opp: o }); }));
+  scan('bench', 'Worst bench decision', 'max', emit => { for (const g of settled) for (const m of state.managers) emit(benchWasteOf2(m.id, g), { mid: m.id, gw: g }); });
+  // longest streaks — walk each manager's full settled sequence
+  const streakScan = (key, label, test) => scan(key, label, 'max', emit => {
+    for (const m of state.managers) {
+      let run = 0, from = null;
+      for (const g of settled) {
+        const pr = pairingsFor(g).find(x => x.includes(m.id));
+        if (!pr) continue;
+        const o = pr[0] === m.id ? pr[1] : pr[0];
+        const s = gwManagerPoints(m.id, g), so = gwManagerPoints(o, g);
+        if (test(s, so)) { run++; from = from ?? g; emit(run, { mid: m.id, gw: g, from }); }
+        else { run = 0; from = null; }
+      }
+    }
+  });
+  streakScan('winrun', 'Longest winning run', (s, so) => s > so);
+  streakScan('loserun', 'Longest losing run', (s, so) => s < so);
+  streakScan('unbeaten', 'Longest unbeaten run', (s, so) => s >= so);
+  // most-transferred player (in+out records through the settled window)
+  scan('shuttle', 'Most transferred player', 'max', emit => {
+    const count = {};
+    for (const t of state.transfers) if (t.gw <= uptoGw) { count[t.inId] = (count[t.inId] || 0) + 1; count[t.outId] = (count[t.outId] || 0) + 1; }
+    for (const [pid, n] of Object.entries(count)) if (PLAYER_BY_ID[pid]) emit(n, { pid: +pid });
+  });
+  // best/worst COMPLETED transfer report (6-GW window preferred, else 3)
+  const cards = state.transfers.filter(t => !t.trade || tradeBatchOf(t)[0] === t).map(t => {
+    const wf = transferWindowFacts(t, 6) || transferWindowFacts(t, 3);
+    return wf ? { t, wf } : null;
+  }).filter(Boolean);
+  if (cards.length) {
+    const bestDeal = cards.reduce((a, x) => x.wf.diff > a.wf.diff ? x : a);
+    const worstDeal = cards.reduce((a, x) => x.wf.diff < a.wf.diff ? x : a);
+    recs.push({ key: 'bestdeal', label: 'Best completed transfer', value: bestDeal.wf.diff, holders: [{ mid: bestDeal.t.managerId, gw: bestDeal.t.gw, pid: bestDeal.t.inId }], fmt: v => `${v >= 0 ? '+' : ''}${v} net` });
+    recs.push({ key: 'worstdeal', label: 'Worst completed transfer', value: worstDeal.wf.diff, holders: [{ mid: worstDeal.t.managerId, gw: worstDeal.t.gw, pid: worstDeal.t.inId }], fmt: v => `${v >= 0 ? '+' : ''}${v} net` });
+  }
+  // highest single player performance in a starting XI
+  scan('perf', 'Highest player score', 'max', emit => {
+    for (const g of settled) for (const m of state.managers) for (const pid of lineupFor(m.id, g)) emit(gwPlayerPoints(pid, g), { mid: m.id, gw: g, pid });
+  });
+  // biggest handicap overturned in the playoffs — only when the bracket is real
+  const po = typeof playoffState === 'function' ? playoffState() : null;
+  if (po && po.qfWinners) {
+    scan('overturn', 'Biggest handicap overturned', 'max', emit => {
+      po.qfWinners.forEach((wmid, k) => {
+        const pair = [po.seeds[k], po.seeds[7 - k]];
+        if (wmid === pair[1]) emit(po.handicaps[k], { mid: wmid, gw: REGULAR_GWS }); // lower seed beat the head start
+      });
+    });
+  }
+  return recs;
+}
+const benchWasteOf2 = (mid, g) => Math.max(0, optimalXI(mid, g) - gwManagerPoints(mid, g));
+// archive arbitration: 25/26 extremes when the archive is genuinely loaded
+function archiveExtremes() {
+  const ms = (typeof LEAGUE_HISTORY !== 'undefined' && LEAGUE_HISTORY?.epl25?.matches) || null;
+  if (!ms || !ms.length) return null;
+  let hi = -Infinity, lo = Infinity, margin = 0;
+  for (const m of ms) { hi = Math.max(hi, m.a, m.b); lo = Math.min(lo, m.a, m.b); margin = Math.max(margin, Math.abs(m.a - m.b)); }
+  return { hi, lo, margin };
+}
+function recordStatus(recs, prevRecs, latestGw) {
+  return recs.map(r => {
+    const prev = prevRecs.find(p => p.key === r.key);
+    const touchedNow = r.holders.some(h => h.gw === latestGw);
+    let status = '';
+    if (touchedNow) {
+      if (!prev) status = 'new';
+      else if (r.value !== prev.value) status = 'broken';
+      else if (r.holders.length > prev.holders.length) status = 'tied';
+    }
+    return { ...r, status };
+  });
+}
+function recordBookNowCard() {
+  const settled = [];
+  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
+  if (!settled.length) return '';
+  const last = settled.at(-1);
+  const recs = recordStatus(seasonRecordsNow(last), settled.length > 1 ? seasonRecordsNow(settled.at(-2)) : [], last);
+  const arch = archiveExtremes();
+  const scope = r => {
+    if (!arch) return 'this season';
+    if (r.key === 'hi' && r.value > arch.hi) return `since records began (25/26's best was ${arch.hi})`;
+    if (r.key === 'lo' && r.value < arch.lo) return `since records began (25/26's low was ${arch.lo})`;
+    if (r.key === 'margin' && r.value > arch.margin) return `since records began (25/26's widest was ${arch.margin})`;
+    return 'this season';
+  };
+  const who = h => h.pid != null && !h.mid ? esc(PLAYER_BY_ID[h.pid]?.name || '?')
+    : `${esc(teamName(h.mid))}${h.pid != null ? ` (${esc(PLAYER_BY_ID[h.pid]?.name || '?')})` : ''}`;
+  const rows = recs.map(r => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
+    <span style="min-width:170px"><b>${esc(r.label)}</b></span>
+    <span>${r.holders.map(who).join(' & ')} — <b class="gold">${esc(r.fmt(r.value))}</b>
+      ${r.holders[0].gw != null && GAMEWEEKS[r.holders[0].gw] ? `<span class="muted" style="font-size:11px">GW${GAMEWEEKS[r.holders[0].gw].n}${r.holders[0].opp != null ? ` v ${esc(teamName(r.holders[0].opp))}` : ''}</span>` : ''}
+      <span class="muted" style="font-size:10.5px">&middot; ${esc(scope(r))}</span>
+      ${r.status ? `<span class="tag live-tag">${r.status.toUpperCase()}</span>` : ''}</span>
+  </div>`).join('');
+  return `<div class="card"><h2>The Record Book <span class="muted" style="font-weight:400;font-size:12px">this season, settled truth only</span></h2>${rows}</div>`;
+}
+
+/* ----- Transfer Report Cards (sol follow-up #1): every completed move gets
+   revisited after 3 and 6 COMPLETED gameweeks from its effective GW. Facts
+   only — points each side actually produced in the exact window, XI points
+   realised, honest notes for zero appearances. No verdict before the window
+   completes; failed/private claims are never material here because only
+   EXECUTED moves live in state.transfers. ----- */
+function tradeBatchOf(t) {
+  if (!t.trade) return [t];
+  return state.transfers.filter(u => u.trade && u.managerId === t.managerId && u.gw === t.gw && Math.abs((u.t || 0) - (t.t || 0)) < 5000);
+}
+function transferWindowFacts(t, horizon) {
+  const gws = [];
+  for (let i = t.gw; i < Math.min(t.gw + horizon, REGULAR_GWS) && gws.length < horizon; i++) {
+    if (gwStatus(i) === 'final') gws.push(i);
+    else if (gwHasStarted(i) || i <= currentGwIndex()) continue; // blank/live weeks don't count as completed
+    else break;
+  }
+  if (gws.length < horizon) return null; // window not complete — no judgement yet
+  const batch = tradeBatchOf(t);
+  const sum = (pid, realised) => gws.reduce((tot, g) => {
+    if (realised && !lineupFor(t.managerId, g).includes(pid)) return tot;
+    return tot + gwPlayerPoints(pid, g);
+  }, 0);
+  const apps = pid => gws.reduce((n, g) => n + (appearedInGw(pid, g) ? 1 : 0), 0);
+  const inn = batch.map(b => ({ p: PLAYER_BY_ID[b.inId], pts: sum(b.inId), xi: sum(b.inId, true), apps: apps(b.inId) })).filter(x => x.p);
+  const out = batch.map(b => ({ p: PLAYER_BY_ID[b.outId], pts: sum(b.outId), apps: apps(b.outId) })).filter(x => x.p);
+  const inPts = inn.reduce((a, x) => a + x.pts, 0), outPts = out.reduce((a, x) => a + x.pts, 0);
+  return { gws, inn, out, inPts, outPts, diff: inPts - outPts, batch };
+}
+function transferVerdict(wf, horizon) {
+  const d = wf.diff;
+  if (d >= 20) return 'daylight robbery';
+  if (d >= 10) return 'inspired business';
+  if (d >= 3) return horizon === 3 ? 'a promising start' : 'good business';
+  if (d >= -2) return 'a sideways move';
+  if (d >= -9) return horizon === 3 ? 'jury still out' : 'a sideways move, generously';
+  return 'an expensive mistake';
+}
+function reportCardHtml(t) {
+  const kind = t.trade ? 'trade' : t.windowDraft ? 'Window Draft' : t.waiver ? 'waiver claim' : 'Trough signing';
+  const w3 = transferWindowFacts(t, 3);
+  const w6 = transferWindowFacts(t, 6);
+  const windowRow = (wf, label) => {
+    if (!wf) return '';
+    const inTxt = wf.inn.map(x => `${esc(x.p.name)} ${x.pts}${x.apps === 0 ? ' (never appeared)' : ''}${x.xi < x.pts ? ` — ${x.xi} of them in the XI` : ''}`).join(', ');
+    const outTxt = wf.out.length ? wf.out.map(x => `${esc(x.p.name)} ${x.pts}${x.apps === 0 ? ' (never appeared)' : ''}`).join(', ') : '—';
+    return `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="tag">${label}</span>
+      <span>in: <b>${inTxt}</b> &middot; out: ${outTxt} &middot; net <b>${wf.diff >= 0 ? '+' : ''}${wf.diff}</b> — <b>${esc(transferVerdict(wf, wf.gws.length))}</b></span></div>`;
+  };
+  const body = (w6 ? windowRow(w6, '6 GWs') : '') + (w3 ? windowRow(w3, '3 GWs') : '');
+  return body || `<div class="lrow muted" style="font-size:12px">Report card opens after three completed gameweeks from GW${GAMEWEEKS[t.gw]?.n ?? '?'} — the Gazette does not judge early. Much.</div>`;
+}
+
+// the post-waivers snapshot (Ben, UAT night: "there should be recent
+// transfers and waivers and trades on the dashboard tbf") — the last eight
+// moves of any kind, newest first, with where they count from
+function latestBusinessCard() {
+  if (!state.transfers.length) return '';
+  const kindOf = t => t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough';
+  const rows = [...state.transfers].reverse().slice(0, 8).map(t => `<div class="lrow" style="font-size:12.5px">
+    <span class="tag" style="flex-shrink:0">${kindOf(t)}</span>
+    <b style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(teamName(t.managerId))}</b>
+    <span style="min-width:0">${pname(PLAYER_BY_ID[t.inId])} <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${esc(PLAYER_BY_ID[t.outId].name)} out` : ''}</span></span>
+    <span class="muted" style="margin-left:auto;flex-shrink:0;font-size:11px">GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
+  </div>`).join('');
+  return `<div class="card" style="margin-top:14px">
+    <h2>Latest business <span class="muted" style="font-weight:400;font-size:12px">who moved, how, and from when</span></h2>
+    ${rows}
+    <p class="muted" style="font-size:10.5px;margin-top:6px"><button class="btn ghost small" data-goto="transfers" style="font-size:10.5px;padding:1px 8px">Full history &amp; filters</button></p>
+  </div>`;
 }
 
 /* ----- The Matchday Programme (Marc + Ben, 2 Aug): preview and review
@@ -6181,20 +6484,36 @@ function bestPickups(uptoGw) {
 // the deadline has passed once the GW's own deadline stamp is behind us —
 // Marc's ruling: the matchday edition prints AT the deadline, not at kick-off
 const gwDeadlinePassed = i => GAMEWEEKS[i] && new Date(GAMEWEEKS[i].from).getTime() <= Date.now();
+// which back-edition the reader has open (null = today's paper). The archive
+// is generated, not stored — reviewArticle() rebuilds any settled week from
+// state, so every edition is permanent for free (sol product review #5).
+let progView = { gw: null };
 function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
   const cur = currentGwIndex();
   const pick = (arr, seed) => arr[seed % arr.length];
   // the nameplate (Ben, UAT night: "more like a newspaper")
   const masthead = (edition, gwN) => `<div class="prog-plate"><div class="prog-title">The League Gazette</div><div class="prog-date">${edition} &middot; Gameweek ${gwN} &middot; est. 2015 &middot; price: your dignity</div></div>`;
+  const last = lastFinalGw();
+  const settled = [];
+  for (let i = 0; i <= last && i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
+  const archNav = at => settled.length > 1 || (settled.length === 1 && at !== settled[0]) ? `
+    <div style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
+      <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
+      ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
+      ${at != null ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
+    </div>` : '';
+  // a back-edition stays open until the reader returns to today's paper
+  if (progView.gw != null && settled.includes(progView.gw)) {
+    return `<div class="card prog-card">${masthead('review edition — from the archive', GAMEWEEKS[progView.gw].n)}${reviewArticle(progView.gw, pick)}${archNav(progView.gw)}</div>`;
+  }
   if ((gwDeadlinePassed(cur) || gwUnderway(cur)) && gwStatus(cur) !== 'final') {
     const art = previewArticle(cur, pick);
-    if (art) return `<div class="card prog-card">${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}</div>`;
+    if (art) return `<div class="card prog-card">${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}${archNav(null)}</div>`;
   }
-  const last = lastFinalGw();
   if (last >= 0) {
     return `<div class="card prog-card">${masthead('review edition', GAMEWEEKS[last].n)}${reviewArticle(last, pick)}
-      <p class="muted" style="font-size:11px;margin-top:8px">The GW${GAMEWEEKS[Math.min(cur, REGULAR_GWS - 1)].n} matchday edition goes to print when the teams are locked.</p></div>`;
+      <p class="muted" style="font-size:11px;margin-top:8px">The GW${GAMEWEEKS[Math.min(cur, REGULAR_GWS - 1)].n} matchday edition goes to print when the teams are locked.</p>${archNav(last)}</div>`;
   }
   return `<div class="card prog-card">
     <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
@@ -6287,6 +6606,13 @@ function previewArticle(i, pick) {
   </div>`;
 }
 function reviewArticle(last, pick) {
+  // the Gazette's writing engine (js/gazette.js) sets the paper now —
+  // archetypes, lore, cliché gates, cooldowns. This body remains as the
+  // fallback edition if the engine ever fails to load or throws.
+  if (typeof Gazette !== 'undefined' && Gazette.review) {
+    const g = Gazette.review(last);
+    if (g) return g;
+  }
   const aw = weeklyAwards(last);
   const results = pairingsFor(last).map(([a, b]) => ({ a, b, sa: gwManagerPoints(a, last), sb: gwManagerPoints(b, last) }));
   if (!results.length) return '';
@@ -6493,6 +6819,7 @@ function viewData() {
   return `
   ${sect('League data')}
   ${bracketCard()}
+  ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${sect('Team data')}
   ${troughActivityCard()}
@@ -6808,13 +7135,20 @@ function dashMiniPitch(mid, gw) {
 }
 function bindDash() {
   bindInstall();
+  document.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
+    progView.gw = b.dataset.progw === 'today' ? null : +b.dataset.progw;
+    render();
+  });
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
   if (fl) fl.onclick = () => { localStorage.setItem(`${LS_NS}-founded-${fl.dataset.mid}`, '1'); render(); };
   const ds = $('#dashSignIn');
   if (ds) ds.onclick = () => { spectating = false; localStorage.removeItem(SPECT_KEY); whoami = null; forceIdentity = true; render(); };
-  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { state.view = b.dataset.goto; save(); render(); });
+  document.querySelectorAll('[data-goto]').forEach(b => b.onclick = () => {
+    if (b.dataset.goto === 'transfers') transfersView.tab = 'history'; // Latest business lands on the full record
+    state.view = b.dataset.goto; save(); render();
+  });
   bindAwardsBits(); // awards/treatment live in the Data Room now, but stay bound if ever re-hosted
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
@@ -7857,11 +8191,63 @@ function recordBookCards() {
 }
 
 /* ----- settings ----- */
+/* ----- the Chairman's pre-flight panel (sol product review #3): one glance,
+   seven checks, honest reasons. Read-only — every button is a safe link to a
+   control that already exists. ----- */
+function preflightCard() {
+  const light = (st, label, why, extra = '') => `<div class="lrow" style="font-size:12.5px;align-items:flex-start">
+    <span style="flex-shrink:0;font-size:13px">${st === 'ok' ? '&#128994;' : st === 'warn' ? '&#128993;' : st === 'bad' ? '&#128308;' : '&#9898;'}</span>
+    <div style="min-width:0"><b>${label}</b> <span class="muted">— ${why}</span>${extra}</div></div>`;
+  const rows = [];
+  // 1. feed freshness
+  const age = state.feedGenerated ? Date.now() - new Date(state.feedGenerated).getTime() : null;
+  const mins = age != null ? Math.round(age / 60000) : null;
+  rows.push(light(age == null ? 'warn' : mins <= 30 ? 'ok' : mins <= 90 ? 'warn' : 'bad', 'Stats feed',
+    age == null ? 'no feed stamp in memory — refresh' : `updated ${mins} min ago${mins > 90 ? ' — waivers will refuse to run on this' : ''}`,
+    ` <button class="btn ghost small" id="pfSync">&#8635; refresh</button>`));
+  // 2. the chamber
+  const mk = state.mock;
+  rows.push(SANDBOX
+    ? light(mk ? 'warn' : 'ok', 'Simulation Chamber', mk ? `mounted (GW${GAMEWEEKS[mk.gw]?.n}, ${esc(mk.phase)}) — deals clamp to GW${GAMEWEEKS[Math.min(mk.gw + 1, GAMEWEEKS.length - 1)]?.n} until it's switched off` : 'dark — real clocks apply')
+    : light(mk ? 'bad' : 'ok', 'Simulation Chamber', mk ? 'a mock is mounted in the REAL league — switch it off, this should be impossible' : 'no mock in the real league, as it should be'));
+  // 3. squads
+  if (state.draft.picks.length) {
+    const tgw = transferGw();
+    const broken = state.managers.filter(m => { const sq = squadAt(m.id, tgw); return sq.length !== state.settings.squadSize || !squadShapeOk(sq); });
+    rows.push(light(broken.length ? 'bad' : 'ok', 'Squads',
+      broken.length ? `${broken.length} squad${broken.length > 1 ? 's' : ''} illegal at GW${GAMEWEEKS[tgw].n}: ${broken.map(m => esc(m.team || m.name)).join(', ')}` : `all ${state.managers.length} legal — ${state.settings.squadSize} men, shapes inside the rules`));
+  } else {
+    rows.push(light('info', 'Squads', state.phase === 'setup' ? `not drafted yet — ${Object.keys(state.ready || {}).length}/${state.managers.length} in the ready room` : 'no picks on the board'));
+  }
+  // 4. draft board
+  const expect = state.managers.length * state.settings.squadSize;
+  rows.push(state.phase === 'draft'
+    ? light(state.draft.deadline || !state.settings.pickTimer ? 'ok' : 'warn', 'Draft board', `live — pick ${state.draft.picks.length + 1} of ${expect}${state.settings.pickTimer && !state.draft.deadline ? ', clock not yet armed' : ''}`)
+    : light(state.phase === 'season' && state.draft.picks.length === expect ? 'ok' : state.phase === 'season' ? 'bad' : 'info', 'Draft board',
+      state.phase === 'season' ? `${state.draft.picks.length}/${expect} picks recorded${state.draft.picks.length === expect ? '' : ' — the board is short'}` : 'waiting for draft night'));
+  // 5. waiver scheduler
+  const ctl = waiverControl();
+  const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+  rows.push(light(ctl === 'auto' ? 'ok' : 'warn', 'Waivers',
+    ctl === 'auto' ? `on the fixture clock — next run ${fmtWhen(nextRun)}` : `manual override active (${esc(ctl)}) — the scheduler stands down until it's back on auto`));
+  // 6. orphaned trades
+  const stale = toArr(state.trades).filter(t => t.status === 'executing' || (t.status === 'pending' && Date.now() - (t.t || 0) > 7 * 864e5));
+  rows.push(light(stale.length ? 'warn' : 'ok', 'Trade desk', stale.length ? `${stale.length} offer${stale.length > 1 ? 's' : ''} stuck or older than a week — worth a look` : 'no orphaned offers'));
+  // 7. backups — the client can't see GitHub's artifacts, so no false greens
+  rows.push(light('info', 'Backups', 'hourly + encrypted on GitHub — this panel cannot verify them, the Actions page can',
+    ` <a class="btn ghost small" href="https://github.com/benmpolak/the-league/actions/workflows/backup.yml" target="_blank" rel="noopener">open</a>`));
+  return `<div class="card">
+    <h2>Pre-flight <span class="tag">Chairman only</span></h2>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Seven checks before you trust a matchday to the machinery. Green means go; every light says why.</p>
+    ${rows.join('')}
+  </div>`;
+}
 function viewSettings() {
   const sc = state.settings.scoring;
   const admin = !netOn() || isCommissioner(); // only the Chairman edits league settings
   const ro = admin ? '' : 'disabled';
   return `<div class="settings-grid">
+    ${admin ? preflightCard() : ''}
     <div class="card">
       <h2>Scoring rules ${admin ? '' : '<span class="tag">read-only</span>'}</h2>
       ${Object.keys(DEFAULT_SCORING).map(k => `
@@ -7955,6 +8341,7 @@ function bindSettings() {
     state.settings.scoring[inp.dataset.score] = +inp.value || 0;
     save(); toast('Scoring updated');
   });
+  const pfS = $('#pfSync'); if (pfS) pfS.onclick = () => syncNow(true);
   const demoB = $('#demoBtn2'); if (demoB) demoB.onclick = enterDemo;
   const exportB = $('#exportBtn');
   if (!exportB) return; // non-commissioner: admin controls aren't rendered
@@ -8058,7 +8445,10 @@ function showPlayerCard(pid) {
       const pk = state.draft.picks.find(x => x.playerId === pid);
       if (pk) hist.push(`Drafted pick #${pk.n} by ${teamName(pk.managerId)}`);
       for (const t of state.transfers) {
-        if (t.inId === pid) hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'claimed off waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}`);
+        if (t.inId === pid) {
+          const wf = transferWindowFacts(t, 6) || transferWindowFacts(t, 3);
+          hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'claimed off waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}${wf ? ` — the report card reads ${transferVerdict(wf, wf.gws.length)} (${wf.diff >= 0 ? '+' : ''}${wf.diff} over ${wf.gws.length})` : ''}`);
+        }
         else if (t.outId === pid && !t.trade) hist.push(`GW${GAMEWEEKS[t.gw].n}: dropped by ${teamName(t.managerId)}`);
       }
       return hist.length ? `<p class="muted" style="font-size:11.5px;margin-bottom:8px"><b style="color:var(--text)">History:</b> ${hist.map(esc).join(' \u00b7 ')}</p>` : '';
