@@ -750,10 +750,16 @@ const fdrCls = opp => {
   if (s > 100) return s >= 1240 ? 'fdr-hard' : s <= 1100 ? 'fdr-easy' : '';
   return s >= 4 ? 'fdr-hard' : s <= 2 ? 'fdr-easy' : '';
 };
-// coloured fixture chip for the pitch views
+// coloured fixture chip for the pitch views. No fixture for THAT gw on this
+// device (blank GW, or a device carrying truncated fixture data — the lads'
+// laptops on UAT night) → show the player's NEXT fixture instead of a dash
+// (Ben: "show next fixture").
 function nextOppHtml(club, gwN) {
   const f = state.fixtures.find(f => f.gw === gwN && (f.home === club || f.away === club));
-  if (!f) return '—';
+  if (!f) {
+    const nxt = typeof nextFx === 'function' ? nextFx(club) : '—';
+    return nxt && nxt !== '—' ? `<span class="muted" title="No fixture that week — this is his next one">next: ${esc(nxt)}</span>` : '—';
+  }
   const opp = f.home === club ? f.away : f.home;
   return `<span class="${fdrCls(opp)}">${esc(`${TEAM_BY_NAME[opp]?.short || opp} (${f.home === club ? 'H' : 'A'})`)}</span>`;
 }
@@ -8194,7 +8200,12 @@ setTimeout(() => tryAutoWaivers(), 4000);
 // and always when stats aren't in memory — saves no longer persist them)
 if (state.phase === 'season') {
   const stale = !state.lastSync || (Date.now() - new Date(state.lastSync).getTime()) > 20 * 60 * 1000;
-  if (stale || anyMatchLive() || !Object.keys(state.matchStats || {}).length) syncNow(false);
+  // truncated fixtures (a device with only the current round in memory —
+  // laptops on UAT night showed dashes for every future gameweek) count as
+  // needing a sync too
+  const nextI = Math.min(currentGwIndex() + 1, GAMEWEEKS.length - 1);
+  const fxShort = !state.fixtures?.length || !state.fixtures.some(f => f.gw === GAMEWEEKS[nextI].n);
+  if (stale || anyMatchLive() || fxShort || !Object.keys(state.matchStats || {}).length) syncNow(false);
 } else if (!state.fixtures?.length) {
   // setup + draft: the scouting floor's Vs column and the draft room's
   // fixture bits need the schedule too, and saves never persist it — without
