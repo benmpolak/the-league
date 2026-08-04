@@ -114,10 +114,14 @@ const gwHasStarted = i => Date.now() > new Date(gwFrom(i)).getTime();
 const transferGw = () => {
   const c = currentGwIndex();
   let g = c + (gwHasStarted(c) ? 1 : 0);
-  // a Simulation Chamber matchday counts as "being played" — deals land next GW
+  // a Simulation Chamber matchday counts as PLAYED for as long as it's
+  // mounted — even after its waiver run. The old lastWaiverRun carve-out let
+  // post-run deals land back INSIDE the settled mock GW (real calendar says
+  // GW1 hasn't started), retroactively rewriting scored squads — Toby's
+  // 15-man, 3-keeper side on UAT night. Open/shut is troughWindow's business;
+  // the landing gameweek never rolls back.
   const mk = state.mock;
-  if (mk && mk.gw != null && GAMEWEEKS[mk.gw]
-    && (mk.phase === 'live' || (mk.phase === 'final' && lastWaiverRun() < hamTs(mk.t)))) g = Math.max(g, mk.gw + 1);
+  if (mk && mk.gw != null && GAMEWEEKS[mk.gw]) g = Math.max(g, mk.gw + 1);
   return Math.min(g, GAMEWEEKS.length - 1);
 };
 // stats for a gameweek land under key 'gw{n}' — no date-window matching needed
@@ -2209,6 +2213,14 @@ function effectiveXI(mid, gwIdx) {
   const ev = gwEvent(gwIdx);
   const anySynced = !!ev && Object.keys(ev.playerStats || {}).length > 0;
   if (!anySynced) return { xi, subs: [] };
+  // auto-subs land at the FINAL WHISTLE OF THE LAST GAME, never mid-round
+  // (Ben, UAT night: Wilko's Ruben was "subbed out" before Chelsea's Monday
+  // kickoff — "players stay in their elevens and it gets recalibrated at the
+  // final whistle of the last game of the gw")
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  const gwFx = state.fixtures.filter(f => f.gw === gwN);
+  const roundDone = ev.final || gwIsOver(gwIdx) || (gwFx.length > 0 && gwFx.every(f => f.finished));
+  if (!roundDone) return { xi, subs: [] };
   const bench = benchFor(mid, gwIdx).filter(p => appearedInGw(p.id, gwIdx)); // manager's order, leftmost first
   const subs = [];
   for (const pid of [...xi]) {
@@ -4755,7 +4767,14 @@ let teamView = { mid: null, gw: null, transferOut: null, pitchSel: null, showOpp
 
 function viewTeam() {
   if (teamView.mid == null) teamView.mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
-  if (teamView.gw == null) teamView.gw = currentGwIndex();
+  // default to the next UNSETTLED gameweek — after a round goes final (real
+  // Tuesday or Simulation Chamber), "current" means next week's team sheet
+  // (Wilko, UAT night: "it's still defaulting to gameweek 1")
+  if (teamView.gw == null) {
+    let g = currentGwIndex();
+    while (g < GAMEWEEKS.length - 1 && gwStatus(g) === 'final') g++;
+    teamView.gw = g;
+  }
   const mid = teamView.mid, gw = teamView.gw;
   const squad = squadAt(mid, gw).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
   const xi = lineupFor(mid, gw);

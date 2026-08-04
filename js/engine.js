@@ -87,11 +87,11 @@
     const transferGw = (state) => {
       const c = currentGwIndex();
       let g = c + (gwHasStarted(c) ? 1 : 0);
+      // the clamp holds for as long as the mock is MOUNTED — the old post-run
+      // carve-out let deals land back inside the settled mock GW and rewrite
+      // scored squads (UAT night). js/app.js transferGw mirrors this.
       const mk = state && state.mock;
-      if (mk && mk.gw != null && GAMEWEEKS[mk.gw]) {
-        const mkT = typeof mk.t === 'number' ? mk.t : 0;
-        if (mk.phase === 'live' || (mk.phase === 'final' && lastWaiverRun(state) < mkT)) g = Math.max(g, mk.gw + 1);
-      }
+      if (mk && mk.gw != null && GAMEWEEKS[mk.gw]) g = Math.max(g, mk.gw + 1);
       return Math.min(g, GAMEWEEKS.length - 1);
     };
     const gwEvent = (state, i) => GAMEWEEKS[i] ? state.matchStats[`gw${GAMEWEEKS[i].n}`] : null;
@@ -303,6 +303,12 @@
       const ev = gwEvent(state, gwIdx);
       const anySynced = !!ev && Object.keys(ev.playerStats || {}).length > 0;
       if (!anySynced) return { xi, subs: [] };
+      // auto-subs land at the final whistle of the round's LAST game, never
+      // mid-round (Committee ruling, UAT night) — js/app.js mirrors this
+      const gwN = GAMEWEEKS[gwIdx] && GAMEWEEKS[gwIdx].n;
+      const gwFx = FIXTURES.filter(f => f.gw === gwN);
+      const roundDone = (ev && ev.final) || gwIsOver(gwIdx) || (gwFx.length > 0 && gwFx.every(f => f.finished));
+      if (!roundDone) return { xi, subs: [] };
       const bench = benchFor(state, mid, gwIdx).filter(p => appearedInGw(state, p.id, gwIdx));
       const subs = [];
       for (const pid of [...xi]) {
