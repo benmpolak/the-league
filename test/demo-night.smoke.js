@@ -74,8 +74,9 @@ const chk = (name, ok, detail = '') => {
     pre.sides === 2 && pre.benchStrips === 2 && pre.benchCounts.length === 2
       && pre.benchCounts[0] === pre.benchCounts[1] && pre.benchCounts[0] === 3
       && pre.orderTags.every(x => JSON.stringify(x) === JSON.stringify(['1', '2', '3'])), JSON.stringify(pre));
-  chk('pre-deadline duel shows fixture chips everywhere and no live bench points',
-    pre.ownFixtures === 11 && pre.oppFixtures === 11 && pre.pointBadges === 0 && pre.oppBenchCards === 3, JSON.stringify(pre));
+  // 14 per side since UAT night: the bench carries fixture chips too (Ben)
+  chk('pre-deadline duel shows fixture chips everywhere (XI + bench) and no live bench points',
+    pre.ownFixtures === 14 && pre.oppFixtures === 14 && pre.pointBadges === 0 && pre.oppBenchCards === 3, JSON.stringify(pre));
   chk('swap test found a same-position starter and substitute', !!pre.starter && !!pre.bench, JSON.stringify(pre));
 
   await page.click(`[data-pitch="${pre.starter}"] .pitch-vs`);

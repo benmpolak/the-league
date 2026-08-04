@@ -58,15 +58,20 @@
       if (r == null) {
         const ls = lastSeasonOf(p);
         const src = ls && ls.mp ? ls : (!FPL_WIPED && p.mp ? { mp: p.mp, g: p.g || 0, a: p.a || 0, cs: p.cs || 0 } : null);
-        if (!src) r = 0;
-        else {
-          const apps = src.mp / 90;
+        const apps = src ? src.mp / 90 : 0;
+        let played = 0;
+        if (src) {
           const csPts = p.pos === 'GK' || p.pos === 'DF' ? DEFAULT_SCORING.cleanSheet : p.pos === 'MF' ? DEFAULT_SCORING.cleanSheetMF : 0;
-          r = Math.max(0, Math.round(apps * DEFAULT_SCORING.appearanceStart * 0.85
+          played = Math.max(0, apps * DEFAULT_SCORING.appearanceStart * 0.85
             + src.g * DEFAULT_SCORING['goal' + p.pos] + src.a * DEFAULT_SCORING.assist + (src.cs || 0) * csPts
             + (p.pos === 'GK' ? apps * 0.5 : 0)
-            - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0)));
+            - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0));
         }
+        // thin/no sample → FPL-value prior, sample takes over by ~8 apps
+        // (Committee ruling, UAT night; js/app.js rating() mirrors this)
+        const prior = (p.price || 4.5) * 12;
+        const w = Math.min(1, apps / 8);
+        r = Math.round(played * w + prior * (1 - w));
         _ratingCache.set(p.id, r);
       }
       return r;

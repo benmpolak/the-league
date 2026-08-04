@@ -108,3 +108,33 @@ The lads intend more waiver-cycle tests this week and the REAL draft is
 imminent (GW1 deadline 21 Aug). Verify the three field-bug fixes are dead by
 independent repro, sweep the batch above, then one word: **GO or NO-GO** for
 draft night.
+
+## ADDENDUM — commits after the brief was first cut (review these too)
+- 31c6386 drinks-break anthems alternate (bonjovi/pitbull synth, n%2)
+- Sandbox REPAIRED live (scripts/repair_sandbox_donnarumma.js ran clean:
+  all squads 14, Donnarumma solely Wilko's — verify the invariant holds)
+- Trough/trade desk views moved to the LANDING-GW lens: mySquadCard,
+  myPitchCard, #trOut options, squadAfterOut, trade give/meAfter, pool
+  owned/ownedBy all use transferGw() not currentGwIndex() (Toby's "I don't
+  own Vicario!"). ATTACK: display vs server-validation consistency, and the
+  no-mock real-season path where transferGw==cur pre-deadline.
+- Vidiprinter goal lines carry BOTH scoreboards: live fixture score + the
+  fantasy tie state computed from newPS via lineupFor+statPoints (Ben:
+  "both"). ATTACK: ordering (vidiDiff runs before state.matchStats update),
+  escaping, DGW fixture pick (first started fixture wins).
+- Scroll anchoring v2: element-anchored restore (elementsFromPoint →
+  closest('[id]') in #main) with scrollY fallback. ATTACK: anchors inside
+  overlays, ids duplicated across drawers, elementsFromPoint on mobile.
+- Match centre: fixture rows on PL fixtures open showFixtureCard —
+  scorers/assists/cards/featured from gw stats with owner tags; pre-match =
+  owned players per club. ATTACK: XSS via names, gwIdx -1 path, the
+  Highlights anchor passthrough.
+- Rating: thin-sample (<8 apps) blends an FPL-price prior (price*12), pure
+  prior at 0 apps (Jackson 6→78). Engine mirrors. ATTACK: parity again,
+  price missing/0, FPL_WIPED interplay.
+- History tab filters (All/Trough/Waivers/Trades/Window); Rate column added
+  to desktop DEFAULT_COL_KEYS (saved prefs still win); punditry desk moved
+  BELOW pick history; Ham Cup documented on the Rules page; vidi tape wipes
+  on a new draft era (VIDI_ERA_KEY = draftPool.at).
+- demo-night duel pin re-set to 14 fixture chips/side (bench chips carry
+  fixtures now — deliberate).
