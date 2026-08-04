@@ -268,7 +268,7 @@ async function runWaivers(league, runId, trigger, failAt) {
   try {
     const ctx = await loadCtx();
     if (ctx.feedGenerated && Date.now() - new Date(ctx.feedGenerated).getTime() > 90 * 60 * 1000) {
-      throw new Error('stats feed is stale (>90 min) — refusing to run waivers on old scores');
+      throw new HttpsError('failed-precondition', 'the stats feed is stale (>90 min old) — waivers refuse to run on old scores. Check the Refresh FPL data Action.');
     }
     const eng = ctx.eng;
     const state = await loadState(league, ctx, { withPrivate: true });
