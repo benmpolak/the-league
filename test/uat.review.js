@@ -55,10 +55,12 @@ const chk = (name, ok, detail = '') => {
     for (const pid of xi) if (pid !== out.id) ps[pid] = { min: 90, st: 1 };
     ps[inn.id] = { min: 30, sub: 1 };
     state.matchStats = { gw1: { gw: 0, label: 'GW1', final: false, playerStats: ps } };
-    state.fixtures = [
-      { id: 99101, gw: 1, date: GAMEWEEKS[0].from, home: TEAMS[0].name, away: TEAMS[1].name, started: true, finished: true },
-      { id: 99102, gw: 1, date: GAMEWEEKS[0].to, home: TEAMS[2].name, away: TEAMS[3].name, started: false, finished: false },
-    ];
+    // a FULL round — every club paired — since the all-finished path now
+    // demands complete club coverage (the fix for this suite's own P2)
+    state.fixtures = TEAMS.reduce((acc, t, i) => {
+      if (i % 2 === 0 && TEAMS[i + 1]) acc.push({ id: 99101 + i, gw: 1, date: i === 2 ? GAMEWEEKS[0].to : GAMEWEEKS[0].from, home: t.name, away: TEAMS[i + 1].name, started: i !== 2, finished: i !== 2 });
+      return acc;
+    }, []);
     const midRound = effectiveXI(mid, 0);
     state.fixtures[1].finished = true;
     const allFinished = effectiveXI(mid, 0);

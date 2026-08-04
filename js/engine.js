@@ -312,7 +312,11 @@
       // mid-round (Committee ruling, UAT night) — js/app.js mirrors this
       const gwN = GAMEWEEKS[gwIdx] && GAMEWEEKS[gwIdx].n;
       const gwFx = FIXTURES.filter(f => f.gw === gwN);
-      const roundDone = (ev && ev.final) || gwIsOver(gwIdx) || (gwFx.length > 0 && gwFx.every(f => f.finished));
+      // all-finished only counts when the WHOLE round is present — every club
+      // accounted for (sol UAT P2; js/app.js mirrors this)
+      const clubCount = new Set(PLAYERS.map(p => p.team)).size;
+      const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === clubCount;
+      const roundDone = (ev && ev.final) || gwIsOver(gwIdx) || (fullRound && gwFx.every(f => f.finished));
       if (!roundDone) return { xi, subs: [] };
       const bench = benchFor(state, mid, gwIdx).filter(p => appearedInGw(state, p.id, gwIdx));
       const subs = [];

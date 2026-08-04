@@ -2233,7 +2233,11 @@ function effectiveXI(mid, gwIdx) {
   // final whistle of the last game of the gw")
   const gwN = GAMEWEEKS[gwIdx]?.n;
   const gwFx = state.fixtures.filter(f => f.gw === gwN);
-  const roundDone = ev.final || gwIsOver(gwIdx) || (gwFx.length > 0 && gwFx.every(f => f.finished));
+  // the all-finished shortcut must see the WHOLE round: a device carrying
+  // only the finished fixtures would sub early and disagree with the server
+  // (sol UAT P2) — every club accounted for, or wait for feed-final/time
+  const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === TEAMS.length;
+  const roundDone = ev.final || gwIsOver(gwIdx) || (fullRound && gwFx.every(f => f.finished));
   if (!roundDone) return { xi, subs: [] };
   const bench = benchFor(mid, gwIdx).filter(p => appearedInGw(p.id, gwIdx)); // manager's order, leftmost first
   const subs = [];
@@ -2521,6 +2525,7 @@ function vidiDiff(gwIdx, oldPS, newPS) {
     if (dg > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l))) {
       const owner = state.managers.find(m => managerSquad(m.id).some(x => x.id === +pid));
       lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name}${owner ? ` — the certified lobus of ${teamName(owner.id)} —` : ' — uncontracted, feral —'} has SCORED. Great feet for a big man.` });
+      playSound('klaxon');
     }
   }
   vidiPush(lines);
@@ -3530,6 +3535,7 @@ function showCeremony() {
   const steps = [
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
     { h: '&#127884; THE PARADE OF CLUBS', p: '', parade: true },
+    { h: '&#127933; THE PARADE OF MANAGERS', p: '', mparade: true },
     { h: '&#127908; Main stage', p: 'Coldplay perform Viva la Vida in its 9-minute extended ceremony arrangement. Chris Martin has been told this is a twelve-man WhatsApp league that left its old website over £145. He says every revolution is beautiful.' },
     { h: '&#129309; The draw', p: 'The Committee opens the envelopes. The order is final. The complaints will not be.' },
     ...[...order].reverse().map((mid, i) => ({
@@ -3550,7 +3556,7 @@ function showCeremony() {
     const s = steps[i];
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
-      ${s.parade ? '<div id="paradeSlot" class="parade-slot"></div>'
+      ${s.parade || s.mparade ? '<div id="paradeSlot" class="parade-slot"></div>'
         : s.big ? `<div class="ceremony-name">${esc(s.p)}</div>` : `<p class="rules-p" style="text-align:center">${esc(s.p)}</p>`}
       <div style="margin-top:18px;display:flex;gap:8px;justify-content:center">
         <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'To the Console' : 'Continue the pomp'}</button>
@@ -3575,6 +3581,41 @@ function showCeremony() {
       };
       showFlag();
       paradeTimer = setInterval(showFlag, 1400); // Marc, UAT: "still slightly too fast"
+    }
+    if (s.mparade) {
+      // the twelve walk out (Ben, UAT night) — brisker than the clubs, since
+      // unlike the clubs they will be here all season
+      const MGR_WALKS = [
+        m => `emerges from the tunnel to polite applause and one boo. The boo was from ${esc(managerName(rivalsOf(m.id)[0] || state.managers.find(x => x.id !== m.id).id))}.`,
+        m => `walks out holding the ${esc(sponsorFor(m.id) || 'unsponsored')} matchday programme, waving at a section of ${esc(stadium(m.id))} that is not waving back.`,
+        m => gafferFor(m.id) ? `is accompanied by ${esc(gafferFor(m.id).t)}, who has already seen enough.` : 'arrives unaccompanied. The dugout situation remains unresolved.',
+        m => `applauds all four sides of ${esc(stadium(m.id))}, two of which exist.`,
+        m => `points to the sky, then checks the Rate column on his phone.`,
+        m => `high-fives ${esc(assistantFor(m.id).t)}, who was not expecting it.`,
+        m => `jogs out looking match-fit, pulls up immediately.`,
+        m => `salutes the away end. There is no away end.`,
+        m => `carries last season's grudges in a small commemorative box.`,
+        m => `mouths 'this is our year' to a camera that has already cut away.`,
+        m => `arrives to the sound of ${esc(sponsorFor(m.id) || 'a local firm')}'s jingle, which nobody licensed either.`,
+        m => `bows to the Committee. The Committee notes it, without warmth.`,
+      ];
+      let f = 0;
+      const walkOut = () => {
+        const slot = $('#paradeSlot');
+        if (!slot) { clearInterval(paradeTimer); return; }
+        if (f >= state.managers.length) {
+          slot.innerHTML = '<p class="rules-p" style="text-align:center">All twelve accounted for. Nobody has been sent off yet. Yet.</p>';
+          clearInterval(paradeTimer);
+          return;
+        }
+        const m = state.managers[f];
+        slot.innerHTML = `<div style="display:flex;justify-content:center;margin-bottom:6px">${kitSvg(m.id, 46)}</div>
+          <div class="parade-team">${esc(m.team || m.name)}</div>
+          <div class="parade-bearer">${esc(managerName(m.id))} ${MGR_WALKS[(m.id * 7 + 3) % MGR_WALKS.length](m)}</div>`;
+        f++;
+      };
+      walkOut();
+      paradeTimer = setInterval(walkOut, 950); // "make that bit quick"
     }
     $('#cerNext').onclick = () => { i++; show(); };
     $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
@@ -3786,6 +3827,17 @@ function playSound(kind) {
         ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
       ];
       for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
+    } else if (kind === 'whistle') {
+      // full time: an officious triple blast, the last one held far longer
+      // than anyone needed ("more sound effects but not too many… humourous")
+      tone(c, 2200, 0, 0.12, { type: 'square', gain: 0.045 });
+      tone(c, 2200, 0.22, 0.12, { type: 'square', gain: 0.045 });
+      tone(c, 2200, 0.44, 0.85, { type: 'square', gain: 0.05, slideTo: 2150 });
+    } else if (kind === 'klaxon') {
+      // the lobus air horn: two tones, both wrong
+      tone(c, 466, 0, 0.4, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 370, 0.42, 0.55, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 466, 1.05, 0.7, { type: 'sawtooth', gain: 0.06 });
     } else if (kind === 'trombone') {
       // the universal sound of a bad decision
       tone(c, 466, 0, 0.25, { type: 'sawtooth', gain: 0.06, slideTo: 440 });
@@ -5358,7 +5410,7 @@ function viewTransfers() {
         ${canActFor(actor) ? `
         <select id="wdOut" style="width:100%;max-width:420px;margin:8px 0;display:block">
           <option value="">Player out…</option>
-          ${squadAt(actor, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}">${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
+          ${squadAt(actor, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(pp => `<option value="${pp.id}">${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
         </select>` : `<p class="muted" style="font-size:12px">Lean on them in the group chat.</p>`}
         <div class="pick-log" style="max-height:320px">
           ${[...arrivals].sort(metricSort('pts')).map(p => `<div class="lrow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} ${statusChip(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
@@ -5887,7 +5939,7 @@ function bindTransfers() {
       if (!other) { pickers.innerHTML = ''; return; }
       const cur = currentGwIndex();
       const mine = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
-      const theirs = squadAt(other, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
+      const theirs = squadAt(other, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
       const col = (title, list, side) => `<div style="flex:1;min-width:190px">
         <p style="font-size:12px;font-weight:700;margin-bottom:4px">${title}</p>
         <div style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:6px">
@@ -5913,7 +5965,7 @@ function bindTransfers() {
         if (give.length !== get.length) { toast(`Same number each way — you've ticked ${give.length} for ${get.length}`); return; }
         const giveSet = new Set(give), getSet = new Set(get);
         const meAfter = [...squadAt(mid, transferGw()).filter(p => !giveSet.has(p.id)), ...get.map(pid => PLAYER_BY_ID[pid])];
-        const themAfter = [...squadAt(other, cur).filter(p => !getSet.has(p.id)), ...give.map(pid => PLAYER_BY_ID[pid])];
+        const themAfter = [...squadAt(other, transferGw()).filter(p => !getSet.has(p.id)), ...give.map(pid => PLAYER_BY_ID[pid])];
         if (!squadShapeOk(meAfter) || !squadShapeOk(themAfter)) { toast('That combination breaks a squad’s position limits'); return; }
         const terms = $('#tradeTerms').value.trim();
         if (!await confirmSheet({
@@ -7882,7 +7934,7 @@ function bindSettings() {
     const gw = +($('#mockGw')?.value ?? currentGwIndex());
     if (netOn()) {
       serverAct('mockMatchday', { op, gw })
-        .then(() => toast(op === 'off' ? 'The chamber goes dark.' : op === 'live' ? `GW${GAMEWEEKS[gw].n} KICKS OFF — entirely imaginary, fiercely contested.` : `FULL TIME in the simulation. The results stand (in here).`))
+        .then(() => { if (op === 'final') playSound('whistle'); toast(op === 'off' ? 'The chamber goes dark.' : op === 'live' ? `GW${GAMEWEEKS[gw].n} KICKS OFF — entirely imaginary, fiercely contested.` : `FULL TIME in the simulation. The results stand (in here).`); })
         .catch(() => {});
       return;
     }
