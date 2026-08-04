@@ -5488,7 +5488,10 @@ function bindTransfers() {
       const owned = ownedIdsAt(cur);
       const outP = transfersView.out ? PLAYER_BY_ID[transfersView.out] : null;
       const squadAfterOut = squadAt(mid, cur).filter(p => !outP || p.id !== outP.id);
-      const claimedIds = new Set(myClaims(mid).map(c => c.in));
+      // only an IDENTICAL {in, out} pair is a duplicate — "Jones for Okafor,
+      // else Dorgu for Okafor" is a legitimate fallback ladder (Marc, UAT
+      // night); the run voids whatever's already settled
+      const claimPairs = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
       const ownedBy = {};
       for (const mm of state.managers) for (const sp of squadAt(mm.id, cur)) ownedBy[sp.id] = mm.id;
       let pool = transfersView.scope === 'all' ? [...PLAYERS]
@@ -5520,9 +5523,10 @@ function bindTransfers() {
           const ownerMid = ownedBy[p.id];
           const locked = !ownerMid && arrivalLocked(p);
           const waiv = !ownerMid && !locked && onWaivers(p);
-          const ok = !ownerMid && !locked && outP && squadShapeOk([...squadAfterOut, p]) && !claimedIds.has(p.id);
+          const dupe = outP && claimPairs.has(`${p.id}:${outP.id}`);
+          const ok = !ownerMid && !locked && outP && squadShapeOk([...squadAfterOut, p]) && !dupe;
           const why = locked ? 'New arrival — locked until the window shuts, then the Window Draft'
-            : !outP ? 'Pick who goes out first' : claimedIds.has(p.id) ? 'Already claimed' : 'Breaks the squad position limits';
+            : !outP ? 'Pick who goes out first' : dupe ? 'That exact claim is already on your list' : 'Breaks the squad position limits';
           const m = metricsFor(p);
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
