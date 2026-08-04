@@ -5242,7 +5242,22 @@ function viewTransfers() {
     return `${head}${myPitchCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
-      ${claims.length ? `<h3>${esc(managerName(mid))}'s claims</h3>${claimRows}` : ''}
+      ${(() => {
+        // ALWAYS show the claims desk (Ben, UAT night: "is there a waiver list
+        // you add to? i can't see it" — it only rendered once you had one; the
+        // rule, learned three times now: never hide a feature, explain it)
+        const claimsBlock = `<h3>${esc(managerName(mid))}'s waiver claims</h3>` + (claims.length ? claimRows
+          : `<p class="muted" style="font-size:12px;margin-bottom:8px">None lodged. Sign a player who's <b>on waivers</b> and he lands here as a ranked blind claim — top of the list gets tried first at the run.</p>`);
+        // and the window's completed business, so a multi-move session is
+        // visible as you go ("what if you want to do multiple transfers at
+        // once… you should be able to see what you are doing")
+        const tgw = transferGw();
+        const moves = state.transfers.filter(t => t.managerId === mid && t.gw === tgw);
+        const movesBlock = moves.length ? `<h3 style="margin-top:10px">Done this window</h3>` + moves.map(t => `
+          <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver claim, landed' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
+          </div>`).join('') : '';
+        return claimsBlock + movesBlock;
+      })()}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
@@ -5993,6 +6008,26 @@ function previewArticle(i, pick) {
   const troughLine = recent.length
     ? ` The transfer columns note ${recent.slice(-3).map(t => `${managerName(t.managerId)} ${t.trade ? 'trading for' : 'signing'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(', ')} — moves that will look either shrewd or desperate by Monday.`
     : '';
+  // week one leads with the draft (Ben, UAT night: "who takes who, who might
+  // perform, interesting clashes") — first pick, the steal by the numbers,
+  // and any club-hoarding policy the Committee should note
+  let draftRecap = '';
+  if (i === 0 && !played && state.draft?.picks?.length) {
+    const picks = state.draft.picks;
+    const fp = PLAYER_BY_ID[picks[0]?.playerId];
+    const bits = [];
+    if (fp) bits.push(`${managerName(picks[0].managerId)} opened the night with ${fp.name} at No. 1 — ${playerXp(fp).toFixed(1)} expected a week says fair enough`);
+    const late = picks.filter(pk => pk.n > picks.length / 2).map(pk => ({ pk, p: PLAYER_BY_ID[pk.playerId] })).filter(x => x.p);
+    const steal = late.sort((a, b) => playerXp(b.p) - playerXp(a.p))[0];
+    if (steal && playerXp(steal.p) > 0) bits.push(`the steal, by the numbers: ${steal.p.name} at pick ${steal.pk.n}, round ${Math.ceil(steal.pk.n / state.managers.length)}, to ${teamName(steal.pk.managerId)}`);
+    let hoard = null;
+    for (const m of state.managers) {
+      const c = {};
+      for (const p of squadAt(m.id, 0)) { c[p.team] = (c[p.team] || 0) + 1; if (!hoard || c[p.team] > hoard.n) hoard = { mid: m.id, team: p.team, n: c[p.team] }; }
+    }
+    if (hoard && hoard.n >= 4) bits.push(`${teamName(hoard.mid)} left with ${hoard.n} from ${hoard.team}, a procurement policy the Committee has noted without endorsing`);
+    if (bits.length) draftRecap = `The draft, minuted: ${bits.map((s, k) => k ? s[0].toUpperCase() + s.slice(1) : s).join('. ')}.`;
+  }
   const dc = i < 10 ? draftClassTable() : [];
   const draftLine = dc.length >= 2 && dc[0].pts > 0
     ? ` Draft-class watch: ${teamName(dc[0].mid)}'s August board still tops the charts (${dc[0].pts} banked); ${teamName(dc[dc.length - 1].mid)}'s is being described, generously, as "a project".`
@@ -6005,6 +6040,7 @@ function previewArticle(i, pick) {
   return `<div class="prog-art">
     <p class="prog-lead">${esc(lead)}</p>
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
+    ${draftRecap ? `<p>${esc(draftRecap)}</p>` : ''}
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
     <p><b>Around the grounds:</b> ${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
