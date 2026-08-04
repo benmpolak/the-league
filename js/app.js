@@ -5305,12 +5305,16 @@ function viewTransfers() {
   // (Ben: "you should see your squad as a lineup pitch style rather than list")
   const myPitchCard = (() => {
     if (netOn() && (!whoami || whoami === -1)) return '';
-    const sq = squadAt(mid, transferGw());
+    // ONE lens for the whole card: the landing gameweek. Mixing it (tgw squad,
+    // current-week XI/bench) left Wilko's outgoing Wharton on this pitch while
+    // My Team already showed Schade (UAT night, 23:19).
+    const tgw = transferGw();
+    const sq = squadAt(mid, tgw);
     if (!sq.length) return '';
     // a proper lineup page (Ben, UAT night): the selected XI in its real
     // formation, the subs on a numbered bench strip below — same shape as My
     // Team. Every chip is still a tap-to-put-him-up target.
-    const xi = new Set(lineupFor(mid, cur));
+    const xi = new Set(lineupFor(mid, tgw));
     const starters = sq.filter(p => xi.has(p.id));
     const chip = p => `
           <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
@@ -5329,7 +5333,7 @@ function viewTransfers() {
       </div>
       <div class="bench-strip">
         <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
-        ${benchFor(mid, cur).map((p, bi) => `
+        ${benchFor(mid, tgw).map((p, bi) => `
           <div class="pitch-chip benched ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
             <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
             ${kitImg(p.team, p.pos === 'GK')}
