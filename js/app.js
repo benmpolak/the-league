@@ -5146,16 +5146,34 @@ function viewTransfers() {
     if (netOn() && (!whoami || whoami === -1)) return '';
     const sq = squadAt(mid, cur);
     if (!sq.length) return '';
-    return `<div class="card" style="margin-bottom:14px">
-      <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
-      <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
-      <div class="pitch mu-pitch">
-        ${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${sq.filter(p => p.pos === pos).map(p => `
+    // a proper lineup page (Ben, UAT night): the selected XI in its real
+    // formation, the subs on a numbered bench strip below — same shape as My
+    // Team. Every chip is still a tap-to-put-him-up target.
+    const xi = new Set(lineupFor(mid, cur));
+    const starters = sq.filter(p => xi.has(p.id));
+    const chip = p => `
           <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
             <span class="pitch-vs">${metricsFor(p).pts} pts</span>
-          </div>`).join('') || '<span class="muted" style="font-size:11px">—</span>'}</div>`).join('')}
+          </div>`;
+    return `<div class="card" style="margin-bottom:14px">
+      <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
+      <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
+      <div class="pitch mu-pitch">
+        ${['GK', 'DF', 'MF', 'FW'].map(pos => {
+          const row = starters.filter(p => p.pos === pos);
+          return row.length ? `<div class="pitch-row">${row.map(chip).join('')}</div>` : '';
+        }).join('')}
+      </div>
+      <div class="bench-strip">
+        <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
+        ${benchFor(mid, cur).map((p, bi) => `
+          <div class="pitch-chip benched ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+            <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
+            ${kitImg(p.team, p.pos === 'GK')}
+            <span class="pitch-name">${esc(p.name)}</span>
+          </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
       </div>
     </div>`;
   })();
@@ -6015,13 +6033,59 @@ function reviewArticle(last, pick) {
   const starLine = star && star.pts > 0
     ? ` The individual honours go to ${star.p.name}, whose ${star.pts} points for ${teamName(star.mid)} were the week's outstanding shift.`
     : '';
-  const card = results.map((r, k) => r.sa === r.sb
-    ? `${teamName(r.a)} ${r.sa}–${r.sb} ${teamName(r.b)} (a draw nobody enjoyed)`
-    : pick([
-      `${teamName(r.sa > r.sb ? r.a : r.b)} saw off ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
-      `${teamName(r.sa > r.sb ? r.a : r.b)} edged ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
-      `${teamName(r.sa > r.sb ? r.a : r.b)} beat ${teamName(r.sa > r.sb ? r.b : r.a)} ${Math.max(r.sa, r.sb)}–${Math.min(r.sa, r.sb)}`,
-    ], last * 5 + k)).join('; ');
+  // per-match reports (Ben, UAT night: "more depth — who drafted who, who
+  // scored the points"): star men with their stat lines and their provenance
+  // (round drafted / Trough find / waiver claim / trade), flops in dispatches
+  const provenance = (mid, pid) => {
+    const pk = (state.draft.picks || []).find(x => x.managerId === mid && x.playerId === pid);
+    if (pk && pk.n) return `his round-${Math.ceil(pk.n / state.managers.length)} pick (No. ${pk.n} overall)`;
+    if (pk) return 'his own draft pick';
+    const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
+    if (!tr) return '';
+    return tr.trade ? 'landed in a trade' : tr.windowDraft ? 'a Window Draft signing' : tr.waiver ? 'a waiver-wire claim' : 'plucked from the Trough for nothing';
+  };
+  const shift = pid => {
+    const s = gwEvent(last)?.playerStats?.[pid];
+    if (!s) return '';
+    const bits = [];
+    if ((s.g || 0) >= 3) bits.push('a hat-trick'); else if (s.g === 2) bits.push('two goals'); else if (s.g === 1) bits.push('a goal');
+    if ((s.a || 0) === 1) bits.push('an assist'); else if ((s.a || 0) >= 2) bits.push(`${s.a} assists`);
+    if (s.cs && ['GK', 'DF'].includes(PLAYER_BY_ID[pid]?.pos)) bits.push('a clean sheet');
+    if (s.ps) bits.push('a penalty save');
+    return bits.length <= 2 ? bits.join(' and ') : `${bits.slice(0, -1).join(', ')} and ${bits.at(-1)}`;
+  };
+  const topOf = mid => {
+    let best = null;
+    for (const pid of lineupFor(mid, last)) {
+      const pts = gwPlayerPoints(pid, last);
+      if (!best || pts > best.pts) best = { pid, pts };
+    }
+    return best;
+  };
+  const reports = results.map((r, k) => {
+    if (r.sa === r.sb) {
+      const ba = topOf(r.a), bb = topOf(r.b);
+      const bm = ba && bb && bb.pts > ba.pts ? { ...bb, mid: r.b } : ba ? { ...ba, mid: r.a } : null;
+      return `<p><b>${esc(teamName(r.a))} ${r.sa}–${r.sb} ${esc(teamName(r.b))}.</b> ${esc(bm && bm.pts > 0 ? `A draw nobody enjoyed; ${PLAYER_BY_ID[bm.pid]?.name || '?'} (${bm.pts}) did most to avoid it.` : 'A draw nobody enjoyed, least of all the neutrals. There were no neutrals.')}</p>`;
+    }
+    const w = r.sa > r.sb ? r.a : r.b, l = w === r.a ? r.b : r.a;
+    const ws = Math.max(r.sa, r.sb), ls = Math.min(r.sa, r.sb);
+    const wStar = topOf(w), lStar = topOf(l);
+    const wp = wStar ? PLAYER_BY_ID[wStar.pid] : null;
+    const verb = pick(['saw off', 'edged', 'beat', 'dispatched', 'got past'], last * 5 + k);
+    let body = '';
+    if (wp && wStar.pts > 0) {
+      const sh = shift(wStar.pid);
+      const prov = provenance(w, wStar.pid);
+      body = ` ${wp.name} led the winning effort with ${wStar.pts}${sh ? ` — ${sh}` : ''}${prov ? ` — ${prov}` : ''}.`;
+    }
+    if (lStar && PLAYER_BY_ID[lStar.pid]) {
+      body += lStar.pts >= Math.max(8, ws / 3)
+        ? ` In defeat, ${PLAYER_BY_ID[lStar.pid].name}'s ${lStar.pts} deserved better company.`
+        : ` ${teamName(l)}'s best was ${PLAYER_BY_ID[lStar.pid].name} with ${lStar.pts}, which tells its own story.`;
+    }
+    return `<p><b>${esc(teamName(w))} ${ws}–${ls} ${esc(teamName(l))}.</b> ${esc(`${teamName(w)} ${verb} ${teamName(l)}.`)}${esc(body)}</p>`;
+  }).join('');
   const awardBits = [];
   if (lo) awardBits.push(`the Wooden Spoon goes to ${teamName(lo.id)} (${lo.s})`);
   if (jammy && jammy.ws < (hi?.s || 99)) awardBits.push(`${teamName(jammy.w)} take Jammiest Win, victorious with just ${jammy.ws}`);
@@ -6077,7 +6141,7 @@ function reviewArticle(last, pick) {
   }
   return `<div class="prog-art">
     <p class="prog-lead">${esc(lead)}${esc(starLine)}</p>
-    <p><b>The full card:</b> ${esc(card)}.</p>
+    ${reports}
     ${awardBits.length ? `<p><b>In dispatches:</b> ${esc(awardBits.join('; '))}.</p>` : ''}
     ${momentsLine ? `<p>${esc(momentsLine)}</p>` : ''}
     ${draftPara ? `<p>${esc(draftPara)}</p>` : ''}
