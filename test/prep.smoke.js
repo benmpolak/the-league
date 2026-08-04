@@ -285,12 +285,12 @@ const chk = (name, ok, detail = '') => {
     const card = document.querySelector('.prog-card');
     const art = card?.querySelector('.prog-art');
     return {
-      card: !!card, mast: !!card?.querySelector('.prog-mast'),
+      card: !!card, mast: !!card?.querySelector('.prog-plate .prog-title'),
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
-      edition: card?.querySelector('.prog-mast')?.textContent || '',
+      edition: card?.querySelector('.prog-date')?.textContent || '',
     };
   });
-  chk('P8g Matchday Programme prints a real article on the dashboard',
+  chk('P8g Matchday Programme prints a real article under the Gazette nameplate',
     p8g.card && p8g.mast && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
 
   // ---- P8h: multiple rivals — mutual clásico, one-sided mockery, legacy field honoured

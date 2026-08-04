@@ -5259,6 +5259,10 @@ function viewTransfers() {
         return claimsBlock + movesBlock;
       })()}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
+      <select id="trOut" style="width:100%;max-width:420px;margin-bottom:8px;display:block" title="Marc's dropdown — the pitch above does the same job">
+        <option value="">Player out — pick here or tap him on the pitch…</option>
+        ${squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
+      </select>
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
@@ -5431,6 +5435,10 @@ function bindTransfers() {
   });
   // --- waivers & the Trough ---
   const search = $('#trSearch'), results = $('#trResults');
+  // the player-out dropdown (Marc, UAT night: "we had a drop down… bit of a
+  // faff on the pitch") — same state as the pitch taps, either works
+  const trOut = $('#trOut');
+  if (trOut) trOut.onchange = () => { transfersView.out = +trOut.value || null; render(); };
   // claim list management (withdraw / reprioritise)
   document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
@@ -5950,17 +5958,18 @@ function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
   const cur = currentGwIndex();
   const pick = (arr, seed) => arr[seed % arr.length];
-  const masthead = (edition, gwN) => `<p class="prog-mast">The League Gazette &middot; ${edition} &middot; GW${gwN}</p>`;
+  // the nameplate (Ben, UAT night: "more like a newspaper")
+  const masthead = (edition, gwN) => `<div class="prog-plate"><div class="prog-title">The League Gazette</div><div class="prog-date">${edition} &middot; Gameweek ${gwN} &middot; est. 2015 &middot; price: your dignity</div></div>`;
   if ((gwDeadlinePassed(cur) || gwUnderway(cur)) && gwStatus(cur) !== 'final') {
     const art = previewArticle(cur, pick);
-    if (art) return `<div class="card prog-card"><h2>The Matchday Programme</h2>${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}</div>`;
+    if (art) return `<div class="card prog-card">${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}</div>`;
   }
   const last = lastFinalGw();
   if (last >= 0) {
-    return `<div class="card prog-card"><h2>The Matchday Programme</h2>${masthead('review edition', GAMEWEEKS[last].n)}${reviewArticle(last, pick)}
+    return `<div class="card prog-card">${masthead('review edition', GAMEWEEKS[last].n)}${reviewArticle(last, pick)}
       <p class="muted" style="font-size:11px;margin-top:8px">The GW${GAMEWEEKS[Math.min(cur, REGULAR_GWS - 1)].n} matchday edition goes to print when the teams are locked.</p></div>`;
   }
-  return `<div class="card prog-card"><h2>The Matchday Programme</h2>
+  return `<div class="card prog-card">
     <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
 }
 function previewArticle(i, pick) {
@@ -6046,7 +6055,7 @@ function previewArticle(i, pick) {
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${draftRecap ? `<p>${esc(draftRecap)}</p>` : ''}
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
-    <p><b>Around the grounds:</b> ${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
+    <div class="prog-sec">Around the grounds</div><p>${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }
@@ -6103,28 +6112,33 @@ function reviewArticle(last, pick) {
     return best;
   };
   const reports = results.map((r, k) => {
+    const story = (home, hs2, away, as2, byline, body) => `<div class="prog-story">
+      <div class="prog-head">${esc(teamName(home))} ${hs2} &nbsp;${esc(teamName(away))} ${as2}</div>
+      <div class="prog-by">${esc(byline)}</div>
+      <p>${esc(body)}</p></div>`;
     if (r.sa === r.sb) {
       const ba = topOf(r.a), bb = topOf(r.b);
       const bm = ba && bb && bb.pts > ba.pts ? { ...bb, mid: r.b } : ba ? { ...ba, mid: r.a } : null;
-      return `<p><b>${esc(teamName(r.a))} ${r.sa}–${r.sb} ${esc(teamName(r.b))}.</b> ${esc(bm && bm.pts > 0 ? `A draw nobody enjoyed; ${PLAYER_BY_ID[bm.pid]?.name || '?'} (${bm.pts}) did most to avoid it.` : 'A draw nobody enjoyed, least of all the neutrals. There were no neutrals.')}</p>`;
+      return story(r.a, r.sa, r.b, r.sb, `From our man at ${stadium(r.a)}`,
+        bm && bm.pts > 0 ? `A draw nobody enjoyed; ${PLAYER_BY_ID[bm.pid]?.name || '?'} (${bm.pts}) did most to avoid it.` : 'A draw nobody enjoyed, least of all the neutrals. There were no neutrals.');
     }
     const w = r.sa > r.sb ? r.a : r.b, l = w === r.a ? r.b : r.a;
     const ws = Math.max(r.sa, r.sb), ls = Math.min(r.sa, r.sb);
     const wStar = topOf(w), lStar = topOf(l);
     const wp = wStar ? PLAYER_BY_ID[wStar.pid] : null;
     const verb = pick(['saw off', 'edged', 'beat', 'dispatched', 'got past'], last * 5 + k);
-    let body = '';
+    let body = `${teamName(w)} ${verb} ${teamName(l)}.`;
     if (wp && wStar.pts > 0) {
       const sh = shift(wStar.pid);
       const prov = provenance(w, wStar.pid);
-      body = ` ${wp.name} led the winning effort with ${wStar.pts}${sh ? ` — ${sh}` : ''}${prov ? ` — ${prov}` : ''}.`;
+      body += ` ${wp.name} led the winning effort with ${wStar.pts}${sh ? ` — ${sh}` : ''}${prov ? ` — ${prov}` : ''}.`;
     }
     if (lStar && PLAYER_BY_ID[lStar.pid]) {
       body += lStar.pts >= Math.max(8, ws / 3)
         ? ` In defeat, ${PLAYER_BY_ID[lStar.pid].name}'s ${lStar.pts} deserved better company.`
         : ` ${teamName(l)}'s best was ${PLAYER_BY_ID[lStar.pid].name} with ${lStar.pts}, which tells its own story.`;
     }
-    return `<p><b>${esc(teamName(w))} ${ws}–${ls} ${esc(teamName(l))}.</b> ${esc(`${teamName(w)} ${verb} ${teamName(l)}.`)}${esc(body)}</p>`;
+    return story(w === r.a ? r.a : r.b, w === r.a ? ws : ls, w === r.a ? r.b : r.a, w === r.a ? ls : ws, `From our man at ${stadium(r.a)}`, body);
   }).join('');
   const awardBits = [];
   if (lo) awardBits.push(`the Wooden Spoon goes to ${teamName(lo.id)} (${lo.s})`);
@@ -6181,11 +6195,11 @@ function reviewArticle(last, pick) {
   }
   return `<div class="prog-art">
     <p class="prog-lead">${esc(lead)}${esc(starLine)}</p>
-    ${reports}
-    ${awardBits.length ? `<p><b>In dispatches:</b> ${esc(awardBits.join('; '))}.</p>` : ''}
-    ${momentsLine ? `<p>${esc(momentsLine)}</p>` : ''}
-    ${draftPara ? `<p>${esc(draftPara)}</p>` : ''}
-    ${tableLine ? `<p>${esc(tableLine)}</p>` : ''}
+    <div class="prog-cols">${reports}</div>
+    ${awardBits.length ? `<div class="prog-sec">In dispatches</div><p>${esc(awardBits.join('; '))}.</p>` : ''}
+    ${momentsLine ? `<div class="prog-sec">The Vidiprinter</div><p>${esc(momentsLine)}</p>` : ''}
+    ${draftPara ? `<div class="prog-sec">The draft, revisited</div><p>${esc(draftPara)}</p>` : ''}
+    ${tableLine ? `<div class="prog-sec">The state of the table</div><p>${esc(tableLine)}</p>` : ''}
   </div>`;
 }
 /* ----- the Data Room (Marc, 1 Aug): the stats desk gets its own page so the
