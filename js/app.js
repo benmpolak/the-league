@@ -3548,7 +3548,9 @@ function maybeDrinksBreak() {
     <p class="muted" style="font-size:12.5px;margin-top:10px">&#127928; Now playing over the tannoy: <b>Livin' on a Prayer</b> — Bon Jovi. Committee anthem, non-negotiable, requested by the Chairman himself.</p>
     <button class="btn" id="breakDone" style="margin-top:16px" disabled>Back to the Console</button></div>`;
   document.body.appendChild(el);
-  playSound('bonjovi');
+  // the breaks alternate anthems: Bon Jovi, then Pitbull, then Bon Jovi…
+  // (Toby, UAT night). Both synthesized; both licensing-free; both shite/brilliant.
+  playSound(n % 2 ? 'pitbull' : 'bonjovi');
   // the countdown survives refreshes/re-renders — stored per break, so a
   // reload at 1:59 doesn't hold the room another two minutes (sol mock-night)
   const breakKey = `${LS_NS}-break-${n}-${state.draftPool?.at || 0}`;
@@ -3709,6 +3711,18 @@ function playSound(kind) {
         ['B4', 4.25, .18], ['A4', 4.46, .18], ['G4', 4.67, .18], ['A4', 4.9, .7], // livin' on a prayer
       ];
       for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'sawtooth', gain: 0.05 });
+    } else if (kind === 'pitbull') {
+      // Timber, harmonica hook, same tannoy treatment — the SECOND drinks-break
+      // anthem (Toby, UAT night: "should be a new song. Pitbull."). Mr Worldwide
+      // was also unavailable for licensing.
+      const N = { G4: 392, A4: 440, B4: 494, D5: 587, E5: 659 };
+      const riff = [
+        ['E5', 0, .16], ['E5', .18, .16], ['E5', .36, .16], ['D5', .54, .22], ['B4', .8, .3],   // it's going down
+        ['A4', 1.2, .16], ['B4', 1.38, .16], ['D5', 1.56, .4],                                   // I'm yelling timber
+        ['E5', 2.15, .16], ['E5', 2.33, .16], ['E5', 2.51, .16], ['D5', 2.69, .22], ['B4', 2.95, .3], // you better move
+        ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
+      ];
+      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
     } else if (kind === 'trombone') {
       // the universal sound of a bad decision
       tone(c, 466, 0, 0.25, { type: 'sawtooth', gain: 0.06, slideTo: 440 });
