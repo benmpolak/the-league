@@ -37,23 +37,23 @@ const GAFFERS = [
 ];
 
 // ================= The assistant managers =================
-// The No. 2s (Ben, UAT night: "a selection of funny assistant managers to
-// choose from, and then people can do their own"). Every club gets a
-// house-issue one by default; swap him in the club office or invent your own.
-// He fronts the Assistant Manager briefing on My Team.
+// The No. 2s (Ben, UAT night: famous number twos from down the years and
+// around the world, comical — same real-name parody licence as the punditry
+// desk). Every club gets a house-issue one by default; swap him in the club
+// office or invent your own. He fronts the briefing on My Team.
 const ASSISTANTS = [
-  { t: 'The Clipboard', e: '📋', bio: 'Thirty years of laminated drills. Owns one coat. The cones fear him.' },
-  { t: 'The Shouter', e: '🗣️', bio: 'Does the shouting so the gaffer doesn’t have to. Tactical input: “GET RID.”' },
-  { t: 'The Psychologist', e: '🧠', bio: 'Keeps asking the back four how the goal made them feel.' },
-  { t: 'The Magic Sponge', e: '🧽', bio: '700 lower-league games in his knees. Prescribes the sponge for everything, including grief.' },
-  { t: 'Il Vice', e: '🧣', bio: 'Immaculate. Calls the Trough “il mercato”. Will not discuss long throws.' },
-  { t: 'The Set-Piece Lab', e: '📐', bio: 'Eleven routines, four whiteboards, one corner won all season.' },
-  { t: 'The Keepers’ Union', e: '🧤', bio: 'Goalkeeping coach. Believes every problem is, at heart, a goalkeeping problem.' },
-  { t: 'Two Phones', e: '📱', bio: 'Knows an agent. Knows ALL the agents. Do not ask about the second phone.' },
-  { t: 'The Pressing Zealot', e: '⚡', bio: 'Wants the bench counter-pressing the buffet.' },
-  { t: 'The Tea Lady', e: '🫖', bio: 'Promoted from the canteen for knowing where the bodies are buried.' },
-  { t: 'The Lanyard', e: '🕴️', bio: 'Nobody appointed him. He was simply there one day, with a lanyard.' },
-  { t: 'The Work Experience Lad', e: '🎒', bio: 'Sixteen. Terrifying with the numbers. Does not know who won Euro 96.' },
+  { t: 'Lawrie McMenemy', e: '🎖️', bio: 'Guardsman’s bearing, brigadier’s voice. Served on the Impossible Job. Do not mention turnips.' },
+  { t: 'Phil Neal', e: '🦜', bio: '“Yes boss. Whatever you say, boss.” Eight league titles of agreeing.' },
+  { t: 'Peter Taylor', e: '🧥', bio: 'Clough was the shop window; he was the goods in the back. Knows a player, knows a punchline.' },
+  { t: 'Tord Grip', e: '🪗', bio: 'Sven’s man. Scouts with an accordion. Hears a 4-4-2 in every folk song.' },
+  { t: 'Pat Rice', e: '🤫', bio: 'Fourteen years beside Wenger. Said nothing. Saw everything.' },
+  { t: 'Terry McDermott', e: '🍾', bio: 'Job description: being Keegan’s mate. Would love it if we beat them. LOVE IT.' },
+  { t: 'Rui Faria', e: '🕶️', bio: 'Seventeen years in Mourinho’s shadow. Warms up the grievances as well as the players.' },
+  { t: 'Željko Buvač', e: '🧩', bio: '“The Brain.” Ran Klopp’s tactics for years, then vanished mid-season. May vanish again.' },
+  { t: 'Mike Phelan', e: '🚜', bio: 'Fergie’s right hand. Now mostly tweets about combine harvesters. Available.' },
+  { t: 'Carlos Queiroz', e: '📋', bio: 'Built Fergie’s back four twice. Left to manage Real Madrid. Came back quieter.' },
+  { t: 'Ray Lewington', e: '🧯', bio: 'Hodgson’s eternal No. 2. Has seen every relegation scrap since decimalisation.' },
+  { t: 'Steve McClaren', e: '☂️', bio: 'The Wally with the Brolly, back in the passenger seat where it’s safe. Brings his own umbrella.' },
 ];
 
 // ================= Pitch-side advertising boards =================
