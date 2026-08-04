@@ -41,16 +41,21 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     // demo settles only GW1 — clone its event onto GW2 so there IS an archive
     state.matchStats.gw2 = { ...state.matchStats.gw1, gw: 1, label: 'GW2', final: true };
     state.view = 'dash'; progView.gw = null; render();
-    const nav = document.querySelectorAll('[data-progw]').length;
-    const target = [...document.querySelectorAll('[data-progw]')].find(b => b.dataset.progw !== 'today' && !b.disabled);
+    // the archive lives inside the reading room now
+    document.querySelector('#progRead')?.click();
+    await new Promise(r => setTimeout(r, 120));
+    const room = () => document.querySelector('.gazette-room');
+    const nav = room()?.querySelectorAll('[data-progw]').length || 0;
+    const target = [...(room()?.querySelectorAll('[data-progw]') || [])].find(b => b.dataset.progw !== 'today' && !b.disabled);
     if (!target) return { nav, fail: 'no archive button' };
     const wantGw = GAMEWEEKS[+target.dataset.progw].n;
-    target.click(); await new Promise(r => setTimeout(r, 120));
-    const plate = document.querySelector('.prog-date')?.textContent || '';
+    target.click(); await new Promise(r => setTimeout(r, 150));
+    const plate = room()?.querySelector('.prog-date')?.textContent || '';
     const fromArchive = /from the archive/.test(plate) && plate.includes(`Gameweek ${wantGw}`);
-    const back = [...document.querySelectorAll('[data-progw]')].find(b => b.dataset.progw === 'today');
-    back.click(); await new Promise(r => setTimeout(r, 120));
-    const restored = !/from the archive/.test(document.querySelector('.prog-date')?.textContent || '');
+    const back = [...(room()?.querySelectorAll('[data-progw]') || [])].find(b => b.dataset.progw === 'today');
+    back?.click(); await new Promise(r => setTimeout(r, 150));
+    const restored = !/from the archive/.test(room()?.querySelector('.prog-date')?.textContent || '');
+    room()?.closest('.overlay')?.remove();
     return { nav, fromArchive, restored };
   });
   chk('#5 Gazette archive opens a back edition and returns to today’s paper',

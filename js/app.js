@@ -6488,35 +6488,80 @@ const gwDeadlinePassed = i => GAMEWEEKS[i] && new Date(GAMEWEEKS[i].from).getTim
 // is generated, not stored — reviewArticle() rebuilds any settled week from
 // state, so every edition is permanent for free (sol product review #5).
 let progView = { gw: null };
-function programmeCard() {
-  if (state.phase !== 'season' || !state.draft.picks.length) return '';
+const progMasthead = (edition, gwN) => `<div class="prog-plate"><div class="prog-title">The League Gazette</div><div class="prog-date">${edition} &middot; Gameweek ${gwN} &middot; est. 2015 &middot; price: your dignity</div></div>`;
+// what's on today's front step: {edition, gwN, article} or null
+function progTodays() {
   const cur = currentGwIndex();
   const pick = (arr, seed) => arr[seed % arr.length];
-  // the nameplate (Ben, UAT night: "more like a newspaper")
-  const masthead = (edition, gwN) => `<div class="prog-plate"><div class="prog-title">The League Gazette</div><div class="prog-date">${edition} &middot; Gameweek ${gwN} &middot; est. 2015 &middot; price: your dignity</div></div>`;
-  const last = lastFinalGw();
-  const settled = [];
-  for (let i = 0; i <= last && i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
-  const archNav = at => settled.length > 1 || (settled.length === 1 && at !== settled[0]) ? `
-    <div style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:10px;border-top:1px solid var(--line);padding-top:8px">
-      <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
-      ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
-      ${at != null ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
-    </div>` : '';
-  // a back-edition stays open until the reader returns to today's paper
-  if (progView.gw != null && settled.includes(progView.gw)) {
-    return `<div class="card prog-card">${masthead('review edition — from the archive', GAMEWEEKS[progView.gw].n)}${reviewArticle(progView.gw, pick)}${archNav(progView.gw)}</div>`;
-  }
   if ((gwDeadlinePassed(cur) || gwUnderway(cur)) && gwStatus(cur) !== 'final') {
     const art = previewArticle(cur, pick);
-    if (art) return `<div class="card prog-card">${masthead('matchday edition', GAMEWEEKS[cur].n)}${art}${archNav(null)}</div>`;
+    if (art) return { edition: 'matchday edition', gwN: GAMEWEEKS[cur].n, article: art };
   }
-  if (last >= 0) {
-    return `<div class="card prog-card">${masthead('review edition', GAMEWEEKS[last].n)}${reviewArticle(last, pick)}
-      <p class="muted" style="font-size:11px;margin-top:8px">The GW${GAMEWEEKS[Math.min(cur, REGULAR_GWS - 1)].n} matchday edition goes to print when the teams are locked.</p>${archNav(last)}</div>`;
+  const last = lastFinalGw();
+  if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
+  return null;
+}
+// the dashboard shows a FRONT PAGE, not the whole paper (Ben: "make it
+// clickable into so it doesn't take the screen over") — nameplate, the
+// lead headline and standfirst, one button. The edition opens in the
+// reading room overlay.
+function programmeCard() {
+  if (state.phase !== 'season' || !state.draft.picks.length) return '';
+  const today = progTodays();
+  if (!today) {
+    return `<div class="card prog-card">
+      <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
   }
+  // the lead's headline + first sentence, lifted from the article itself so
+  // the teaser can never disagree with the paper
+  const scratch = document.createElement('div');
+  scratch.innerHTML = today.article;
+  const head = scratch.querySelector('.prog-head')?.textContent || '';
+  const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
+  const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
   return `<div class="card prog-card">
-    <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
+    ${progMasthead(today.edition, today.gwN)}
+    ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
+    ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" id="progRead" style="flex:1">Read the ${esc(today.edition)}</button>
+    </div>
+  </div>`;
+}
+// the reading room: the full edition, typeset for reading, archive inside
+function gazetteSheet(gwIdx = null) {
+  const pick = (arr, seed) => arr[seed % arr.length];
+  const settled = [];
+  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
+  const today = progTodays();
+  const showing = gwIdx != null && settled.includes(gwIdx)
+    ? { edition: gwIdx === today?.gw ? 'review edition' : 'review edition — from the archive', gwN: GAMEWEEKS[gwIdx].n, article: reviewArticle(gwIdx, pick), gw: gwIdx }
+    : today;
+  if (!showing) return;
+  progView.gw = showing.gw ?? null;
+  const at = showing.gw ?? null;
+  const archNav = settled.length > 1 || (settled.length === 1 && at !== settled[0]) ? `
+    <div class="prog-arch">
+      <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
+      ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
+      ${at != null && today && at !== today.gw ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
+    </div>` : '';
+  document.querySelectorAll('.gazette-room').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card gazette-room" role="dialog" aria-label="The League Gazette">
+    <button class="btn ghost small gz-close" id="gzClose" title="Fold the paper">&#10005;</button>
+    ${progMasthead(showing.edition, showing.gwN)}
+    ${showing.article}
+    ${archNav}
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#gzClose').onclick = () => closeOv(ov);
+  ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
+    gazetteSheet(b.dataset.progw === 'today' ? null : +b.dataset.progw);
+  });
 }
 function previewArticle(i, pick) {
   const d = gwPreviewData(i);
@@ -7135,10 +7180,8 @@ function dashMiniPitch(mid, gw) {
 }
 function bindDash() {
   bindInstall();
-  document.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
-    progView.gw = b.dataset.progw === 'today' ? null : +b.dataset.progw;
-    render();
-  });
+  const pr = $('#progRead');
+  if (pr) pr.onclick = () => gazetteSheet();
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');

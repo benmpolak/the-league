@@ -283,15 +283,21 @@ const chk = (name, ok, detail = '') => {
     state.view = 'dash';
     render();
     const card = document.querySelector('.prog-card');
-    const art = card?.querySelector('.prog-art');
-    return {
+    // the dash shows a front page; the full edition lives in the reading room
+    card?.querySelector('#progRead')?.click();
+    const room = document.querySelector('.gazette-room');
+    const art = room?.querySelector('.prog-art');
+    const out = {
       card: !!card, mast: !!card?.querySelector('.prog-plate .prog-title'),
+      teaser: !!card?.querySelector('.prog-head-lead'), room: !!room,
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
-      edition: card?.querySelector('.prog-date')?.textContent || '',
+      edition: room?.querySelector('.prog-date')?.textContent || '',
     };
+    room?.closest('.overlay')?.remove();
+    return out;
   });
-  chk('P8g Matchday Programme prints a real article under the Gazette nameplate',
-    p8g.card && p8g.mast && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
+  chk('P8g Gazette front page teases; the reading room prints the real article',
+    p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
 
   // ---- P8h: multiple rivals — mutual clásico, one-sided mockery, legacy field honoured
   const p8h = await page.evaluate(() => {
