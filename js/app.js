@@ -568,7 +568,7 @@ async function enterDemo() {
   vidiStash = vidiFeed;
   vidiFeed = [
     { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
-    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — the declared Lobus of ${teamName(8)} — has SCORED. Great feet for a big man.` },
+    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — the certified lobus of ${teamName(8)} — has SCORED. Great feet for a big man.` },
     { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
     { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -3` },
     { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
@@ -955,6 +955,15 @@ function gafferFor(mid) {
   if (typeof g === 'number') return GAFFERS[g] || null;
   return { t: g.t, e: '🧢', bio: g.bio || '', fm: { badges: 'Unverifiable', playing: 'Undisclosed', media: 'No comment' } };
 }
+// the No. 2 beside him: house-issue by default (every club gets one — the
+// briefing card needs a voice from day one), an archetype off the stable, or
+// homemade. Clearing goes back to house-issue; there is no vacant No. 2.
+function assistantFor(mid) {
+  const a = state.managers.find(x => x.id === mid)?.assistant;
+  if (typeof a === 'number' && ASSISTANTS[a]) return ASSISTANTS[a];
+  if (a && typeof a === 'object' && a.t) return { t: a.t, e: '🤝', bio: a.bio || '' };
+  return ASSISTANTS[(mid * 5 + 2) % ASSISTANTS.length];
+}
 function gafferChip(mid) {
   const g = gafferFor(mid);
   return g ? `<span class="tag" title="${esc(g.bio)}&#10;Coaching badges: ${esc(g.fm.badges)}&#10;Playing career: ${esc(g.fm.playing)}&#10;Media handling: ${esc(g.fm.media)}">${g.e} ${esc(g.t)}</span>` : '';
@@ -1035,7 +1044,8 @@ function clubEditor(mid) {
   // nothing — drop them here so they can't eat a slot of the three
   const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
   const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer };
+  const savedAssistant = typeof m?.assistant === 'number' && !ASSISTANTS[m.assistant] ? null : (m?.assistant ?? null);
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant };
   const stock = AD_BOARDS.map(b => b.t);
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -1045,10 +1055,11 @@ function clubEditor(mid) {
     ov.querySelectorAll('[data-pat]').forEach(b => b.classList.toggle('active', b.dataset.pat === draft.kit.pattern));
     ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
     ov.querySelectorAll('[data-gaffer]').forEach(b => b.classList.toggle('active', draft.gaffer === +b.dataset.gaffer));
+    ov.querySelectorAll('[data-assist]').forEach(b => b.classList.toggle('active', draft.assistant === +b.dataset.assist));
   };
   // extras open when any is already chosen — a founder editing their boards
   // shouldn't have to hunt for them behind a closed drawer
-  const extrasOpen = draft.boards.length || draft.gaffer != null || draft.rivals.length;
+  const extrasOpen = draft.boards.length || draft.gaffer != null || draft.assistant != null || draft.rivals.length;
   ov.innerHTML = `<div class="card club-office" role="dialog" aria-modal="true" aria-label="The club office" style="max-width:460px;width:94%">
     <h2>The club office</h2>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
@@ -1080,7 +1091,7 @@ function clubEditor(mid) {
     <label class="muted" style="font-size:11px">YOUR GROUND</label>
     <input id="clubStadium" maxlength="40" value="${esc(draft.stadium)}" style="width:100%;margin:4px 0 10px" />
     <details class="club-extras"${extrasOpen ? ' open' : ''}>
-      <summary>The extras — hoardings, gaffer, rival</summary>
+      <summary>The extras — hoardings, gaffer, assistant, rival</summary>
       <label class="muted" style="font-size:11px">PITCH-SIDE HOARDINGS — pick up to three for home games</label>
       <div id="clubBoards" style="display:flex;gap:5px;flex-wrap:wrap;margin:4px 0 10px">
         ${AD_BOARDS.map((b, i) => `<button class="btn ghost small" data-board="${i}" style="font-size:10px">${esc(b.t)}</button>`).join('')}
@@ -1094,6 +1105,16 @@ function clubEditor(mid) {
       <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
         <button class="btn ghost small" id="gafferOwn">Make one up…</button>
         <button class="btn ghost small" id="gafferNone">Vacant dugout</button>
+      </div>
+      <label class="muted" style="font-size:11px">THE ASSISTANT MANAGER — the No. 2 who briefs you on My Team</label>
+      <div id="assistGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:4px 0 6px">
+        ${ASSISTANTS.map((g, i) => `<button class="btn ghost gaffer-card" data-assist="${i}">
+          <b>${g.e} ${esc(g.t)}</b><span class="muted">${esc(g.bio)}</span>
+        </button>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btn ghost small" id="assistOwn">Make one up…</button>
+        <button class="btn ghost small" id="assistNone">House-issue, thanks</button>
       </div>
       <label class="muted" style="font-size:11px">RIVALS — declare up to three derbies. They don't get a say.</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:4px 0 14px">
@@ -1118,10 +1139,10 @@ function clubEditor(mid) {
   // persists or travels; the draft object stays the single source of truth.
   const savedCustom = {
     kit: !!m?.kit, sponsor: !!m?.sponsor, boards: savedBoards.length > 0,
-    gaffer: savedGaffer != null, stadium: !!m?.stadium,
+    gaffer: savedGaffer != null, assistant: savedAssistant != null, stadium: !!m?.stadium,
   };
   const touched = new Set();
-  const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'stadium'].filter(f => !savedCustom[f] && !touched.has(f));
+  const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'assistant', 'stadium'].filter(f => !savedCustom[f] && !touched.has(f));
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
   ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { touched.add('kit'); draft.kit.pattern = b.dataset.pat; paint(); });
   ov.querySelector('#clubC1').oninput = e => { touched.add('kit'); draft.kit.c1 = e.target.value; paint(); };
@@ -1150,6 +1171,17 @@ function clubEditor(mid) {
     draft.gaffer = { t: t.trim().slice(0, 30), bio: bio.trim().slice(0, 60) };
     paint();
     toast(`${draft.gaffer.t} — appointed.`);
+  };
+  ov.querySelectorAll('[data-assist]').forEach(b => b.onclick = () => { touched.add('assistant'); draft.assistant = +b.dataset.assist; paint(); });
+  ov.querySelector('#assistNone').onclick = () => { touched.add('assistant'); draft.assistant = null; paint(); toast('Back to the house-issue No. 2.'); };
+  ov.querySelector('#assistOwn').onclick = () => {
+    const t = prompt('Your assistant manager (30 characters):', typeof draft.assistant === 'object' && draft.assistant ? draft.assistant.t : '');
+    if (!t || t.trim().length < 2) return;
+    touched.add('assistant');
+    const bio = prompt('One-line bio (60 characters):', typeof draft.assistant === 'object' && draft.assistant ? draft.assistant.bio || '' : '') || '';
+    draft.assistant = { t: t.trim().slice(0, 30), bio: bio.trim().slice(0, 60) };
+    paint();
+    toast(`${draft.assistant.t} — on the staff.`);
   };
   ov.querySelectorAll('[data-board]').forEach(b => b.onclick = () => {
     touched.add('boards');
@@ -1197,6 +1229,8 @@ function clubEditor(mid) {
         for (let k = 0; k < n && pool.length; k++) draft.boards.push(pool.splice(Math.floor(R() * pool.length) % pool.length, 1)[0]);
       } else if (f === 'gaffer') {
         draft.gaffer = Math.floor(R() * GAFFERS.length) % GAFFERS.length;
+      } else if (f === 'assistant') {
+        draft.assistant = Math.floor(R() * ASSISTANTS.length) % ASSISTANTS.length;
       } else if (f === 'stadium') {
         draft.stadium = pick(SURPRISE_STADIA);
         ov.querySelector('#clubStadium').value = draft.stadium;
@@ -1223,7 +1257,7 @@ function clubEditor(mid) {
       const cnl = ov.querySelector('#clubCancel');
       saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
-        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, ...(mid !== whoami && { asManager: mid }) });
+        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, ...(mid !== whoami && { asManager: mid }) });
       } catch {
         saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
         return; // serverAct already toasted why
@@ -1234,7 +1268,7 @@ function clubEditor(mid) {
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer };
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant };
     localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
@@ -1393,6 +1427,8 @@ function clubProfileHtml(mid, { editable = false } = {}) {
       <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Playing career</span><b style="margin-left:auto">${esc(g.fm.playing)}</b></div>
       <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Media handling</span><b style="margin-left:auto">${esc(g.fm.media)}</b></div>`
       : '<p class="muted">The dugout stands vacant. The board is monitoring the situation.</p>'}
+    <p style="font-size:12.5px;margin-top:10px"><span class="muted">Assistant manager:</span> <b>${assistantFor(mid).e} ${esc(assistantFor(mid).t)}</b></p>
+    <p class="muted" style="font-size:11.5px;margin-top:2px">${esc(assistantFor(mid).bio)}</p>
   </div>
   <div class="card" style="margin-top:14px">
     <h2>Rivalries</h2>
@@ -2398,14 +2434,13 @@ function vidiDiff(gwIdx, oldPS, newPS) {
       : benchOf[p.id] != null ? `benched by ${teamName(benchOf[p.id])} (!)` : 'the Trough';
     const haul = now >= 10 && mid != null ? ` (${VIDI_WORDS[now] || now}!!)` : '';
     lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `${bits.join(' · ')} — ${p.name} (${p.club}) — ${who}${haul}` });
-    // the Lobus Klaxon (Marc, 1 Aug): the gag is DELIVERED here — any declared
-    // Lobus scoring sets off the klaxon on the tape, whoever owns him
+    // the Lobus Klaxon: declarations are GONE (Marc, UAT night — "remove the
+    // declare my lobus"); the klaxon now fires off the certified registry
+    // instead, so the gag needs no admin. Big units only.
     const dg = (s.g || 0) - (o.g || 0);
-    if (dg > 0) {
-      for (const [lmid, lpid] of Object.entries(state.lobus || {})) {
-        if (+lpid !== +pid) continue;
-        lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — the declared Lobus of ${teamName(+lmid)} — has SCORED. Great feet for a big man.` });
-      }
+    if (dg > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l))) {
+      const owner = state.managers.find(m => managerSquad(m.id).some(x => x.id === +pid));
+      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name}${owner ? ` — the certified lobus of ${teamName(owner.id)} —` : ' — uncontracted, feral —'} has SCORED. Great feet for a big man.` });
     }
   }
   vidiPush(lines);
@@ -2418,6 +2453,14 @@ function vidiDiff(gwIdx, oldPS, newPS) {
    then 'final' settles it. The real league has no such lever: the server
    action hard-refuses outside the-league-sandbox. ----- */
 const MOCK_LIVE_MS = 20 * 60e3;
+// Kickoffs are STAGGERED (Ben, UAT night: "let's make it not" all kick off
+// together): each fixture's real kickoff time maps onto the first 60% of the
+// mock window, so the Friday-to-Monday shape compresses into the 20 minutes —
+// the Friday game reaches full time before Monday's has kicked off, exactly
+// like a real round. 60% spread + 40% match span guarantees that overlap.
+const MOCK_KO_SPREAD = 0.6;
+// minutes played in THIS fixture given overall window progress (0..1)
+const mockFxElapsed = (ko, frac) => Math.round(90 * Math.max(0, Math.min(1, (frac - ko) / (1 - MOCK_KO_SPREAD))));
 function mockRnd(seed) { let s = (seed >>> 0) || 1; return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648; }
 /* Real scorelines first, player stats second (Ben, mock night: "annoyed me
    that in the test they didn't make up real game scores"). Each fixture gets a
@@ -2428,16 +2471,26 @@ function mockRnd(seed) { let s = (seed >>> 0) || 1; return () => (s = (s * 11035
 function mockScorelines(gwIdx, seed) {
   const gwN = GAMEWEEKS[gwIdx].n;
   const score = rnd => { const r = rnd(); return r < 0.28 ? 0 : r < 0.62 ? 1 : r < 0.85 ? 2 : r < 0.96 ? 3 : 4; };
+  const gwFx = state.fixtures.filter(x => x.gw === gwN);
+  // kickoff offsets: real kickoff order squeezed into [0, MOCK_KO_SPREAD];
+  // no usable dates (synthetic calendars) → spread by list position instead
+  const stamps = gwFx.map(x => Date.parse(x.date || '') || 0);
+  const lo = Math.min(...stamps, Infinity), hi = Math.max(...stamps, -Infinity);
+  const koFor = (f, i) => {
+    if (hi > lo && Date.parse(f.date || '')) return (Date.parse(f.date) - lo) / (hi - lo) * MOCK_KO_SPREAD;
+    return gwFx.length > 1 ? (i / (gwFx.length - 1)) * MOCK_KO_SPREAD : 0;
+  };
   const teams = {}, fixtures = [];
-  for (const f of state.fixtures.filter(x => x.gw === gwN)) {
+  gwFx.forEach((f, i) => {
     const rnd = mockRnd(seed * 6151 + (f.id || 0) * 30011);
     const hs = score(rnd), as = score(rnd);
     const ht = Array.from({ length: hs }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
     const at = Array.from({ length: as }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
-    fixtures.push({ f, ht, at });
-    teams[f.home] = { times: ht, oppTimes: at };
-    teams[f.away] = { times: at, oppTimes: ht };
-  }
+    const ko = koFor(f, i);
+    fixtures.push({ f, ht, at, ko });
+    teams[f.home] = { times: ht, oppTimes: at, ko };
+    teams[f.away] = { times: at, oppTimes: ht, ko };
+  });
   return { teams, fixtures };
 }
 function mockGwStats(gwIdx, seed, frac) {
@@ -2447,19 +2500,19 @@ function mockGwStats(gwIdx, seed, frac) {
   for (const arr of Object.values(state.hamCup?.entries || {})) for (const pid of toArr(arr)) featured.add(+pid);
   const { teams } = mockScorelines(gwIdx, seed);
   const haveFixtures = Object.keys(teams).length > 0;
-  const elapsed = Math.round(90 * frac);
-  // pass 1: who featured, and for how long
-  const roster = []; // {p, started, mins}
+  // pass 1: who featured, and for how long — each on HIS fixture's clock
+  const roster = []; // {p, started, mins, el}
   for (const pid of featured) {
     const p = PLAYER_BY_ID[pid];
     if (!p) continue;
     if (haveFixtures && !teams[p.team]) continue; // blank GW for his club — didn't play, honestly
+    const el = haveFixtures ? mockFxElapsed(teams[p.team].ko, frac) : Math.round(90 * frac);
     const rnd = mockRnd(seed * 7919 + pid * 104729);
     if (rnd() < 0.07) continue; // left out this week
     const started = rnd() < 0.85;
-    const mins = started ? elapsed : Math.max(0, elapsed - 60); // subs enter on the hour
-    if (!mins) continue; // not on the pitch yet — no stat line
-    roster.push({ p, rnd, started, mins });
+    const mins = started ? el : Math.max(0, el - 60); // subs enter on the hour
+    if (!mins) continue; // his game hasn't kicked off (or he's not on yet) — no stat line
+    roster.push({ p, rnd, started, mins, el });
   }
   const byTeam = {};
   for (const r of roster) (byTeam[r.p.team] = byTeam[r.p.team] || []).push(r);
@@ -2486,20 +2539,21 @@ function mockGwStats(gwIdx, seed, frac) {
       }
     }
   }
-  // pass 3: the stat lines, consistent with the scoreboard so far
-  for (const { p, rnd, started, mins } of roster) {
+  // pass 3: the stat lines, consistent with each fixture's scoreboard so far
+  for (const { p, rnd, started, mins, el } of roster) {
     const sl = teams[p.team];
-    const conceded = sl ? sl.oppTimes.filter(t => t <= elapsed).length : 0;
+    const conceded = sl ? sl.oppTimes.filter(t => t <= el).length : 0;
+    const fxFrac = el / 90;
     const cr = credit[p.id] || { g: [], a: [] };
     const s = {
       min: mins, st: started ? 1 : 0, sub: started ? 0 : 1,
-      g: cr.g.filter(t => t <= elapsed).length,
-      a: cr.a.filter(t => t <= elapsed).length,
-      cs: sl && conceded === 0 && elapsed >= 60 && mins >= 60 ? 1 : 0,
+      g: cr.g.filter(t => t <= el).length,
+      a: cr.a.filter(t => t <= el).length,
+      cs: sl && conceded === 0 && el >= 60 && mins >= 60 ? 1 : 0,
       gc: conceded, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0,
     };
-    if (rnd() < 0.10 && rnd() < frac) s.yc = 1;
-    if (p.pos === 'GK') s.sv = Math.min(9, Math.floor(rnd() * 4 * frac) + (conceded ? 1 : 0));
+    if (rnd() < 0.10 && rnd() < fxFrac) s.yc = 1;
+    if (p.pos === 'GK') s.sv = Math.min(9, Math.floor(rnd() * 4 * fxFrac) + (conceded ? 1 : 0));
     ps[p.id] = s;
   }
   return ps;
@@ -2518,16 +2572,16 @@ let mockFxSaved = null;
 let mockFxPatched = new WeakSet();
 function patchMockFixtures(mk, frac, final) {
   const { fixtures } = mockScorelines(mk.gw, +mk.seed || 1);
-  const elapsed = Math.round(90 * frac);
   mockFxSaved = mockFxSaved || {};
-  for (const { f, ht, at } of fixtures) {
+  for (const { f, ht, at, ko } of fixtures) {
     if (!mockFxPatched.has(f)) {
       mockFxSaved[f.id] = { hs: f.hs, as: f.as, started: f.started, finished: f.finished, minutes: f.minutes };
       mockFxPatched.add(f);
     }
-    f.hs = ht.filter(t => t <= elapsed).length;
-    f.as = at.filter(t => t <= elapsed).length;
-    f.started = true; f.finished = !!final; f.minutes = elapsed;
+    const el = final ? 90 : mockFxElapsed(ko, frac);
+    f.hs = el ? ht.filter(t => t <= el).length : null;
+    f.as = el ? at.filter(t => t <= el).length : null;
+    f.started = el > 0; f.finished = !!final || el >= 90; f.minutes = el;
   }
 }
 function unpatchMockFixtures() {
@@ -4802,7 +4856,87 @@ function viewTeam() {
       </div>
     </div>
   </div>
+  ${assistantCard(mid, gw)}
   ${nextSixCard(mid)}`;
+}
+
+/* ----- The Assistant Manager (Marc, UAT night: "recommend the team selection
+   or trough/waiver players — should I start Liam Delap or Haji Wright").
+   A number-cruncher on the same projections as the Crystal Ball, spoken like
+   a lower-league No. 2. Deterministic — NOT a chatbot (that's on the
+   Committee's wishlist and needs a server + a budget). ----- */
+function assistantGwProj(p, gwIdx) {
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (!gwN || !state.fixtures?.length) return 0;
+  const games = state.fixtures.filter(f => f.gw === gwN && (f.home === p.team || f.away === p.team)).length;
+  return games * playerXp(p);
+}
+function assistantCard(mid, gw) {
+  if (state.phase !== 'season') return '';
+  const signedOut = netOn() && !demoMode && (!whoami || whoami === -1);
+  const notMine = netOn() && !demoMode && !signedOut && whoami !== mid;
+  if (notMine) return ''; // he works for YOU; other clubs have their own staff
+  const asst = assistantFor(mid);
+  const head = (body) => `<div class="card" style="margin-top:12px"><h2>${asst.e} ${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">assistant manager${gafferFor(mid) ? ` — No. 2 to ${esc(gafferFor(mid).t)}` : ''}</span></h2>${body}</div>`;
+  if (signedOut) {
+    return head(`<p class="muted" style="font-size:12.5px;opacity:.75">He has opinions on the XI and the Trough, but he only briefs his own manager. Sign in (top right) and he's yours.</p>`);
+  }
+  // advise the first gameweek that hasn't kicked off yet, from the one being viewed
+  let ai = gw;
+  while (ai < REGULAR_GWS - 1 && gwHasStarted(ai)) ai++;
+  const gwN = GAMEWEEKS[ai].n;
+  const xi = lineupFor(mid, ai);
+  const xiSet = new Set(xi);
+  const squad = squadAt(mid, ai);
+  const starters = squad.filter(p => xiSet.has(p.id));
+  const bench = squad.filter(p => !xiSet.has(p.id));
+  const proj = p => assistantGwProj(p, ai);
+  const lines = [];
+  // 1. no-fixture starters — the one mistake he will not forgive
+  for (const s of starters) {
+    if (proj(s) === 0) lines.push(`<b>${pname(s)} has no fixture in GW${gwN}.</b> He cannot score from the sofa. Get him out of the XI.`);
+  }
+  // 2. fitness doubts in the XI
+  for (const s of starters) {
+    if (s.status === 'i' || s.status === 's' || s.status === 'u') {
+      lines.push(`${pname(s)} is ${s.status === 's' ? 'suspended' : 'flagged'} — ${esc(s.news || 'no details from the club')}. I'd have a plan B warmed up.`);
+    }
+  }
+  // 3. straight positional swaps the numbers back (Delap-or-Wright answered)
+  const swaps = [];
+  for (const b of bench) {
+    if (b.status === 'i' || b.status === 's' || b.status === 'u') continue;
+    const rivals = starters.filter(s => s.pos === b.pos && !swaps.some(x => x.out === s.id));
+    if (!rivals.length) continue;
+    const weakest = rivals.reduce((a, s) => proj(s) < proj(a) ? s : a);
+    if (proj(b) > proj(weakest) + 0.5) swaps.push({ in: b, out: weakest, pi: proj(b), po: proj(weakest), outId: weakest.id });
+  }
+  swaps.sort((a, b) => (b.pi - b.po) - (a.pi - a.po));
+  for (const s of swaps.slice(0, 3)) {
+    lines.push(`I'd start ${pname(s.in)} over ${pname(s.out)} — projects <b>${s.pi.toFixed(1)}</b> against <b>${s.po.toFixed(1)}</b> this week${s.pi > s.po * 2 && s.po > 0 ? '. Not close, gaffer' : ''}.`);
+  }
+  // 4. the shopping list: free agents who out-project the weakest of ours
+  const owned = ownedIdsAt(currentGwIndex());
+  const tips = [];
+  for (const p of PLAYERS) {
+    if (owned.has(p.id) || arrivalLocked(p) || p.status === 'i' || p.status === 's' || p.status === 'u') continue;
+    const mine = squad.filter(x => x.pos === p.pos);
+    if (!mine.length) continue;
+    const weakest = mine.reduce((a, x) => projPts(x, 3) < projPts(a, 3) ? x : a);
+    const gain = projPts(p, 3) - projPts(weakest, 3);
+    if (gain > 1) tips.push({ p, weakest, gain });
+  }
+  tips.sort((a, b) => b.gain - a.gain);
+  const tipRows = tips.slice(0, 3).map(t =>
+    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth a blind claim.' : 'Free in the Trough. I’d move.'}</div>`).join('');
+  const brief = lines.length
+    ? lines.map(l => `<div class="lrow" style="font-size:12.5px">${l}</div>`).join('')
+    : `<p class="muted" style="font-size:12.5px">The XI picks itself for GW${gwN}. I've nothing, gaffer. Good session though.</p>`;
+  return head(`
+    <p class="muted" style="font-size:11.5px;margin-bottom:6px">Briefing for GW${gwN}. Same numbers as the Crystal Ball — projections, not prophecy.</p>
+    ${brief}
+    ${tipRows ? `<h3 style="margin-top:10px">The shopping list</h3>${tipRows}` : ''}
+    <p class="muted" style="font-size:10.5px;margin-top:8px">He does not do chat. A conversational version is on the Committee's wishlist.</p>`);
 }
 
 /* ----- Next Six: the current squad's fixture runway. Deliberately small —
@@ -5974,7 +6108,7 @@ function bracketCard() {
       ? `<div class="br-side br-tbd muted">${j ? labelB : labelA}</div>`
       : `<div class="br-side${winner != null ? (winner === id ? ' br-won' : ' br-out') : ''}">
           <span class="br-seed">${seedNo(id)}</span>${kitSvg(id, 15)}<span class="br-name">${esc(teamName(id))}</span>
-          ${j === 0 && hcap ? `<span class="gold br-hcap" title="Head start — half the table-points gap between the pair, capped +${QF_HANDICAP_CAP}">+${hcap}</span>` : ''}
+          ${j === 0 && hcap ? `<span class="gold br-hcap" title="Head start — the full table-Points gap between the pair">+${hcap}</span>` : ''}
           ${score ? `<span class="br-pts">${score[j]}</span>` : ''}
         </div>`).join('')}</div>`;
   const qfCol = qfs.map((pair, k) => {
@@ -6000,7 +6134,7 @@ function bracketCard() {
   return `<div class="card"><h2>The Playoff Bracket${po ? '' : ' <span class="tag">projected</span>'}</h2>
     <p class="muted" style="font-size:11.5px;margin-bottom:8px">${po
       ? 'Top eight. Handicap quarter-finals, fixed bracket, three-legged final. Ties: higher seed.'
-      : `If the season ended today &mdash; seeds from the table, quarter-final head starts = half the points gap (capped +${QF_HANDICAP_CAP}). Firms up as the table does; the real thing kicks off GW34.`}</p>
+      : `If the season ended today &mdash; seeds from the table, quarter-final head starts = the full table-Points gap. Firms up as the table does; the real thing kicks off GW34.`}</p>
     <div class="bracket">
       <div class="br-col"><p class="br-stage">Quarter-finals &middot; GW34</p>${qfCol}</div>
       <div class="br-col"><p class="br-stage">Semi-finals &middot; GW35</p>${semiCol}</div>
@@ -6285,10 +6419,9 @@ function awardsCard() {
     </div>` : ''}
   </div>`;
 }
-/* ----- the Lobus (ledger #1): the Registry card is GONE (Marc, 1 Aug —
-   "not a fully formed joke"); declarations stay (player card) and the gag is
-   delivered by the LOBUS KLAXON on the Vidiprinter when a declared Lobus
-   scores. ----- */
+/* ----- the Lobus (ledger #1): Registry card GONE (Marc, 1 Aug), declarations
+   GONE (Marc, UAT night). The gag survives as the LOBUS KLAXON on the
+   Vidiprinter, fired off LOBUS_LIST — no admin, no constitution clause. ----- */
 /* ----- the Committee Minutes: one tap, WhatsApp-ready recap ----- */
 function committeeMinutes(last) {
   const g = GAMEWEEKS[last];
@@ -6346,11 +6479,11 @@ function bindDash() {
 
 /* ----- playoffs (top 8: GW34 handicap quarter-finals, GW35 semis, GW36–38 three-legged final) ----- */
 const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : Math.min(n % 10, 4) === 1 ? 1 : n % 10 === 2 ? 2 : n % 10 === 3 ? 3 : 0]);
-// QF head start for the higher seed: half the table-points gap between the
-// pair, rounded down, capped at +15 (Committee ruling — replaces the old
-// fixed +12/+9/+6/+3; a tight 4v5 now carries no handicap at all)
-const QF_HANDICAP_CAP = 15;
-const qfHandicap = (ptsHigh, ptsLow) => Math.min(QF_HANDICAP_CAP, Math.floor(Math.max(0, ptsHigh - ptsLow) / 2));
+// QF head start for the higher seed: the FULL table-Points gap between the
+// pair (Marc + Toby, group chat 3 Aug: "just the table points gap", "full
+// handicap week one" — replaces the halved-and-capped-15 version; a tight
+// 4v5 still carries next to nothing)
+const qfHandicap = (ptsHigh, ptsLow) => Math.max(0, ptsHigh - ptsLow);
 function playoffState() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') return null;
   const table = standingsBefore(REGULAR_GWS).rows;
@@ -6391,7 +6524,7 @@ function playoffCard() {
   const po = playoffState();
   if (!po) {
     return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting with <b>half the table-points gap</b> between the pair (rounded down, capped at +${QF_HANDICAP_CAP}). Finish miles clear, start miles ahead. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
+      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting with <b>the full table-Points gap</b> between the pair. Finish miles clear, start miles ahead. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
   }
   const seedNo = id => po.seeds.indexOf(id) + 1;
   const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
@@ -7191,7 +7324,7 @@ function viewRules() {
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
       <p class="rules-p"><b>GW1–33</b>: regular season, head-to-head every week — everyone plays everyone, nearly three times over. Win 3, draw 1, loss 0.</p>
-      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting on <b>half the table-points gap</b> between the pair (rounded down, capped at +15). Dominate the regular season, carry the cushion; scrape in level, get nothing.</p>
+      <p class="rules-p"><b>GW34</b>: handicap quarter-finals, one leg — top eight go through. 1v8, 2v7, 3v6, 4v5, with the higher seed starting on <b>the full table-Points gap</b> between the pair. Dominate the regular season, carry the cushion; scrape in level, get nothing.</p>
       <p class="rules-p"><b>GW35</b>: semi-finals, one leg — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. No handicaps from here.</p>
       <p class="rules-p"><b>GW36–38</b>: the final, three legs. Most legs won → cumulative points → higher regular-season finish. All other ties: higher seed advances.</p>
       <p class="rules-p"><b>The Monzo League Cup</b>, from GW8: last man standing. Lowest score each gameweek is eliminated; ties roll over.</p>
@@ -7335,8 +7468,6 @@ function viewSettings() {
       ${Object.keys(DEFAULT_SCORING).map(k => `
         <div class="score-row"><span>${SCORING_LABELS[k]}</span>
         <input type="number" step="1" data-score="${k}" value="${sc[k]}" ${ro}></div>`).join('')}
-      <div class="score-row" style="margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"><span>Lobus bonus <span class="muted" style="font-size:11px">(0 = off; +N any GW your starting Lobus scores or assists — ledger #1, Committee approval pending)</span></span>
-      <input type="number" step="1" id="lobusBonus" value="${+state.settings.lobusBonus || 0}" ${ro}></div>
       <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only ${esc(managerName(state.managers[0]?.id))} can change scoring.`}</p>
     </div>
     ${installCard(true)}
@@ -7372,9 +7503,8 @@ function viewSettings() {
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
       <p class="rules-p">&sect;4 Waivers follow the fixtures: 8pm after the gameweek, 8pm before the next. Reverse table order. The Trough takes the rest.</p>
       <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
-      <p class="rules-p">&sect;6 Every manager declares one (1) Lobus. The klaxon is ceremonial until the Committee says otherwise.</p>
-      <p class="rules-p">&sect;7 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
-      <p class="rules-p">&sect;8 The hydration break is inviolable.</p>
+      <p class="rules-p">&sect;6 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
+      <p class="rules-p">&sect;7 The hydration break is inviolable.</p>
       <p class="rules-p muted" style="font-style:italic">Amendments require a Committee majority and will be ignored regardless. Full rules on the Rules page.</p>
     </div>
     ${SANDBOX && (!netOn() || isCommissioner()) ? (() => {
@@ -7382,7 +7512,7 @@ function viewSettings() {
       const cur = currentGwIndex();
       const gw = mk?.gw ?? cur;
       const stateLine = !mk ? 'The chamber is dark. No simulation running.'
-        : mk.phase === 'live' ? `GW${GAMEWEEKS[mk.gw].n} is being simulated LIVE — points land over ~20 minutes. Watch the dashboard.`
+        : mk.phase === 'live' ? `GW${GAMEWEEKS[mk.gw].n} is being simulated LIVE — kickoffs are staggered like a real matchday round (the Friday game finishes while Monday's hasn't kicked off), the whole thing lands over ~20 minutes. Watch the dashboard.`
         : `GW${GAMEWEEKS[mk.gw].n} simulation is at FULL TIME — table, awards and results all count it.`;
       return `<div class="card" style="border-color:var(--gold,#d4af37)">
       <h2>The Simulation Chamber <span class="tag">sandbox only</span></h2>
@@ -7426,19 +7556,6 @@ function bindSettings() {
     state.settings.scoring[inp.dataset.score] = +inp.value || 0;
     save(); toast('Scoring updated');
   });
-  const lb = $('#lobusBonus');
-  if (lb) lb.onchange = () => {
-    if (netOn() && !isCommissioner()) { toast('Only the commissioner changes scoring'); render(); return; }
-    const v = +lb.value || 0;
-    if (netOn()) {
-      serverAct('settingsSet', { key: 'lobusBonus', value: v })
-        .then(() => toast(v ? `Lobus bonus live: +${v}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.'))
-        .catch(() => {});
-      return;
-    }
-    state.settings.lobusBonus = v;
-    save(); toast(v ? `Lobus bonus live: +${v}. Marc will be told.` : 'Lobus bonus off. The klaxon stays ceremonial.');
-  };
   const demoB = $('#demoBtn2'); if (demoB) demoB.onclick = enterDemo;
   const exportB = $('#exportBtn');
   if (!exportB) return; // non-commissioner: admin controls aren't rendered
@@ -7603,23 +7720,6 @@ function showPlayerCard(pid) {
         toggleBlock(whoami, pid);
         toast(listed ? `${p.name} quietly delisted.` : `${p.name} is on the transfer list. Offers invited.`);
       }, true);
-      // one mandatory Lobus per manager (ledger #1) — changeable until GW1 kicks off
-      const myLob = state.lobus?.[whoami];
-      if (myLob === pid) {
-        btn('&#128239; Your declared Lobus', () => toast('He is your Lobus. There is no undo, only a new Lobus.'), true);
-      } else if (!myLob || !gwHasStarted(0)) {
-        btn('&#128239; Declare my Lobus', () => {
-          ov.remove();
-          const crow = () => {
-            playSound('cheer');
-            toast(`LOBUS KLAXON — ${p.name} is now ${managerName(whoami)}'s Lobus. Big unit. Great feet for a big man.`);
-          };
-          if (netOn()) { serverAct('lobusDeclare', { pid }).then(crow).catch(() => {}); return; }
-          state.lobus[whoami] = pid;
-          save(); render();
-          crow();
-        }, true);
-      }
     }
     // from your own pitch view: start a swap from the card, finish it with a tap
     if (owner && state.view === 'team' && owner.id === teamView.mid && canActFor(owner.id) && (demoMode || !gwHasStarted(teamView.gw))) {

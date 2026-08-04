@@ -376,9 +376,9 @@ const check = (label, ok, detail = '') => {
     const seeds = table.map(r => r.id).slice(0, 8);
     const tp = Object.fromEntries(table.map(r => [r.id, r.h2h]));
     const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
-    // handicap = half the H2H table-points gap (3 a win), rounded down, capped +15
+    // handicap = the FULL H2H table-Points gap (3 a win) — Committee ruling 3 Aug
     const H = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]]
-      .map(([x, y]) => Math.min(15, Math.floor(Math.max(0, tp[x] - tp[y]) / 2)));
+      .map(([x, y]) => Math.max(0, tp[x] - tp[y]));
     const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
       const px = gwManagerPoints(x, 33) + H[k], py = gwManagerPoints(y, 33);
       return px === py ? hi(x, y) : (px > py ? x : y);

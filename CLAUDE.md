@@ -36,7 +36,7 @@ python3 -m http.server 8749   # from repo root; it's a static site
 
 - `npm run check` — syntax pass over all entry files
 - `npm run test:offline` — node, no browser (includes sim.test.js full-season sim)
-- `npm run test:browser` — puppeteer smokes (demo-night.smoke.js pins QF handicaps [15,11,5,0])
+- `npm run test:browser` — puppeteer smokes (demo-night.smoke.js pins QF handicaps [40,22,11,0] — full Points gap)
 - `npm run test:emu` — Firebase emulator rules/functions tests
 
 ## League glossary (the code speaks this language)

@@ -328,27 +328,34 @@ const chk = (name, ok, detail = '') => {
   chk('long sponsor markup compresses to the chest, short sponsor keeps a visible stroke, saves remains editable',
     smallFixes.longCompressed && smallFixes.shortStroke >= 1 && smallFixes.savesEditable, JSON.stringify(smallFixes));
 
-  /* Lobus: goal-only, one line per declaring manager, escaped on render. */
+  /* Lobus: declarations are gone — the klaxon fires off LOBUS_LIST (goal
+     only), names the owner, and the tape render escapes hostile team names. */
   const klaxon = await page.evaluate(() => {
-    const p = squadAt(1, 0).find(x => x.pos === 'FW');
-    state.phase = 'season'; state.lobus = { 1: p.id, 2: String(p.id) };
+    state.phase = 'season';
+    const lob = PLAYERS.find(x => x.pos === 'FW' && LOBUS_LIST.some(l => normName(x.name).includes(l)));
+    const civilian = PLAYERS.find(x => x.pos === 'FW' && !LOBUS_LIST.some(l => normName(x.name).includes(l)));
+    // put the lobus in manager 1's squad so the owner path renders (and can be XSS-probed)
+    state.transfers.push({ gw: 0, managerId: 1, inId: lob.id, type: 'test' });
     state.managers[0].team = '<img data-klaxon-xss src=x>';
     vidiFeed = [];
-    vidiDiff(0, { [p.id]: { min: 90, st: 1, g: 0, a: 0 } }, { [p.id]: { min: 90, st: 1, g: 2, a: 0 } });
+    vidiDiff(0, { [lob.id]: { min: 90, st: 1, g: 0, a: 0 } }, { [lob.id]: { min: 90, st: 1, g: 1, a: 0 } });
     const goalLines = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
-    vidiDiff(0, { [p.id]: { min: 90, st: 1, g: 2, a: 0 } }, { [p.id]: { min: 90, st: 1, g: 2, a: 1 } });
+    vidiDiff(0, { [lob.id]: { min: 90, st: 1, g: 1, a: 0 } }, { [lob.id]: { min: 90, st: 1, g: 1, a: 1 } });
     const afterAssist = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
+    vidiDiff(0, { [civilian.id]: { min: 90, st: 1, g: 0, a: 0 } }, { [civilian.id]: { min: 90, st: 1, g: 1, a: 0 } });
+    const afterCivilian = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
     state.view = 'dash'; render();
-    return { goalLines, afterAssist, tape: vidiFeed.length, injected: !!document.querySelector('[data-klaxon-xss]') };
+    state.transfers.pop();
+    return { goalLines, afterAssist, afterCivilian, injected: !!document.querySelector('[data-klaxon-xss]') };
   });
-  chk('Lobus brace emits one klaxon per declaring manager, assist emits none, tape render escapes team names',
-    klaxon.goalLines === 2 && klaxon.afterAssist === 2 && !klaxon.injected && klaxon.tape <= 60, JSON.stringify(klaxon));
+  chk('LOBUS_LIST goal emits one klaxon, assist and civilian goals emit none, tape render escapes team names',
+    klaxon.goalLines === 1 && klaxon.afterAssist === 1 && klaxon.afterCivilian === 1 && !klaxon.injected, JSON.stringify(klaxon));
 
   /* QF formula: winner maths, playoff card, provisional H2H column, Rules. */
   const qf = await page.evaluate(() => {
     window.__demoNightOrig = { standingsBefore, gwStatus, gwManagerPoints, h2hStandings };
     const ids = state.managers.map(m => m.id);
-    const pts = [40, 30, 20, 11, 10, 9, 8, 0, 0, 0, 0, 0];
+    const pts = [40, 30, 20, 10, 10, 9, 8, 0, 0, 0, 0, 0];
     // pts doubles as h2h: h2hStandings rows carry table Points in .pts, while
     // standingsBefore rows carry them in .h2h — the bracket reads .h2h
     const rows = ids.map((id, i) => ({ ...state.managers[i], id, pts: pts[i], h2h: pts[i], p: 33, w: 0, d: 0, l: 0, pf: 0, pa: 0 }));
@@ -377,17 +384,17 @@ const chk = (name, ok, detail = '') => {
     h2hStandings = window.__demoNightOrig.h2hStandings;
     return {
       handicaps: pre.handicaps,
-      cardBadges: ['+15', '+11', '+5'].every(x => card.includes(x)) && !card.includes('starts +0'),
+      cardBadges: ['+40', '+22', '+11'].every(x => card.includes(x)) && !card.includes('starts +0'),
       col,
       winners: settled.qfWinners,
-      expectedWinners: [ids[0], ids[1], ids[5], ids[4]],
-      rules: /half the table-points gap/.test(rules) && /capped at \+15/.test(rules),
+      expectedWinners: [ids[0], ids[1], ids[2], ids[4]],
+      rules: /full table-Points gap/.test(rules) && !/capped/.test(rules),
     };
   });
-  chk('QF handicap is [15,11,5,0] in playoffState and the playoff card',
-    JSON.stringify(qf.handicaps) === JSON.stringify([15, 11, 5, 0]) && qf.cardBadges, JSON.stringify(qf));
+  chk('QF handicap is [40,22,11,0] (full Points gap) in playoffState and the playoff card',
+    JSON.stringify(qf.handicaps) === JSON.stringify([40, 22, 11, 0]) && qf.cardBadges, JSON.stringify(qf));
   chk('QF H2H column pairs 1v8, 2v7, 3v6, 4v5 with mirrored signs',
-    JSON.stringify(qf.col) === JSON.stringify(['+15', '+11', '+5', '0', '0', '-5', '-11', '-15']), JSON.stringify(qf.col));
+    JSON.stringify(qf.col) === JSON.stringify(['+40', '+22', '+11', '0', '0', '-11', '-22', '-40']), JSON.stringify(qf.col));
   chk('QF winner maths applies the same handicap and Rules states the same formula',
     JSON.stringify(qf.winners) === JSON.stringify(qf.expectedWinners) && qf.rules, JSON.stringify(qf));
 

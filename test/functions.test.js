@@ -364,13 +364,20 @@ const SB = 'the-league-sandbox';
   require('vm').createContext(loreCtx);
   require('vm').runInContext(
     require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'lore.js'), 'utf8')
-    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length;', loreCtx);
+    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length; this.__A = ASSISTANTS.length;', loreCtx);
   const fnSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'functions', 'index.js'), 'utf8');
-  const GC = +fnSrc.match(/GAFFER_COUNT = (\d+)/)[1], BC = +fnSrc.match(/BOARD_COUNT = (\d+)/)[1];
-  chk('server catalogue bounds match js/lore.js', loreCtx.__G === GC && loreCtx.__B === BC, `lore ${loreCtx.__G}/${loreCtx.__B} vs functions ${GC}/${BC}`);
+  const GC = +fnSrc.match(/GAFFER_COUNT = (\d+)/)[1], BC = +fnSrc.match(/BOARD_COUNT = (\d+)/)[1], AC = +fnSrc.match(/ASSISTANT_COUNT = (\d+)/)[1];
+  chk('server catalogue bounds match js/lore.js', loreCtx.__G === GC && loreCtx.__B === BC && loreCtx.__A === AC, `lore ${loreCtx.__G}/${loreCtx.__B}/${loreCtx.__A} vs functions ${GC}/${BC}/${AC}`);
   chk('last gaffer on the stable accepted, first off the end rejected',
     !(await T.mutate(SB, 'clubSet', { gaffer: GC - 1 }, sbTok2)).error
     && (await T.mutate(SB, 'clubSet', { gaffer: GC }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('assistant: stable index and custom accepted, off-the-end and junk rejected',
+    !(await T.mutate(SB, 'clubSet', { assistant: AC - 1 }, sbTok2)).error
+    && !(await T.mutate(SB, 'clubSet', { assistant: { t: 'Uncle Keith', bio: 'Has a van.' } }, sbTok2)).error
+    && (await T.mutate(SB, 'clubSet', { assistant: AC }, sbTok2)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(SB, 'clubSet', { assistant: 'x' }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('assistant cleared back to house-issue', !(await T.mutate(SB, 'clubSet', { assistant: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/assistant`, { owner: true })).val == null);
   chk('last hoarding accepted, first off the end rejected',
     !(await T.mutate(SB, 'clubSet', { boards: [BC - 1] }, sbTok2)).error
     && (await T.mutate(SB, 'clubSet', { boards: [BC] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');

@@ -909,6 +909,7 @@ const hexOk = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 // functions.test.js — grow them together or the suite fails. Out-of-range
 // values render as a vacant dugout / dead hoarding, so they must not validate.
 const GAFFER_COUNT = 12;
+const ASSISTANT_COUNT = 12;
 const BOARD_COUNT = 27;
 const cleanKit = k => {
   if (k === null) return null;
@@ -923,6 +924,15 @@ const cleanGaffer = g => {
     return { t: cleanText(g.t, 30).trim(), bio: cleanText(g.bio || '', 60).trim() || null };
   }
   throw new HttpsError('invalid-argument', 'gaffer is an archetype number or a name + bio');
+};
+const cleanAssistant = g => {
+  // the No. 2: one off the stable, or a made-up one. null = back to house-issue
+  if (g === null) return null;
+  if (Number.isInteger(g) && g >= 0 && g < ASSISTANT_COUNT) return g;
+  if (g && typeof g === 'object' && typeof g.t === 'string' && cleanText(g.t, 30).trim().length >= 2) {
+    return { t: cleanText(g.t, 30).trim(), bio: cleanText(g.bio || '', 60).trim() || null };
+  }
+  throw new HttpsError('invalid-argument', 'assistant is an archetype number or a name + bio');
 };
 const cleanBoards = b0 => {
   // up to three hoardings off the league's stable to line the home ground.
@@ -995,6 +1005,7 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
   }
   if (data.stadium !== undefined) up.stadium = cleanStadium(data.stadium);
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
+  if (data.assistant !== undefined) up.assistant = cleanAssistant(data.assistant);
   if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
   if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
   await managerMerge(league, state, mid, up);
@@ -1455,7 +1466,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
     // club identity fields travel with the manager — a backup taken after a
     // founding must restore, and the pre-draft start once exported them too
     // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'boards'].includes(k)) importError(`manager key "${k}"`);
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     // stadium shares the office's 40-char contract; old longer backups are
@@ -1468,6 +1479,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
     // kit/gaffer/boards reuse the clubSet validators — same bounds, same shapes
     if (m.kit != null) m.kit = cleanKit(m.kit);
     if (m.gaffer != null) m.gaffer = cleanGaffer(m.gaffer);
+    if (m.assistant != null) m.assistant = cleanAssistant(m.assistant);
     if (m.boards != null) m.boards = cleanBoards(m.boards);
   }
   for (const m of managers) {
