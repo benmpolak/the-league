@@ -4843,7 +4843,7 @@ function viewTeam() {
               <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
               ${kitImg(p.team, p.pos === 'GK')}
               <span class="pitch-name">${esc(p.name)}</span>
-              ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+              ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>`}
             </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
       </div><div class="duel-side">
@@ -4883,7 +4883,7 @@ function viewTeam() {
           ${info(p)}
           ${pic(p)}
           ${nameSpan(p)}
-          ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+          ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>`}
         </div>`).join('')}
     </div>`;
     })()}
