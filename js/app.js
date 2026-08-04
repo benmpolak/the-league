@@ -3388,9 +3388,12 @@ const FLAG_BEARERS = {
   'Brighton': 'the ghost of a future £100m midfielder, currently 17',
   'Burnley': 'Sean Dyche, gravel voice audible over the PA',
   'Chelsea': 'Roman Abramovich’s lawyers, waving from a safe distance',
+  'Coventry City': 'the last remaining Special, playing Ghost Town at a parade, which nobody thought through',
   'Crystal Palace': 'the entire Holmesdale Fanatics drum section',
   'Everton': 'Duncan Ferguson, escorting two burglars he has made friends with',
   'Fulham': 'Hugh Grant, apologising charmingly',
+  'Hull City': 'Lucy Beaumont, asking if everyone got here okay, because it’s Hull',
+  'Ipswich Town': 'Ed Sheeran, quietly sponsoring everything he can see',
   'Leeds': 'Marcelo Bielsa on an upturned bucket',
   'Liverpool': 'Jürgen Klopp, hugging the flagpole',
   'Man City': 'a KC from Freshfields carrying box 116 of 130',
@@ -3459,7 +3462,7 @@ function showCeremony() {
         f++;
       };
       showFlag();
-      paradeTimer = setInterval(showFlag, 900);
+      paradeTimer = setInterval(showFlag, 1400); // Marc, UAT: "still slightly too fast"
     }
     $('#cerNext').onclick = () => { i++; show(); };
     $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
@@ -3681,12 +3684,20 @@ let poolFilter = { q: '', team: '', pos: '', sort: 'pts', limit: 60 };
 let draftSquadTab = 'mine';
 function squadPanelHtml() {
   const meValid = netOn() && whoami && whoami !== -1;
-  const showMid = meValid && draftSquadTab === 'mine' ? whoami : currentManagerId();
+  // third option (Marc + Ben, UAT: "see everyone's squad so far") — a dropdown
+  // to nose at ANY board; draftSquadTab holds a manager id when it's in use
+  const showMid = meValid && draftSquadTab === 'mine' ? whoami
+    : typeof draftSquadTab === 'number' ? draftSquadTab
+    : currentManagerId();
   if (showMid == null) return '<span class="muted">No one on the clock.</span>';
-  const tabs = meValid ? `<div style="display:flex;gap:6px;margin-bottom:8px">
-      <button class="btn small ${draftSquadTab === 'mine' ? '' : 'ghost'}" data-sqtab="mine">My squad</button>
+  const tabs = `<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      ${meValid ? `<button class="btn small ${draftSquadTab === 'mine' ? '' : 'ghost'}" data-sqtab="mine">My squad</button>` : ''}
       <button class="btn small ${draftSquadTab === 'clock' ? '' : 'ghost'}" data-sqtab="clock">On the clock</button>
-    </div>` : '';
+      <select id="sqAnyone" style="font-size:12px;max-width:140px">
+        <option value="">Anyone&hellip;</option>
+        ${state.managers.map(mm => `<option value="${mm.id}" ${draftSquadTab === mm.id ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}
+      </select>
+    </div>`;
   return `${tabs}<h2>${esc(managerName(showMid))}'s squad${meValid && showMid === whoami ? ' <span class="tag">you</span>' : ''}</h2>
     <div class="quota-bar">${quotaPills(showMid)}</div>
     ${managerSquad(showMid).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]).map(p => `
@@ -3957,6 +3968,9 @@ function renderKlaxons() {
   for (let i = window._klaxSeen; i < picks.length; i++) {
     const pk = picks[i], p = PLAYER_BY_ID[pk.playerId];
     if (!p) continue;
+    // every pick flashes up for everyone else (Toby, UAT: "I didn't see who
+    // Wilko picked without scrolling") — your own pick you already know about
+    if (!(whoami && pk.managerId === whoami)) pickFlash(pk, p);
     for (const k of KLAXONS) {
       if (k.mid !== pk.managerId) continue;
       if (k.club && p.team !== k.club) continue;
@@ -3969,6 +3983,14 @@ function renderKlaxons() {
     }
   }
   window._klaxSeen = picks.length;
+}
+function pickFlash(pk, p) {
+  document.querySelectorAll('.pick-flash').forEach(x => x.remove()); // last pick wins the billboard
+  const el = document.createElement('div');
+  el.className = 'heckle-flash pick-flash';
+  el.innerHTML = `<span class="hk-who">PICK ${pk.n}</span> ${esc(managerName(pk.managerId))} takes <b>${esc(p.name)}</b> <span class="muted">(${esc(p.pos)}, ${esc(p.team)})</span>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
 }
 function klaxonFlash(k, p) {
   const el = document.createElement('div');
@@ -4074,6 +4096,9 @@ const ALL_STAT_COLS = live => [
   { k: 'gw', h: 'GW', t: 'Points this gameweek', v: m => m.gw },
   { k: 'ppg', h: 'PPG', t: live ? 'League points per appearance' : 'FPL points per game, last season', v: m => m.ppg.toFixed(1) },
   { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
+  // Marc, UAT night: DF had a "rating" so new arrivals aren't buried at 0 pts —
+  // this is the board's own blend (metricSort's rating tiebreak sorts it)
+  { k: 'rate', h: 'Rate', t: 'The board’s rating — blends last season with this one, so new signings rank instead of hiding at zero', v: (m, p) => Math.round(rating(p)) },
 ];
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts']
@@ -4514,6 +4539,7 @@ function bindDraft() {
     heckleSheet();
   };
   document.querySelectorAll('[data-sqtab]').forEach(b => b.onclick = () => { draftSquadTab = b.dataset.sqtab; render(); });
+  document.querySelectorAll('#sqAnyone').forEach(s => s.onchange = () => { draftSquadTab = +s.value || 'clock'; render(); });
   const sf = $('#squadFab'), sd = $('#squadDrawer');
   if (sf) sf.onclick = () => { window._squadOpen = !window._squadOpen; sd?.classList.toggle('open', window._squadOpen); };
   const sc = $('#squadClose');
