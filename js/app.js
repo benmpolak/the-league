@@ -2833,6 +2833,14 @@ function render() {
   syncHash();
   // fresh page starts at the top; re-renders of the same page hold position
   if (lastRenderedView !== state.view) { window.scrollTo(0, 0); lastRenderedView = state.view; window.onscroll = null; }
+  else {
+    // same view re-rendering under the reader (draft night syncs every few
+    // seconds): the innerHTML swap momentarily shortens the page, the browser
+    // clamps the scroll, and your place "just sort of jumps" (Ben, UAT).
+    // Pin the reading position back once the new content has laid out.
+    const keepY = window.scrollY;
+    if (keepY > 0) requestAnimationFrame(() => { if (lastRenderedView === state.view && Math.abs(window.scrollY - keepY) > 2) window.scrollTo(0, keepY); });
+  }
   renderNav();
   renderSyncArea();
   const main = $('#main');
