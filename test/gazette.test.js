@@ -41,14 +41,28 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const facts = await page.evaluate(() => {
     const html = Gazette.review(0);
     const txt = html.replace(/<[^>]+>/g, ' ');
+    const doc = document.createElement('div'); doc.innerHTML = html;
     const table = h2hStandings();
     const posOf = Object.fromEntries(table.map((r, k) => [r.id, k]));
     const all = pairingsFor(0).map(([a, b]) => Gazette._facts(a, b, 0, table, posOf)).sort((x, y) => y.weight - x.weight);
     const scoresOk = all.every(f => txt.includes(String(f.ws)) && txt.includes(String(f.ls)));
-    return { deterministic: Gazette.review(0) === html, scoresOk, stories: (html.match(/prog-story/g) || []).length };
+    const headline = doc.querySelector('.prog-lead-story .prog-head')?.textContent || '';
+    state.view = 'dash'; render();
+    const frontHeadline = document.querySelector('.prog-card .prog-head-lead')?.textContent || '';
+    return {
+      deterministic: Gazette.review(0) === html, scoresOk, stories: doc.querySelectorAll('.prog-story').length,
+      headline, frontHeadline, scoreline: !!doc.querySelector('.prog-lead-story .prog-scoreline'),
+      awards: !!doc.querySelector('.prog-awards'), oldFiles: [...doc.querySelectorAll('.prog-sec')].some(x => /Old Files/.test(x.textContent)),
+      dressingRoom: [...doc.querySelectorAll('.prog-sec')].some(x => /Dressing Room/.test(x.textContent)),
+      words: txt.trim().split(/\s+/).length,
+      footballese: /form book|fine margins|full backing|three points|job done|bragging rights|dressing room|got away with it/i.test(txt),
+    };
   });
   chk('every scoreline printed matches the computed results; output deterministic',
     facts.deterministic && facts.scoresOk && facts.stories >= 3, JSON.stringify(facts));
+  chk('front page leads on an editorial headline; the edition has lore, verdicts and football language',
+    facts.headline && facts.frontHeadline === facts.headline && facts.scoreline && facts.awards && facts.oldFiles
+      && facts.dressingRoom && facts.words >= 280 && facts.footballese, JSON.stringify(facts));
 
   /* repetition cooldown: consecutive editions share no distinctive line ids */
   const cool = await page.evaluate(() => {
@@ -56,13 +70,15 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     state.matchStats.gw2 = { ...state.matchStats.gw1, gw: 1, label: 'GW2', final: true };
     const a = Gazette._editionLineIds(0);
     const b = Gazette._editionLineIds(1);
-    const overlap = a.filter(id => b.includes(id) && !id.startsWith('sr') && !id.startsWith('cr'));
-    // std-report + closing banks are small; DISTINCTIVE leads must not repeat
-    const leadOverlap = a.filter(id => b.includes(id) && /l\d/.test(id) && !id.startsWith('sr'));
-    return { a: a.length, b: b.length, leadOverlap };
+    const extract = html => {
+      const d = document.createElement('div'); d.innerHTML = html;
+      return { head: d.querySelector('.prog-lead-story .prog-head')?.textContent, lead: d.querySelector('.prog-lead-story p')?.textContent };
+    };
+    return { a: a.length, b: b.length, first: extract(Gazette.review(0)), second: extract(Gazette.review(1)) };
   });
-  chk('cooldown: consecutive editions reuse no distinctive lead lines',
-    cool.a > 0 && cool.b > 0 && cool.leadOverlap.length === 0, JSON.stringify(cool));
+  chk('cooldown: consecutive editions reuse no distinctive headlines or lead lines',
+    cool.a > 0 && cool.b > 0 && cool.first.head && cool.second.head
+      && cool.first.head !== cool.second.head && cool.first.lead !== cool.second.lead, JSON.stringify(cool));
 
   /* privacy: pending claims never surface in the paper */
   const priv = await page.evaluate(() => {

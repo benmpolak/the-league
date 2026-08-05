@@ -3694,24 +3694,32 @@ function drinksBreakAt(n) {
 // a proper break, not a pit stop (Marc, mock night: "slightly too quick") —
 // the button unlocks after a 2-minute anthem countdown; the Chairman ends it.
 const DRINKS_BREAK_MS = 120000;
+function drinksBreakTrack(n) {
+  const second = n === Math.round(2 * totalPicks() / 3);
+  return second
+    ? { sound: 'pitbull', title: 'Timber', artist: 'Pitbull' }
+    : { sound: 'bonjovi', title: 'Livin\' on a Prayer', artist: 'Bon Jovi' };
+}
 function maybeDrinksBreak() {
   const ov = $('#drinksBreak');
   const n = pickNo();
   const due = state.phase === 'draft' && drinksBreakAt(n) && !(state.draft.breaksDone || []).includes(n);
   if (!due) { ov?.remove(); return; }
   if (ov) return;
+  const track = drinksBreakTrack(n);
   const el = document.createElement('div');
   el.id = 'drinksBreak';
   el.className = 'overlay';
   el.innerHTML = `<div class="card" style="max-width:480px;width:92%;text-align:center">
     <div style="font-size:46px;margin-bottom:8px">&#127866;</div>
     <h2>${drinksBreakAt(n)}</h2>
-    <p class="muted" style="font-size:12.5px;margin-top:10px">&#127928; Now playing over the tannoy: <b>Livin' on a Prayer</b> — Bon Jovi. Committee anthem, non-negotiable, requested by the Chairman himself.</p>
+    <p class="muted drinks-track" style="font-size:12.5px;margin-top:10px">&#127928; Now playing over the tannoy: <b>${esc(track.title)}</b> — ${esc(track.artist)}. Committee anthem, non-negotiable.</p>
     <button class="btn" id="breakDone" style="margin-top:16px" disabled>Back to the Console</button></div>`;
   document.body.appendChild(el);
-  // the breaks alternate anthems: Bon Jovi, then Pitbull, then Bon Jovi…
+  // First break: Bon Jovi. Second break: Pitbull. Key this to the break itself,
+  // not pick-number parity — in a 168-pick draft both break numbers are even.
   // (Toby, UAT night). Both synthesized; both licensing-free; both shite/brilliant.
-  playSound(n % 2 ? 'pitbull' : 'bonjovi');
+  playSound(track.sound);
   // the countdown survives refreshes/re-renders — stored per break, so a
   // reload at 1:59 doesn't hold the room another two minutes (sol mock-night)
   const breakKey = `${LS_NS}-break-${n}-${state.draftPool?.at || 0}`;

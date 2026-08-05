@@ -175,6 +175,8 @@ const chk = (name, ok, detail = '') => {
     document.querySelectorAll('.overlay').forEach(x => x.remove());
     state = freshState(); state.phase = 'draft'; state.view = 'draft'; state.settings.pickTimer = 0;
     state.draft.order = state.managers.map(m => m.id);
+    const heard = [];
+    playSound = kind => heard.push(kind);
     state.draft.picks = Array.from({ length: Math.round(totalPicks() / 3) }, (_, i) => ({ n: i + 1, managerId: 1, playerId: PLAYERS[i].id }));
     state.draft.breaksDone = [];
     window.__mockNow = 1000000; Date.now = () => window.__mockNow;
@@ -185,10 +187,22 @@ const chk = (name, ok, detail = '') => {
     maybeDrinksBreak();
     window.__mockNow += 2000;
     await new Promise(r => setTimeout(r, 600));
-    return { firstDisabled, restartedDisabled: document.getElementById('breakDone')?.disabled };
+    const restartedDisabled = document.getElementById('breakDone')?.disabled;
+    const firstTrack = document.querySelector('.drinks-track')?.textContent || '';
+    document.getElementById('drinksBreak')?.remove();
+    state.draft.breaksDone = [Math.round(totalPicks() / 3)];
+    state.draft.picks = Array.from({ length: Math.round(2 * totalPicks() / 3) }, (_, i) => ({ n: i + 1, managerId: 1, playerId: PLAYERS[i].id }));
+    maybeDrinksBreak();
+    const secondTrack = document.querySelector('.drinks-track')?.textContent || '';
+    return { firstDisabled, restartedDisabled, firstTrack, secondTrack, heard };
   });
   chk('drinks-break countdown survives a refresh/re-render instead of restarting from two minutes',
     breakAudit.firstDisabled && breakAudit.restartedDisabled === false, JSON.stringify(breakAudit));
+  chk('drinks breaks announce and play Bon Jovi first, Pitbull second',
+    /Livin' on a Prayer.*Bon Jovi/.test(breakAudit.firstTrack)
+      && /Timber.*Pitbull/.test(breakAudit.secondTrack)
+      && breakAudit.heard.slice(0, -1).every(x => x === 'bonjovi')
+      && breakAudit.heard.at(-1) === 'pitbull', JSON.stringify(breakAudit));
 
   chk('no uncaught browser errors', errors.length === 0, errors.join(' | '));
   await browser.close();

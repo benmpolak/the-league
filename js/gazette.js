@@ -142,6 +142,71 @@ window.Gazette = (() => {
      already established in f/L. Clichés live where their gate is true. */
 
   const B = {
+    'derby-head': [
+      ['dh1', f => `BRAGGING RIGHTS: ${f.tw}`],
+      ['dh2', f => `PERSONAL. LOUD. ${f.tw}.`],
+      ['dh3', f => `${f.tw} WIN THE ONE THAT MATTERS`],
+    ],
+    'upset-head': [
+      ['uh1', () => 'FORM BOOK? WHAT FORM BOOK?'],
+      ['uh2', f => `${f.tw} TEAR UP THE SCRIPT`],
+      ['uh3', () => 'NOBODY SAW THAT COMING'],
+    ],
+    'rout-head': [
+      ['rh1', f => `${f.tw} RUN RIOT`],
+      ['rh2', f => `${f.margin} POINTS OF PAIN`],
+      ['rh3', f => `NO CONTEST AT ${f.ground}`],
+    ],
+    'bottle-head': [
+      ['bh1', () => 'BOTTLED IT'],
+      ['bh2', f => `${f.tl} LOSE THE PLOT`],
+      ['bh3', () => 'TOP DOGS FALL APART'],
+    ],
+    'sixp-head': [
+      ['sh1', () => 'PLAYOFF PANIC'],
+      ['sh2', () => 'ABOVE THE LINE, BELOW THE BELT'],
+      ['sh3', f => `${f.tw} WIN THE SIX-POINTER`],
+    ],
+    'bench-head': [
+      ['xh1', () => 'BEATEN BY THEIR OWN BENCH'],
+      ['xh2', f => `${f.benchL} POINTS LEFT TO ROT`],
+      ['xh3', () => 'PICKED THE WRONG XI. PAID THE PRICE.'],
+    ],
+    'hsd-head': [
+      ['hh1', () => 'ROBBED IN BROAD DAYLIGHT'],
+      ['hh2', f => `${f.ls} POINTS. NO REWARD.`],
+      ['hh3', () => 'RIGHT SCORE, WRONG WEEK'],
+    ],
+    'sng-head': [
+      ['gh1', () => 'HOW DID THEY GET AWAY WITH THAT?'],
+      ['gh2', () => 'WIN UGLY, GO HOME HAPPY'],
+      ['gh3', f => `${f.tw} STEAL THE POINTS`],
+    ],
+    'title-head': [
+      ['th1', f => `${f.tw} MARCH ON`],
+      ['th2', () => 'CATCH THEM IF YOU CAN'],
+      ['th3', () => 'TOP. AGAIN.'],
+    ],
+    'collapse-head': [
+      ['ch1', () => 'FULL BACKING KLAXON'],
+      ['ch2', () => 'CRISIS? WHAT CRISIS?'],
+      ['ch3', f => `${f.tl} IN FREEFALL`],
+    ],
+    'draw-head': [
+      ['nh1', () => 'A POINT EACH. JOY FOR NOBODY.'],
+      ['nh2', f => `STALEMATE AT ${f.ground}`],
+      ['nh3', () => 'ALL SQUARE, ALL GRUMPY'],
+    ],
+    'shootout-head': [
+      ['qh1', () => 'THE SHOOTOUT NOBODY WON'],
+      ['qh2', f => `${f.sa}–${f.sb}: BREATHLESS, POINTLESS`],
+      ['qh3', () => 'BIG SCORES, SMALL REWARD'],
+    ],
+    'standard-head': [
+      ['zh1', f => `${f.tw} GET THE JOB DONE`],
+      ['zh2', () => 'NO DRAMA. THREE POINTS.'],
+      ['zh3', f => `${f.tw} TAKE CARE OF BUSINESS`],
+    ],
     'derby-lead': [
       ['dl1', f => `Form book, meet window. ${f.tw} ${f.ws}, ${f.tl} ${f.ls}, and the bragging rights are not up for discussion until the reverse fixture.`],
       ['dl2', f => `They say derbies are never won on paper, and this one wasn't: it was won by ${f.tw}, ${f.ws}–${f.ls}, in an atmosphere ${f.gaffW ? `${f.gaffW} described as "hostile, mostly from our own supporters"` : 'best described as personal'}.`],
@@ -195,12 +260,20 @@ window.Gazette = (() => {
       ['sr2', f => `Routine for ${f.tw}, ${f.ws}–${f.ls}${f.starL ? `; in defeat ${f.starL.p.name}'s ${f.starL.pts} deserved better company` : ''}.`],
       ['sr3', f => `${f.tl} showed character, which is what the beaten say: ${f.tw} took it ${f.ws}–${f.ls}.`],
       ['sr4', f => `${f.tw} ${f.ws}, ${f.tl} ${f.ls}. Job done, nothing filmed for the montage.`],
+      ['sr5', f => `${f.tw} found a way; ${f.tl} found several reasons. ${f.ws}–${f.ls}, all three points, no public inquiry yet.`],
+      ['sr6', f => `${f.tw} wanted it more, according to people who cannot explain what that means. ${f.ws}–${f.ls}.`],
+      ['sr7', f => `${f.tw} take the points and ${f.tl} take the positives, presumably home in a carrier bag. ${f.ws}–${f.ls}.`],
+      ['sr8', f => `A result for the purists, if the purists support ${f.tw}: ${f.ws}–${f.ls} over ${f.tl}.`],
     ],
     'closing': [
       ['cr1', () => 'The Committee reminds all twelve clubs that the deadline is the deadline. It has always been the deadline.'],
       ['cr2', () => 'The Committee notes rising standards of conduct in the group chat and expects the lapse to be temporary.'],
       ['cr3', () => 'The Committee has reviewed the week and, on balance, permits it.'],
       ['cr4', () => 'The Committee wishes the bottom four a speedy recovery and reminds them the Trough is open to all.'],
+      ['cr5', () => 'It is a marathon, not a sprint, except for the managers currently winning, who reject the premise.'],
+      ['cr6', () => 'There are no easy games at this level. There are, however, several easy managers.'],
+      ['cr7', () => 'The table never lies, although it has retained excellent lawyers.'],
+      ['cr8', () => 'Form is temporary. Screenshots in the group chat are permanent.'],
     ],
   };
 
@@ -270,9 +343,93 @@ window.Gazette = (() => {
 
   /* ---------- article shapes ---------- */
 
+  const STORY_BANK = {
+    derby: 'derby-lead', upset: 'upset-lead', rout: 'rout-lead', 'bottle-job': 'bottle-lead',
+    'six-pointer': 'sixp-lead', 'bench-disaster': 'bench-lead', 'high-scoring-defeat': 'hsd-lead',
+    'smash-and-grab': 'sng-lead', 'title-charge': 'title-lead', collapse: 'collapse-lead',
+    stalemate: 'draw-lead', 'shootout-draw': 'shootout-lead',
+  };
+  const HEAD_BANK = {
+    derby: 'derby-head', upset: 'upset-head', rout: 'rout-head', 'bottle-job': 'bottle-head',
+    'six-pointer': 'sixp-head', 'bench-disaster': 'bench-head', 'high-scoring-defeat': 'hsd-head',
+    'smash-and-grab': 'sng-head', 'title-charge': 'title-head', collapse: 'collapse-head',
+    stalemate: 'draw-head', 'shootout-draw': 'shootout-head',
+  };
+  const STORY_LABEL = {
+    derby: 'THE GRUDGE MATCH', upset: 'SHOCK OF THE WEEK', rout: 'THE BIG STORY',
+    'bottle-job': 'BOTTLE WATCH', 'six-pointer': 'PLAYOFF RACE', 'bench-disaster': 'TACTICAL INQUEST',
+    'high-scoring-defeat': 'HARD-LUCK STORY', 'smash-and-grab': 'THE GREAT ESCAPE',
+    'title-charge': 'TITLE WATCH', collapse: 'CRISIS CLUB', stalemate: 'THE DRAW',
+    'shootout-draw': 'GAME OF THE WEEK', standard: 'MATCH OF THE WEEK', 'mid-table-scrap': 'MID-TABLE THEATRE',
+  };
+
+  // The surviving Draft Fantasy archive gives the paper an actual memory.
+  // Match current managers by name, then print only facts recovered from it.
+  function oldFiles(f) {
+    if (typeof LEAGUE_HISTORY === 'undefined' || !LEAGUE_HISTORY.length) return '';
+    const S = LEAGUE_HISTORY.at(-1);
+    const ia = S.managers.findIndex(m => m.name === managerName(f.a));
+    const ib = S.managers.findIndex(m => m.name === managerName(f.b));
+    if (ia < 0 || ib < 0) return '';
+    let aw = 0, bw = 0, d = 0, latest = null;
+    for (const m of S.matches) {
+      const [, h, a, hs, as] = m;
+      if (!((h === ia && a === ib) || (h === ib && a === ia))) continue;
+      const aScore = h === ia ? hs : as, bScore = h === ib ? hs : as;
+      if (aScore > bScore) aw++; else if (bScore > aScore) bw++; else d++;
+      latest = { gw: m[0], aScore, bScore };
+    }
+    if (!latest) return '';
+    const champ = S.honours?.champion?.name;
+    const crown = champ === managerName(f.a) ? `${managerName(f.a)} arrived as the reigning champion. `
+      : champ === managerName(f.b) ? `${managerName(f.b)} arrived as the reigning champion. ` : '';
+    const ledger = aw === bw
+      ? `Last season's ledger finished level: ${aw} win${aw === 1 ? '' : 's'} each${d ? ` and ${d} draw${d === 1 ? '' : 's'}` : ''}.`
+      : `${managerName(aw > bw ? f.a : f.b)} held last season's edge, ${Math.max(aw, bw)} win${Math.max(aw, bw) === 1 ? '' : 's'} to ${Math.min(aw, bw)}${d ? `, with ${d} draw${d === 1 ? '' : 's'}` : ''}.`;
+    return `${crown}${ledger} Their last meeting ended ${latest.aScore}–${latest.bScore} in GW${latest.gw}. Old files, fresh ammunition.`;
+  }
+
+  function dressingRoomQuote(f, gwIdx) {
+    if (f.kind === 'bench-disaster') return `"We picked the right squad. Regrettably, several of them were sitting down."`;
+    if (f.kind === 'rout') return `"The scoreline flattered them. It did not flatter us, which is the immediate concern."`;
+    if (f.kind === 'bottle-job' || f.kind === 'collapse') return `"The gaffer has the full backing of everybody who has not yet checked the table."`;
+    if (f.kind === 'high-scoring-defeat') return `"On another week that wins. Unfortunately the fixture was played on this one."`;
+    const q = [
+      `"We trained well, prepared well and then encountered the match itself."`,
+      `"There were positives. The analyst is looking for them now."`,
+      `"Fine margins. Very wide, extremely visible fine margins."`,
+      `"We go again, mainly because the rules require another fixture."`,
+      `"The result does not tell the whole story. We would prefer it told less of it."`,
+    ];
+    return q[hash(`quote:${gwIdx}:${f.a}:${f.b}`) % q.length];
+  }
+
+  // Footballese, used knowingly: the comedy is in treating the game's odd
+  // dialect as a precise technical language. Gates stop a phrase claiming a
+  // fact the score does not support.
+  const FOOTBALLESE = [
+    ['fe1', f => f.margin <= 5, () => 'Fine margins decided it — the traditional unit of measurement for something large enough to hurt and small enough to blame.'],
+    ['fe2', f => f.margin >= 20, f => `By the business end, ${f.tw} were seeing the game out and ${f.tl} were seeing if it could end sooner.`],
+    ['fe3', f => f.benchL >= 10, f => `${f.mgrL} had a selection headache and, with admirable commitment, selected the headache.`],
+    ['fe4', f => f.starW?.pts >= 10, f => `${f.starW.p.name} was at the heart of everything, the exact location traditionally occupied by the player with the most points.`],
+    ['fe5', f => f.cut, () => 'Questions were asked of both sides’ playoff credentials. One set of answers has been marked more generously.'],
+    ['fe6', () => true, f => `${f.tw} did the basics right, an achievement football usually identifies only after somebody wins.`],
+    ['fe7', () => true, f => `Game management entered the conversation shortly before ${f.tw} made the result look inevitable.`],
+    ['fe8', () => true, f => `${f.tw} wanted it more — not measurable, not falsifiable, and therefore perfect for the post-match analysis.`],
+    ['fe9', () => true, () => 'On paper it looked straightforward. Football keeps paper around mainly to make a fool of it.'],
+  ];
+  function footballese(f, gwIdx, used) {
+    const eligible = FOOTBALLESE.filter(([id, gate]) => gate(f) && !used.has(id));
+    const pool = eligible.length ? eligible : FOOTBALLESE.filter(([, gate]) => gate(f));
+    const [id, , line] = pool[hash(`footballese:${gwIdx}:${f.a}:${f.b}`) % pool.length];
+    used.add(id); usedThisEdition.push(id);
+    return line(f);
+  }
+
   function leadArticle(f, gwIdx, used) {
     const seed = `lead:${gwIdx}:${f.a}:${f.b}`;
-    const bankKey = { derby: 'derby-lead', upset: 'upset-lead', rout: 'rout-lead', 'bottle-job': 'bottle-lead', 'six-pointer': 'sixp-lead', 'bench-disaster': 'bench-lead', 'high-scoring-defeat': 'hsd-lead', 'smash-and-grab': 'sng-lead', 'title-charge': 'title-lead', collapse: 'collapse-lead', stalemate: 'draw-lead', 'shootout-draw': 'shootout-lead' }[f.kind] || 'std-report';
+    const bankKey = STORY_BANK[f.kind] || 'std-report';
+    const head = pickLine(HEAD_BANK[f.kind] || 'standard-head', f, `${seed}:head`, used);
     const open = pickLine(bankKey, f, seed, used);
     const paras = [esc(open)];
     // second paragraph: the star men, with provenance and grudges — facts only
@@ -291,7 +448,12 @@ window.Gazette = (() => {
     if (f.stW.w >= 3) bits.push(`That's ${f.stW.w} wins on the bounce for ${f.tw}.`);
     if (f.stL.winless >= 4) bits.push(`${f.tl} remain winless in ${f.stL.winless} — the beach beckons and it is August.`);
     if (bits.length) paras.push(esc(bits.join(' ')));
-    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><div class="prog-by">From our man at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
+    paras.push(esc(footballese(f, gwIdx, used)));
+    return `<div class="prog-story prog-lead-story">
+      <div class="prog-story-kicker">${esc(STORY_LABEL[f.kind] || STORY_LABEL.standard)}</div>
+      <div class="prog-head">${esc(head)}</div>
+      <div class="prog-scoreline">${esc(f.tw)} ${f.ws} &nbsp; ${esc(f.tl)} ${f.ls}</div>
+      <div class="prog-by">From our man at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
   }
 
   function report(f, gwIdx, used) {
@@ -300,19 +462,56 @@ window.Gazette = (() => {
       const open = pickLine(f.sa >= 55 ? 'shootout-lead' : 'draw-lead', f, seed, used);
       return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p></div>`;
     }
-    const open = pickLine('std-report', f, seed, used);
+    const open = pickLine(STORY_BANK[f.kind] || 'std-report', f, seed, used);
     const extra = f.stL.l >= 3 ? ` ${esc(`${f.tl} have now lost ${f.stL.l} straight.`)}` : '';
     return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}${extra}</p></div>`;
   }
 
-  function nib(f) {
-    return `<div class="lrow" style="font-size:12.5px"><b>${esc(f.tw)} ${f.ws}–${f.ls} ${esc(f.tl)}</b>${f.starW && f.starW.pts > 0 ? ` <span class="muted">— ${esc(f.starW.p.name)} ${f.starW.pts}</span>` : ''}</div>`;
+  function nib(f, gwIdx) {
+    const tails = f.margin >= 18 ? ['No need for the highlights.', 'A long way home for the beaten.', 'Comfortable is doing some work.']
+      : ['Job done; points banked.', 'Fine margins, loud consequences.', 'The sort of result managers call professional.'];
+    const tail = tails[hash(`nib:${gwIdx}:${f.a}:${f.b}`) % tails.length];
+    return `<div class="prog-nib"><b>${esc(f.tw)} ${f.ws}–${f.ls} ${esc(f.tl)}</b><span>${f.starW && f.starW.pts > 0 ? `${esc(f.starW.p.name)} ${f.starW.pts}. ` : ''}${esc(tail)}</span></div>`;
   }
 
   /* ---------- departments (conditional; only when the facts support them) ---------- */
 
   function departments(gwIdx, allFacts, used) {
     const out = [];
+    const lead = allFacts[0];
+
+    // Back-page awards — every edition needs verdicts, not six score recaps.
+    if (typeof weeklyAwards === 'function') {
+      const aw = weeklyAwards(gwIdx);
+      const cards = [];
+      if (aw.hi) cards.push({ k: 'TEAM OF THE WEEK', v: teamName(aw.hi.id), d: `${aw.hi.s} points. Champagne football, or at least champagne arithmetic.` });
+      if (aw.lo) cards.push({ k: 'WOODEN SPOON', v: teamName(aw.lo.id), d: `${aw.lo.s} points. One for the mantelpiece, preferably face-down.` });
+      if (aw.jammy) cards.push({ k: 'GOT AWAY WITH IT', v: teamName(aw.jammy.w), d: `Won with ${aw.jammy.ws}. Do not ask how; do ask how often.` });
+      if (aw.robbed) cards.push({ k: 'ROBBED', v: teamName(aw.robbed.l), d: `${aw.robbed.ls} points and nothing. Contact the authorities.` });
+      if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 4).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
+    }
+
+    // The archive turns fixtures into grudges from GW1, before current-season
+    // form has had time to become a story of its own.
+    const lore = lead ? oldFiles(lead) : '';
+    if (lore) out.push(`<div class="prog-sec">From the Old Files</div><p>${esc(lore)}</p>`);
+
+    // Completed business only. Blind claims remain private; the paper judges
+    // deals after they have happened, as God and the tabloids intended.
+    const business = [...state.transfers].filter(t => t.gw <= gwIdx && PLAYER_BY_ID[t.inId])
+      .sort((a, b) => (+b.t || 0) - (+a.t || 0)).slice(0, 3);
+    if (business.length) {
+      const lines = business.map(t => {
+        const inn = PLAYER_BY_ID[t.inId], outP = PLAYER_BY_ID[t.outId];
+        const inPts = gwPlayerPoints(t.inId, gwIdx), outPts = outP ? gwPlayerPoints(t.outId, gwIdx) : 0;
+        const route = t.trade ? 'trade' : t.windowDraft ? 'Window Draft' : t.waiver ? 'waivers' : 'the Trough';
+        const verdict = inPts > outPts ? 'Immediate returns; recruitment department seen nodding.'
+          : inPts < outPts ? 'The outgoing man won round one. Awkward.' : 'No verdict yet. The jury has gone for refreshments.';
+        return `<div class="prog-deal"><b>${esc(teamName(t.managerId))}</b><span>IN ${esc(inn.name)} &middot; OUT ${esc(outP?.name || 'vacancy')}</span><small>${esc(route)} &middot; ${esc(verdict)}</small></div>`;
+      }).join('');
+      out.push(`<div class="prog-sec">Deals Desk</div><div class="prog-deals">${lines}</div>`);
+    }
+
     // The Trough Watch — a recent pickup that actually scored this week
     const pickups = state.transfers.filter(t => !t.trade && !t.windowDraft && t.gw <= gwIdx && gwIdx - t.gw <= 2)
       .map(t => ({ t, pts: gwPlayerPoints(t.inId, gwIdx), p: PLAYER_BY_ID[t.inId] }))
@@ -328,10 +527,9 @@ window.Gazette = (() => {
       out.push(`<div class="prog-sec">Tactical Negligence</div><p>${esc(`${teamName(worstBench.mid)} left ${worstBench.w} points on the bench${run >= 2 ? ` — the ${ord(run)} week running they have led this table, which is now a table` : ''}. The bench order is a queue, not a punishment.`)}</p>`);
     }
     // Assistant Manager's Notebook — the lead story's beaten No. 2 speaks
-    const lead = allFacts[0];
     if (lead && typeof assistantFor === 'function') {
       const asst = assistantFor(lead.l);
-      if (asst) out.push(`<div class="prog-sec">Assistant Manager&rsquo;s Notebook</div><p>${esc(`${asst.t} (${teamName(lead.l)}): "We go again. The gaffer has asked me to say that we go again."`)}</p>`);
+      if (asst) out.push(`<div class="prog-sec">From the Dressing Room</div><p><b>${esc(asst.t)} (${esc(teamName(lead.l))}):</b> ${esc(dressingRoomQuote(lead, gwIdx))}</p>`);
     }
     // The Treatment Table — owned players the feed flags, worst first
     const flagged = [];
@@ -385,11 +583,11 @@ window.Gazette = (() => {
     const lead = leadArticle(facts[0], gwIdx, used);
     const second = facts.slice(1, 3).map(f => report(f, gwIdx, used)).join('');
     const nibs = facts.slice(3);
-    const nibBlock = nibs.length ? `<div class="prog-sec">Around the grounds, briefly</div>${nibs.map(nib).join('')}` : '';
-    // the table stakes line — movement across the dashed line this week
-    const crossers = facts.filter(f => (posOf[f.w] <= 7 && posOf[f.l] === 8) || posOf[f.l] === 7);
-    const stakes = crossers.length && table.some(r => r.p > 0)
-      ? `<div class="prog-sec">The state of the table</div><p>${esc(`${teamName(table[0].id)} lead. The dashed line currently cuts between ${teamName(table[7].id)} and ${teamName(table[8].id)}, and it is not sentimental.`)}</p>` : '';
+    const nibBlock = nibs.length ? `<div class="prog-sec">Around the Grounds</div><div class="prog-nibs">${nibs.map(f => nib(f, gwIdx)).join('')}</div>` : '';
+    // Always give the reader the consequence of the weekend. Scores without
+    // a table are weather; the paper needs a developing plot.
+    const stakes = table.some(r => r.p > 0)
+      ? `<div class="prog-sec">The State of the Table</div><p>${esc(`${teamName(table[0].id)} have the early bragging rights${table[0].pts > table[1].pts ? `, ${table[0].pts - table[1].pts} point${table[0].pts - table[1].pts === 1 ? '' : 's'} clear` : ' on tiebreak'}. The playoff line cuts between ${teamName(table[7].id)} and ${teamName(table[8].id)}; ${teamName(table.at(-1).id)} are holding the rest of it up. The table never lies, but it does enjoy a wind-up.`)}</p>` : '';
     return `<div class="prog-art">
       <div class="prog-cols">${lead}${second}</div>
       ${nibBlock}
