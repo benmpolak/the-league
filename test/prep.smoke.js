@@ -299,7 +299,7 @@ const chk = (name, ok, detail = '') => {
     state.view = 'dash';
     render();
     const card = document.querySelector('.prog-card');
-    const vidi = document.querySelector('.vidi-tape')?.closest('.card');
+    const attention = document.querySelector('.dash-attention');
     const business = document.querySelector('.business-card');
     const follows = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
     // the dash shows a front page; the full edition lives in the reading room
@@ -311,7 +311,11 @@ const chk = (name, ok, detail = '') => {
       teaser: !!card?.querySelector('.prog-head-lead'), room: !!room,
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
       edition: room?.querySelector('.prog-date')?.textContent || '',
-      order: follows(vidi, card) && follows(card, business),
+      noPriceGag: !/your dignity|price:/i.test(room?.querySelector('.prog-date')?.textContent || ''),
+      frontDesign: !!card?.querySelector('.prog-seal[src="icons/icon-192.png"]') && !!card?.querySelector('.prog-flag')
+        && !!card?.querySelector('.prog-front-by') && !!card?.querySelector('.prog-read'),
+      order: follows(attention, business) && business?.parentElement?.classList.contains('dash-side-stack'),
+      compact: business?.classList.contains('business-compact'),
       businessRows: business?.querySelectorAll('.business-row').length || 0,
       groupedTradeRows: [...(business?.querySelectorAll('.business-row') || [])].filter(r => /trade/i.test(r.textContent)).length,
       duplicateAttentionMoves: /Latest moves/i.test([...document.querySelectorAll('.card h2')].find(h => /Needs your attention/i.test(h.textContent))?.closest('.card')?.textContent || ''),
@@ -323,9 +327,10 @@ const chk = (name, ok, detail = '') => {
     return out;
   });
   chk('P8g Gazette front page teases; the reading room prints the real article',
-    p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
-  chk('P8g dashboard news stack is Vidiprinter → Gazette → Latest Business',
-    p8g.order === true, JSON.stringify(p8g));
+    p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && /edition/.test(p8g.edition)
+      && p8g.noPriceGag && p8g.frontDesign, JSON.stringify(p8g));
+  chk('P8g Latest Business fills the dashboard attention-column gap',
+    p8g.order === true && p8g.compact === true, JSON.stringify(p8g));
   chk('P8g Latest Business groups a 2-for-2 trade into one item per club',
     p8g.businessRows === 3 && p8g.groupedTradeRows === 2, JSON.stringify(p8g));
   chk('P8g business wire removes the duplicate attention list and makes IN/OUT unmistakable',
@@ -334,10 +339,16 @@ const chk = (name, ok, detail = '') => {
   const p8gPhone = await page.evaluate(() => {
     render();
     const card = document.querySelector('.business-card');
-    return { card: !!card, rows: card?.querySelectorAll('.business-row').length || 0, docW: document.documentElement.scrollWidth };
+    return {
+      card: !!card, rows: card?.querySelectorAll('.business-row').length || 0,
+      stacked: card?.parentElement?.classList.contains('dash-side-stack') || false,
+      afterAttention: !!(document.querySelector('.dash-attention')?.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING),
+      docW: document.documentElement.scrollWidth,
+    };
   });
   chk('P8g dashboard news stack and business wire fit at 320px',
-    p8gPhone.card && p8gPhone.rows === 3 && p8gPhone.docW <= 320, JSON.stringify(p8gPhone));
+    p8gPhone.card && p8gPhone.rows === 3 && p8gPhone.stacked && p8gPhone.afterAttention && p8gPhone.docW <= 320,
+    JSON.stringify(p8gPhone));
   const p8gNilWaivers = await page.evaluate(() => {
     state.transfers = [];
     state.waiverMeta = { ...state.waiverMeta, lastRun: new Date(3000).toISOString() };

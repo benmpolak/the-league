@@ -390,30 +390,50 @@ tr.gone-row td.act { opacity: .8; }
 .prog-mast { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; margin: -2px 0 10px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
 .prog-card, .prog-card p, .prog-card .prog-head,
 .gazette-room, .gazette-room p, .gazette-room .prog-head { font-family: Georgia, 'Times New Roman', serif; }
-.prog-plate { text-align: center; border-bottom: 3px double var(--text); margin-bottom: 12px; padding-bottom: 8px; }
-.prog-title { font-size: 26px; font-weight: 800; letter-spacing: .02em; line-height: 1.1; }
-.prog-date { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .14em; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 4px; }
+.prog-card { position: relative; overflow: hidden; border-color: rgba(226,190,86,.3); }
+.prog-card::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--accent), #e2be56 50%, var(--accent)); }
+.prog-plate { text-align: center; border-bottom: 3px double var(--text); margin-bottom: 14px; padding: 2px 0 8px; }
+.prog-nameplate { display: grid; grid-template-columns: 38px 1fr 38px; align-items: center; max-width: 430px; margin: 0 auto; }
+.prog-seal { display: block; width: 34px; height: 34px; object-fit: contain; filter: drop-shadow(0 2px 5px rgba(0,0,0,.3)); }
+.prog-seal-spacer { width: 34px; }
+.prog-flag { color: var(--accent); font-family: Inter, system-ui, sans-serif; font-size: 9px; font-weight: 900; letter-spacing: .32em; line-height: 1; }
+.prog-title { font-size: 30px; font-weight: 900; letter-spacing: .1em; line-height: 1.05; margin: 2px 0 5px; }
+.prog-date { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; font-family: Inter, system-ui, sans-serif; font-size: 9px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; border-top: 1px solid var(--line); padding-top: 5px; }
+.prog-date span:first-child { text-align: left; }
+.prog-date span:last-child { text-align: right; }
+.prog-front { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 24px; }
+.prog-front-label { color: var(--accent); font-family: Inter, system-ui, sans-serif; font-size: 9px; font-weight: 900; letter-spacing: .16em; margin-bottom: 5px; }
+.prog-front-by { color: var(--muted); font-family: Inter, system-ui, sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-top: 8px; }
+.prog-read { align-self: end; min-width: 190px; justify-content: space-between; font-family: Inter, system-ui, sans-serif; font-size: 10.5px; letter-spacing: .06em; }
 /* readability pass (Ben: "formatting is unreadable"): ragged right, roomy
    line-height, one column at normal widths, clear headline hierarchy, and a
    book-like measure inside the reading room */
-.prog-art p { font-size: 14px; line-height: 1.7; margin: 0 0 12px; }
+.prog-art { max-width: 72ch; margin-inline: auto; }
+.prog-art p { font-size: 15px; line-height: 1.75; margin: 0 0 14px; }
 .prog-art p:last-child { margin-bottom: 0; }
 .prog-art .prog-lead { font-size: 15px; }
 .prog-art .prog-lead::first-letter { font-size: 30px; font-weight: 800; color: var(--accent); float: left; line-height: 1; padding: 2px 6px 0 0; }
 .prog-cols { margin: 2px 0 4px; }
-@media (min-width: 1000px) { .prog-cols { column-count: 2; column-gap: 32px; column-rule: 1px solid var(--line); } }
 .prog-story { break-inside: avoid; margin-bottom: 20px; }
 .prog-head { font-size: 16px; font-weight: 800; line-height: 1.3; margin-bottom: 2px; }
 .prog-story + .prog-story { border-top: 1px solid var(--line); padding-top: 14px; }
 .prog-story:first-child .prog-head { font-size: 19px; }
-.prog-head-lead { font-size: 19px; font-weight: 800; line-height: 1.3; font-family: Georgia, 'Times New Roman', serif; margin-top: 2px; }
+.prog-head-lead { font-size: 22px; font-weight: 800; line-height: 1.18; font-family: Georgia, 'Times New Roman', serif; margin-top: 2px; }
 .prog-standfirst { font-family: Georgia, 'Times New Roman', serif; font-size: 13.5px; line-height: 1.6; color: var(--muted); margin-top: 4px; }
 .prog-by { font-size: 11px; font-style: italic; color: var(--muted); margin: 1px 0 8px; }
 .prog-sec { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .16em; color: var(--muted); border-top: 2px solid var(--line); padding-top: 8px; margin: 18px 0 8px; }
 .prog-arch { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
 /* the reading room */
-.gazette-room { position: relative; max-width: 640px; width: 94%; max-height: 90vh; overflow-y: auto; padding: 22px 26px; }
-@media (max-width: 700px) { .gazette-room { width: 100%; max-height: 100dvh; border-radius: 0; padding: 18px 16px; } }
+.gazette-room { position: relative; max-width: 760px; width: 94%; max-height: 90vh; overflow-y: auto; padding: 26px 34px 32px; border-color: rgba(226,190,86,.3); }
+.gazette-room::before { content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: linear-gradient(90deg, var(--accent), #e2be56 50%, var(--accent)); }
+@media (max-width: 700px) {
+  .gazette-room { width: 100%; max-height: 100dvh; border-radius: 0; padding: 18px 16px; }
+  .prog-title { font-size: 25px; }
+  .prog-date { gap: 6px; font-size: 8px; letter-spacing: .06em; }
+  .prog-front { grid-template-columns: 1fr; gap: 12px; }
+  .prog-head-lead { font-size: 20px; }
+  .prog-read { width: 100%; min-width: 0; }
+}
 .gz-close { position: sticky; top: 0; float: right; z-index: 2; margin-left: 8px; }
 
 /* the playoff bracket (Data Room) */
@@ -626,6 +646,9 @@ tr.gone-row td.act { opacity: .8; }
 /* the dashboard's lineup shot stacks: the matchup column is too narrow for
    two readable pitches side by side */
 .dash-mu { grid-template-columns: 1fr; }
+.dash-side-stack {
+  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+}
 /* Latest Business: a small transfer wire, not another undifferentiated lrow
    ledger. Deals scan club -> arrivals/departures -> effective gameweek; full
    audit detail stays in Transfers. */
@@ -684,7 +707,19 @@ tr.gone-row td.act { opacity: .8; }
 .business-gw small { color: var(--muted); font-size: 7.5px; font-weight: 800; letter-spacing: .08em; }
 .business-gw b { color: var(--text); font-size: 11.5px; }
 .business-history { width: 100%; justify-content: space-between; margin-top: 10px; }
+.business-compact { margin-top: 0; padding: 15px 16px; }
+.business-compact .business-head { padding-bottom: 7px; }
+.business-compact .business-head h2 { font-size: 15px; margin-bottom: 0; }
+.business-compact .business-run { padding: 6px 8px; margin-bottom: 6px; }
+.business-compact .business-row { padding: 8px 0; gap: 8px; }
+.business-compact .business-mark { width: 27px; height: 27px; font-size: 15px; }
+.business-compact .business-waiver { font-size: 11px; }
+.business-compact .business-who { font-size: 11.5px; }
+.business-compact .business-flow { margin-top: 4px; font-size: 11.5px; row-gap: 2px; }
+.business-compact .business-history { margin-top: 7px; padding: 5px 10px; }
 @media (max-width: 390px) {
+  .dash-side-stack { gap: 12px; }
+  .business-compact { padding: 13px 14px; }
   .business-head > .muted { display: none; }
   .business-run { grid-template-columns: auto 1fr; }
   .business-run small { grid-column: 2; }

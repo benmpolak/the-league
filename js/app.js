@@ -6264,7 +6264,8 @@ function viewDash() {
         <button class="btn ghost small" data-goto="h2h">Matches</button>
       </div>
     </div>
-    <div class="card">
+    <div class="dash-side-stack">
+    <div class="card dash-attention">
       <h2>Needs your attention</h2>
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
@@ -6297,6 +6298,8 @@ function viewDash() {
         return next.length ? `<h3 style="margin-top:12px">Next three</h3>
           ${next.map(({ k, opp }) => `<div class="lrow" style="font-size:12.5px"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${kitSvg(opp)} <b>${esc(teamName(opp))}</b> <span class="muted" style="margin-left:auto;font-size:11px">${esc(managerName(opp))}</span></div>`).join('')}` : '';
       })()}
+    </div>
+    ${latestBusinessCard(true)}
     </div>`}
     <div class="card">
       <h2>The table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
@@ -6314,9 +6317,9 @@ function viewDash() {
       <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
+  ${identified ? '' : latestBusinessCard(true)}
   ${vidiCard(true)}
   ${programmeCard()}
-  ${latestBusinessCard()}
   ${installCard()}`;
 }
 /* ----- The Record Book, current season (sol follow-up #2): computed from
@@ -6511,7 +6514,7 @@ function reportCardHtml(t) {
 // transfers and waivers and trades on the dashboard tbf"). A multi-player
 // trade is one piece of business per club, not four near-identical ledger
 // lines; the full ungrouped audit trail remains one tap away in Transfers.
-function latestBusinessCard() {
+function latestBusinessCard(compact = false) {
   const latestRun = lastWaiverRun();
   if (!state.transfers.length && !latestRun) return '';
   const kindOf = t => t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough';
@@ -6553,7 +6556,7 @@ function latestBusinessCard() {
     <b>WAIVER RESULTS</b> <span>${waiverResults.length ? `${waiverResults.length} CLAIM${waiverResults.length === 1 ? '' : 'S'} LANDED` : 'NO CLAIMS LANDED'}</span>
     <small>${new Date(publishedRun).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}</small>
   </div>` : '';
-  return `<div class="card business-card">
+  return `<div class="card business-card${compact ? ' business-compact' : ''}">
     <div class="business-head">
       <div><span class="business-kicker">THE TRANSFER WIRE</span><h2>LATEST BUSINESS</h2></div>
       <span class="muted">COMPLETED DEALS ONLY</span>
@@ -6602,7 +6605,14 @@ const gwDeadlinePassed = i => GAMEWEEKS[i] && new Date(GAMEWEEKS[i].from).getTim
 // is generated, not stored — reviewArticle() rebuilds any settled week from
 // state, so every edition is permanent for free (sol product review #5).
 let progView = { gw: null };
-const progMasthead = (edition, gwN) => `<div class="prog-plate"><div class="prog-title">The League Gazette</div><div class="prog-date">${edition} &middot; Gameweek ${gwN} &middot; est. 2015 &middot; price: your dignity</div></div>`;
+const progMasthead = (edition, gwN) => `<div class="prog-plate">
+  <div class="prog-nameplate">
+    <img class="prog-seal" src="icons/icon-192.png" alt="The League crest">
+    <div><div class="prog-flag">THE LEAGUE</div><div class="prog-title">GAZETTE</div></div>
+    <span class="prog-seal-spacer" aria-hidden="true"></span>
+  </div>
+  <div class="prog-date"><span>${edition}</span><span>Gameweek ${gwN}</span><span>Est. 2015</span></div>
+</div>`;
 // what's on today's front step: {edition, gwN, article} or null
 function progTodays() {
   const cur = currentGwIndex();
@@ -6632,13 +6642,18 @@ function programmeCard() {
   scratch.innerHTML = today.article;
   const head = scratch.querySelector('.prog-head')?.textContent || '';
   const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
+  const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
   const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
   return `<div class="card prog-card">
     ${progMasthead(today.edition, today.gwN)}
-    ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
-    ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" id="progRead" style="flex:1">Read the ${esc(today.edition)}</button>
+    <div class="prog-front">
+      <div class="prog-front-copy">
+        <div class="prog-front-label">LEAD STORY</div>
+        ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
+        ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
+        <div class="prog-front-by">${esc(byline)}</div>
+      </div>
+      <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
     </div>
   </div>`;
 }
@@ -7152,7 +7167,7 @@ function crystalBallCard(standings) {
     <div style="overflow-x:auto">
     <table class="pool-table">
       <thead><tr><th>Team</th>
-        <th class="num" title="Your record if you'd played all eleven others every week">All-play</th>
+        <th class="num" title="Your win-draw-loss record against all eleven managers each finished week">Vs everyone</th>
         <th class="num" title="H2H points vs what your scores deserved. Positive = riding your luck">Luck</th>
         <th class="num" title="Points left on the bench vs your best possible XI, season total">Bench waste</th>
         ${odds ? '<th class="num" title="Monte Carlo simulation of the remaining fixtures, 1,000 runs">Playoffs %</th>' : ''}
@@ -7167,7 +7182,7 @@ function crystalBallCard(standings) {
       </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px">All-play: your record playing every manager every finished week. Luck: actual H2H points minus what that record deserved. ${odds ? 'Playoff odds: 1,000 simulated seasons from everyone’s scoring so far.' : 'Playoff odds appear after three finished gameweeks.'}</p>
+    <p class="muted" style="font-size:10.5px;margin-top:6px"><b>Vs everyone:</b> the record your weekly score would have earned against all 11 managers, not only your fixture. <b>Luck:</b> actual H2H points minus what those scores deserved. ${odds ? '<b>Playoff odds:</b> 1,000 simulated seasons from everyone’s scoring so far.' : 'Playoff odds appear after three finished gameweeks.'}</p>
   </div>`;
 }
 /* ----- the week's awards, auto-issued ----- */
