@@ -94,6 +94,37 @@ const chk = (name, ok, detail = '') => {
       && p2b.duplicate.resultCount === 1 && p2b.unique.shown === p2b.unique.short && p2b.labelsUnique,
     JSON.stringify(p2b));
 
+  // ---- P2c: the written name opens the same stats card as the headshot
+  const p2c = await page.evaluate(() => {
+    const name = document.querySelector('.pool-table .player-name-btn');
+    if (!name) return { name: false };
+    const pid = +name.dataset.pcard;
+    name.click();
+    const card = document.getElementById('pcardOverlay');
+    const heading = card?.querySelector('h2')?.textContent || '';
+    card?.remove();
+    return { name: true, button: name.tagName === 'BUTTON', pid, opened: !!card, heading };
+  });
+  chk('P2c clicking a player name opens his stats card',
+    p2c.name && p2c.button && p2c.pid > 0 && p2c.opened && p2c.heading.length > 0,
+    JSON.stringify(p2c));
+
+  // ---- P2d: Pts stays official FPL output; Rate is the board's own blend
+  const p2d = await page.evaluate(() => {
+    const candidates = PLAYERS.filter(p => {
+      const official = FPL_WIPED ? lastSeasonOf(p)?.pts : p.pts;
+      return Number.isFinite(official) && official !== rating(p);
+    });
+    const p = candidates[0];
+    if (!p) return { player: false };
+    const official = FPL_WIPED ? lastSeasonOf(p).pts : p.pts;
+    const m = metricsFor(p);
+    return { player: p.name, pts: m.pts, official, rate: rating(p) };
+  });
+  chk('P2d Pts and Rate are separate numbers in the pre-season pool',
+    !!p2d.player && p2d.pts === p2d.official && p2d.rate !== p2d.pts,
+    JSON.stringify(p2d));
+
   // ---- P3: star two players -> ranked queue in added order
   const p3 = await page.evaluate(() => {
     const stars = [...document.querySelectorAll('[data-auto]')];

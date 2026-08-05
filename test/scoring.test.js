@@ -48,5 +48,22 @@ chk('DGW cards are capped per fixture, not across the week', pts('MF', {
   fx: [{ min: 90, yc: 1 }, { min: 90, yc: 2, rc: 1 }],
 }) === -2); // 4 appearance - 1 yellow - 5 red
 
+// Established players keep a meaningful current-market signal: identical
+// League production, but a £10m valuation gap, must create exactly a 30-point
+// Rate gap (10 × 12-point price scale × permanent 25% valuation weight).
+const ratingPlayers = [
+  { id: 11, code: 11, pos: 'MF', price: 5 },
+  { id: 12, code: 12, pos: 'MF', price: 15 },
+];
+const sameHistory = { mp: 1800, g: 8, a: 8, cs: 6 };
+const ratingEng = Engine.make({
+  players: ratingPlayers,
+  gameweeks: [{ n: 1, from: '2026-08-14T18:00:00Z', to: '2026-08-18T23:00:00Z' }],
+  lastSeasonByCode: { 11: sameHistory, 12: sameHistory },
+});
+const valuationGap = ratingEng.rating(ratingPlayers[1]) - ratingEng.rating(ratingPlayers[0]);
+chk('established-player Rate includes 25% current FPL valuation',
+  Engine.RATING_HISTORY_WEIGHT === 0.75 && valuationGap === 30, `gap ${valuationGap}`);
+
 console.log(`\n[scoring] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

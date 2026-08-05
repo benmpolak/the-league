@@ -487,6 +487,7 @@ function save() {
 // Fixed DEFAULT_SCORING currency (not the live editable scoring) so the
 // board ranks identically on client and server — engine.js mirrors this.
 const _ratingCache = new Map();
+const RATING_HISTORY_WEIGHT = 0.75;
 const rating = p => {
   let r = _ratingCache.get(p.id);
   if (r == null) {
@@ -495,10 +496,12 @@ const rating = p => {
     const played = src ? Math.max(0, leaguePtsFrom(src, p.pos, DEFAULT_SCORING)) : 0;
     // thin or no sample → weight on FPL VALUE (Ben's ruling, UAT night:
     // Jackson and Hackney sat at 6 — "any new players just have 6"). Price
-    // tracks expected output well enough to seed a board rank; the real
-    // sample takes over by ~8 appearances.
+    // tracks expected output well enough to seed a board rank. History earns
+    // trust by ~8 appearances, but FPL valuation keeps a permanent 25% say so
+    // Rate reflects this season's market as well as last season's production
+    // (Ben, 5 Aug: weight the board towards FPL valuations too).
     const prior = (p.price || 4.5) * 12;
-    const w = Math.min(1, apps / 8);
+    const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 8);
     r = Math.round(played * w + prior * (1 - w));
     _ratingCache.set(p.id, r);
   }
@@ -4432,7 +4435,9 @@ function metricsFor(p) {
     const ls = FPL_WIPED ? lastSeasonOf(p) : null;
     m = ls
       ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, f5: 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ppg: ls.ppg || 0, xgi: ls.xgi || 0, price: p.price }
-      : { pts: rating(p), apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
+      // Keep Pts as the official FPL total. Rate is the separate League/FPL
+      // blend; using Rate here made the two columns identical (Ben, 5 Aug).
+      : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
   }
   m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
   _metricsCache.set(p.id, m);
@@ -4473,7 +4478,7 @@ const ALL_STAT_COLS = live => [
   { k: 'pts', h: 'Pts', t: live ? 'Points under league scoring' : 'Total FPL points, last season', v: m => m.pts, cls: ' gold' },
   // Marc, UAT night: DF had a "rating" so new arrivals aren't buried at 0 pts —
   // this is the board's own blend (metricSort's rating tiebreak sorts it)
-  { k: 'rate', h: 'Rate', t: 'The board’s rating — last season rescored under THE LEAGUE’s rules (no bonus, no defensive-contribution points), so new signings rank instead of hiding at zero', v: (m, p) => Math.round(rating(p)) },
+  { k: 'rate', h: 'Rate', t: 'The board’s rating — 75% last-season production rescored under THE LEAGUE’s rules, 25% current FPL valuation; valuation carries more when the sample is thin', v: (m, p) => Math.round(rating(p)) },
 ];
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts', 'rate']
@@ -4752,7 +4757,7 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
-        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="pname">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></div></div></td>
+        <td class="pcol"><div class="pcell">${photoImg(p)}<button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
@@ -5949,7 +5954,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>

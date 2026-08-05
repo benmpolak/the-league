@@ -18,6 +18,7 @@
   // for an outfield maximum, so two flex maxima cannot coexist.
   const SQUAD_RULES = { size: 14, min: { GK: 1, DF: 4, MF: 4, FW: 2 }, max: { GK: 2, DF: 6, MF: 6, FW: 4 } };
   const REGULAR_GWS = 33;
+  const RATING_HISTORY_WEIGHT = 0.75;
   const DEFAULT_SCORING = {
     appearanceStart: 2,
     appearanceSub: 1,
@@ -71,10 +72,10 @@
             + (p.pos === 'GK' ? apps * 0.5 : 0)
             - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0));
         }
-        // thin/no sample → FPL-value prior, sample takes over by ~8 apps
-        // (Committee ruling, UAT night; js/app.js rating() mirrors this)
+        // Thin/no sample → FPL-value prior. History earns trust by ~8 apps,
+        // but valuation keeps a permanent 25% say (Ben, 5 Aug); app.js mirrors.
         const prior = (p.price || 4.5) * 12;
-        const w = Math.min(1, apps / 8);
+        const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 8);
         r = Math.round(played * w + prior * (1 - w));
         _ratingCache.set(p.id, r);
       }
@@ -541,5 +542,5 @@
     };
   }
 
-  return { make, XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING };
+  return { make, XI_RULES, SQUAD_RULES, REGULAR_GWS, RATING_HISTORY_WEIGHT, DEFAULT_SCORING };
 });

@@ -210,6 +210,7 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 /* the NAME ellipsizes in its own span; the flag sits outside the clip so it
    can never render half-Italy-as-Algeria (Marc, 2 Aug) */
 .pcell .pname { font-weight: 600; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.player-name-btn { appearance: none; border: 0; background: none; color: inherit; font: inherit; padding: 0; text-align: left; }
 .pcell .pname .pn-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcell .pname .nat-flag { flex: none; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
