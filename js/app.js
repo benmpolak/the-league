@@ -5246,7 +5246,7 @@ function assistantCard(mid, gw) {
   if (notMine) return ''; // he works for YOU; other clubs have their own staff
   const asst = assistantFor(mid);
   const head = body => `<div class="card assistant-card">
-    <div class="assistant-pop" aria-hidden="true"><span>${asst.e}</span></div>
+    <div class="assistant-pop" aria-hidden="true"><span class="assistant-person">&#129489;&#8205;&#128188;</span><small>${asst.e}</small></div>
     <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">assistant manager${gafferFor(mid) ? ` — No. 2 to ${esc(gafferFor(mid).t)}` : ''}</span></h2>${body}</div>
   </div>`;
   if (signedOut) {

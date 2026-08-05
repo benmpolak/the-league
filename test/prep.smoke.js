@@ -356,6 +356,8 @@ const chk = (name, ok, detail = '') => {
     return {
       card: !!card,
       face: face?.textContent.trim() || '',
+      person: face?.querySelector('.assistant-person')?.textContent || '',
+      badge: face?.querySelector('small')?.textContent || '',
       oldDisclaimer: document.body.textContent.includes('He does not do chat'),
       docW: document.documentElement.scrollWidth,
       animated: face ? getComputedStyle(face).animationName === 'assistant-arrives' : false,
@@ -363,7 +365,8 @@ const chk = (name, ok, detail = '') => {
     };
   });
   chk('P8g assistant arrives as his club character; the old chat disclaimer is gone',
-    p8gAssistant.card && !!p8gAssistant.face && !p8gAssistant.oldDisclaimer && p8gAssistant.docW <= 320
+    p8gAssistant.card && p8gAssistant.person.includes('🧑') && !!p8gAssistant.badge
+      && !p8gAssistant.oldDisclaimer && p8gAssistant.docW <= 320
       && (p8gAssistant.animated || p8gAssistant.reducedMotion),
     JSON.stringify(p8gAssistant));
   await page.setViewport({ width: 390, height: 844 });
