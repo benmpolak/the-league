@@ -786,8 +786,38 @@ function nextOppHtml(club, gwN) {
   const opp = f.home === club ? f.away : f.home;
   return `<span class="${fdrCls(opp)}">${esc(`${TEAM_BY_NAME[opp]?.short || opp} (${f.home === club ? 'H' : 'A'})`)}</span>`;
 }
+// Familiar short names keep the tables clean. Only genuine collisions get a
+// first initial (Marc + Ben, 5 Aug): E. Martinez / L. Martinez, while Haaland
+// stays Haaland. Club + position remain alongside it, and the full name stays
+// in the player card/search data rather than becoming a second line.
+const _PLAYER_NAME_COUNTS = PLAYERS.reduce((m, p) => {
+  const key = normName(p.name);
+  m.set(key, (m.get(key) || 0) + 1);
+  return m;
+}, new Map());
+const _PLAYER_INITIAL_LABEL_COUNTS = PLAYERS.reduce((m, p) => {
+  const name = String(p.name || p.full || '?').trim();
+  if ((_PLAYER_NAME_COUNTS.get(normName(name)) || 0) < 2) return m;
+  const initial = String(p.full || '').trim().charAt(0).toUpperCase();
+  const label = initial && !name.toUpperCase().startsWith(`${initial}.`) ? `${initial}. ${name}` : name;
+  const key = normName(label);
+  m.set(key, (m.get(key) || 0) + 1);
+  return m;
+}, new Map());
+function playerDisplayName(p) {
+  if (!p) return '?';
+  const name = String(p.name || p.full || '?').trim();
+  if ((_PLAYER_NAME_COUNTS.get(normName(name)) || 0) < 2) return name;
+  const initial = String(p.full || '').trim().charAt(0).toUpperCase();
+  const label = initial && !name.toUpperCase().startsWith(`${initial}.`) ? `${initial}. ${name}` : name;
+  // Josh/Jay Dasilva and Brennan/Ben Johnson share initials too. Only those
+  // stubborn collisions graduate to the full feed name.
+  return (_PLAYER_INITIAL_LABEL_COUNTS.get(normName(label)) || 0) > 1
+    ? String(p.full || label).trim()
+    : label;
+}
 // clickable player name — opens the stats card, usable in any text row
-const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(p.name)}</span>` : '?';
+const pname = p => p ? `<span class="plink" data-pcard="${p.id}">${esc(playerDisplayName(p))}</span>` : '?';
 // expected points next gameweek: FPL's own projection, then points-per-game, then a guess
 /* Projections in OUR currency (Marc, mock night: "Garner projected top MF" —
    FPL's carried-forward ppg pays bonus + defensive-contribution points this
@@ -3929,7 +3959,9 @@ function playSound(kind) {
 function broadcastOnPick() {}
 
 /* ----- the console (draft) ----- */
-let poolFilter = { q: '', team: '', pos: '', sort: 'pts', limit: 60 };
+// The League's own board rating is the draft currency, so the pool opens in
+// that order (Ben + Marc, 5 Aug). Managers can still sort it afterwards.
+let poolFilter = { q: '', team: '', pos: '', sort: 'rate', limit: 60 };
 // which squad the side panel shows: yours, or the man on the clock's (Ben +
 // Marc, mock night: both, clearly labelled, yours first)
 let draftSquadTab = 'mine';
@@ -4076,7 +4108,7 @@ function viewDraft() {
     return `<div class="draft-strip" id="draftStrip" title="Tap for your full queue">
       <b>${turn}</b>
       <span class="muted">&middot; ${slots} slot${slots === 1 ? '' : 's'}${need.length ? `, must draft ${esc(need.join(', '))}` : ''}</span>
-      ${q.length ? `<span class="muted">&middot; queue: ${q.map(p => esc(p.name)).join(', ')}</span>` : ''}
+      ${q.length ? `<span class="muted">&middot; queue: ${q.map(p => esc(playerDisplayName(p))).join(', ')}</span>` : ''}
     </div>`;
   })()}
   ${queueDrawerHtml()}
@@ -4448,7 +4480,7 @@ const DEFAULT_COL_KEYS = live => live
   : ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts', 'rate'];
 // phones default to the essentials — tap any player for the full story, or
 // add columns back via the Columns toggle (a saved preference wins everywhere)
-const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'pts'] : ['vs', 'ppg', 'pts'];
+const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'rate'] : ['vs', 'ppg', 'rate'];
 let _colPrefs;
 function visibleColKeys(live) {
   if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem('tl2627-cols')); } catch { _colPrefs = null; } }
@@ -4488,7 +4520,7 @@ const SCOUT_PRESETS = [
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
   { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '' };
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
@@ -4498,7 +4530,7 @@ function cleanScoutView(v) {
   if (!name) return null;
   const allowedCols = new Set(ALL_STAT_COLS(seasonHasStats()).map(c => c.k));
   const cols = toArr(v.cols).filter((k, i, a) => allowedCols.has(k) && a.indexOf(k) === i);
-  const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'pts';
+  const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'rate';
   const pos = SCOUT_POS.has(v.pos) ? v.pos : '';
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
   const scope = v.scope === 'all' ? 'all' : 'free';
@@ -4665,7 +4697,7 @@ function showScoutCompare(addHistory = true) {
       ${players.map(p => {
         const owner = compareOwner(p.id);
         return `<section class="compare-player">
-          <div class="compare-player-head">${photoImg(p)}<div><h3>${esc(p.name)}</h3><p class="muted">${esc(p.club)} &middot; ${p.pos}</p><p class="muted">${owner ? `Owned by ${esc(teamName(owner.id))}` : 'Free agent'}</p></div></div>
+          <div class="compare-player-head">${photoImg(p)}<div><h3>${esc(playerDisplayName(p))}</h3><p class="muted">${esc(p.club)} &middot; ${p.pos}</p><p class="muted">${owner ? `Owned by ${esc(teamName(owner.id))}` : 'Free agent'}</p></div></div>
           ${fields.map(([label, val]) => `<div class="compare-row"><span>${label}</span><span>${val(p)}</span></div>`).join('')}
           <div class="compare-runway"><b>Next six</b>${gws.map(g => `<span><small>GW${g.n}</small>${esc(nextOpp(p.team, g.n) || '—')}</span>`).join('')}</div>
           <button class="btn ghost small" data-compare-remove="${p.id}">Remove</button>
@@ -4681,8 +4713,6 @@ function showScoutCompare(addHistory = true) {
   if (addHistory) pushOvState();
 }
 
-let bulkQueueIds = new Set();
-
 function poolTable() {
   // on the scouting floor (setup phase) there is no board yet: nobody is
   // taken, nobody is on the clock, and the Draft button stays away
@@ -4693,7 +4723,7 @@ function poolTable() {
   let rows = showGone ? [...PLAYERS] : PLAYERS.filter(p => !taken.has(p.id));
   if (poolFilter.q) {
     const q = normName(poolFilter.q);
-    rows = rows.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
+    rows = rows.filter(p => normName(p.name).includes(q) || normName(p.full).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
   }
   if (poolFilter.team) rows = rows.filter(p => p.team === poolFilter.team);
   if (poolFilter.pos) rows = rows.filter(p => p.pos === poolFilter.pos);
@@ -4706,22 +4736,15 @@ function poolTable() {
   // signed-out on the live site: stars still SHOW (dimmed) and tapping one
   // explains — an invisible feature reads as a broken one (Ben, 2 Aug)
   const showStar = canQueue || netOn();
-  const visibleIds = rows.map(p => p.id);
-  const selected = [...bulkQueueIds].filter(id => !taken.has(id));
   return `
   <div class="pool-wrap">
   ${scoutViewHtml('draft')}
   <div class="pool-toolbar">
-    ${canQueue ? `<div class="bulk-queue">
-      <button class="btn ghost small" data-bulk-all="${visibleIds.join(',')}">${visibleIds.length && visibleIds.every(id => bulkQueueIds.has(id)) ? 'Clear page' : 'Select page'}</button>
-      <button class="btn small" data-bulk-add ${selected.length ? '' : 'disabled'}>Add ${selected.length || ''} to queue</button>
-    </div>` : ''}
     ${colToggleHtml(seasonHasStats())}
   </div>
   <div style="overflow-x:auto">
   <table class="pool-table">
     <thead><tr>
-      ${canQueue ? '<th class="bulk-check"><span class="sr-only">Queue selection</span></th>' : ''}
       <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
       <th></th>
       ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
@@ -4729,8 +4752,7 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
-        ${canQueue ? `<td class="bulk-check"><input type="checkbox" data-bulk-pid="${p.id}" aria-label="Select ${esc(p.name)} for the autopick queue" ${bulkQueueIds.has(p.id) ? 'checked' : ''}></td>` : ''}
-        <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${esc(p.full)}</div></div></div></td>
+        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="pname">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></div></div></td>
         <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td>${statusChip(p)}</td>
@@ -4932,39 +4954,6 @@ function refreshPool() {
 }
 function bindPoolTable() {
   bindScoutDesk('draft', refreshPool);
-  const takenNow = () => state.phase === 'draft' ? draftedIds() : new Set();
-  const updateBulkQueue = () => {
-    const add = document.querySelector('[data-bulk-add]');
-    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !takenNow().has(id));
-    if (add) {
-      add.disabled = !selected.length;
-      add.textContent = `Add ${selected.length || ''} to queue`;
-    }
-  };
-  document.querySelectorAll('[data-bulk-pid]').forEach(cb => cb.onchange = () => {
-    const pid = +cb.dataset.bulkPid;
-    cb.checked ? bulkQueueIds.add(pid) : bulkQueueIds.delete(pid);
-    updateBulkQueue();
-  });
-  const all = document.querySelector('[data-bulk-all]');
-  if (all) all.onclick = () => {
-    const ids = all.dataset.bulkAll.split(',').map(Number).filter(Boolean);
-    const clear = ids.length && ids.every(id => bulkQueueIds.has(id));
-    ids.forEach(id => clear ? bulkQueueIds.delete(id) : bulkQueueIds.add(id));
-    refreshPool();
-  };
-  const bulkAdd = document.querySelector('[data-bulk-add]');
-  if (bulkAdd) bulkAdd.onclick = () => {
-    if (!whoami || whoami === -1) return;
-    const taken = takenNow();
-    const selected = [...bulkQueueIds].filter(id => PLAYER_BY_ID[id] && !taken.has(id));
-    const current = toArr(state.autolists?.[whoami]);
-    const fresh = selected.filter(id => !current.includes(id));
-    if (!fresh.length) { toast('Those players are already queued'); return; }
-    bulkQueueIds = new Set();
-    setAutolist(whoami, [...current, ...fresh]);
-    toast(`${fresh.length} player${fresh.length === 1 ? '' : 's'} added to your autopick queue`);
-  };
   document.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
     const pid = +b.dataset.pick, mid = currentManagerId(), p = PLAYER_BY_ID[pid];
     if (!draftRoomOpen()) { toast('Pick one is locked until every manager is through the ceremony.'); return; }
@@ -5960,7 +5949,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(p.name)}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><div class="pname">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></div><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
@@ -8789,7 +8778,7 @@ function gsRowsHtml(players, ownerOf) {
     return `<div class="gs-row" data-pcard="${p.id}" role="button" tabindex="0">
       ${photoImg(p)}
       <div class="gs-main">
-        <span class="gs-name"><span class="gs-nm">${esc(p.name)}</span> ${natFlag(p)} ${statusChip(p)}</span>
+        <span class="gs-name"><span class="gs-nm">${esc(playerDisplayName(p))}</span> ${natFlag(p)} ${statusChip(p)}</span>
         <span class="gs-sub muted">${esc(p.club)} &middot; <span class="pos-badge pos-${p.pos}">${p.pos}</span></span>
         <span class="gs-sub">${ownLabel}</span>
       </div>

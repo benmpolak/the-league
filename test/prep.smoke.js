@@ -48,22 +48,51 @@ const chk = (name, ok, detail = '') => {
     p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.length === 4 && p1.prepGo,
     JSON.stringify(p1));
 
-  // ---- P2: signpost opens the scouting floor — pool without Draft buttons
+  // ---- P2: signpost opens the scouting floor — one clean queue control per row
   await page.click('#prepGo');
   const p2 = await page.evaluate(() => ({
     view: state.view,
     pool: !!document.getElementById('poolCard'),
     rows: document.querySelectorAll('.pool-table tbody tr').length,
     stars: document.querySelectorAll('[data-auto]').length,
-    checks: document.querySelectorAll('[data-bulk-pid]').length,
+    bulkControls: document.querySelectorAll('[data-bulk-pid], [data-bulk-add], [data-bulk-all]').length,
+    drags: document.querySelectorAll('tr[data-drag]').length,
+    duplicateNames: document.querySelectorAll('.pool-table .pclub').length,
+    sort: poolFilter.sort,
+    rateDescending: [...document.querySelectorAll('.pool-table tbody tr')].slice(0, 8)
+      .map(tr => rating(PLAYER_BY_ID[+tr.dataset.drag]))
+      .every((n, i, a) => i === 0 || a[i - 1] >= n),
     draftBtns: document.querySelectorAll('[data-pick]').length,
     clock: !!document.querySelector('.on-clock'),
     hash: location.hash,
   }));
-  chk('P2 scouting floor: pool + stars + bulk, no Draft buttons, no clock',
-    p2.view === 'draft' && p2.pool && p2.rows > 3 && p2.stars > 3 && p2.checks > 3 &&
+  chk('P2 scouting floor: one name, star control, no bulk checkboxes, Rate order',
+    p2.view === 'draft' && p2.pool && p2.rows > 3 && p2.stars > 3 && p2.drags > 3 &&
+    p2.bulkControls === 0 && p2.duplicateNames === 0 && p2.sort === 'rate' && p2.rateDescending &&
     p2.draftBtns === 0 && !p2.clock && p2.hash === '#draft',
     JSON.stringify(p2));
+
+  // ---- P2b: only duplicate short names gain an initial; full names still search
+  const p2b = await page.evaluate(() => {
+    const dup = PLAYERS.find(p => PLAYERS.some(x => x.id !== p.id && normName(x.name) === normName(p.name)));
+    const unique = PLAYERS.find(p => !PLAYERS.some(x => x.id !== p.id && normName(x.name) === normName(p.name)));
+    const labels = PLAYERS.map(playerDisplayName);
+    poolFilter.q = dup.full;
+    refreshPool();
+    const result = document.querySelector('.pool-table .pn-txt')?.textContent;
+    const resultCount = document.querySelectorAll('.pool-table tbody tr').length;
+    poolFilter.q = '';
+    refreshPool();
+    return {
+      duplicate: { short: dup.name, shown: playerDisplayName(dup), result, resultCount },
+      unique: { short: unique.name, shown: playerDisplayName(unique) },
+      labelsUnique: new Set(labels).size === labels.length,
+    };
+  });
+  chk('P2b duplicate names gain one initial; unique names stay short and full-name search works',
+    p2b.duplicate.shown !== p2b.duplicate.short && p2b.duplicate.result === p2b.duplicate.shown
+      && p2b.duplicate.resultCount === 1 && p2b.unique.shown === p2b.unique.short && p2b.labelsUnique,
+    JSON.stringify(p2b));
 
   // ---- P3: star two players -> ranked queue in added order
   const p3 = await page.evaluate(() => {
@@ -139,17 +168,17 @@ const chk = (name, ok, detail = '') => {
   chk('P4d star toggles: filled when listed, second tap removes',
     p4d.filled && p4d.removed && p4d.cleared, JSON.stringify(p4d));
 
-  // ---- P5: bulk select-page -> add to queue works pre-draft
+  // ---- P5: the redundant checkbox/bulk route stays gone after rerenders
   const p5 = await page.evaluate(() => {
-    const before = toArr(state.autolists[whoami]).length;
-    document.querySelector('[data-bulk-all]').click();
-    const add = document.querySelector('[data-bulk-add]');
-    const enabled = add && !add.disabled;
-    add.click();
-    return { enabled, before, after: toArr(state.autolists[whoami]).length };
+    refreshPool();
+    return {
+      bulkControls: document.querySelectorAll('[data-bulk-pid], [data-bulk-add], [data-bulk-all]').length,
+      stars: document.querySelectorAll('[data-auto]').length,
+      draggable: document.querySelectorAll('tr[data-drag]').length,
+    };
   });
-  chk('P5 bulk add fills the queue pre-draft (no draft-state crash)',
-    p5.enabled && p5.after > p5.before + 10, JSON.stringify(p5));
+  chk('P5 queue UI keeps the star and desktop drag, without bulk controls',
+    p5.bulkControls === 0 && p5.stars > 10 && p5.draggable > 10, JSON.stringify(p5));
 
   // ---- P6: compare works on the scouting floor
   const p6 = await page.evaluate(() => {
@@ -170,7 +199,7 @@ const chk = (name, ok, detail = '') => {
     rows: document.querySelectorAll('.qrow').length,
   }));
   chk('P7 list + scouting floor survive a reload',
-    p7.phase === 'setup' && p7.view === 'draft' && p7.rows > 10 &&
+    p7.phase === 'setup' && p7.view === 'draft' && p7.list.length >= 3 && p7.rows >= p7.list.length &&
     JSON.stringify(p7.list) === JSON.stringify(savedList),
     `rows=${p7.rows} list=${p7.list.length}/${savedList.length}`);
 
@@ -183,7 +212,7 @@ const chk = (name, ok, detail = '') => {
     state.settings.pickTimer = 0;
     state.draft.order = state.managers.map(m => m.id); // whoami picks first
     render();
-    const queueIntact = document.querySelectorAll('.qrow').length > 10;
+    const queueIntact = document.querySelectorAll('.qrow').length >= toArr(state.autolists[whoami]).length;
     const draftBtns = document.querySelectorAll('[data-pick]').length;
     autoPick();
     return { head, queueIntact, draftBtns, picked: state.draft.picks[0]?.playerId };

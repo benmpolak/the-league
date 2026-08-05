@@ -184,9 +184,6 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pool-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .pool-controls input[type=text] { flex: 1; min-width: 180px; }
 .pool-toolbar { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
-.bulk-queue { display: flex; gap: 6px; align-items: center; margin-right: auto; }
-.bulk-check { width: 34px; min-width: 34px; text-align: center !important; padding-left: 5px !important; padding-right: 5px !important; }
-.bulk-check input { width: 17px; height: 17px; cursor: pointer; }
 .row-actions { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

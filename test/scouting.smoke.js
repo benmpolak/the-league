@@ -1,4 +1,4 @@
-/* Scouting Desk regression: saved views, player comparison and bulk queue.
+/* Scouting Desk regression: saved views, player comparison and queue controls.
  *
  * Honesty rules:
  * - every negative assertion has a positive surface/data precondition;
@@ -43,12 +43,14 @@ const chk = (name, ok, detail = '') => {
       managers: state.managers.length,
       desk: !!document.querySelector('.scout-desk'),
       compares: document.querySelectorAll('[data-compare]').length,
-      checks: document.querySelectorAll('[data-bulk-pid]').length,
-      addDisabled: document.querySelector('[data-bulk-add]')?.disabled,
+      stars: document.querySelectorAll('[data-auto]').length,
+      bulkControls: document.querySelectorAll('[data-bulk-pid], [data-bulk-add], [data-bulk-all]').length,
+      sort: poolFilter.sort,
     };
   });
-  chk('SC1 precondition: live draft pool exposes the new additive controls',
-    seeded.managers === 12 && seeded.desk && seeded.compares > 3 && seeded.checks > 3 && seeded.addDisabled,
+  chk('SC1 live draft pool opens by Rate with one queue control per player',
+    seeded.managers === 12 && seeded.desk && seeded.compares > 3 && seeded.stars > 3
+      && seeded.bulkControls === 0 && seeded.sort === 'rate',
     JSON.stringify(seeded));
 
   const preset = await page.evaluate(() => {
@@ -124,29 +126,26 @@ const chk = (name, ok, detail = '') => {
   chk('SC6: compare is read-only and hard-capped at three players',
     comparison.capped && comparison.sharedUntouched, JSON.stringify(comparison));
 
-  const bulk = await page.evaluate(() => {
-    const boxes = [...document.querySelectorAll('[data-bulk-pid]')].slice(0, 3);
-    const ids = boxes.map(cb => +cb.dataset.bulkPid);
-    boxes.forEach(cb => { cb.checked = true; cb.dispatchEvent(new Event('change')); });
-    const labelBefore = document.querySelector('[data-bulk-add]').textContent.trim();
+  const singleAdd = await page.evaluate(() => {
+    const button = document.querySelector('[data-auto]');
+    const pid = +button.dataset.auto;
     const original = setAutolist;
     let calls = 0;
     setAutolist = (mid, arr) => { calls++; return original(mid, arr); };
-    document.querySelector('[data-bulk-add]').click();
+    button.click();
     setAutolist = original;
     return {
-      ids,
+      pid,
       calls,
       queued: state.autolists[whoami],
-      labelBefore,
-      selectionCleared: bulkQueueIds.size === 0,
+      bulkControls: document.querySelectorAll('[data-bulk-pid], [data-bulk-add], [data-bulk-all]').length,
     };
   });
-  chk('SC7: three selections become one ranked queue update (not three racing writes)',
-    bulk.ids.length === 3 && bulk.calls === 1
-      && JSON.stringify(bulk.queued) === JSON.stringify(bulk.ids)
-      && bulk.labelBefore === 'Add 3 to queue' && bulk.selectionCleared,
-    JSON.stringify(bulk));
+  chk('SC7: the single star action makes one ranked queue update',
+    singleAdd.pid > 0 && singleAdd.calls === 1
+      && JSON.stringify(singleAdd.queued) === JSON.stringify([singleAdd.pid])
+      && singleAdd.bulkControls === 0,
+    JSON.stringify(singleAdd));
 
   const scoring = await page.evaluate(() => {
     const p = PLAYERS.find(x => x.pos === 'DF');
