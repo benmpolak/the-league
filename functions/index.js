@@ -217,35 +217,45 @@ async function stripLineup(league, state, mid, tgw, outId) {
  *   1. claim the run id under a short lease (txn)
  *   2. compute the resolution and persist it as a durable PLAN on the run record
  *   3. apply the plan: transfer append is idempotent (records tagged with the
- *      run id are skipped on replay), then one atomic update clears claims,
- *      stamps meta, strips lineups and marks the run done
+ *      run id are skipped on replay), then clear claims, strip only players
+ *      whose claims REALLY landed, stamp meta and mark the run done
  * A crash at any point leaves a re-claimable record whose stored plan replays
  * without double-applying. While a fresh lease is held, callers get an ERROR
  * (never a false success), so the Scheduler's retry keeps retrying until the
  * lease expires and the work really completes. */
 const WAIVER_LEASE_MS = 3 * 60 * 1000;
 
-async function applyWaiverPlan(league, runId, plan, state, eng) {
-  if (!plan.records || !plan.records.length) return { applied: 0, dropped: 0 };
+async function applyWaiverPlan(league, runId, plan, state, eng, ctx) {
+  if (!plan.records || !plan.records.length) return { applied: 0, dropped: 0, landed: [] };
   const ref = db().ref(`${leagueBase(league)}/public/transfers`);
   const seedSnap = (await ref.get()).val();
-  let applied = 0, dropped = 0;
+  const keyOf = r => `${r.managerId}:${r.inId}:${r.outId}`;
+  let applied = 0, dropped = 0, landedKeys = new Set();
   const res = await ref.transaction(cur => {
     const out = toArr(cur === null ? seedSnap : cur).map(x => ({ ...x }));
-    applied = 0; dropped = 0;
+    applied = 0; dropped = 0; landedKeys = new Set();
     const have = new Set(out.filter(t => t && t.waiver && t.runId === runId)
-      .map(t => `${t.managerId}:${t.inId}:${t.outId}`));
+      .map(keyOf));
     for (const r of plan.records) {
-      if (have.has(`${r.managerId}:${r.inId}:${r.outId}`)) { applied++; continue; } // replay — already landed
+      const key = keyOf(r);
+      if (have.has(key)) { applied++; landedKeys.add(key); continue; } // replay — already landed
       const owned = eng.ownedIdsGiven(state, out, plan.tgw);
       if (owned.has(r.inId) || !owned.has(r.outId)) { dropped++; continue; } // sniped since planning — claim lapses
+      // Ownership may have changed the manager's positional flex after the
+      // durable plan was written. Revalidate the resulting 14-man shape at
+      // APPLY time as well as PLAN time; an invalid claim lapses harmlessly.
+      const current = { ...state, transfers: out };
+      const squad = eng.squadAt(current, r.managerId, plan.tgw);
+      const inP = ctx.PLAYER_BY_ID[r.inId];
+      const after = inP ? [...squad.filter(p => p.id !== r.outId), inP] : [];
+      if (!inP || !eng.squadShapeOk(current, after)) { dropped++; continue; }
       out.push({ ...r, n: out.length + 1 });
-      applied++;
+      applied++; landedKeys.add(key);
     }
     return out;
   });
   if (!res.committed) throw new HttpsError('aborted', 'transfer ledger contended — run again');
-  return { applied, dropped };
+  return { applied, dropped, landed: plan.records.filter(r => landedKeys.has(keyOf(r))) };
 }
 
 async function runWaivers(league, runId, trigger, failAt) {
@@ -288,8 +298,22 @@ async function runWaivers(league, runId, trigger, failAt) {
       await runRef.update({ status: 'applying', plan });
     }
     failpoint(failAt, 'waivers:afterPlan');
-    const { applied, dropped } = await applyWaiverPlan(league, runId, plan, state, eng);
+    const { applied, dropped, landed } = await applyWaiverPlan(league, runId, plan, state, eng, ctx);
     failpoint(failAt, 'waivers:afterTransfers');
+    const executed = landed.map(r => ({ mid: r.managerId, in: r.inId, out: r.outId }));
+    // A plan can go stale while a crashed run waits to replay. Strip lineups
+    // only for claims that actually landed, and remove from the CURRENT lineup
+    // transactionally so a later team-sheet edit is never overwritten by the
+    // plan's stale snapshot.
+    const landedOuts = {};
+    for (const r of landed) (landedOuts[r.managerId] = landedOuts[r.managerId] || []).push(r.outId);
+    for (const [mid, outs] of Object.entries(landedOuts)) {
+      const luRef = db().ref(`${base}/public/lineups/${mid}/${plan.tgw}`);
+      await luRef.transaction(cur => {
+        if (cur == null) return;
+        return toArr(cur).filter(id => !outs.includes(id));
+      });
+    }
     // clear ONLY the claims the plan adjudicated (executed or lapsed). A claim
     // lodged between planning and apply (crash window) stays for the next run.
     // Mapping comes from MEMBERSHIP — the same source loadState planned from —
@@ -323,14 +347,13 @@ async function runWaivers(league, runId, trigger, failAt) {
     upd[`${base}/public/waiverMeta`] = plan.stampedMeta;
     // legacy plans (written before `consumed` existed) replay with the old wholesale clear
     if (plan.consumed === undefined) for (const uid of Object.keys(mem)) for (const g of (plan.buckets || [])) upd[`${base}/private/${uid}/claims/${g}`] = null;
-    for (const [mid, xi] of Object.entries(plan.strippedLineups || {})) upd[`${base}/public/lineups/${mid}/${plan.tgw}`] = xi;
     upd[`${base}/server/waiverRuns/${runId}/status`] = 'done';
     upd[`${base}/server/waiverRuns/${runId}/finishedAt`] = Date.now();
-    upd[`${base}/server/waiverRuns/${runId}/executed`] = plan.executed || [];
+    upd[`${base}/server/waiverRuns/${runId}/executed`] = executed;
     upd[`${base}/server/waiverRuns/${runId}/applied`] = applied;
     upd[`${base}/server/waiverRuns/${runId}/dropped`] = dropped;
     await db().ref().update(upd);
-    return { executed: plan.executed || [] };
+    return { executed };
   } catch (e) {
     // release the lease; the plan (if written) survives for an exact replay
     await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});

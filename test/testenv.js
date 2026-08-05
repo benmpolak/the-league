@@ -196,7 +196,7 @@ function buildSeedState(players, managerCount = 3) {
       scoring: {
         appearanceStart: 2, appearanceSub: 1, goalGK: 10, goalDF: 6, goalMF: 5, goalFW: 4,
         assist: 3, cleanSheet: 4, cleanSheetMF: 1, per3Saves: 1, penSave: 5,
-        penMiss: -2, yellow: -1, red: -3, ownGoal: -2, per2Conceded: -1,
+        penMiss: -3, yellow: -1, red: -5, ownGoal: -3, per2Conceded: -1,
       },
     },
     draft: { order, picks, breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0 },

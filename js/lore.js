@@ -16,35 +16,35 @@ const RIVALRIES = [
 
 // One-liners about individual managers, used to colour previews. Keyed by id.
 const MANAGER_LORE = {
-  1: 'was forecast to finish his first draft with Tony Hibbert and now runs the Draft Fantasy South office',
-  2: 'has been on holiday since the January window but still found time to invent another cup',
-  3: 'does not always read the Chairman\'s circulars and should therefore enjoy the new app',
-  4: 'has made every playoff since his title and regards democracy as an administrative delay',
-  5: 'has already asked how next season\'s draft position will be decided',
-  6: 'has read the rules, the amended rules and the reasons the amended rules make no sense',
-  7: 'once argued for stopping the season at Christmas and will reassess the project after GW10',
-  8: 'still believes 38 separate cup competitions would be administratively cleaner',
-  9: 'remains very open to offers and is understood to be seeking an Everton defender',
-  10: 'quite likes this cup, placing him in direct opposition to Marc',
-  11: 'served ten years on the waiting list and immediately identified a Mickey Mouse cup',
-  12: 'would still like to know whether he can keep his demo team',
+  1: 'won the 2019–20 title after beginning League life as the man expected to draft Tony Hibbert',
+  2: 'won the inaugural title, became Chairman and has been adding cups and circulars ever since',
+  3: 'has built Atlético Benfield while treating the Chairman\'s circulars as optional pre-match reading',
+  4: 'is the reigning champion and regards democracy as an administrative delay between trophies',
+  5: 'has two titles, a standing claim on Manchester City and the constitutional opposition front bench',
+  6: 'is the League\'s only back-to-back champion and its foremost scout of promoted-club obscurities',
+  7: 'won the 2024–25 title despite periodically declaring the entire competition over by GW10',
+  8: 'has two titles and still believes 38 separate cup competitions would be administratively cleaner',
+  9: 'won in 2022–23 and remains open to offers involving Eze, future considerations or an Everton defender',
+  10: 'runs Celta Leigh-Go, the M23 rivalry and the League\'s unexpectedly conservative cup-policy wing',
+  11: 'served ten years on the waiting list, formed Geldog FC and immediately identified a Mickey Mouse cup',
+  12: 'topped the 2025–26 table, lost the playoffs and would still like to keep his suspiciously excellent demo team',
 };
 
 // Opening-ceremony walkouts. These are affectionate character sketches
 // distilled from eleven years of League-only chat, not verbatim quotations.
 const MANAGER_ENTRANCES = {
-  1: 'arrives from the Draft Fantasy South office carrying a laptop and a ceremonial Tony Hibbert shortlist.',
-  2: 'emerges with the velvet bag, a revised six-page circular and sole authority to explain either of them.',
-  3: 'comes through asking whether the Chairman sent anything important. Several messages are produced in evidence.',
-  4: 'walks out wearing the title medal and moving that voting rights be curtailed until morale improves.',
-  5: 'enters with a constitutional objection, a proposed playoff format and a question about next year\'s draft order.',
-  6: 'carries the rules bible with twelve amendments tabbed and one cup competition crossed out, then restored.',
-  7: 'announces that the entire exercise becomes irrelevant after GW10. The crowd checks the calendar.',
-  8: 'pushes a trolley containing 38 small cups, one for every gameweek. This is described as the simpler option.',
-  9: 'offers the mascot, a future pick and Eze for any eligible Everton defender before reaching the halfway line.',
-  10: 'unfurls an M23 half-and-half scarf and asks whether the proposed transaction is permanent or obviously a loan.',
-  11: 'completes a ten-year walk from the waiting list, surveys the silverware and calls the first cup Mickey Mouse.',
-  12: 'brings the barbecue, Haaland and the demo squad he has again been told he cannot keep.',
+  1: 'the 2019–20 champion arrives from the Draft Fantasy South office carrying a laptop and the Tony Hibbert shortlist everyone expected him to need in 2015.',
+  2: 'the inaugural champion and permanent Chairman emerges with the velvet bag, a revised six-page circular and sole authority to explain either of them.',
+  3: 'Atlético Benfield come through with eleven years of service and no recollection of the Chairman sending anything important. Several messages are produced in evidence.',
+  4: 'the reigning champion walks out in the Interjacksonale medal and moves that voting rights be curtailed until somebody takes it from him.',
+  5: 'the two-time champion enters beneath a guard of honour made entirely of Manchester City shirts. He calls himself the constitutional opposition; the trophy cabinet suggests the constitution has generally suited him.',
+  6: 'the League\'s only back-to-back champion walks out insisting none of this really matters, accompanied by three promoted players nobody else considered draftable. The Spartans have seen something in them.',
+  7: 'the 2024–25 champion announces that the entire exercise becomes irrelevant after GW10. Asterick\'s title medal makes this harder to dismiss than usual.',
+  8: 'the two-time champion pushes a trolley containing 38 small cups, one for every gameweek. This is described as the simpler option.',
+  9: 'the 2022–23 champion offers the mascot, a future pick and Eze for any eligible Everton defender before Mighty Duck reaches the halfway line.',
+  10: 'Celta Leigh-Go unfurl the M23 half-and-half scarf and take their place as the only established League institution still broadly satisfied with the existing cup.',
+  11: 'Geldog FC complete a ten-year walk from the waiting list, survey eleven seasons of silverware and call the first cup Mickey Mouse.',
+  12: 'last season\'s table-topper brings the barbecue, Haaland and the demo squad he has again been told he cannot keep. The playoff runners-up medal is left in the car.',
 };
 
 // Former managers verified from the group archive. The opening ceremony gives

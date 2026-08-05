@@ -78,6 +78,13 @@ const SB = 'the-league-sandbox';
     for (const t of Object.values(transfers)) if (t && t.managerId === mid) { ids.delete(t.outId); ids.add(t.inId); }
     return [...ids];
   };
+  const squadAtGw = async (mid, gw) => {
+    const picks = Object.values((await db.ref(`v2/leagues/${LG}/public/draft/picks`).get()).val() || {});
+    const transfers = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {});
+    const ids = new Set(picks.filter(p => p.managerId === mid).map(p => p.playerId));
+    for (const t of transfers) if (t && t.managerId === mid && t.gw <= gw) { ids.delete(t.outId); ids.add(t.inId); }
+    return [...ids];
+  };
   const byPos = (ids, pos) => ids.filter(id => players.find(p => p.id === id)?.pos === pos);
   const owned = new Set([].concat(await squadOf(1), await squadOf(2), await squadOf(3)));
   const freeOf = pos => players.filter(p => p.pos === pos && !owned.has(p.id)).map(p => p.id);
@@ -255,6 +262,7 @@ const SB = 'the-league-sandbox';
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));
   const theirMF = (await dropMine(2, 'MF'));
+  const liveBeforeTrade = [await squadAtGw(1, curGw), await squadAtGw(2, curGw)];
   const prop = await T.mutate(LG, 'tradePropose', { to: 2, give: [myMF], get: [theirMF] }, tok1);
   chk('trade proposed', !prop.error && prop.result?.id, JSON.stringify(prop.error));
   const tradeId = prop.result.id;
@@ -265,6 +273,11 @@ const SB = 'the-league-sandbox';
   ]);
   chk('double-accept executes exactly once', [acc1, acc2].filter(r => !r.error).length === 1, JSON.stringify([acc1.error, acc2.error]));
   chk('players actually swapped', (await squadOf(1)).includes(theirMF) && (await squadOf(2)).includes(myMF));
+  const tradeRecs = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {}).filter(t => t?.trade === tradeId);
+  const liveAfterTrade = [await squadAtGw(1, curGw), await squadAtGw(2, curGw)];
+  chk('mid-GW trade is ledgered only for the next unplayed GW', tradeRecs.length === 2 && tradeRecs.every(t => t.gw === curGw + 1), JSON.stringify(tradeRecs));
+  chk('mid-GW trade leaves both ongoing-GW squads byte-for-byte unchanged',
+    JSON.stringify(liveAfterTrade.map(x => [...x].sort((a, b) => a - b))) === JSON.stringify(liveBeforeTrade.map(x => [...x].sort((a, b) => a - b))));
   const prop2 = await T.mutate(LG, 'tradePropose', { to: 2, give: [theirMF], get: [myMF] }, tok1);
   chk('reject path', (await T.mutate(LG, 'tradeRespond', { tradeId: prop2.result.id, action: 'reject' }, tok2)).result?.status === 'rejected');
   const prop3 = await T.mutate(LG, 'tradePropose', { to: 2, give: [theirMF], get: [myMF] }, tok1);
@@ -694,6 +707,67 @@ const SB = 'the-league-sandbox';
     const taken = new Set([...(await squadOf(1)), ...(await squadOf(2)), ...(await squadOf(3))]);
     return players.filter(p => p.pos === pos && !taken.has(p.id)).map(p => p.id);
   };
+
+  /* Toby's exact invalid-waiver case: the outgoing player is traded away
+     after a durable waiver plan is written. Replay must lapse the claim,
+     report no execution and preserve the newer team sheet. */
+  const staleFree = (await freeNow('MF'))[0];
+  const staleOut = byPos(await squadOf(2), 'MF')[0];
+  chk('stale-out claim lodged while the player is still owned',
+    !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: staleFree, out: staleOut }] }, tok2)).error);
+  const stalePlan = await T.mutate(LG, 'waiverRunNow', { runId: 'stale-out', __failpoint: 'waivers:afterPlan' }, tok1);
+  chk('stale-out run pauses after writing its durable plan', !!stalePlan.error);
+  const swapFor = byPos(await squadOf(3), 'MF')[0];
+  const staleTrade = await T.mutate(LG, 'tradePropose', { to: 3, give: [staleOut], get: [swapFor] }, tok2);
+  const staleAccept = staleTrade.error ? staleTrade : await T.mutate(LG, 'tradeRespond', { tradeId: staleTrade.result.id, action: 'accept' }, tok3);
+  chk('outgoing player is genuinely traded away before waiver replay', !staleTrade.error && !staleAccept.error, JSON.stringify({ staleTrade, staleAccept }));
+  const postTradeSq = await squadOf(2);
+  const freshXi = [
+    ...byPos(postTradeSq, 'GK').slice(0, 1), ...byPos(postTradeSq, 'DF').slice(0, 4),
+    ...byPos(postTradeSq, 'MF').slice(0, 4), ...byPos(postTradeSq, 'FW').slice(0, 2),
+  ];
+  chk('new post-trade XI saves before the crashed waiver replays',
+    freshXi.length === 11 && !(await T.mutate(LG, 'lineupSave', { gw: curGw + 1, xi: freshXi }, tok2)).error);
+  const staleReplay = await T.mutate(LG, 'waiverRunNow', { runId: 'stale-out' }, tok1);
+  const staleRun = (await db.ref(`v2/leagues/${LG}/server/waiverRuns/manual-stale-out`).get()).val();
+  const xiAfterStale = Object.values((await db.ref(`v2/leagues/${LG}/public/lineups/2/${curGw + 1}`).get()).val() || {});
+  chk('invalid stale-out claim lapses and is not falsely reported as executed',
+    !staleReplay.error && (staleReplay.result?.executed || []).length === 0 && staleRun?.dropped === 1, JSON.stringify({ staleReplay, staleRun }));
+  chk('stale waiver replay does not overwrite the newer XI', JSON.stringify(xiAfterStale) === JSON.stringify(freshXi), JSON.stringify(xiAfterStale));
+  chk('invalid claim is cleared and its target remains unowned',
+    !(await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/${curGw}`).get()).val()
+      && ![...(await squadOf(1)), ...(await squadOf(2)), ...(await squadOf(3))].includes(staleFree));
+
+  // A different post-plan deal can leave both named claim players untouched
+  // but consume the positional flex. The claim must be rechecked as a whole,
+  // not merely pass because its in-player is free and out-player is owned.
+  const shapeFree = (await freeNow('FW'))[0];
+  const shapeOut = byPos(await squadOf(2), 'GK')[0];
+  chk('shape-race claim is legal when lodged',
+    !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: shapeFree, out: shapeOut }] }, tok2)).error);
+  const shapePlan = await T.mutate(LG, 'waiverRunNow', { runId: 'stale-shape', __failpoint: 'waivers:afterPlan' }, tok1);
+  chk('shape-race run pauses with a durable plan', !!shapePlan.error);
+  const shapeGive = byPos(await squadOf(2), 'DF')[0], shapeGet = byPos(await squadOf(3), 'FW')[0];
+  const shapeTrade = await T.mutate(LG, 'tradePropose', { to: 3, give: [shapeGive], get: [shapeGet] }, tok2);
+  const shapeAccept = shapeTrade.error ? shapeTrade : await T.mutate(LG, 'tradeRespond', { tradeId: shapeTrade.result.id, action: 'accept' }, tok3);
+  chk('intervening trade legally consumes the claimant\'s flex', !shapeTrade.error && !shapeAccept.error, JSON.stringify({ shapeTrade, shapeAccept }));
+  const shapeReplay = await T.mutate(LG, 'waiverRunNow', { runId: 'stale-shape' }, tok1);
+  const shapeRun = (await db.ref(`v2/leagues/${LG}/server/waiverRuns/manual-stale-shape`).get()).val();
+  chk('apply-time shape revalidation lapses the now-illegal claim',
+    !shapeReplay.error && (shapeReplay.result?.executed || []).length === 0 && shapeRun?.dropped === 1
+      && ![...(await squadOf(1)), ...(await squadOf(2)), ...(await squadOf(3))].includes(shapeFree),
+    JSON.stringify({ shapeReplay, shapeRun }));
+
+  const marketSquads = [await squadAtGw(1, curGw + 1), await squadAtGw(2, curGw + 1), await squadAtGw(3, curGw + 1)];
+  const marketOwned = marketSquads.flat();
+  const legalMarketShape = ids => {
+    const c = Object.fromEntries(['GK', 'DF', 'MF', 'FW'].map(pos => [pos, byPos(ids, pos).length]));
+    return c.GK >= 1 && c.GK <= 2 && c.DF >= 4 && c.DF <= 6 && c.MF >= 4 && c.MF <= 6 && c.FW >= 2 && c.FW <= 4;
+  };
+  chk('after live trades and waiver races: every squad is legal 14 and every player has one owner',
+    marketSquads.every(s => s.length === 14 && legalMarketShape(s)) && new Set(marketOwned).size === marketOwned.length,
+    JSON.stringify(marketSquads.map(s => s.length)));
+
   const mfFree = await freeNow('MF');
   const eaten = { in: mfFree[0], out: byPos(await squadOf(2), 'MF')[0] };
   chk('adjudicated-claim lodged', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [eaten] }, tok2)).error);

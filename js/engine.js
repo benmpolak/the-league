@@ -27,10 +27,10 @@
     cleanSheetMF: 1,
     per3Saves: 0, // retired by the Chairman, 1 Aug 2026
     penSave: 5,
-    penMiss: -2,
+    penMiss: -3,
     yellow: -1,
-    red: -3,
-    ownGoal: -2,
+    red: -5,
+    ownGoal: -3,
     per2Conceded: -1,
   };
 
@@ -287,7 +287,11 @@
       if (!skipAppearance && min > 0) pts += appearancePts(sc, s, 1);
       pts += (s.g || 0) * goalPts + (s.a || 0) * sc.assist;
       pts += (s.og || 0) * sc.ownGoal + (s.pm || 0) * sc.penMiss;
-      pts += (s.yc || 0) * sc.yellow + (s.rc || 0) * sc.red;
+      // A red-card deduction is the TOTAL disciplinary sanction for that
+      // fixture: it already includes any yellow-card deductions. In
+      // particular, second yellow + red is -5, never -7. DGWs are safe
+      // because each fixture row is scored separately above.
+      pts += (s.rc || 0) ? (s.rc || 0) * sc.red : (s.yc || 0) * sc.yellow;
       const cs60 = min >= 60 ? (s.cs || 0) : 0;
       if (player.pos === 'GK' || player.pos === 'DF') {
         pts += cs60 * sc.cleanSheet;

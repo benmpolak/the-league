@@ -52,10 +52,10 @@ const DEFAULT_SCORING = {
   cleanSheetMF: 1,
   per3Saves: 0, // retired by the Chairman, 1 Aug 2026 — Marc liked it; overruled
   penSave: 5,
-  penMiss: -2,
+  penMiss: -3,
   yellow: -1,
-  red: -3,
-  ownGoal: -2,
+  red: -5,
+  ownGoal: -3,
   per2Conceded: -1,
 };
 const SCORING_LABELS = {
@@ -614,7 +614,7 @@ async function enterDemo() {
     { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
     { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — the certified lobus of ${teamName(8)} — has SCORED. Great feet for a big man.` },
     { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
-    { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -3` },
+    { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -5` },
     { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
     { txt: `⚽ GOAL — ${dfw(12).name} (${dfw(12).club}) — benched by ${teamName(12)} (!)` },
   ].map((x, i) => ({ ts: Date.now() - (i + 2) * 7 * 60 * 1000, gw: 1, ...x }));
@@ -2192,7 +2192,9 @@ function statPoints(player, s, skipAppearance) {
   if (!skipAppearance && min > 0) pts += appearancePts(sc, s, 1);
   pts += (s.g || 0) * goalPts + (s.a || 0) * sc.assist;
   pts += (s.og || 0) * sc.ownGoal + (s.pm || 0) * sc.penMiss;
-  pts += (s.yc || 0) * sc.yellow + (s.rc || 0) * sc.red;
+  // Red includes the yellows that produced it: two yellows and the resulting
+  // dismissal are one -5 disciplinary sanction, not -1 -1 -5.
+  pts += (s.rc || 0) ? (s.rc || 0) * sc.red : (s.yc || 0) * sc.yellow;
   // clean-sheet points require 60+ minutes (real FPL/DF rule) — a defender
   // subbed at half-time gets nothing even if his team keeps the sheet. The
   // gate lives here so it's correct no matter how the feed reports cs.
@@ -3645,8 +3647,8 @@ function showCeremony() {
       paradeTimer = setInterval(showFlag, 1400); // Marc, UAT: "still slightly too fast"
     }
     if (s.mparade) {
-      // the twelve walk out (Ben, UAT night) — brisker than the clubs, since
-      // unlike the clubs they will be here all season
+      // The twelve are the point of the parade, not a loading spinner. Each
+      // entrance gets enough screen time to read; Ian's skip button remains.
       const MGR_WALKS = [
         m => `emerges from the tunnel to polite applause and one boo. The boo was from ${esc(managerName(rivalsOf(m.id)[0] || state.managers.find(x => x.id !== m.id).id))}.`,
         m => `walks out holding the ${esc(sponsorFor(m.id) || 'unsponsored')} matchday programme, waving at a section of ${esc(stadium(m.id))} that is not waving back.`,
@@ -3678,7 +3680,7 @@ function showCeremony() {
         f++;
       };
       walkOut();
-      paradeTimer = setInterval(walkOut, 950); // "make that bit quick"
+      paradeTimer = setInterval(walkOut, 6500);
     }
     $('#cerNext').onclick = () => { i++; show(); };
     $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
