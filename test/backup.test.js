@@ -107,6 +107,18 @@ const runRestore = args => runScript(RESTORE, args);
   chk('REAL-league restore refuses a v2 snapshot carrying public.mock',
     mockIntoReal.code === 1 && /mock|Simulation Chamber/i.test(mockIntoReal.out), mockIntoReal.out.slice(0, 300));
 
+  const prePickFile = path.join(tmp(), 'pre-pick-live-clock.json');
+  const prePick = JSON.parse(fs.readFileSync(v2Snap, 'utf8'));
+  prePick.public.phase = 'draft';
+  prePick.public.draft = { ...prePick.public.draft, order: [1, 2, 3], picks: [],
+    deadline: Date.now() + 60_000, ceremonyReady: { 1: true, 2: true, 3: true } };
+  fs.writeFileSync(prePickFile, JSON.stringify(prePick));
+  const prePickRestore = runRestore([prePickFile, '--schema', 'v2', '--league', LG, '--yes']);
+  const restoredDraft = (await db.ref(`v2/leagues/${LG}/public/draft`).get()).val();
+  chk('Admin restore cannot revive a pre-pick clock or old ceremony ticks', prePickRestore.code === 0
+    && restoredDraft?.deadline == null && restoredDraft?.ceremonyReady == null
+    && /require every manager/i.test(prePickRestore.out), prePickRestore.out.slice(0, 300));
+
   /* valid restores land in exactly the declared tree */
   await db.ref(`leagues/${LG}`).set(null);
   await db.ref(`v2/leagues/${LG}`).set(null);

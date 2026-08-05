@@ -307,6 +307,15 @@ const SB = 'the-league-sandbox';
   chk('draft start on a never-initialised league seeds then starts', !coldStart.error
     && (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'draft', JSON.stringify(coldStart.error));
 
+  const forgedCeremony = structuredClone(sbSeed);
+  forgedCeremony.phase = 'draft';
+  forgedCeremony.draft = { ...forgedCeremony.draft, order: [1, 2, 3], picks: [], deadline: Date.now() + 60_000, ceremonyReady: { 1: true, 2: true, 3: true } };
+  const forgedImport = await T.mutate(SB, 'importState', { state: forgedCeremony }, sbTok1);
+  const forgedPick = await T.mutate(SB, 'draftAutopick', {}, sbTok1);
+  chk('restore cannot smuggle a live pick-one clock around the ceremony barrier', !forgedImport.error
+    && (await db.ref(`v2/leagues/${SB}/public/draft/deadline`).get()).val() === null
+    && forgedPick.error?.status === 'FAILED_PRECONDITION', JSON.stringify({ forgedImport, forgedPick }));
+
   await T.mutate(SB, 'importState', { state: sbSeed }, sbTok1);
 
   // the ready room: self-mark, Chairman vouch, gating, and the phase gate below
@@ -482,6 +491,11 @@ const SB = 'the-league-sandbox';
   chk('heckle cooldown cannot be bypassed by alternating custom text to line',
     (await T.mutate(SB, 'heckle', { line: 2 }, sbTok2)).error?.status === 'RESOURCE_EXHAUSTED');
   chk('empty custom heckle refused', (await T.mutate(SB, 'heckle', { text: '   ' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok1);
+  await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok2);
+  const sbRoom = await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok3);
+  chk('sandbox draft races begin only after all three test managers finish the ceremony',
+    !sbRoom.error && sbRoom.result?.complete === true && sbRoom.result?.count === 3, JSON.stringify(sbRoom));
   chk('out-of-turn pick rejected', (await T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   const [p1, p2] = await Promise.all([
     T.mutate(SB, 'draftPick', { playerId: players[0].id, expectedCount: 0 }, sbTok1),
@@ -803,10 +817,34 @@ const SB = 'the-league-sandbox';
   /* ---------------- sol r3: ceremony clock + pick/undo race + wedge heal ---------------- */
   const dl = () => db.ref(`v2/leagues/${LG}/public/draft/deadline`).get().then(s => s.val());
   chk('draft start leaves the clock UNARMED (the ceremony must not eat pick one)', await dl() === null);
-  const arm = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok3); // any manager, not just the Chairman
+  const prematurePick = await T.mutate(LG, 'draftPick', { playerId: players.find(p => p.pos === 'GK').id, expectedCount: 0 }, tok2);
+  chk('first pick is server-locked while any ceremony is outstanding', prematurePick.error?.status === 'FAILED_PRECONDITION', JSON.stringify(prematurePick));
+  const prematureAuto = await T.mutate(LG, 'draftAutopick', {}, tok2);
+  chk('autopick cannot bypass the shared ceremony barrier', prematureAuto.error?.status === 'FAILED_PRECONDITION', JSON.stringify(prematureAuto));
+  const earlyArm = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok3);
+  chk('clockStart cannot bypass the shared ceremony barrier', !earlyArm.error && earlyArm.result?.armed === false
+    && earlyArm.result?.legacyAck === true && earlyArm.result?.waiting?.count === 1 && await dl() === null, JSON.stringify(earlyArm));
+  const adminBypasses = await Promise.all([
+    T.mutate(LG, 'draftAdmin', { op: 'pause' }, tok1),
+    T.mutate(LG, 'draftAdmin', { op: 'resume' }, tok1),
+    T.mutate(LG, 'draftAdmin', { op: 'breakDone', round: 14 }, tok1),
+    T.mutate(LG, 'draftAdmin', { op: 'timewaste' }, tok2),
+  ]);
+  chk('pause/resume/break/timewaste admin routes cannot manufacture a pre-ceremony clock',
+    adminBypasses.every(r => r.error?.status === 'FAILED_PRECONDITION') && await dl() === null,
+    JSON.stringify(adminBypasses));
+  const through3 = await T.mutate(LG, 'draftAdmin', { op: 'ceremonyReady' }, tok3);
+  const through1 = await T.mutate(LG, 'draftAdmin', { op: 'ceremonyReady' }, tok1);
+  chk('partial room acknowledgement stays unarmed at 2/3', !through3.error && !through1.error
+    && through1.result?.count === 2 && through1.result?.complete === false && await dl() === null, JSON.stringify(through1));
+  const through2 = await T.mutate(LG, 'draftAdmin', { op: 'ceremonyReady' }, tok2);
   const dlArmed = await dl();
-  chk('any manager arms the clock after the pomp', !arm.error && arm.result?.armed === true
-    && dlArmed > Date.now() && dlArmed <= Date.now() + 31_000, JSON.stringify(arm));
+  chk('the FINAL manager through atomically opens the room and arms pick one', !through2.error
+    && through2.result?.count === 3 && through2.result?.complete === true && through2.result?.armed === true
+    && dlArmed > Date.now() && dlArmed <= Date.now() + 31_000, JSON.stringify(through2));
+  const duplicateReady = await T.mutate(LG, 'draftAdmin', { op: 'ceremonyReady' }, tok2);
+  chk('duplicate ceremony acknowledgement counts once and preserves the deadline', !duplicateReady.error
+    && duplicateReady.result?.count === 3 && await dl() === dlArmed, JSON.stringify(duplicateReady));
   const arm2 = await T.mutate(LG, 'draftAdmin', { op: 'clockStart' }, tok2);
   chk('second arm is an idempotent no-op', !arm2.error && arm2.result?.armed === false && await dl() === dlArmed);
   const firstPick = await T.mutate(LG, 'draftPick', { playerId: players.find(p => p.pos === 'GK').id, expectedCount: 0 }, tok2);

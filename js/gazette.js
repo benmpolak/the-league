@@ -35,6 +35,7 @@ window.Gazette = (() => {
   }
   function streaks(mid, uptoGw) {
     let w = 0, l = 0, unbeaten = 0, winless = 0;
+    let countW = true, countL = true, countUnbeaten = true, countWinless = true;
     for (let i = uptoGw; i >= 0; i--) {
       if (gwStatus(i) !== 'final') continue;
       const pr = pairingsFor(i).find(x => x.includes(mid));
@@ -42,10 +43,11 @@ window.Gazette = (() => {
       const op = pr[0] === mid ? pr[1] : pr[0];
       const a = gwManagerPoints(mid, i), b = gwManagerPoints(op, i);
       const res = a > b ? 'W' : a < b ? 'L' : 'D';
-      if (res === 'W' && l === 0 && winless === 0) w++; else if (w > 0) break;
-      if (res === 'L' && w === 0 && unbeaten === 0) l++; else if (l > 0) break;
-      if (res !== 'L') unbeaten++; else if (unbeaten > 0) break;
-      if (res !== 'W') winless++; else if (winless > 0) break;
+      if (countW && res === 'W') w++; else countW = false;
+      if (countL && res === 'L') l++; else countL = false;
+      if (countUnbeaten && res !== 'L') unbeaten++; else countUnbeaten = false;
+      if (countWinless && res !== 'W') winless++; else countWinless = false;
+      if (!countW && !countL && !countUnbeaten && !countWinless) break;
     }
     return { w, l, unbeaten, winless };
   }
@@ -60,10 +62,10 @@ window.Gazette = (() => {
     }
     return null;
   }
-  function provenance(mid, pid) {
+  function provenance(mid, pid, uptoGw = REGULAR_GWS) {
     const pk = (state.draft.picks || []).find(x => x.managerId === mid && x.playerId === pid);
     if (pk && pk.n) return { kind: 'draft', round: Math.ceil(pk.n / state.managers.length), n: pk.n };
-    const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
+    const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid && t.gw <= uptoGw);
     if (!tr) return null;
     return { kind: tr.trade ? 'trade' : tr.windowDraft ? 'window' : tr.waiver ? 'waiver' : 'trough' };
   }
@@ -97,7 +99,7 @@ window.Gazette = (() => {
   }
   function topScorer(mid, gwIdx) {
     let best = null;
-    for (const pid of lineupFor(mid, gwIdx)) {
+    for (const pid of effectiveXI(mid, gwIdx).xi) {
       const pts = gwPlayerPoints(pid, gwIdx);
       if (!best || pts > best.pts) best = { p: PLAYER_BY_ID[pid], pts };
     }
@@ -121,8 +123,8 @@ window.Gazette = (() => {
     // f: {a, b, sa, sb, w, l, ws, ls, margin, posW, posL, stW, stL, derby, revenge, benchL, avgW, avgL, cut}
     if (f.sa === f.sb) return f.sa >= 55 ? 'shootout-draw' : 'stalemate';
     if (f.derby) return 'derby';
-    if (f.posW - f.posL >= 5 && f.posW >= 7) return 'upset';           // lower-placed side wins big table gap
     if (f.posL <= 2 && f.posW >= 9) return 'bottle-job';               // top side beaten by the basement
+    if (f.posW - f.posL >= 5 && f.posW >= 7) return 'upset';           // lower-placed side wins big table gap
     if (f.margin >= 25) return 'rout';
     if (f.cut) return 'six-pointer';
     if (f.benchL >= 12 && f.benchL > f.margin) return 'bench-disaster'; // the bench would have turned it
@@ -230,14 +232,9 @@ window.Gazette = (() => {
     }
     return used;
   }
-  const _idsCache = new Map();
   function editionLineIds(gw) {
-    const key = `${gw}:${state.transfers.length}`;
-    if (_idsCache.has(key)) return _idsCache.get(key);
     build(gw, new Set()); // replay with empty memory — ids are what matter
-    const ids = [...usedThisEdition];
-    _idsCache.set(key, ids);
-    return ids;
+    return [...usedThisEdition];
   }
 
   /* ---------- fact assembly per match ---------- */
@@ -282,7 +279,7 @@ window.Gazette = (() => {
     const bits = [];
     if (f.starW && f.starW.pts > 0) {
       const sh = shiftLine(f.starW.p.id, gwIdx);
-      const prov = provenance(f.w, f.starW.p.id);
+      const prov = provenance(f.w, f.starW.p.id, gwIdx);
       const provTxt = prov?.kind === 'draft' ? `a round-${prov.round} pick doing top-of-the-board work`
         : prov?.kind === 'trough' ? 'plucked from the Trough for nothing'
         : prov?.kind === 'waiver' ? 'a waiver-wire signing'
@@ -378,7 +375,9 @@ window.Gazette = (() => {
 
   function build(gwIdx, used) {
     usedThisEdition = [];
-    const table = h2hStandings();
+    // A back edition is a historical document: later results must not move
+    // its table, reclassify its matches or reshuffle its lead stories.
+    const table = h2hStandings(false, gwIdx + 1);
     const posOf = Object.fromEntries(table.map((r, k) => [r.id, k]));
     const facts = pairingsFor(gwIdx).map(([a, b]) => factsFor(a, b, gwIdx, table, posOf))
       .sort((x, y) => y.weight - x.weight);

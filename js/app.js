@@ -317,6 +317,7 @@ function applySharedSnapshot(data) {
   data.draft.order = toArr(data.draft.order);
   data.draft.picks = toArr(data.draft.picks);
   data.draft.breaksDone = toArr(data.draft.breaksDone);
+  data.draft.ceremonyReady = data.draft.ceremonyReady || {};
   data.draft.paused = !!data.draft.paused;
   // first sight of a fresh draft on this device → roll the opening ceremony
   const fresh = data.phase === 'draft' && data.draft.picks.length === 0;
@@ -360,12 +361,18 @@ function applySharedSnapshot(data) {
   if (!state.settings.posMin) state.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
   if (!state.settings.posMax) state.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
   save(); render();
+  reportCeremonyReady(); // a previously-finished device retries until its shared tick lands
   const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
   if (fresh && cerKey && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== cerKey) {
     showCeremony(); // stamps "seen" itself, at the END — never at open
   }
 };
-window.onSyncConnection = up => { syncConnected = up; renderSyncArea(); if (document.getElementById('whoOverlay')) renderIdentity(); };
+window.onSyncConnection = up => {
+  syncConnected = up;
+  renderSyncArea();
+  if (document.getElementById('whoOverlay')) renderIdentity();
+  if (up) { ceremonyReportFailures = 0; reportCeremonyReady(); } // retry an acknowledgement lost with the connection
+};
 // a failed private/membership read updates the open identity card's tech line
 window.onSyncReadError = () => { if (document.getElementById('whoOverlay')) renderIdentity(); };
 
@@ -390,6 +397,7 @@ window.onMembershipSnapshot = m => {
   syncIdentity();
   if (membership && _pendingPrivate !== undefined) { applyPrivateNode(_pendingPrivate); _pendingPrivate = undefined; }
   render();
+  if (membership) { ceremonyReportFailures = 0; reportCeremonyReady(); }
 };
 window.onAuthChanged = u => {
   authUser = u;
@@ -431,7 +439,7 @@ function freshState() {
       pickTimer: 30,
       scoring: { ...DEFAULT_SCORING },
     },
-    draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0 },
+    draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0, ceremonyReady: {} },
     autolists: {},         // managerId -> [pid] ranked personal autopick list / shortlist
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
@@ -1977,8 +1985,8 @@ function respondTrade(id, accept) {
     if (!squadShapeOk(fa) || !squadShapeOk(ta)) return null;
     const out = [...arr];
     for (let k = 0; k < give.length; k++) {
-      out.push({ managerId: tr.from, outId: give[k], inId: get[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: true });
-      out.push({ managerId: tr.to, outId: get[k], inId: give[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: true });
+      out.push({ managerId: tr.from, outId: give[k], inId: get[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
+      out.push({ managerId: tr.to, outId: get[k], inId: give[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
     }
     return out;
   }).then(ok => {
@@ -2414,9 +2422,9 @@ function gwStatus(i) {
 // stats before the real kickoff date). Locks and transfer maths must keep
 // using the time-based gwHasStarted — this is for showing points, only.
 function gwUnderway(i) { const st = gwStatus(i); return st === 'live' || st === 'final' || gwHasStarted(i); }
-function h2hStandings(includeLive = false) {
+function h2hStandings(includeLive = false, uptoGw = REGULAR_GWS) {
   const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, name: m.name, team: m.team, p: 0, w: 0, d: 0, l: 0, pts: 0, pf: 0, pa: 0 }]));
-  for (let i = 0; i < REGULAR_GWS; i++) {
+  for (let i = 0; i < Math.min(uptoGw, REGULAR_GWS); i++) {
     const st = gwStatus(i);
     if (st !== 'final' && !(includeLive && st === 'live')) continue;
     for (const [a, b] of pairingsFor(i)) {
@@ -2839,17 +2847,21 @@ window.addEventListener('popstate', () => {
 /* ----- transaction receipts (sol UX #1): after the deal, the paperwork —
    who came, who went, which gameweek it counts from, what it does to your
    XI, and where to go next. Same overlay language as everything else. ----- */
-function receiptSheet({ title, inP, outP, gw, note = '', mid = whoami }) {
-  const wasStarting = outP && mid && lineupFor(mid, gw).includes(outP.id);
+function receiptSheet({ title, inP, outP, gw, note = '', mid = whoami, wasStarting = null, pending = false }) {
+  // Executed deals strip the outgoing player before this sheet opens, so the
+  // caller captures his pre-deal XI status. Pending claims have changed
+  // nothing yet and must never masquerade as completed business.
+  const started = wasStarting == null ? !!(outP && mid && lineupFor(mid, gw).includes(outP.id)) : !!wasStarting;
   const impact = !outP ? ''
-    : wasStarting ? `${esc(outP.name)} was in your GW${GAMEWEEKS[gw].n} XI — pick his replacement on My Team.`
+    : pending ? `No XI change yet — ${esc(outP.name)} stays in your GW${GAMEWEEKS[gw].n} side unless the claim lands.`
+    : started ? `${esc(outP.name)} was in your GW${GAMEWEEKS[gw].n} XI — pick his replacement on My Team.`
     : `Your XI is untouched — ${esc(outP.name)} was on the bench.`;
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:420px;width:94%" role="dialog" aria-label="Receipt">
     <h2>${esc(title)}</h2>
     ${dealRows(outP ? [outP] : [], inP ? [inP] : [])}
-    <p style="font-size:12.5px;margin-top:8px">Counts from <b>GW${GAMEWEEKS[gw].n}</b>.${impact ? ` ${impact}` : ''}</p>
+    <p style="font-size:12.5px;margin-top:8px">${pending ? 'Would count' : 'Counts'} from <b>GW${GAMEWEEKS[gw].n}</b>.${impact ? ` ${impact}` : ''}</p>
     ${note ? `<p class="muted" style="font-size:12px">${note}</p>` : ''}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn ghost small" id="rcSquad" style="flex:1">View squad</button>
@@ -3514,6 +3526,7 @@ function bindSetup() {
     }
     state.draft.order = order;
     state.draft.deadline = null; // armed by armClock() once the ceremony ends
+    state.draft.ceremonyReady = {};
     // draft-night snapshot: anyone who joins a PL club after this is locked until the window shuts
     state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
     state.phase = 'draft';
@@ -3553,6 +3566,35 @@ const FLAG_BEARERS = {
   'Wolves': 'a very good sports scientist selling a very good midfielder',
 };
 const ceremonyKey = () => state.draft.order.length ? `${state.draft.order.join('-')}:${state.draftPool?.at || ''}` : '';
+function draftCeremonyStatus() {
+  const order = toArr(state.draft?.order);
+  const ready = state.draft?.ceremonyReady || {};
+  const count = order.filter(mid => ready[mid] === true).length;
+  return { count, total: order.length, complete: order.length > 0 && count === order.length };
+}
+const draftRoomOpen = () => !netOn() || state.draft.picks.length > 0 || draftCeremonyStatus().complete;
+let ceremonyReportPending = false, ceremonyReportFailures = 0, ceremonyReportTimer = null, ceremonyReportKey = '';
+function reportCeremonyReady() {
+  if (!netOn() || ceremonyReportPending || state.phase !== 'draft' || state.draft.picks.length) return;
+  if (!whoami || whoami === -1 || !state.draft.order.includes(whoami)) return;
+  if (state.draft.ceremonyReady?.[whoami] === true) return;
+  const key = ceremonyKey();
+  if (!key || localStorage.getItem(`${LS_NS}-ceremony-seen`) !== key) return;
+  if (ceremonyReportKey !== key) { ceremonyReportKey = key; ceremonyReportFailures = 0; }
+  ceremonyReportPending = true;
+  serverAct('draftAdmin', { op: 'ceremonyReady' })
+    .then(() => { ceremonyReportFailures = 0; })
+    .catch(() => {
+      // A one-off callable failure after the final manager leaves the ceremony
+      // must not wedge the room with nobody left to create another snapshot.
+      // Retry twice; reconnect/sign-in resets the allowance thereafter.
+      ceremonyReportFailures++;
+      if (ceremonyReportFailures < 3 && !ceremonyReportTimer) {
+        ceremonyReportTimer = setTimeout(() => { ceremonyReportTimer = null; reportCeremonyReady(); }, 3000);
+      }
+    })
+    .finally(() => { ceremonyReportPending = false; });
+}
 function showCeremony() {
   if ($('#ceremony')) return;
   const order = state.draft.order;
@@ -3560,7 +3602,10 @@ function showCeremony() {
   // "seen" is stamped only when the ceremony ENDS — stamping at open meant a
   // refresh mid-pomp skipped straight to a live clock (sol r4). The key
   // includes draftPool.at so a rehearsal/reset with the same order replays it.
-  const cerFinish = () => { localStorage.setItem(`${LS_NS}-ceremony-seen`, ceremonyKey()); };
+  const cerFinish = () => {
+    localStorage.setItem(`${LS_NS}-ceremony-seen`, ceremonyKey());
+    reportCeremonyReady();
+  };
   const ordinals = ['twelfth', 'eleventh', 'tenth', 'ninth', 'eighth', 'seventh', 'sixth', 'fifth', 'fourth', 'third', 'second', 'FIRST'];
   const steps = [
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
@@ -3571,7 +3616,7 @@ function showCeremony() {
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
-    { h: 'LET THE DRAFT BEGIN', p: `${managerName(order[0])} is on the clock. The Committee is watching.` },
+    { h: 'REPORT TO THE DRAFT ROOM', p: `You are through. Pick one begins only when all ${order.length} managers have finished or skipped the ceremony.` },
   ];
   let i = 0;
   const ov = document.createElement('div');
@@ -3582,14 +3627,14 @@ function showCeremony() {
   let paradeTimer = null;
   const show = () => {
     clearInterval(paradeTimer);
-    if (i >= steps.length) { cerFinish(); ov.remove(); return; }
+    if (i >= steps.length) { cerFinish(); ov.remove(); render(); return; }
     const s = steps[i];
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
       ${s.parade || s.mparade ? '<div id="paradeSlot" class="parade-slot"></div>'
         : s.big ? `<div class="ceremony-name">${esc(s.p)}</div>` : `<p class="rules-p" style="text-align:center">${esc(s.p)}</p>`}
       <div style="margin-top:18px;display:flex;gap:8px;justify-content:center">
-        <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'To the Console' : 'Continue the pomp'}</button>
+        <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'I’m through — join the room' : 'Continue the pomp'}</button>
         <button class="btn ghost small" id="cerSkip" title="Reserved for Ian">Skip ceremony (Ian's button)</button>
       </div></div>`;
     if (s.parade) {
@@ -3648,7 +3693,7 @@ function showCeremony() {
       paradeTimer = setInterval(walkOut, 950); // "make that bit quick"
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); toast('Ceremony skipped. Ian nods, once.'); };
+    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
   };
   show();
 }
@@ -3944,9 +3989,11 @@ function viewDraft() {
   const n = pickNo();
   const round = Math.floor(n / state.managers.length) + 1;
   const taken = draftedIds();
+  const ceremony = draftCeremonyStatus();
+  const roomOpen = draftRoomOpen();
 
   // personal state: is it MY pick, and if not, how many picks until it is?
-  const iAmUp = netOn() && whoami && whoami !== -1 && mid === whoami;
+  const iAmUp = roomOpen && netOn() && whoami && whoami !== -1 && mid === whoami;
   const picksUntilMine = (() => {
     if (!netOn() || !whoami || whoami === -1 || iAmUp) return null;
     const m = state.managers.length;
@@ -3960,10 +4007,13 @@ function viewDraft() {
   // the big board: whose pick it is must be readable from across the room
   // (Ben, mock night: "it needs to be clearer that it's your pick — the names
   // are too small"). The group-chat intercept strip died for the space.
-  const whoLine = iAmUp
+  const whoLine = !roomOpen
+    ? `<span class="oc-label">OPENING CEREMONY</span><span class="oc-name">Waiting for the room</span><span class="oc-sub">${ceremony.count}/${ceremony.total} managers through</span>`
+    : iAmUp
     ? `<span class="oc-label" style="color:var(--accent)">&#9201; YOUR PICK</span><span class="oc-name" style="color:var(--accent)">${esc(managerName(mid))}, you're on the clock</span>`
     : `<span class="oc-label">ON THE CLOCK</span><span class="oc-name">${esc(managerName(mid))}</span>${picksUntilMine ? `<span class="oc-sub">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
   return `
+  ${!roomOpen ? `<div class="ceremony-wait" role="status"><b>The first pick is locked.</b><span>${ceremony.count}/${ceremony.total} managers have finished or skipped the opening ceremony. The clock starts automatically when the last manager arrives.</span></div>` : ''}
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
     <div class="who">${whoLine}</div>
     ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
@@ -3973,10 +4023,10 @@ function viewDraft() {
       return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
     })()}</div>
     <div class="oc-btns">
-      ${state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
+      ${roomOpen && state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
-      ${(!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
-      <button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>
+      ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
+      ${roomOpen ? '<button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>' : ''}
       <button class="btn ghost small" id="heckleBtn" title="Random barb, your own words, or a player recommendation — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
     </div>
   </div>
@@ -4128,6 +4178,41 @@ function autolistRows() {
   }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
 }
 
+/* Pick alerts own the important top billboard. Heckles and klaxons are room
+   noise: they share a lower rail and queue there, so neither can cover a pick
+   or shout over the other (Marc, final mock-night notes). */
+let _draftShoutQueue = [], _draftShoutEl = null, _draftShoutCurrent = null, _draftShoutTimer = null, _pickFlashTimer = null;
+function pumpDraftShouts() {
+  if (document.querySelector('.pick-flash')) return; // the actual pick always owns the room
+  if (_draftShoutEl && document.body.contains(_draftShoutEl)) return;
+  if (_draftShoutTimer) { clearTimeout(_draftShoutTimer); _draftShoutTimer = null; }
+  _draftShoutEl = null;
+  _draftShoutCurrent = null;
+  const next = _draftShoutQueue.shift();
+  if (!next) return;
+  const el = document.createElement('div');
+  el.className = `heckle-flash draft-shout ${next.kind}-flash${next.you ? ' heckle-you' : ''}`;
+  el.innerHTML = next.html;
+  document.body.appendChild(el);
+  _draftShoutEl = el;
+  _draftShoutCurrent = next;
+  _draftShoutTimer = setTimeout(() => {
+    el.remove();
+    if (_draftShoutEl === el) { _draftShoutEl = null; _draftShoutCurrent = null; }
+    _draftShoutTimer = null;
+    pumpDraftShouts();
+  }, next.ms);
+}
+function queueDraftShout(kind, html, ms, you = false) {
+  // Tests and admin resets may remove a rail item directly; do not let its old
+  // timer hold the next live message hostage.
+  if (_draftShoutEl && !document.body.contains(_draftShoutEl)) {
+    clearTimeout(_draftShoutTimer); _draftShoutTimer = null; _draftShoutEl = null; _draftShoutCurrent = null;
+  }
+  _draftShoutQueue.push({ kind, html, ms, you });
+  pumpDraftShouts();
+}
+
 /* draft-night heckles: fresh stamps in state.heckles become a flash on every
    screen, biggest on the device that's actually on the clock */
 function renderHeckles() {
@@ -4144,11 +4229,7 @@ function heckleFlash(mid, h) {
   const txt = (h && typeof h.text === 'string' && h.text.trim())
     || (typeof HECKLES !== 'undefined' && HECKLES[h?.line]) || 'HURRY UP.';
   const onClock = whoami && whoami !== -1 && currentManagerId() === whoami;
-  const el = document.createElement('div');
-  el.className = 'heckle-flash' + (onClock ? ' heckle-you' : '');
-  el.innerHTML = `<span class="hk-who">${esc(managerName(mid))}</span> &ldquo;${esc(txt)}&rdquo;`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), onClock ? 6000 : 4000);
+  queueDraftShout('heckle', `<span class="hk-who">${esc(managerName(mid))}</span> &ldquo;${esc(txt)}&rdquo;`, onClock ? 6000 : 4000, onClock);
 }
 
 /* the heckle desk (Marc, mock night): random barb, your own words, or a
@@ -4244,19 +4325,24 @@ function renderKlaxons() {
   window._klaxSeen = picks.length;
 }
 function pickFlash(pk, p) {
+  // A pick is the only compulsory information in this little circus. If room
+  // noise is live, put it back at the head of its queue and resume it only
+  // after the pick billboard has had the room to itself.
+  if (_draftShoutEl && document.body.contains(_draftShoutEl)) {
+    if (_draftShoutCurrent) _draftShoutQueue.unshift(_draftShoutCurrent);
+    clearTimeout(_draftShoutTimer); _draftShoutTimer = null;
+    _draftShoutEl.remove(); _draftShoutEl = null; _draftShoutCurrent = null;
+  }
   document.querySelectorAll('.pick-flash').forEach(x => x.remove()); // last pick wins the billboard
+  clearTimeout(_pickFlashTimer);
   const el = document.createElement('div');
   el.className = 'heckle-flash pick-flash';
   el.innerHTML = `<span class="hk-who">PICK ${pk.n}</span> ${esc(managerName(pk.managerId))} takes <b>${esc(p.name)}</b> <span class="muted">(${esc(p.pos)}, ${esc(p.team)})</span>`;
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 5000);
+  _pickFlashTimer = setTimeout(() => { el.remove(); _pickFlashTimer = null; pumpDraftShouts(); }, 5000);
 }
 function klaxonFlash(k, p) {
-  const el = document.createElement('div');
-  el.className = 'heckle-flash klaxon-flash';
-  el.innerHTML = `<span class="hk-who">${esc(k.label)}</span> ${esc(p.name)} &mdash; ${esc(k.line)}`;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 6500);
+  queueDraftShout('klaxon', `<span class="hk-who">${esc(k.label)}</span> ${esc(p.name)} &mdash; ${esc(k.line)}`, 6500);
 }
 
 function draftOrderStrip() {
@@ -4654,7 +4740,7 @@ function poolTable() {
         <td class="act" style="white-space:nowrap">${taken.has(p.id) ? (() => {
           const pk = state.draft.picks.find(x => x.playerId === p.id);
           return pk ? `<span class="tag gone-tag" title="Pick ${pk.n}">#${pk.n} ${esc(teamName(pk.managerId))}</span>` : '<span class="tag gone-tag">GONE</span>';
-        })() : `${live ? `<button class="btn small${canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}`}</td>
+        })() : `${live ? `<button class="btn small${draftRoomOpen() && canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}`}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -4668,6 +4754,7 @@ let firedDeadline = 0;
 let clockArming = false;
 function armClock() {
   if (clockArming || !state.settings.pickTimer) return;
+  if (netOn() && !draftRoomOpen()) return;
   if (state.draft.deadline && currentManagerId() != null) return; // armed with someone on the clock — nothing to do
   clockArming = true;
   if (netOn()) {
@@ -4734,9 +4821,11 @@ function bindDraft() {
       }
       if (!state.draft.deadline) {
         // the start op leaves the deadline null so the ceremony can't eat pick
-        // one's clock — the first device past the pomp arms it (op idempotent)
-        el.textContent = '—'; el.classList.remove('urgent');
-        if (el2) el2.textContent = '—';
+        // one's clock. The final authenticated ceremony acknowledgement arms
+        // it server-side; clockStart below is only the idempotent recovery path.
+        const ceremony = draftCeremonyStatus();
+        el.textContent = draftRoomOpen() ? '—' : `${ceremony.count}/${ceremony.total}`; el.classList.remove('urgent');
+        if (el2) el2.textContent = el.textContent;
         armClock();
         return;
       }
@@ -4806,6 +4895,7 @@ function bindDraft() {
   if (sc) sc.onclick = () => { window._squadOpen = false; sd?.classList.remove('open'); };
   const apBtn = $('#autoPick');
   if (apBtn) apBtn.onclick = () => {
+    if (!draftRoomOpen()) { toast('Pick one waits for every manager to finish the ceremony.'); return; }
     // strictly the on-clock manager's call — their list, their pick. The
     // Chairman can force it (DF's admin Force Pick) but gets the confirm.
     const mid = currentManagerId();
@@ -4879,6 +4969,7 @@ function bindPoolTable() {
   };
   document.querySelectorAll('[data-pick]').forEach(b => b.onclick = async () => {
     const pid = +b.dataset.pick, mid = currentManagerId(), p = PLAYER_BY_ID[pid];
+    if (!draftRoomOpen()) { toast('Pick one is locked until every manager is through the ceremony.'); return; }
     // explain, don't dead-tap: a disabled-looking button now says why (tooltips
     // don't exist on touch — the #1 "it's broken" generator on phones)
     if (!canActFor(mid)) { toast(`${managerName(mid)} is on the clock — not you.`); return; }
@@ -5720,6 +5811,7 @@ function bindTransfers() {
     if (!outId) { toast('Pick who goes out first'); return; }
     const inP = PLAYER_BY_ID[+b.dataset.wdin];
     const tgw = transferGw();
+    const outWasStarting = lineupFor(actor, tgw).includes(outId);
     if (!squadShapeOk([...squadAt(actor, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
     if (!await confirmSheet({
       title: 'Window Draft signing',
@@ -5729,7 +5821,7 @@ function bindTransfers() {
     })) return;
     if (netOn()) {
       serverAct('windowDraft', { op: 'pick', inId: inP.id, outId, expectedTurn: state.windowDraft?.turn || 0 })
-        .then(() => receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: transferGw(), mid: actor, note: 'The snake moves on.' }))
+        .then(() => receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: tgw, mid: actor, wasStarting: outWasStarting, note: 'The snake moves on.' }))
         .catch(() => {});
       return;
     }
@@ -5744,7 +5836,7 @@ function bindTransfers() {
         state.lineups[actor][tgw] = lu.filter(id => id !== outId);
         pushShared(`lineups/${actor}/${tgw}`, state.lineups[actor][tgw]);
       }
-      receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: transferGw(), mid: actor, note: 'The snake moves on.' });
+      receiptSheet({ title: 'Window Draft pick', inP, outP: PLAYER_BY_ID[outId], gw: tgw, mid: actor, wasStarting: outWasStarting, note: 'The snake moves on.' });
       wdAdvance(false, { mid: actor, in: inP.id, out: outId });
     });
   });
@@ -5911,6 +6003,7 @@ function bindTransfers() {
         if (!actGuard(mid, 'squad')) return;
         const inId = +b.dataset.trin, outId = transfersView.out;
         const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
+        const startingByGw = GAMEWEEKS.map((_, g) => lineupFor(mid, g).includes(outId));
         if (b.dataset.waiv === '1') {
           if (!await confirmSheet({
             title: 'Lodge this claim?',
@@ -5920,7 +6013,7 @@ function bindTransfers() {
           })) return;
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
-          receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid,
+          receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
             note: `Blind claim #${myClaims(mid).length} on your list — resolves ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
           return;
         }
@@ -5937,7 +6030,7 @@ function bindTransfers() {
           serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) })
             .then(r => {
               transfersView.out = null;
-              receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: r.tgw, mid, note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
+              receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: r.tgw, mid, wasStarting: startingByGw[r.tgw], note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
             }).catch(() => {});
           return;
         }
@@ -5957,7 +6050,7 @@ function bindTransfers() {
           }
           transfersView.out = null;
           save(); render();
-          receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: tgw, mid, note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
+          receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: tgw, mid, wasStarting: startingByGw[tgw], note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
         });
       });
     }
@@ -6297,10 +6390,15 @@ function seasonRecordsNow(uptoGw) {
   streakScan('winrun', 'Longest winning run', (s, so) => s > so);
   streakScan('loserun', 'Longest losing run', (s, so) => s < so);
   streakScan('unbeaten', 'Longest unbeaten run', (s, so) => s >= so);
-  // most-transferred player (in+out records through the settled window)
+  // most-transferred player. A trade writes reciprocal ledger rows, so each
+  // traded player is counted once from the row where he moves OUT; ordinary
+  // signings still move both the arrival and the drop once each.
   scan('shuttle', 'Most transferred player', 'max', emit => {
     const count = {};
-    for (const t of state.transfers) if (t.gw <= uptoGw) { count[t.inId] = (count[t.inId] || 0) + 1; count[t.outId] = (count[t.outId] || 0) + 1; }
+    for (const t of state.transfers) if (t.gw <= uptoGw) {
+      if (!t.trade) count[t.inId] = (count[t.inId] || 0) + 1;
+      count[t.outId] = (count[t.outId] || 0) + 1;
+    }
     for (const [pid, n] of Object.entries(count)) if (PLAYER_BY_ID[pid]) emit(n, { pid: +pid });
   });
   // best/worst COMPLETED transfer report (6-GW window preferred, else 3)
@@ -6316,7 +6414,7 @@ function seasonRecordsNow(uptoGw) {
   }
   // highest single player performance in a starting XI
   scan('perf', 'Highest player score', 'max', emit => {
-    for (const g of settled) for (const m of state.managers) for (const pid of lineupFor(m.id, g)) emit(gwPlayerPoints(pid, g), { mid: m.id, gw: g, pid });
+    for (const g of settled) for (const m of state.managers) for (const pid of effectiveXI(m.id, g).xi) emit(gwPlayerPoints(pid, g), { mid: m.id, gw: g, pid });
   });
   // biggest handicap overturned in the playoffs — only when the bracket is real
   const po = typeof playoffState === 'function' ? playoffState() : null;
@@ -6361,9 +6459,9 @@ function recordBookNowCard() {
   const arch = archiveExtremes();
   const scope = r => {
     if (!arch) return 'this season';
-    if (r.key === 'hi' && r.value > arch.hi) return `since records began (25/26's best was ${arch.hi})`;
-    if (r.key === 'lo' && r.value < arch.lo) return `since records began (25/26's low was ${arch.lo})`;
-    if (r.key === 'margin' && r.value > arch.margin) return `since records began (25/26's widest was ${arch.margin})`;
+    if (r.key === 'hi' && r.value > arch.hi) return `best in the loaded 25/26–26/27 archive (25/26's best was ${arch.hi})`;
+    if (r.key === 'lo' && r.value < arch.lo) return `lowest in the loaded 25/26–26/27 archive (25/26's low was ${arch.lo})`;
+    if (r.key === 'margin' && r.value > arch.margin) return `widest in the loaded 25/26–26/27 archive (25/26's widest was ${arch.margin})`;
     return 'this season';
   };
   const who = h => h.pid != null && !h.mid ? esc(PLAYER_BY_ID[h.pid]?.name || '?')
@@ -6386,6 +6484,8 @@ function recordBookNowCard() {
    EXECUTED moves live in state.transfers. ----- */
 function tradeBatchOf(t) {
   if (!t.trade) return [t];
+  if (t.trade !== true) return state.transfers.filter(u => u.trade === t.trade && u.managerId === t.managerId);
+  // Legacy local/demo ledgers used boolean true rather than the trade id.
   return state.transfers.filter(u => u.trade && u.managerId === t.managerId && u.gw === t.gw && Math.abs((u.t || 0) - (t.t || 0)) < 5000);
 }
 function transferWindowFacts(t, horizon) {
@@ -6398,7 +6498,7 @@ function transferWindowFacts(t, horizon) {
   if (gws.length < horizon) return null; // window not complete — no judgement yet
   const batch = tradeBatchOf(t);
   const sum = (pid, realised) => gws.reduce((tot, g) => {
-    if (realised && !lineupFor(t.managerId, g).includes(pid)) return tot;
+    if (realised && !effectiveXI(t.managerId, g).xi.includes(pid)) return tot;
     return tot + gwPlayerPoints(pid, g);
   }, 0);
   const apps = pid => gws.reduce((n, g) => n + (appearedInGw(pid, g) ? 1 : 0), 0);
@@ -6546,6 +6646,7 @@ function gazetteSheet(gwIdx = null) {
       ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
       ${at != null && today && at !== today.gw ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
     </div>` : '';
+  const replacing = !!document.querySelector('.gazette-room');
   document.querySelectorAll('.gazette-room').forEach(x => x.closest('.overlay')?.remove());
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -6556,7 +6657,7 @@ function gazetteSheet(gwIdx = null) {
     ${archNav}
   </div>`;
   document.body.appendChild(ov);
-  pushOvState();
+  if (!replacing) pushOvState();
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   ov.querySelector('#gzClose').onclick = () => closeOv(ov);
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {

@@ -361,11 +361,28 @@ async function sealFullBoard(league) {
   return !!res.committed;
 }
 
+// Pick one is a room start, not merely manager one's start.  A manager is
+// counted once (by authenticated manager id) when their ceremony ends or they
+// explicitly skip it.  Every route capable of moving the first pick consults
+// this same predicate; the client-side waiting card is only an explanation.
+function draftCeremonyStatus(state) {
+  const order = toArr(state?.draft?.order).map(Number);
+  // RTDB materialises dense numeric-key maps as arrays. Treat both shapes as
+  // the same manager-id ledger or each acknowledgement would erase the last.
+  const rawReady = state?.draft?.ceremonyReady;
+  const ready = rawReady && typeof rawReady === 'object' ? rawReady : {};
+  const count = order.filter(mid => ready[mid] === true).length;
+  return { count, total: order.length, complete: order.length > 0 && count === order.length };
+}
+
 /* ----- draft ----- */
 ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const base = leagueBase(league);
   if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
   if (state.draft.paused) throw new HttpsError('failed-precondition', 'draft is paused');
+  if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) {
+    throw new HttpsError('failed-precondition', 'waiting for every manager to finish the opening ceremony');
+  }
   const onClock = eng.currentManagerId(state);
   if (onClock == null) {
     // board full but phase never flipped (the final pick's follow-up died) — heal
@@ -383,6 +400,9 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const res = await db().ref(`${base}/public/draft`).transaction(seededObj(state.draft, dr => {
     const arr = toArr(dr.picks).map(x => ({ ...x }));
     if (arr.length !== expected) return;
+    // Re-check the committed draft node inside the pick transaction. The last
+    // ceremony acknowledgement and a keen first click may arrive together.
+    if (!arr.length && !draftCeremonyStatus({ draft: dr }).complete) return;
     if (arr.some(p => p.playerId === player.id)) return;
     arr.push({ managerId: onClock, playerId: player.id, n: arr.length + 1 });
     dr.picks = arr;
@@ -404,6 +424,9 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
 ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
   if (state.draft.paused) throw new HttpsError('failed-precondition', 'draft is paused');
+  if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) {
+    throw new HttpsError('failed-precondition', 'waiting for every manager to finish the opening ceremony');
+  }
   const onClock = eng.currentManagerId(state);
   if (onClock == null) {
     await sealFullBoard(league); // heal a died final follow-up (txn-verified)
@@ -423,6 +446,27 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
   const base = leagueBase(league);
   const d = `${base}/public/draft`;
   const op = data.op;
+  if (op === 'ceremonyReady') {
+    if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
+    if (!state.draft.order.includes(a.managerId)) throw new HttpsError('permission-denied', 'not in this draft');
+    const res = await db().ref(d).transaction(seededObj(state.draft, dr => {
+      if (toArr(dr.picks).length) return dr; // harmless late/retried acknowledgement
+      const order = toArr(dr.order).map(Number);
+      if (!order.includes(a.managerId)) return;
+      dr.ceremonyReady = { ...(dr.ceremonyReady && typeof dr.ceremonyReady === 'object' ? dr.ceremonyReady : {}), [a.managerId]: true };
+      const status = draftCeremonyStatus({ draft: dr });
+      // The final acknowledgement starts the first clock in this SAME txn.
+      // There is no gap in which a client can see 12/12 with an unarmed room.
+      if (status.complete && state.settings.pickTimer && !dr.deadline && !dr.paused) {
+        dr.deadline = Date.now() + state.settings.pickTimer * 1000;
+      }
+      return dr;
+    }));
+    if (!res.committed) throw new HttpsError('aborted', 'the draft room moved on');
+    const draft = res.snapshot.val() || {};
+    const status = draftCeremonyStatus({ draft });
+    return { ok: true, ...status, armed: !!draft.deadline };
+  }
   if (op === 'clockStart') {
     // arms the first deadline once the opening ceremony is over — the start op
     // deliberately leaves it null so the pomp can't eat manager one's clock.
@@ -435,12 +479,28 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
       const healed = await sealFullBoard(league);
       return { ok: true, armed: false, healed };
     }
+    const status = draftCeremonyStatus(state);
+    if (!state.draft.picks.length && !status.complete) {
+      // Backward compatibility for a phone holding the previous cached app:
+      // that client calls clockStart only after ITS local ceremony ends. Count
+      // that authenticated manager as through, but still require every id in
+      // the order before arming. One stale phone cannot bypass or wedge the room.
+      const compat = await ACTIONS.draftAdmin({ league, a, data: { op: 'ceremonyReady' }, state, eng });
+      return { ...compat, waiting: { count: compat.count, total: compat.total, complete: compat.complete }, legacyAck: true };
+    }
     if (!state.settings.pickTimer || state.draft.deadline || state.draft.paused) return { ok: true, armed: false };
-    await db().ref(`${d}/deadline`).set(Date.now() + state.settings.pickTimer * 1000);
-    return { ok: true, armed: true };
+    const res = await db().ref(d).transaction(seededObj(state.draft, dr => {
+      if (dr.deadline || dr.paused) return dr;
+      if (!toArr(dr.picks).length && !draftCeremonyStatus({ draft: dr }).complete) return dr;
+      dr.deadline = Date.now() + state.settings.pickTimer * 1000;
+      return dr;
+    }));
+    const deadline = res.snapshot.val()?.deadline || null;
+    return { ok: true, armed: !!deadline };
   }
   if (op === 'timewaste') {
     if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
+    if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
     const onClock = eng.currentManagerId(state);
     if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your clock to waste');
     const used = state.draft.timewastes?.[onClock] || 0;
@@ -506,7 +566,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
         c.settings = merged;
       }
       c.phase = 'draft';
-      c.draft = { ...(c.draft || {}), order, picks: null, deadline: null }; // deadline armed by clockStart when the ceremony ends — the pomp must not eat pick one's clock
+      c.draft = { ...(c.draft || {}), order, picks: null, deadline: null, ceremonyReady: null }; // the final manager through the ceremony arms pick one
       c.draftPool = { at: Date.now(), ids: poolIds };
       c.ready = null; // the roll call served its purpose; it must not haunt the next reset
       return c;
@@ -517,9 +577,16 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     }
     return { ok: true };
   }
-  if (op === 'pause') { await db().ref().update({ [`${d}/paused`]: true, [`${d}/pausedLeft`]: Math.max(0, (state.draft.deadline || 0) - Date.now()) }); return { ok: true }; }
-  if (op === 'resume') { await db().ref().update({ [`${d}/paused`]: false, [`${d}/deadline`]: Date.now() + (state.draft.pausedLeft || (state.settings.pickTimer || 30) * 1000) }); return { ok: true }; }
+  if (op === 'pause') {
+    if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
+    await db().ref().update({ [`${d}/paused`]: true, [`${d}/pausedLeft`]: Math.max(0, (state.draft.deadline || 0) - Date.now()) }); return { ok: true };
+  }
+  if (op === 'resume') {
+    if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
+    await db().ref().update({ [`${d}/paused`]: false, [`${d}/deadline`]: Date.now() + (state.draft.pausedLeft || (state.settings.pickTimer || 30) * 1000) }); return { ok: true };
+  }
   if (op === 'breakDone') {
+    if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
     await db().ref().update({ [`${d}/breaksDone`]: [...state.draft.breaksDone, data.round ?? state.draft.breaksDone.length], [`${d}/deadline`]: Date.now() + (state.settings.pickTimer || 30) * 1000 });
     return { ok: true };
   }
@@ -1502,6 +1569,14 @@ ACTIONS.importState = async ({ league, a, data }) => {
   }
   if (s.draft != null && !isPlainObj(s.draft)) importError('draft');
   if (s.draft?.picks != null && toArr(s.draft.picks).length > 500) importError('draft picks');
+
+  // Restoring a pre-pick draft must not be an escape hatch around the shared
+  // ceremony barrier. A restore creates a new room session, so everybody
+  // acknowledges again—even if the file claimed all managers were through.
+  if (s.phase === 'draft' && s.draft && !toArr(s.draft.picks).length) {
+    s.draft.ceremonyReady = {};
+    s.draft.deadline = null;
+  }
 
   const base = leagueBase(league);
   const pub = {};

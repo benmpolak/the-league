@@ -232,10 +232,15 @@ const chk = (name, ok, detail = '') => {
     state.draft.picks.push({ n: state.draft.picks.length + 1, managerId: 3, playerId: dm.id });
     render();
     await new Promise(r => setTimeout(r, 80));
+    const queued = _draftShoutQueue.some(x => x.kind === 'klaxon');
+    // The pick billboard owns the room first. Clear it, then the interrupted
+    // heckle, to prove the commissioned klaxon is retained and fires next.
+    document.querySelector('.pick-flash')?.remove(); clearTimeout(_pickFlashTimer); _pickFlashTimer = null; pumpDraftShouts();
+    _draftShoutEl?.remove(); pumpDraftShouts();
     const flash = document.querySelector('.klaxon-flash');
-    return { dm: dm.name, fired: !!flash, label: flash?.textContent?.includes('KLAXON') };
+    return { dm: dm.name, queued, fired: !!flash, label: flash?.textContent?.includes('KLAXON') };
   });
-  chk('P8e Ben Levy DM klaxon fires on a listed sitter', !!p8e.dm && p8e.fired && p8e.label, JSON.stringify(p8e));
+  chk('P8e Ben Levy DM klaxon queues behind a heckle, then fires on a listed sitter', !!p8e.dm && p8e.queued && p8e.fired && p8e.label, JSON.stringify(p8e));
 
   // ---- P8f: projected points columns are fixture-count aware and optional
   const p8f = await page.evaluate(() => {

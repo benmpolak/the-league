@@ -21,7 +21,8 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     return {
       rout: c({ margin: 30 }),
       derby: c({ derby: true, margin: 30 }),                      // derby outranks rout
-      upset: c({ posW: 10, posL: 1, margin: 12 }),
+      upset: c({ posW: 10, posL: 4, margin: 12 }),
+      bottle: c({ posW: 10, posL: 1, margin: 12 }),
       stalemate: c({ sa: 40, sb: 40, ws: 40, ls: 40, margin: 0 }),
       shootout: c({ sa: 60, sb: 60, ws: 60, ls: 60, margin: 0 }),
       hsd: c({ ls: 58, ws: 62, margin: 4, avgW: 55 }),
@@ -31,7 +32,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     };
   });
   chk('archetypes classify from facts (derby outranks rout; gates hold)',
-    arch.rout === 'rout' && arch.derby === 'derby' && arch.upset === 'upset' && arch.stalemate === 'stalemate'
+    arch.rout === 'rout' && arch.derby === 'derby' && arch.upset === 'upset' && arch.bottle === 'bottle-job' && arch.stalemate === 'stalemate'
     && arch.shootout === 'shootout-draw' && arch.hsd === 'high-scoring-defeat' && arch.sixp === 'six-pointer'
     && arch.snb === 'smash-and-grab' && arch.bench === 'bench-disaster', JSON.stringify(arch));
 

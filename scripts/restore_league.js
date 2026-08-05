@@ -110,6 +110,15 @@ async function main() {
     console.error('REFUSING: snapshot carries a Simulation Chamber flag (public.mock) — sandbox-only. Delete public.mock from the file, or restore to the-league-sandbox.');
     process.exit(1);
   }
+  // A full-tree Admin restore bypasses callable validation. If it restores a
+  // draft before pick one, make it a fresh room session: no saved deadline or
+  // ceremony ticks may start the draft behind somebody's opening ceremony.
+  if (args.schema === 'v2' && isObj(data.public) && data.public.phase === 'draft'
+      && isObj(data.public.draft) && Object.keys(data.public.draft.picks || {}).length === 0) {
+    data.public.draft.deadline = null;
+    data.public.draft.ceremonyReady = null;
+    console.log('safety: pre-pick restore will require every manager to finish the ceremony again');
+  }
 
   const dbPath = args.schema === 'v2' ? `v2/leagues/${args.league}` : `leagues/${args.league}`;
   const keys = isObj(data) ? Object.keys(data).sort().join(', ') : typeof data;
