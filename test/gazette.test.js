@@ -54,6 +54,10 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
       headline, frontHeadline, scoreline: !!doc.querySelector('.prog-lead-story .prog-scoreline'),
       awards: !!doc.querySelector('.prog-awards'), oldFiles: [...doc.querySelectorAll('.prog-sec')].some(x => /Old Files/.test(x.textContent)),
       dressingRoom: [...doc.querySelectorAll('.prog-sec')].some(x => /Dressing Room/.test(x.textContent)),
+      sheetRows: doc.querySelectorAll('.prog-team-sheet .prog-sheet-row').length,
+      receiptRows: doc.querySelectorAll('.prog-draft-receipts .prog-receipt').length,
+      selectionDetail: /STARTED/.test(doc.querySelector('.prog-team-sheet')?.textContent || '') && /BENCHED/.test(doc.querySelector('.prog-team-sheet')?.textContent || ''),
+      draftSources: /DRAFT R\d+\s*·\s*PICK \d+/.test(doc.querySelector('.prog-draft-receipts')?.textContent || ''),
       words: txt.trim().split(/\s+/).length,
       footballese: /form book|fine margins|full backing|three points|job done|bragging rights|dressing room|got away with it/i.test(txt),
     };
@@ -62,7 +66,8 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     facts.deterministic && facts.scoresOk && facts.stories >= 3, JSON.stringify(facts));
   chk('front page leads on an editorial headline; the edition has lore, verdicts and football language',
     facts.headline && facts.frontHeadline === facts.headline && facts.scoreline && facts.awards && facts.oldFiles
-      && facts.dressingRoom && facts.words >= 280 && facts.footballese, JSON.stringify(facts));
+      && facts.dressingRoom && facts.sheetRows === 12 && facts.receiptRows === 6 && facts.selectionDetail && facts.draftSources
+      && facts.words >= 280 && facts.footballese, JSON.stringify(facts));
 
   /* repetition cooldown: consecutive editions share no distinctive line ids */
   const cool = await page.evaluate(() => {

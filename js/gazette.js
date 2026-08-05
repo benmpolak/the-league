@@ -69,6 +69,15 @@ window.Gazette = (() => {
     if (!tr) return null;
     return { kind: tr.trade ? 'trade' : tr.windowDraft ? 'window' : tr.waiver ? 'waiver' : 'trough' };
   }
+  function provenanceLabel(prov, compact = false) {
+    if (!prov) return compact ? 'SOURCE UNKNOWN' : '';
+    if (prov.kind === 'draft') return compact ? `DRAFT R${prov.round} · PICK ${prov.n}` : `drafted in round ${prov.round} (No. ${prov.n} overall)`;
+    if (prov.kind === 'trough') return compact ? 'TROUGH SIGNING' : 'plucked from the Trough for nothing';
+    if (prov.kind === 'waiver') return compact ? 'WAIVER CLAIM' : 'claimed off waivers';
+    if (prov.kind === 'trade') return compact ? 'TRADE ARRIVAL' : 'landed in a trade';
+    if (prov.kind === 'window') return compact ? 'WINDOW DRAFT' : 'taken in the Window Draft';
+    return compact ? 'SOURCE UNKNOWN' : '';
+  }
   // a player scoring against a fantasy club that used to own him
   function oldClubGrudge(pid, oppMid, gwIdx) {
     return state.transfers.some(t => t.managerId === oppMid && t.outId === pid && t.gw <= gwIdx)
@@ -437,10 +446,7 @@ window.Gazette = (() => {
     if (f.starW && f.starW.pts > 0) {
       const sh = shiftLine(f.starW.p.id, gwIdx);
       const prov = provenance(f.w, f.starW.p.id, gwIdx);
-      const provTxt = prov?.kind === 'draft' ? `a round-${prov.round} pick doing top-of-the-board work`
-        : prov?.kind === 'trough' ? 'plucked from the Trough for nothing'
-        : prov?.kind === 'waiver' ? 'a waiver-wire signing'
-        : prov?.kind === 'trade' ? 'landed in a trade' : '';
+      const provTxt = provenanceLabel(prov);
       const grudge = oldClubGrudge(f.starW.p.id, f.l, gwIdx) ? ` — and yes, against his old club, because football does this` : '';
       bits.push(`${f.starW.p.name} carried the winners with ${f.starW.pts}${sh ? ` (${sh})` : ''}${provTxt ? `, ${provTxt}` : ''}${grudge}.`);
     }
@@ -460,18 +466,30 @@ window.Gazette = (() => {
     const seed = `rep:${gwIdx}:${f.a}:${f.b}`;
     if (f.sa === f.sb) {
       const open = pickLine(f.sa >= 55 ? 'shootout-lead' : 'draw-lead', f, seed, used);
-      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p></div>`;
+      const star = !f.starW || (f.starL && f.starL.pts > f.starW.pts) ? f.starL : f.starW;
+      const owner = star === f.starW ? f.w : f.l;
+      const source = star ? provenanceLabel(provenance(owner, star.p.id, gwIdx)) : '';
+      const detail = star && star.pts > 0 ? `${star.p.name} led the cast with ${star.pts}${source ? `, ${source}` : ''}.` : '';
+      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p>${detail ? `<p class="prog-match-detail">${esc(detail)}</p>` : ''}</div>`;
     }
     const open = pickLine(STORY_BANK[f.kind] || 'std-report', f, seed, used);
-    const extra = f.stL.l >= 3 ? ` ${esc(`${f.tl} have now lost ${f.stL.l} straight.`)}` : '';
-    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}${extra}</p></div>`;
+    const details = [];
+    if (f.starW && f.starW.pts > 0) {
+      const source = provenanceLabel(provenance(f.w, f.starW.p.id, gwIdx));
+      const shift = shiftLine(f.starW.p.id, gwIdx);
+      details.push(`${f.starW.p.name} supplied ${f.starW.pts}${shift ? ` — ${shift}` : ''}${source ? `; ${source}` : ''}.`);
+    }
+    if (f.benchL > 0) details.push(`${f.tl} left ${f.benchL} attainable point${f.benchL === 1 ? '' : 's'} outside the final XI.`);
+    if (f.stL.l >= 3) details.push(`${f.tl} have now lost ${f.stL.l} straight.`);
+    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}</p>${details.length ? `<p class="prog-match-detail">${esc(details.join(' '))}</p>` : ''}</div>`;
   }
 
   function nib(f, gwIdx) {
     const tails = f.margin >= 18 ? ['No need for the highlights.', 'A long way home for the beaten.', 'Comfortable is doing some work.']
       : ['Job done; points banked.', 'Fine margins, loud consequences.', 'The sort of result managers call professional.'];
     const tail = tails[hash(`nib:${gwIdx}:${f.a}:${f.b}`) % tails.length];
-    return `<div class="prog-nib"><b>${esc(f.tw)} ${f.ws}–${f.ls} ${esc(f.tl)}</b><span>${f.starW && f.starW.pts > 0 ? `${esc(f.starW.p.name)} ${f.starW.pts}. ` : ''}${esc(tail)}</span></div>`;
+    const source = f.starW ? provenanceLabel(provenance(f.w, f.starW.p.id, gwIdx), true) : '';
+    return `<div class="prog-nib"><b>${esc(f.tw)} ${f.ws}–${f.ls} ${esc(f.tl)}</b><span>${f.starW && f.starW.pts > 0 ? `${esc(f.starW.p.name)} ${f.starW.pts}${source ? ` · ${esc(source)}` : ''}. ` : ''}${esc(tail)}</span></div>`;
   }
 
   /* ---------- departments (conditional; only when the facts support them) ---------- */
@@ -490,6 +508,39 @@ window.Gazette = (() => {
       if (aw.robbed) cards.push({ k: 'ROBBED', v: teamName(aw.robbed.l), d: `${aw.robbed.ls} points and nothing. Contact the authorities.` });
       if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 4).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
     }
+
+    // Every manager's consequential team-sheet calls, not merely the winner's
+    // score. STARTED is the submitted XI; BENCHED excludes anyone rescued by
+    // an auto-sub, so these really are points that stayed unused.
+    const sheetRows = state.managers.map(m => {
+      const selected = lineupFor(m.id, gwIdx).map(pid => ({ p: PLAYER_BY_ID[pid], pts: gwPlayerPoints(pid, gwIdx) })).filter(x => x.p)
+        .sort((a, b) => b.pts - a.pts).slice(0, 2);
+      const finalIds = new Set(effectiveXI(m.id, gwIdx).xi);
+      const unused = squadAt(m.id, gwIdx).filter(p => !finalIds.has(p.id)).map(p => ({ p, pts: gwPlayerPoints(p.id, gwIdx) }))
+        .sort((a, b) => b.pts - a.pts)[0];
+      const waste = benchWasteOf(m.id, gwIdx);
+      return `<div class="prog-sheet-row">
+        <b>${esc(teamName(m.id))}</b>
+        <span><em>STARTED</em> ${selected.map(x => `${esc(x.p.name)} ${x.pts}`).join(' &middot; ') || 'No returns'}</span>
+        <span class="${unused?.pts > 0 ? 'prog-bench-hit' : ''}"><em>BENCHED</em> ${unused ? `${esc(unused.p.name)} ${unused.pts}` : 'Nobody'}${waste ? ` &middot; ${waste} point${waste === 1 ? '' : 's'} left` : ' &middot; nothing left unused'}</span>
+      </div>`;
+    });
+    out.push(`<div class="prog-sec">The Team-Sheet Audit</div><p class="prog-deck">Who delivered after being selected, who remained unused, and the attainable points each manager left behind.</p><div class="prog-team-sheet">${sheetRows.join('')}</div>`);
+
+    // The week's best performers, with the receipt attached: draft round and
+    // exact pick, or the route by which the player entered the squad.
+    const performers = [];
+    for (const m of state.managers) for (const pid of effectiveXI(m.id, gwIdx).xi) {
+      const p = PLAYER_BY_ID[pid];
+      if (p) performers.push({ mid: m.id, p, pts: gwPlayerPoints(pid, gwIdx), source: provenance(m.id, pid, gwIdx) });
+    }
+    performers.sort((a, b) => b.pts - a.pts || a.p.name.localeCompare(b.p.name));
+    const receipts = performers.slice(0, 6).map(x => `<div class="prog-receipt">
+      <strong>${esc(x.p.name)} <span>${x.pts}</span></strong>
+      <b>${esc(teamName(x.mid))}</b>
+      <small>${esc(provenanceLabel(x.source, true))}</small>
+    </div>`).join('');
+    if (receipts) out.push(`<div class="prog-sec">Draft Receipts</div><p class="prog-deck">The leading returns, traced back to the decision that put them there.</p><div class="prog-draft-receipts">${receipts}</div>`);
 
     // The archive turns fixtures into grudges from GW1, before current-season
     // form has had time to become a story of its own.
