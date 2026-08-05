@@ -94,6 +94,7 @@ const COMMITTEE_QUOTES = [
   'Lee asks why he wasn’t consulted. The fraternity remains democratic.',
   'Stick that one in your Monzo savings pot.',
   'The Committee has seen worse. The Committee has minutes proving it.',
+  'The Trough opens at 11.03. Not 11.02. Standards matter.',
 ];
 const committeeSays = () => `The Committee: “${COMMITTEE_QUOTES[Math.floor(Math.random() * COMMITTEE_QUOTES.length)]}”`;
 
@@ -3589,10 +3590,14 @@ function showCeremony() {
     reportCeremonyReady();
   };
   const ordinals = ['twelfth', 'eleventh', 'tenth', 'ninth', 'eighth', 'seventh', 'sixth', 'fifth', 'fourth', 'third', 'second', 'FIRST'];
+  const absentFriends = typeof FORMER_MANAGERS !== 'undefined' && FORMER_MANAGERS.length
+    ? FORMER_MANAGERS.length > 1 ? `${FORMER_MANAGERS.slice(0, -1).join(', ')} and ${FORMER_MANAGERS.at(-1)}` : FORMER_MANAGERS[0]
+    : 'the former managers who escaped the minutes';
   const steps = [
     { h: '&#9917; THE OPENING CEREMONY', p: 'Live and exclusive coverage with David Prutton, alongside Big Al Brazil, who has been here since the gallops. Season twelve of The League. Ian, be upstanding. Especially you.' },
     { h: '&#127884; THE PARADE OF CLUBS', p: '', parade: true },
     { h: '&#127933; THE PARADE OF MANAGERS', p: '', mparade: true },
+    { h: '&#128367; ABSENT FRIENDS', p: `The stadium rises for ${absentFriends}. Departed from The League, not this mortal coil. Their picks remain in the minutes.` },
     { h: '&#127908; Main stage', p: 'Coldplay perform Viva la Vida in its 9-minute extended ceremony arrangement. Chris Martin has been told this is a twelve-man WhatsApp league that left its old website over £145. He says every revolution is beautiful.' },
     { h: '&#129309; The draw', p: 'The Committee opens the envelopes. The order is final. The complaints will not be.' },
     ...[...order].reverse().map((mid, i) => ({
@@ -3666,9 +3671,10 @@ function showCeremony() {
           return;
         }
         const m = state.managers[f];
+        const entrance = typeof MANAGER_ENTRANCES !== 'undefined' ? MANAGER_ENTRANCES[m.id] : '';
         slot.innerHTML = `<div style="display:flex;justify-content:center;margin-bottom:6px">${kitSvg(m.id, 46)}</div>
           <div class="parade-team">${esc(m.team || m.name)}</div>
-          <div class="parade-bearer">${esc(managerName(m.id))} ${MGR_WALKS[(m.id * 7 + 3) % MGR_WALKS.length](m)}</div>`;
+          <div class="parade-bearer">${esc(managerName(m.id))} ${entrance ? esc(entrance) : MGR_WALKS[(m.id * 7 + 3) % MGR_WALKS.length](m)}</div>`;
         f++;
       };
       walkOut();

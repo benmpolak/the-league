@@ -331,7 +331,7 @@ window.Gazette = (() => {
     const stW = streaks(w, gwIdx), stL = streaks(l, gwIdx);
     const cutBand = pos => pos >= 5 && pos <= 10; // both within sniffing distance of the dashed line
     const f = {
-      a, b, sa, sb, w, l, ws, ls, margin: ws - ls,
+      gw: gwIdx, a, b, sa, sb, w, l, ws, ls, margin: ws - ls,
       ta: teamName(a), tb: teamName(b), tw: teamName(w), tl: teamName(l),
       mgrW: managerName(w), mgrL: managerName(l),
       posW, posL, stW, stL,
@@ -374,12 +374,24 @@ window.Gazette = (() => {
 
   // The surviving Draft Fantasy archive gives the paper an actual memory.
   // Match current managers by name, then print only facts recovered from it.
+  function groupChatFile(f) {
+    if (typeof CHAT_ARCHIVE === 'undefined' || !CHAT_ARCHIVE.length) return '';
+    // A callback should feel discovered, not compulsory: roughly one edition
+    // in four opens the group-chat drawer.
+    if (hash(`chat-gate:${f.gw}`) % 4 !== 0) return '';
+    const exact = CHAT_ARCHIVE.filter(x => x.mids.length > 1 && x.mids.includes(f.a) && x.mids.includes(f.b));
+    const candidates = exact.length ? exact : CHAT_ARCHIVE.filter(x => x.mids.includes(f.a) || x.mids.includes(f.b));
+    if (!candidates.length) return '';
+    const file = candidates[hash(`chat:${f.gw}:${f.a}:${f.b}`) % candidates.length];
+    return `The group chat archive, ${file.year}: ${file.line}`;
+  }
   function oldFiles(f) {
-    if (typeof LEAGUE_HISTORY === 'undefined' || !LEAGUE_HISTORY.length) return '';
+    const chat = groupChatFile(f);
+    if (typeof LEAGUE_HISTORY === 'undefined' || !LEAGUE_HISTORY.length) return chat;
     const S = LEAGUE_HISTORY.at(-1);
     const ia = S.managers.findIndex(m => m.name === managerName(f.a));
     const ib = S.managers.findIndex(m => m.name === managerName(f.b));
-    if (ia < 0 || ib < 0) return '';
+    if (ia < 0 || ib < 0) return chat;
     let aw = 0, bw = 0, d = 0, latest = null;
     for (const m of S.matches) {
       const [, h, a, hs, as] = m;
@@ -388,14 +400,14 @@ window.Gazette = (() => {
       if (aScore > bScore) aw++; else if (bScore > aScore) bw++; else d++;
       latest = { gw: m[0], aScore, bScore };
     }
-    if (!latest) return '';
+    if (!latest) return chat;
     const champ = S.honours?.champion?.name;
     const crown = champ === managerName(f.a) ? `${managerName(f.a)} arrived as the reigning champion. `
       : champ === managerName(f.b) ? `${managerName(f.b)} arrived as the reigning champion. ` : '';
     const ledger = aw === bw
       ? `Last season's ledger finished level: ${aw} win${aw === 1 ? '' : 's'} each${d ? ` and ${d} draw${d === 1 ? '' : 's'}` : ''}.`
       : `${managerName(aw > bw ? f.a : f.b)} held last season's edge, ${Math.max(aw, bw)} win${Math.max(aw, bw) === 1 ? '' : 's'} to ${Math.min(aw, bw)}${d ? `, with ${d} draw${d === 1 ? '' : 's'}` : ''}.`;
-    return `${crown}${ledger} Their last meeting ended ${latest.aScore}–${latest.bScore} in GW${latest.gw}. Old files, fresh ammunition.`;
+    return `${crown}${ledger} Their last meeting ended ${latest.aScore}–${latest.bScore} in GW${latest.gw}. Old files, fresh ammunition.${chat ? ` ${chat}` : ''}`;
   }
 
   function dressingRoomQuote(f, gwIdx) {
