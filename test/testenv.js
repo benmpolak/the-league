@@ -190,7 +190,7 @@ function buildSeedState(players, managerCount = 3) {
     managers,
     settings: {
       squadSize: 14,
-      posMin: { GK: 1, DF: 3, MF: 3, FW: 1 },
+      posMin: { GK: 1, DF: 4, MF: 4, FW: 2 },
       posMax: { GK: 2, DF: 6, MF: 6, FW: 4 },
       pickTimer: 30,
       scoring: {

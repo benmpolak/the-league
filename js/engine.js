@@ -13,6 +13,10 @@
 })(typeof self !== 'undefined' ? self : this, function () {
 
   const XI_RULES = { size: 11, GK: [1, 1], DF: [3, 5], MF: [2, 5], FW: [1, 3] };
+  // Constitutional squad shape: 14 total. The lower bounds make the flex
+  // genuinely singular — reaching 6 DF, 6 MF or 4 FW consumes the only room
+  // for an outfield maximum, so two flex maxima cannot coexist.
+  const SQUAD_RULES = { size: 14, min: { GK: 1, DF: 4, MF: 4, FW: 2 }, max: { GK: 2, DF: 6, MF: 6, FW: 4 } };
   const REGULAR_GWS = 33;
   const DEFAULT_SCORING = {
     appearanceStart: 2,
@@ -139,12 +143,11 @@
       return ids;
     }
     function squadShapeOk(state, squad) {
-      if (squad.length !== state.settings.squadSize) return false; // exact size — trades can't shrink/grow a squad
+      if (squad.length !== SQUAD_RULES.size) return false; // exact size — trades can't shrink/grow a squad
       if (new Set(squad.map(p => p.id)).size !== squad.length) return false; // nobody owns a player twice
       const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
       squad.forEach(p => c[p.pos]++);
-      const { posMin, posMax } = state.settings;
-      return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= posMin[pos] && c[pos] <= posMax[pos]);
+      return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= SQUAD_RULES.min[pos] && c[pos] <= SQUAD_RULES.max[pos]);
     }
     // ownership computed from an arbitrary transfers list — for in-transaction checks
     function ownedIdsGiven(state, transfers, gwIdx) {
@@ -163,7 +166,7 @@
     const arrivalLocked = isArrival;
 
     /* ---- draft ---- */
-    const totalPicks = state => state.managers.length * state.settings.squadSize;
+    const totalPicks = state => state.managers.length * SQUAD_RULES.size;
     const pickNo = state => state.draft.picks.length;
     function currentManagerId(state) {
       const n = pickNo(state), m = state.managers.length;
@@ -174,15 +177,14 @@
     }
     function canPick(state, mid, player) {
       if (arrivalLocked(state, player)) return false;
-      const { squadSize, posMin, posMax } = state.settings;
       const squad = squadAt(state, mid, currentGwIndex());
       const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
       squad.forEach(p => c[p.pos]++);
       const size = squad.length;
-      if (size >= squadSize || c[player.pos] >= posMax[player.pos]) return false;
+      if (size >= SQUAD_RULES.size || c[player.pos] >= SQUAD_RULES.max[player.pos]) return false;
       let need = 0;
-      for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, posMin[pos] - c[pos] - (pos === player.pos ? 1 : 0));
-      return need <= squadSize - size - 1;
+      for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, SQUAD_RULES.min[pos] - c[pos] - (pos === player.pos ? 1 : 0));
+      return need <= SQUAD_RULES.size - size - 1;
     }
     // deterministic autopick: manager's own list first, then best available by
     // rating with id as tie-break (the server must never flip a coin)
@@ -521,7 +523,7 @@
     }
 
     return {
-      XI_RULES, REGULAR_GWS, DEFAULT_SCORING, FPL_WIPED,
+      XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING, FPL_WIPED,
       toArr, rating, lastSeasonOf,
       currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, gwFrom, pairingsFor,
       squadAt, ownedIdsAt, squadShapeOk, ownedIdsGiven, squadIdsGiven,
@@ -535,5 +537,5 @@
     };
   }
 
-  return { make, XI_RULES, REGULAR_GWS, DEFAULT_SCORING };
+  return { make, XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING };
 });

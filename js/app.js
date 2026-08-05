@@ -75,6 +75,12 @@ const SCORING_LABELS = {
 };
 // starting XI shape
 const XI_RULES = { size: 11, GK: [1, 1], DF: [3, 5], MF: [2, 5], FW: [1, 3] };
+const SQUAD_RULES = { size: 14, min: { GK: 1, DF: 4, MF: 4, FW: 2 }, max: { GK: 2, DF: 6, MF: 6, FW: 4 } };
+const applySquadRules = settings => Object.assign(settings, {
+  squadSize: SQUAD_RULES.size,
+  posMin: { ...SQUAD_RULES.min },
+  posMax: { ...SQUAD_RULES.max },
+});
 
 /* ---------------- The Committee (est. 2015, minutes unavailable) ---------------- */
 const COMMITTEE_QUOTES = [
@@ -358,8 +364,7 @@ function applySharedSnapshot(data) {
     if (netOn() && (k === 'claims' || k === 'autolists')) continue;
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
-  if (!state.settings.posMin) state.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
-  if (!state.settings.posMax) state.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
+  applySquadRules(state.settings);
   save(); render();
   reportCeremonyReady(); // a previously-finished device retries until its shared tick lands
   const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
@@ -433,9 +438,9 @@ function freshState() {
       { id: 12, name: 'Wilko Wilkowski', team: 'WA Wanderers' },
     ],
     settings: {
-      squadSize: 14,
-      posMin: { GK: 1, DF: 3, MF: 3, FW: 1 }, // flex squads: any 14 inside these bounds
-      posMax: { GK: 2, DF: 6, MF: 6, FW: 4 },
+      squadSize: SQUAD_RULES.size,
+      posMin: { ...SQUAD_RULES.min },
+      posMax: { ...SQUAD_RULES.max },
       pickTimer: 30,
       scoring: { ...DEFAULT_SCORING },
     },
@@ -666,8 +671,7 @@ function load() {
     if (s && s.hamCup === undefined) s.hamCup = null;
     if (s && s.mock === undefined) s.mock = null;
     if (s && s.settings.pickTimer == null) s.settings.pickTimer = 30;
-    if (s && !s.settings.posMin) s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1 };
-    if (s && !s.settings.posMax) s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4 };
+    if (s) applySquadRules(s.settings);
     staleSave = stubMissingPlayers(s);
     return s;
   } catch { return null; }
@@ -1646,15 +1650,14 @@ function ownedIdsAt(gwIdx) {
   for (const m of state.managers) for (const p of squadAt(m.id, gwIdx)) ids.add(p.id);
   return ids;
 }
-// flex squads: any 14 inside per-position min/max bounds. No club cap —
+// one-flex squads: exactly 14 inside the constitutional bounds. No club cap —
 // Tussie's right to draft the entire City team by GW30 is constitutionally protected.
 function squadShapeOk(squad) {
-  if (squad.length !== state.settings.squadSize) return false; // exact size — swaps can't shrink/grow a squad
+  if (squad.length !== SQUAD_RULES.size) return false; // exact size — swaps can't shrink/grow a squad
   if (new Set(squad.map(p => p.id)).size !== squad.length) return false; // nobody owns a player twice
   const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
   squad.forEach(p => c[p.pos]++);
-  const { posMin, posMax } = state.settings;
-  return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= posMin[pos] && c[pos] <= posMax[pos]);
+  return ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= SQUAD_RULES.min[pos] && c[pos] <= SQUAD_RULES.max[pos]);
 }
 function shirtNum(mid, pid) {
   return state.shirtNums?.[mid]?.[pid] ?? '–';
@@ -2013,7 +2016,7 @@ function respondTrade(id, accept) {
 }
 
 /* ---------------- draft logic ---------------- */
-function totalPicks() { return state.managers.length * state.settings.squadSize; }
+function totalPicks() { return state.managers.length * SQUAD_RULES.size; }
 function pickNo() { return state.draft.picks.length; }
 function currentManagerId() {
   const n = pickNo(), m = state.managers.length;
@@ -2024,14 +2027,13 @@ function currentManagerId() {
 }
 function canPick(mid, player) {
   if (arrivalLocked(player)) return false; // new arrivals wait for the Window Draft
-  const { squadSize, posMin, posMax } = state.settings;
   const c = posCount(mid);
   const size = managerSquad(mid).length;
-  if (size >= squadSize || c[player.pos] >= posMax[player.pos]) return false;
+  if (size >= SQUAD_RULES.size || c[player.pos] >= SQUAD_RULES.max[player.pos]) return false;
   // the pick must leave enough slots to satisfy every unmet position minimum
   let need = 0;
-  for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, posMin[pos] - c[pos] - (pos === player.pos ? 1 : 0));
-  return need <= squadSize - size - 1;
+  for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, SQUAD_RULES.min[pos] - c[pos] - (pos === player.pos ? 1 : 0));
+  return need <= SQUAD_RULES.size - size - 1;
 }
 function draftedIds() { return new Set(state.draft.picks.map(p => p.playerId)); }
 
@@ -3339,7 +3341,6 @@ function prepCard() {
 
 function viewSetup() {
   const m = state.managers;
-  const { posMin, posMax } = state.settings;
   // pre-draft, only the Chairman gets the editable console. Everyone else sees
   // a calm waiting room (not a form they think they must fill in).
   if (netOn() && !isCommissioner()) {
@@ -3386,18 +3387,13 @@ function viewSetup() {
     </div>
     <div class="card">
       <h2>Squad rules</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Squads of <b>${state.settings.squadSize}</b>, flexible make-up between each position's min and max.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Hard rule: <b>14 players</b>, with one positional flex. Draft picks, autopicks, trades, Trough signings and waivers all use the same limits.</p>
       <div class="quota-grid">
         ${['GK', 'DF', 'MF', 'FW'].map(pos => `
-          <div><label>${POS_LABEL[pos]} min–max</label>
-          <div style="display:flex;gap:6px">
-            <input type="number" min="0" max="11" data-posmin="${pos}" aria-label="${POS_LABEL[pos]} minimum" value="${posMin[pos]}">
-            <input type="number" min="0" max="11" data-posmax="${pos}" aria-label="${POS_LABEL[pos]} maximum" value="${posMax[pos]}">
-          </div></div>`).join('')}
+          <div><label>${POS_LABEL[pos]}</label><b>${SQUAD_RULES.min[pos]}–${SQUAD_RULES.max[pos]} ${pos}</b></div>`).join('')}
       </div>
       <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="font-size:12px;color:var(--muted);font-weight:700">SQUAD SIZE</label>
-        <input type="number" min="11" max="20" id="squadSize" aria-label="Squad size" value="${state.settings.squadSize}" style="width:60px">
+        <span class="tag">SQUAD SIZE ${SQUAD_RULES.size}</span>
         <label style="font-size:12px;color:var(--muted);font-weight:700;margin-left:10px">PICK TIMER</label>
         <select id="pickTimer" aria-label="Pick timer">
           ${[0, 10, 20, 30, 45, 60].map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t ? t + 's — autopick at zero' : 'Off'}</option>`).join('')}
@@ -3428,7 +3424,7 @@ function bindSetup() {
   const wd = $('#waitDemo');
   if (wd) { wd.onclick = enterDemo; return; } // non-commissioner waiting room
   const updateTotal = () => {
-    const total = state.settings.squadSize;
+    const total = SQUAD_RULES.size;
     $('#setupTotal').innerHTML = `Squad size: <b>${total}</b> each &middot; <b>${total * state.managers.length}</b> of ${PLAYERS.length} players drafted &middot; starting XI picked each gameweek &middot; weekly waivers, bottom feeds first`;
   };
   document.querySelectorAll('[data-mgr]').forEach(inp => inp.oninput = () => {
@@ -3437,13 +3433,6 @@ function bindSetup() {
   document.querySelectorAll('[data-mgrteam]').forEach(inp => inp.oninput = () => {
     state.managers.find(m => m.id === +inp.dataset.mgrteam).team = inp.value;
   });
-  document.querySelectorAll('[data-posmin]').forEach(inp => inp.oninput = () => {
-    state.settings.posMin[inp.dataset.posmin] = Math.max(0, +inp.value || 0);
-  });
-  document.querySelectorAll('[data-posmax]').forEach(inp => inp.oninput = () => {
-    state.settings.posMax[inp.dataset.posmax] = Math.max(0, +inp.value || 0);
-  });
-  $('#squadSize').oninput = e => { state.settings.squadSize = Math.max(11, +e.target.value || 14); updateTotal(); };
   $('#pickTimer').onchange = e => { state.settings.pickTimer = +e.target.value || 0; };
   updateTotal();
   $('#demoBtn').onclick = enterDemo;
@@ -3494,11 +3483,7 @@ function bindSetup() {
     const rdyN = netOn() ? state.managers.filter(mg => (state.ready || {})[mg.id]).length : null;
     if (!confirm(`This starts the REAL draft for all twelve managers.${rdyN != null ? ` Ready room says ${rdyN}/${state.managers.length}.` : ''} Everyone ready?`)) return;
     state.managers.forEach((m, i) => { if (!m.name.trim()) m.name = `Manager ${i + 1}`; });
-    if (state.settings.squadSize < 11) { toast('Squads need at least 11 for a starting XI'); return; }
-    const { posMin, posMax } = state.settings;
-    const minSum = posMin.GK + posMin.DF + posMin.MF + posMin.FW;
-    const maxSum = posMax.GK + posMax.DF + posMax.MF + posMax.FW;
-    if (minSum > state.settings.squadSize || maxSum < state.settings.squadSize) { toast('Position min/max can’t make a legal squad'); return; }
+    applySquadRules(state.settings);
     const order = randomise
       ? state.managers.map(m => m.id).sort(() => Math.random() - 0.5)
       : state.managers.map(m => m.id);
@@ -3512,9 +3497,6 @@ function bindSetup() {
         setup: {
           managers: state.managers.map(mg => ({ id: mg.id, name: mg.name, team: mg.team || '' })),
           settings: {
-            squadSize: state.settings.squadSize,
-            posMin: state.settings.posMin,
-            posMax: state.settings.posMax,
             pickTimer: state.settings.pickTimer,
             scoring: state.settings.scoring,
           },
@@ -4017,7 +3999,7 @@ function viewDraft() {
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
     <div class="who">${whoLine}</div>
     ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
-    <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${state.settings.squadSize}${(() => {
+    <div class="pick-meta">Pick ${n + 1} of ${totalPicks()} &middot; Round ${round} of ${SQUAD_RULES.size}${(() => {
       // every round has a title sponsor (ledger #5) — the hydration break was never in danger
       const sp = typeof AD_BOARDS !== 'undefined' && AD_BOARDS.length ? AD_BOARDS[(round - 1) % AD_BOARDS.length] : null;
       return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
@@ -4068,11 +4050,11 @@ function viewDraft() {
     if (!netOn() || !whoami || whoami === -1 || state.phase !== 'draft') return '';
     const c = posCount(whoami);
     const need = ['GK', 'DF', 'MF', 'FW'].map(pos => {
-      const short = Math.max(0, state.settings.posMin[pos] - c[pos]);
+      const short = Math.max(0, SQUAD_RULES.min[pos] - c[pos]);
       return short ? `${short} ${pos}` : null;
     }).filter(Boolean);
     const sz = c.GK + c.DF + c.MF + c.FW;
-    const slots = state.settings.squadSize - sz;
+    const slots = SQUAD_RULES.size - sz;
     const q = toArr(state.autolists?.[whoami]).map(id => PLAYER_BY_ID[id]).filter(p => p && !draftedIds().has(p.id)).slice(0, 3);
     const turn = iAmUp ? 'YOU ARE ON THE CLOCK' : picksUntilMine != null ? `your pick in ${picksUntilMine}` : 'order pending';
     return `<div class="draft-strip" id="draftStrip" title="Tap for your full queue">
@@ -4360,9 +4342,9 @@ function draftOrderStrip() {
 }
 
 function quotaPills(mid) {
-  const { posMin, posMax } = state.settings, c = posCount(mid);
+  const c = posCount(mid);
   return ['GK', 'DF', 'MF', 'FW'].map(p =>
-    `<span class="quota-pill ${c[p] >= posMax[p] ? 'full' : ''}" title="min ${posMin[p]}, max ${posMax[p]}">${p} ${c[p]}/${posMax[p]}</span>`).join('');
+    `<span class="quota-pill ${c[p] >= SQUAD_RULES.max[p] ? 'full' : ''}" title="min ${SQUAD_RULES.min[p]}, max ${SQUAD_RULES.max[p]}">${p} ${c[p]}/${SQUAD_RULES.max[p]}</span>`).join('');
 }
 
 /* ---- season-aware player metrics (Console pool + the Trough) ----
@@ -5263,7 +5245,10 @@ function assistantCard(mid, gw) {
   const notMine = netOn() && !demoMode && !signedOut && whoami !== mid;
   if (notMine) return ''; // he works for YOU; other clubs have their own staff
   const asst = assistantFor(mid);
-  const head = (body) => `<div class="card" style="margin-top:12px"><h2>${asst.e} ${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">assistant manager${gafferFor(mid) ? ` — No. 2 to ${esc(gafferFor(mid).t)}` : ''}</span></h2>${body}</div>`;
+  const head = body => `<div class="card assistant-card">
+    <div class="assistant-pop" aria-hidden="true"><span>${asst.e}</span></div>
+    <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">assistant manager${gafferFor(mid) ? ` — No. 2 to ${esc(gafferFor(mid).t)}` : ''}</span></h2>${body}</div>
+  </div>`;
   if (signedOut) {
     return head(`<p class="muted" style="font-size:12.5px;opacity:.75">He has opinions on the XI and the Trough, but he only briefs his own manager. Sign in (top right) and he's yours.</p>`);
   }
@@ -5321,8 +5306,7 @@ function assistantCard(mid, gw) {
   return head(`
     <p class="muted" style="font-size:11.5px;margin-bottom:6px">Briefing for GW${gwN}. Same numbers as the Crystal Ball — projections, not prophecy.</p>
     ${brief}
-    ${tipRows ? `<h3 style="margin-top:10px">The shopping list</h3>${tipRows}` : ''}
-    <p class="muted" style="font-size:10.5px;margin-top:8px">He does not do chat. A conversational version is on the Committee's wishlist.</p>`);
+    ${tipRows ? `<h3 style="margin-top:10px">The shopping list</h3>${tipRows}` : ''}`);
 }
 
 /* ----- Next Six: the current squad's fixture runway. Deliberately small —
@@ -6244,8 +6228,6 @@ function viewDash() {
   const flags = squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
   const offersIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid);
   const myCl = myClaims(mid);
-  const news = [...state.transfers].slice(-5).reverse();
-  const covs = [...toArr(state.covenants)].slice(-2).reverse();
   const table = h2hStandings(true);
   const myPos = table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
@@ -6315,12 +6297,6 @@ function viewDash() {
         return next.length ? `<h3 style="margin-top:12px">Next three</h3>
           ${next.map(({ k, opp }) => `<div class="lrow" style="font-size:12.5px"><span class="tag">GW${GAMEWEEKS[k].n}</span> ${kitSvg(opp)} <b>${esc(teamName(opp))}</b> <span class="muted" style="margin-left:auto;font-size:11px">${esc(managerName(opp))}</span></div>`).join('')}` : '';
       })()}
-      ${news.length ? `<h3 style="margin-top:12px">Latest moves</h3>
-        ${news.map(t => {
-          const nm = pid => esc(PLAYER_BY_ID[pid]?.name || 'unknown'); // plain text — links inside a truncating one-liner are unreachable anyway
-          return `<div class="move-row"><span class="tag">${t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough'}</span>
-          <span class="move-txt"><b>${esc(teamName(t.managerId))}</b> &middot; ${nm(t.outId)} <span class="muted">→</span> <b>${nm(t.inId)}</b></span></div>`;
-        }).join('')}` : ''}
     </div>`}
     <div class="card">
       <h2>The table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
@@ -6338,10 +6314,10 @@ function viewDash() {
       <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
-  ${latestBusinessCard()}
+  ${vidiCard(true)}
   ${programmeCard()}
-  ${installCard()}
-  ${vidiCard(true)}`;
+  ${latestBusinessCard()}
+  ${installCard()}`;
 }
 /* ----- The Record Book, current season (sol follow-up #2): computed from
    settled truth only, tie-safe, deterministic. "Since records began" is
@@ -6532,21 +6508,59 @@ function reportCardHtml(t) {
 }
 
 // the post-waivers snapshot (Ben, UAT night: "there should be recent
-// transfers and waivers and trades on the dashboard tbf") — the last eight
-// moves of any kind, newest first, with where they count from
+// transfers and waivers and trades on the dashboard tbf"). A multi-player
+// trade is one piece of business per club, not four near-identical ledger
+// lines; the full ungrouped audit trail remains one tap away in Transfers.
 function latestBusinessCard() {
-  if (!state.transfers.length) return '';
+  const latestRun = lastWaiverRun();
+  if (!state.transfers.length && !latestRun) return '';
   const kindOf = t => t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough';
-  const rows = [...state.transfers].reverse().slice(0, 8).map(t => `<div class="lrow" style="font-size:12.5px">
-    <span class="tag" style="flex-shrink:0">${kindOf(t)}</span>
-    <b style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(teamName(t.managerId))}</b>
-    <span style="min-width:0">${pname(PLAYER_BY_ID[t.inId])} <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${esc(PLAYER_BY_ID[t.outId].name)} out` : ''}</span></span>
-    <span class="muted" style="margin-left:auto;flex-shrink:0;font-size:11px">GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
-  </div>`).join('');
-  return `<div class="card" style="margin-top:14px">
-    <h2>Latest business <span class="muted" style="font-weight:400;font-size:12px">who moved, how, and from when</span></h2>
-    ${rows}
-    <p class="muted" style="font-size:10.5px;margin-top:6px"><button class="btn ghost small" data-goto="transfers" style="font-size:10.5px;padding:1px 8px">Full history &amp; filters</button></p>
+  const marks = { trade: '&#8644;', waiver: 'W', window: '&#9638;', trough: '+' };
+  const labels = { trade: 'TRADE', waiver: 'WAIVER', window: 'WINDOW', trough: 'TROUGH' };
+  const grouped = new Map();
+  [...state.transfers].map((t, i) => ({ t, i })).reverse().forEach(({ t, i }) => {
+    const tradeKey = t.trade
+      ? (t.trade === true ? `${t.managerId}:${t.gw}:${Math.floor((t.t || 0) / 5000)}` : `${t.trade}:${t.managerId}`)
+      : `move:${i}`;
+    const key = t.trade ? `trade:${tradeKey}` : tradeKey;
+    if (!grouped.has(key)) grouped.set(key, { ...t, ins: [], outs: [], kind: kindOf(t) });
+    const g = grouped.get(key);
+    if (PLAYER_BY_ID[t.inId] && !g.ins.includes(t.inId)) g.ins.unshift(t.inId);
+    if (PLAYER_BY_ID[t.outId] && !g.outs.includes(t.outId)) g.outs.unshift(t.outId);
+  });
+  const playerList = ids => ids.map(id => pname(PLAYER_BY_ID[id])).join('<span class="business-plus"> + </span>');
+  const allGroups = [...grouped.values()];
+  // Publish the latest waiver round as a round, including a nil return. The
+  // public transfer ledger gives every successful claim the runStart stamp;
+  // waiverMeta supplies the stamp even when nothing landed.
+  const publishedRun = latestRun || Math.max(0, ...state.transfers.filter(t => t.waiver).map(t => +t.t || 0));
+  const waiverResults = publishedRun ? allGroups.filter(g => g.kind === 'waiver' && Math.abs((+g.t || 0) - publishedRun) < 1000) : [];
+  const pinned = new Set(waiverResults);
+  const visible = [...waiverResults, ...allGroups.filter(g => !pinned.has(g)).slice(0, Math.max(0, 6 - waiverResults.length))];
+  const rowHtml = g => `<div class="business-row">
+    <span class="business-mark business-${g.kind}" aria-hidden="true">${marks[g.kind]}</span>
+    <div class="business-main">
+      <div class="business-who">${kitSvg(g.managerId, 17)} <b>${esc(teamName(g.managerId))}</b> <span class="tag">${labels[g.kind]}</span></div>
+      <div class="business-flow">
+        <span class="business-label business-label-in">&#8593; IN</span> <span class="business-players business-players-in">${playerList(g.ins)}</span>
+        ${g.outs.length ? `<span class="business-label business-label-out">&#8595; OUT</span> <span class="business-players business-players-out">${playerList(g.outs)}</span>` : ''}
+      </div>
+    </div>
+    <span class="business-gw"><small>COUNTS</small><b>GW${GAMEWEEKS[g.gw]?.n ?? '?'}</b></span>
+  </div>`;
+  const rows = visible.map(rowHtml).join('');
+  const waiverNotice = publishedRun ? `<div class="business-run">
+    <b>WAIVER RESULTS</b> <span>${waiverResults.length ? `${waiverResults.length} CLAIM${waiverResults.length === 1 ? '' : 'S'} LANDED` : 'NO CLAIMS LANDED'}</span>
+    <small>${new Date(publishedRun).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}</small>
+  </div>` : '';
+  return `<div class="card business-card">
+    <div class="business-head">
+      <div><span class="business-kicker">THE TRANSFER WIRE</span><h2>LATEST BUSINESS</h2></div>
+      <span class="muted">COMPLETED DEALS ONLY</span>
+    </div>
+    ${waiverNotice}
+    <div class="business-feed">${rows}</div>
+    <button class="btn ghost business-history" data-goto="transfers">OPEN TRANSFER HISTORY <span aria-hidden="true">&#8594;</span></button>
   </div>`;
 }
 
@@ -8188,14 +8202,13 @@ const HONOURS_BOARD = [
 ];
 function viewRules() {
   const sc = state.settings.scoring;
-  const { posMin, posMax } = state.settings;
   return `
   <div class="settings-grid">
     <div class="card">
       <h2>The basics</h2>
       <p class="rules-p">Twelve managers. One snake draft over all ${PLAYERS.length} Premier League players — order reverses every round. Est. 2015; this is season twelve.</p>
-      <p class="rules-p">Squads of <b>${state.settings.squadSize}</b>, flexible make-up: ${['GK', 'DF', 'MF', 'FW'].map(p => `${posMin[p]}–${posMax[p]} ${p}`).join(', ')}. <b>No club cap.</b> Tussie may draft the entire City team by GW30. That is his right.</p>
-      <p class="rules-p"><b>Starting XI:</b> pick 11 from your ${state.settings.squadSize} each gameweek — 1 GK, 3–5 DF, 2–5 MF, 1–3 FW. <b>Only starters score.</b> Lineups lock at the FPL deadline.</p>
+      <p class="rules-p">Squads are fixed at <b>${SQUAD_RULES.size}</b>: ${['GK', 'DF', 'MF', 'FW'].map(p => `${SQUAD_RULES.min[p]}–${SQUAD_RULES.max[p]} ${p}`).join(', ')}. Those lower bounds leave room for only <b>one positional flex</b> — you cannot carry 6 midfielders and 4 forwards together. The same rule applies to the draft, autopicks, trades, waivers, the Trough and the Window Draft. <b>No club cap.</b></p>
+      <p class="rules-p"><b>Starting XI:</b> pick 11 from your ${SQUAD_RULES.size} each gameweek — 1 GK, 3–5 DF, 2–5 MF, 1–3 FW. <b>Only starters score.</b> Lineups lock at the FPL deadline.</p>
       <p class="rules-p"><b>Forgot to set it?</b> Your last saved XI carries over, minus anyone you've since sold (repaired to a legal shape if needed). A best XI is auto-picked only if you've never set one at all. Nobody scores nil for being on holiday.</p>
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
       <h3>The season</h3>
@@ -8357,14 +8370,14 @@ function preflightCard() {
   // 3. squads
   if (state.draft.picks.length) {
     const tgw = transferGw();
-    const broken = state.managers.filter(m => { const sq = squadAt(m.id, tgw); return sq.length !== state.settings.squadSize || !squadShapeOk(sq); });
+    const broken = state.managers.filter(m => { const sq = squadAt(m.id, tgw); return sq.length !== SQUAD_RULES.size || !squadShapeOk(sq); });
     rows.push(light(broken.length ? 'bad' : 'ok', 'Squads',
-      broken.length ? `${broken.length} squad${broken.length > 1 ? 's' : ''} illegal at GW${GAMEWEEKS[tgw].n}: ${broken.map(m => esc(m.team || m.name)).join(', ')}` : `all ${state.managers.length} legal — ${state.settings.squadSize} men, shapes inside the rules`));
+      broken.length ? `${broken.length} squad${broken.length > 1 ? 's' : ''} illegal at GW${GAMEWEEKS[tgw].n}: ${broken.map(m => esc(m.team || m.name)).join(', ')}` : `all ${state.managers.length} legal — ${SQUAD_RULES.size} men, shapes inside the rules`));
   } else {
     rows.push(light('info', 'Squads', state.phase === 'setup' ? `not drafted yet — ${Object.keys(state.ready || {}).length}/${state.managers.length} in the ready room` : 'no picks on the board'));
   }
   // 4. draft board
-  const expect = state.managers.length * state.settings.squadSize;
+  const expect = state.managers.length * SQUAD_RULES.size;
   rows.push(state.phase === 'draft'
     ? light(state.draft.deadline || !state.settings.pickTimer ? 'ok' : 'warn', 'Draft board', `live — pick ${state.draft.picks.length + 1} of ${expect}${state.settings.pickTimer && !state.draft.deadline ? ', clock not yet armed' : ''}`)
     : light(state.phase === 'season' && state.draft.picks.length === expect ? 'ok' : state.phase === 'season' ? 'bad' : 'info', 'Draft board',

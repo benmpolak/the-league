@@ -1,7 +1,8 @@
 /* Sol product-review items 2–5 (UAT week): GW lens statement, Chairman
- * pre-flight, tap-to-explain, Gazette archive. Needs the 8125 server. */
+ * pre-flight, tap-to-explain, Gazette archive. */
 const puppeteer = require('puppeteer-core');
 const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : ' — ' + detail}`); ok ? pass++ : fail++; };
 
@@ -10,7 +11,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
   page.on('dialog', d => d.accept());
-  await page.goto('http://localhost:8125/?demo', { waitUntil: 'networkidle2' });
+  await page.goto(`${baseUrl}/?demo`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof state !== 'undefined' && state.managers?.length);
 
   /* #2 — the hub says which GW deals land in */

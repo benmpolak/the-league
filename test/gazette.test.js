@@ -1,9 +1,10 @@
 /* The Gazette writing engine + Transfer Report Cards + Record Book.
  * Pins: archetype selection, factual accuracy, determinism, repetition
  * cooldown, privacy (no private claims), escaping, verdict thresholds,
- * incomplete-window honesty, record tie-safety. Needs the 8125 server. */
+ * incomplete-window honesty, record tie-safety. */
 const puppeteer = require('puppeteer-core');
 const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : ' — ' + detail}`); ok ? pass++ : fail++; };
 
@@ -11,7 +12,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 844 });
-  await page.goto('http://localhost:8125/?demo', { waitUntil: 'networkidle2' });
+  await page.goto(`${baseUrl}/?demo`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof state !== 'undefined' && typeof Gazette !== 'undefined' && state.managers?.length);
 
   /* archetype selection on crafted facts */

@@ -68,6 +68,9 @@ const SB = 'the-league-sandbox';
   chk('non-commissioner cannot import', (await T.mutate(LG, 'importState', { state: seed }, tok2)).error?.status === 'PERMISSION_DENIED');
 
   const db = T.initAdmin().database();
+  const hardRulesOk = settings => settings?.squadSize === 14
+    && settings.posMin?.GK === 1 && settings.posMin?.DF === 4 && settings.posMin?.MF === 4 && settings.posMin?.FW === 2
+    && settings.posMax?.GK === 2 && settings.posMax?.DF === 6 && settings.posMax?.MF === 6 && settings.posMax?.FW === 4;
   const squadOf = async mid => {
     const picks = (await db.ref(`v2/leagues/${LG}/public/draft/picks`).get()).val() || [];
     const transfers = (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || [];
@@ -459,13 +462,19 @@ const SB = 'the-league-sandbox';
   chk('setup payload smuggling club fields rejected',
     (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3], setup: { managers: [{ id: 1, kit: { pattern: 'plain', c1: '#000000', c2: '#ffffff' } }] } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('setup payload with junk settings rejected',
-    (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3], setup: { settings: { squadSize: 2 } } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+    (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3], setup: { settings: { evilSetting: 2 } } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
 
   chk('draft start is Chairman-gated', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok2)).error?.status === 'PERMISSION_DENIED');
   chk('bad order rejected', (await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2] }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('Chairman starts the draft', !(await T.mutate(SB, 'draftAdmin', {
     op: 'start', order: [1, 2, 3],
-    setup: { managers: [{ id: 1, name: 'Renamed Chair', team: 'Renamed FC' }], settings: { pickTimer: 45 } },
+    // A phone holding the old setup form may still send the former editable
+    // squad fields. It must start safely, but those values must never land.
+    setup: { managers: [{ id: 1, name: 'Renamed Chair', team: 'Renamed FC' }], settings: {
+      pickTimer: 45, squadSize: 99,
+      posMin: { GK: 0, DF: 0, MF: 0, FW: 0 },
+      posMax: { GK: 99, DF: 99, MF: 99, FW: 99 },
+    } },
   }, sbTok1)).error);
   chk('start merged the screen edits in the same txn',
     (await db.ref(`v2/leagues/${SB}/public/managers/0/name`).get()).val() === 'Renamed Chair'
@@ -474,6 +483,10 @@ const SB = 'the-league-sandbox';
     (await db.ref(`v2/leagues/${SB}/public/settings/scoring/assist`).get()).val() === 8
     && (await db.ref(`v2/leagues/${SB}/public/settings/lobusBonus`).get()).val() === 13
     && (await db.ref(`v2/leagues/${SB}/public/settings/squadSize`).get()).val() === 14);
+  const startedSquadSettings = (await db.ref(`v2/leagues/${SB}/public/settings`).get()).val();
+  chk('stale setup clients cannot alter the hard 14-man one-flex law',
+    hardRulesOk(startedSquadSettings),
+    JSON.stringify(startedSquadSettings));
   chk('the just-founded club SURVIVED the start (no whole-state import — sol P1.1)',
     (await db.ref(`v2/leagues/${SB}/public/managers/2/team`).get()).val() === 'Founded Late FC'
     && (await db.ref(`v2/leagues/${SB}/public/managers/2/kit/pattern`).get()).val() === 'sash');
@@ -565,15 +578,28 @@ const SB = 'the-league-sandbox';
   const freeGK2 = freeOf('GK')[0];
   chk('shape-breaking claim rejected', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeGK2, out: myDF2 }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
   chk('claim flood rejected (max 30)', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: Array.from({ length: 31 }, () => ({ in: freeFWs[0], out: myFW2 })) }, tok2)).error?.status === 'INVALID_ARGUMENT');
-  // squad-rule settings validated as a consistent ruleset
-  chk('squad rules are locked outside setup phase', (await T.mutate(LG, 'settingsSet', { key: 'squadSize', value: 20 }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  // Squad rules are constitutional. A stale settings client gets a harmless
+  // success while the server actively repairs all three fields.
+  const fixedSet = await T.mutate(LG, 'settingsSet', { key: 'squadSize', value: 20 }, tok1);
+  const repairedRules = (await db.ref(`v2/leagues/${LG}/public/settings`).get()).val();
+  chk('settingsSet cannot alter the hard squad law and repairs stale values', !fixedSet.error && fixedSet.result?.fixed === true
+    && hardRulesOk(repairedRules),
+    JSON.stringify({ fixedSet, repairedRules }));
   chk('scoring value bounds enforced', (await T.mutate(LG, 'settingsSet', { scoringKey: 'assist', value: 5000 }, tok1)).error?.status === 'INVALID_ARGUMENT');
   // oversized XI payloads die at the gate
   chk('oversized xi rejected', (await T.mutate(LG, 'lineupSave', { gw: 3, xi: Array.from({ length: 40 }, (_, i) => i) }, tok1)).error?.status === 'INVALID_ARGUMENT');
   // importState: strict schema
   chk('import with unknown key rejected', (await T.mutate(LG, 'importState', { state: { ...seed, evilKey: 1 } }, tok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import with bad phase rejected', (await T.mutate(LG, 'importState', { state: { ...seed, phase: 'chaos' } }, tok1)).error?.status === 'INVALID_ARGUMENT');
-  chk('import with inconsistent squad rules rejected', (await T.mutate(LG, 'importState', { state: { ...seed, settings: { ...seed.settings, posMin: { GK: 0, DF: 3, MF: 3, FW: 1 } } } }, tok1)).error?.status === 'INVALID_ARGUMENT');
+  const legacyRulesImport = await T.mutate(LG, 'importState', { state: { ...seed, settings: {
+    ...seed.settings, squadSize: 15,
+    posMin: { GK: 0, DF: 3, MF: 3, FW: 1 },
+    posMax: { GK: 3, DF: 8, MF: 8, FW: 5 },
+  } } }, tok1);
+  const migratedRules = (await db.ref(`v2/leagues/${LG}/public/settings`).get()).val();
+  chk('legacy imports are accepted but canonicalised to the hard squad law', !legacyRulesImport.error
+    && hardRulesOk(migratedRules),
+    JSON.stringify({ legacyRulesImport, migratedRules }));
   chk('import with oversized section rejected', (await T.mutate(LG, 'importState', { state: { ...seed, transfers: Array.from({ length: 5001 }, () => ({ x: 1 })) } }, tok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import with junk manager entry rejected', (await T.mutate(LG, 'importState', { state: { ...seed, managers: [{ id: 1, name: 'A', team: 'B', pin: '1234' }, { id: 2, name: 'C', team: 'D' }] } }, tok1)).error?.status === 'INVALID_ARGUMENT');
   chk('legacy export debris (pins) tolerated and dropped', !(await T.mutate(LG, 'importState', { state: { ...seed, pins: { 1: 'x' } } }, tok1)).error

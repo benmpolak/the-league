@@ -626,11 +626,99 @@ tr.gone-row td.act { opacity: .8; }
 /* the dashboard's lineup shot stacks: the matchup column is too narrow for
    two readable pitches side by side */
 .dash-mu { grid-template-columns: 1fr; }
-/* Latest moves rows: tag + one truncating line, never wraps (.lrow has no
-   base flex rule — do not reuse it for anything that must stay on one line) */
-.move-row { display: flex; gap: 6px; align-items: center; padding: 3px 0; font-size: 12.5px; }
-.move-row .tag { flex: none; }
-.move-row .move-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Latest Business: a small transfer wire, not another undifferentiated lrow
+   ledger. Deals scan club -> arrivals/departures -> effective gameweek; full
+   audit detail stays in Transfers. */
+.business-card { margin-top: 14px; overflow: hidden; }
+.business-head {
+  display: flex; align-items: end; justify-content: space-between; gap: 12px;
+  padding-bottom: 10px;
+}
+.business-head h2 { margin: 1px 0 0; }
+.business-head > .muted { font-size: 10.5px; text-align: right; }
+.business-kicker {
+  display: block; color: var(--accent); font-size: 9.5px; font-weight: 800;
+  letter-spacing: .14em; text-transform: uppercase;
+}
+.business-run {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px;
+  align-items: center; padding: 8px 10px; margin-bottom: 8px; border-radius: 8px;
+  background: rgba(107,147,255,.09); border: 1px solid rgba(107,147,255,.22);
+  font-size: 9.5px; letter-spacing: .06em;
+}
+.business-run b { color: #adc5ff; }
+.business-run span { color: var(--text); font-weight: 800; }
+.business-run small { color: var(--muted); font-size: 8.5px; }
+.business-feed { border-top: 1px solid var(--line); }
+.business-row {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px; align-items: center; padding: 11px 0;
+  border-bottom: 1px solid rgba(38,50,80,.62);
+}
+.business-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 31px; height: 31px; border-radius: 9px;
+  background: rgba(45,212,167,.1); border: 1px solid rgba(45,212,167,.25);
+  color: var(--accent); font-size: 17px; font-weight: 900;
+}
+.business-trade { color: #ffd75e; background: rgba(255,215,94,.08); border-color: rgba(255,215,94,.24); }
+.business-waiver { color: #9cbcff; background: rgba(107,147,255,.09); border-color: rgba(107,147,255,.25); font-size: 12px; }
+.business-main { min-width: 0; }
+.business-who { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12.5px; }
+.business-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.business-who .tag { margin-left: 2px; flex: none; font-size: 8.5px; }
+.business-flow {
+  display: grid; grid-template-columns: 42px minmax(0, 1fr);
+  align-items: baseline; column-gap: 6px; row-gap: 3px;
+  margin-top: 6px; font-size: 12px; line-height: 1.35;
+}
+.business-label { font-size: 8.5px; font-weight: 900; letter-spacing: .08em; }
+.business-label-in { color: var(--accent); }
+.business-label-out { color: #e88b8b; }
+.business-players { min-width: 0; font-weight: 700; }
+.business-players-in .plink { color: var(--text); }
+.business-players-out { color: var(--muted); font-weight: 500; }
+.business-players-out .plink { color: var(--muted); text-decoration-color: rgba(155,164,184,.35); }
+.business-plus { color: var(--muted); font-weight: 400; }
+.business-gw { display: grid; justify-items: end; flex: none; font-variant-numeric: tabular-nums; }
+.business-gw small { color: var(--muted); font-size: 7.5px; font-weight: 800; letter-spacing: .08em; }
+.business-gw b { color: var(--text); font-size: 11.5px; }
+.business-history { width: 100%; justify-content: space-between; margin-top: 10px; }
+@media (max-width: 390px) {
+  .business-head > .muted { display: none; }
+  .business-run { grid-template-columns: auto 1fr; }
+  .business-run small { grid-column: 2; }
+  .business-row { grid-template-columns: 31px minmax(0, 1fr); gap: 8px; }
+  .business-mark { width: 29px; height: 29px; }
+  .business-gw { grid-column: 2; grid-row: 2; display: flex; justify-content: flex-start; gap: 4px; margin-top: -5px; }
+  .business-gw small { align-self: center; }
+}
+
+/* The No. 2 actually enters the conversation: his club-selected character
+   pops into the briefing instead of another apologetic product disclaimer. */
+.assistant-card {
+  position: relative; display: grid; grid-template-columns: 48px minmax(0, 1fr);
+  gap: 11px; align-items: start; margin-top: 12px; overflow: hidden;
+}
+.assistant-copy { min-width: 0; }
+.assistant-copy h2 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.assistant-pop {
+  position: relative; display: grid; place-items: center; width: 46px; height: 46px;
+  border-radius: 50% 50% 50% 12px; background: rgba(45,212,167,.11);
+  border: 1px solid rgba(45,212,167,.28); box-shadow: 0 7px 18px rgba(0,0,0,.22);
+  animation: assistant-arrives .42s cubic-bezier(.2,.9,.25,1.25) both;
+}
+.assistant-pop span { font-size: 25px; filter: drop-shadow(0 2px 2px rgba(0,0,0,.3)); }
+@keyframes assistant-arrives {
+  from { opacity: 0; transform: translate(-10px, 8px) rotate(-8deg) scale(.55); }
+  to { opacity: 1; transform: translate(0, 0) rotate(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) { .assistant-pop { animation: none; } }
+@media (max-width: 360px) {
+  .assistant-card { grid-template-columns: 40px minmax(0, 1fr); gap: 8px; }
+  .assistant-pop { width: 39px; height: 39px; }
+  .assistant-pop span { font-size: 22px; }
+}
 /* Lee's scoreboard: the score up top where you look first, not buried in the side headings */
 .mu-scoreline { border-bottom: none; margin: 0 0 4px; font-size: 15px; }
 .mu-scoreline .fx-score { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; padding: 3px 14px; background: var(--card2); border-radius: 7px; white-space: nowrap; }

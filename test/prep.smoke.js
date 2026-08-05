@@ -285,9 +285,23 @@ const chk = (name, ok, detail = '') => {
 
   // ---- P8g: the Matchday Programme prints an article on the demo dashboard
   const p8g = await page.evaluate(() => {
+    // Make the dashboard news stack non-vacuous, and pin aggregation of a
+    // two-player trade into one readable item per club.
+    vidiFeed = [{ ts: Date.now(), gw: 1, txt: 'TEST WIRE — goal' }];
+    const [m1, m2] = state.managers;
+    const a = squadAt(m1.id, 0).slice(0, 2), b = squadAt(m2.id, 0).slice(0, 2);
+    state.transfers = [
+      ...a.map((p, i) => ({ managerId: m1.id, outId: p.id, inId: b[i].id, gw: 0, t: 1000, trade: 'dash-trade' })),
+      ...b.map((p, i) => ({ managerId: m2.id, outId: p.id, inId: a[i].id, gw: 0, t: 1000, trade: 'dash-trade' })),
+      { managerId: m1.id, outId: a[0].id, inId: b[0].id, gw: 0, t: 2000, waiver: true },
+    ];
+    state.waiverMeta = { ...state.waiverMeta, lastRun: new Date(2000).toISOString() };
     state.view = 'dash';
     render();
     const card = document.querySelector('.prog-card');
+    const vidi = document.querySelector('.vidi-tape')?.closest('.card');
+    const business = document.querySelector('.business-card');
+    const follows = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
     // the dash shows a front page; the full edition lives in the reading room
     card?.querySelector('#progRead')?.click();
     const room = document.querySelector('.gazette-room');
@@ -297,12 +311,62 @@ const chk = (name, ok, detail = '') => {
       teaser: !!card?.querySelector('.prog-head-lead'), room: !!room,
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
       edition: room?.querySelector('.prog-date')?.textContent || '',
+      order: follows(vidi, card) && follows(card, business),
+      businessRows: business?.querySelectorAll('.business-row').length || 0,
+      groupedTradeRows: [...(business?.querySelectorAll('.business-row') || [])].filter(r => /trade/i.test(r.textContent)).length,
+      duplicateAttentionMoves: /Latest moves/i.test([...document.querySelectorAll('.card h2')].find(h => /Needs your attention/i.test(h.textContent))?.closest('.card')?.textContent || ''),
+      explicitFlow: [...(business?.querySelectorAll('.business-row') || [])].every(r => /\bIN\b/.test(r.textContent) && /\bOUT\b/.test(r.textContent)),
+      caps: /LATEST BUSINESS/.test(business?.textContent || '') && /COMPLETED DEALS ONLY/.test(business?.textContent || ''),
+      waiverPublished: /WAIVER RESULTS\s+1 CLAIM LANDED/.test(business?.textContent || ''),
     };
     room?.closest('.overlay')?.remove();
     return out;
   });
   chk('P8g Gazette front page teases; the reading room prints the real article',
     p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && /edition/.test(p8g.edition), JSON.stringify(p8g));
+  chk('P8g dashboard news stack is Vidiprinter → Gazette → Latest Business',
+    p8g.order === true, JSON.stringify(p8g));
+  chk('P8g Latest Business groups a 2-for-2 trade into one item per club',
+    p8g.businessRows === 3 && p8g.groupedTradeRows === 2, JSON.stringify(p8g));
+  chk('P8g business wire removes the duplicate attention list and makes IN/OUT unmistakable',
+    !p8g.duplicateAttentionMoves && p8g.explicitFlow && p8g.caps && p8g.waiverPublished, JSON.stringify(p8g));
+  await page.setViewport({ width: 320, height: 780 });
+  const p8gPhone = await page.evaluate(() => {
+    render();
+    const card = document.querySelector('.business-card');
+    return { card: !!card, rows: card?.querySelectorAll('.business-row').length || 0, docW: document.documentElement.scrollWidth };
+  });
+  chk('P8g dashboard news stack and business wire fit at 320px',
+    p8gPhone.card && p8gPhone.rows === 3 && p8gPhone.docW <= 320, JSON.stringify(p8gPhone));
+  const p8gNilWaivers = await page.evaluate(() => {
+    state.transfers = [];
+    state.waiverMeta = { ...state.waiverMeta, lastRun: new Date(3000).toISOString() };
+    render();
+    const card = document.querySelector('.business-card');
+    return { card: !!card, rows: card?.querySelectorAll('.business-row').length || 0, text: card?.textContent || '' };
+  });
+  chk('P8g an empty waiver round is still published, even with no transfer history',
+    p8gNilWaivers.card && p8gNilWaivers.rows === 0 && /WAIVER RESULTS\s+NO CLAIMS LANDED/.test(p8gNilWaivers.text),
+    JSON.stringify(p8gNilWaivers));
+  const p8gAssistant = await page.evaluate(() => {
+    state.view = 'team';
+    render();
+    const card = document.querySelector('.assistant-card');
+    const face = card?.querySelector('.assistant-pop');
+    return {
+      card: !!card,
+      face: face?.textContent.trim() || '',
+      oldDisclaimer: document.body.textContent.includes('He does not do chat'),
+      docW: document.documentElement.scrollWidth,
+      animated: face ? getComputedStyle(face).animationName === 'assistant-arrives' : false,
+      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    };
+  });
+  chk('P8g assistant arrives as his club character; the old chat disclaimer is gone',
+    p8gAssistant.card && !!p8gAssistant.face && !p8gAssistant.oldDisclaimer && p8gAssistant.docW <= 320
+      && (p8gAssistant.animated || p8gAssistant.reducedMotion),
+    JSON.stringify(p8gAssistant));
+  await page.setViewport({ width: 390, height: 844 });
 
   // ---- P8h: multiple rivals — mutual clásico, one-sided mockery, legacy field honoured
   const p8h = await page.evaluate(() => {

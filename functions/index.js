@@ -119,9 +119,9 @@ function normalizeState(pub, ctx) {
   s.managers = toArr(s.managers);
   s.settings = s.settings || {};
   s.settings.scoring = { ...Engine.DEFAULT_SCORING, ...(s.settings.scoring || {}) };
-  s.settings.posMin = { GK: 1, DF: 3, MF: 3, FW: 1, ...(s.settings.posMin || {}) };
-  s.settings.posMax = { GK: 2, DF: 6, MF: 6, FW: 4, ...(s.settings.posMax || {}) };
-  s.settings.squadSize = s.settings.squadSize || 14;
+  s.settings.posMin = { ...Engine.SQUAD_RULES.min };
+  s.settings.posMax = { ...Engine.SQUAD_RULES.max };
+  s.settings.squadSize = Engine.SQUAD_RULES.size;
   s.draft = s.draft || {};
   s.draft.order = toArr(s.draft.order);
   s.draft.picks = toArr(s.draft.picks);
@@ -352,7 +352,7 @@ async function sealFullBoard(league) {
     const c = cur === null ? (seedSnap && JSON.parse(JSON.stringify(seedSnap))) : cur;
     if (!c) return; // nothing to seal
     const picks = toArr(c.draft && c.draft.picks);
-    const total = toArr(c.managers).length * ((c.settings && c.settings.squadSize) || 14);
+    const total = toArr(c.managers).length * Engine.SQUAD_RULES.size;
     if (c.phase !== 'draft' || !total || picks.length < total) return; // board moved — abort
     c.phase = 'season';
     if (c.draft) c.draft.deadline = null;
@@ -562,8 +562,10 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
         const cur = c.settings || {};
         const merged = { ...DEFAULT_SETTINGS(), ...cur, ...setupSettings };
         merged.scoring = { ...Engine.DEFAULT_SCORING, ...(cur.scoring || {}), ...(setupSettings.scoring || {}) };
-        try { validateSquadRules(merged); } catch { deny = { code: 'invalid-argument', msg: 'those squad rules cannot make a legal squad' }; return; }
+        Object.assign(merged, fixedSquadSettings());
         c.settings = merged;
+      } else {
+        c.settings = { ...DEFAULT_SETTINGS(), ...(c.settings || {}), ...fixedSquadSettings(), scoring: { ...Engine.DEFAULT_SCORING, ...(c.settings?.scoring || {}) } };
       }
       c.phase = 'draft';
       c.draft = { ...(c.draft || {}), order, picks: null, deadline: null, ceremonyReady: null }; // the final manager through the ceremony arms pick one
@@ -621,7 +623,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
       arr.pop();
       c.draft.picks = arr;
       c.draft.deadline = Date.now() + ((c.settings && c.settings.pickTimer) || 30) * 1000;
-      const total = toArr(c.managers).length * ((c.settings && c.settings.squadSize) || 14);
+      const total = toArr(c.managers).length * Engine.SQUAD_RULES.size;
       if (c.phase === 'season' && arr.length < total) c.phase = 'draft'; // the final pick flipped it; undo reopens atomically
       return c;
     });
@@ -730,7 +732,7 @@ ACTIONS.tradePropose = async ({ league, a, data, ctx, state, eng }) => {
   const from = actingManager(a, data);
   const to = Number(data.to);
   if (!state.managers.some(m => m.id === to) || to === from) throw new HttpsError('invalid-argument', 'bad counterparty');
-  const cap = state.settings.squadSize || 14;
+  const cap = Engine.SQUAD_RULES.size;
   const give = intArray(data.give, 'give', cap), get = intArray(data.get, 'get', cap);
   if (!give.length || give.length !== get.length) throw new HttpsError('invalid-argument', 'trades swap the same number each way');
   if (new Set(give).size !== give.length || new Set(get).size !== get.length || give.some(id => get.includes(id))) {
@@ -1212,26 +1214,7 @@ ACTIONS.mockMatchday = async ({ league, a, data }) => {
 };
 
 /* ----- commissioner desk ----- */
-const POS_KEYS = ['GK', 'DF', 'MF', 'FW'];
-// squadSize + posMin + posMax must describe a squad that can actually exist
-function validateSquadRules({ squadSize, posMin, posMax }) {
-  if (!Number.isInteger(squadSize) || squadSize < 11 || squadSize > 25) throw new HttpsError('invalid-argument', 'squad size runs 11-25');
-  let smin = 0, smax = 0;
-  for (const k of POS_KEYS) {
-    const lo = posMin?.[k], hi = posMax?.[k];
-    if (!Number.isInteger(lo) || !Number.isInteger(hi) || lo < 0 || hi < lo || hi > squadSize) throw new HttpsError('invalid-argument', `position bounds for ${k} are inconsistent`);
-    smin += lo; smax += hi;
-  }
-  if (posMin.GK < 1) throw new HttpsError('invalid-argument', 'at least one keeper');
-  if (smin > squadSize || smax < squadSize) throw new HttpsError('invalid-argument', 'position bounds cannot produce a legal squad');
-}
-function checkPosObject(v) {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new HttpsError('invalid-argument', 'position rules are an object');
-  const keys = Object.keys(v);
-  if (keys.length !== 4 || POS_KEYS.some(k => !keys.includes(k))) throw new HttpsError('invalid-argument', 'position rules need exactly GK/DF/MF/FW');
-  for (const k of keys) if (!Number.isInteger(v[k]) || v[k] < 0 || v[k] > 25) throw new HttpsError('invalid-argument', `bad bound for ${k}`);
-  return v;
-}
+const fixedSquadSettings = () => ({ squadSize: Engine.SQUAD_RULES.size, posMin: { ...Engine.SQUAD_RULES.min }, posMax: { ...Engine.SQUAD_RULES.max } });
 
 ACTIONS.settingsSet = async ({ league, a, data, state }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
@@ -1256,13 +1239,8 @@ ACTIONS.settingsSet = async ({ league, a, data, state }) => {
     return { ok: true };
   }
   if (['squadSize', 'posMin', 'posMax'].includes(data.key)) {
-    if (state.phase !== 'setup') throw new HttpsError('failed-precondition', 'squad rules are fixed once the draft starts');
-    const next = { squadSize: state.settings.squadSize, posMin: state.settings.posMin, posMax: state.settings.posMax };
-    if (data.key === 'squadSize') next.squadSize = Number(data.value);
-    else next[data.key] = checkPosObject(data.value);
-    validateSquadRules(next);
-    await db().ref(`${base}/public/settings/${data.key}`).set(data.key === 'squadSize' ? next.squadSize : next[data.key]);
-    return { ok: true };
+    await db().ref(`${base}/public/settings`).update(fixedSquadSettings());
+    return { ok: true, fixed: true };
   }
   throw new HttpsError('invalid-argument', 'unknown setting');
 };
@@ -1380,9 +1358,7 @@ const DEFAULT_ROSTER = [
   { id: 12, name: 'Wilko Wilkowski', team: 'WA Wanderers' },
 ];
 const DEFAULT_SETTINGS = () => ({
-  squadSize: 14,
-  posMin: { GK: 1, DF: 3, MF: 3, FW: 1 },
-  posMax: { GK: 2, DF: 6, MF: 6, FW: 4 },
+  ...fixedSquadSettings(),
   pickTimer: 30,
   scoring: { ...Engine.DEFAULT_SCORING },
 });
@@ -1397,7 +1373,7 @@ function canonicalSetupState(prevPub) {
       ...prev.settings,
       scoring: { ...Engine.DEFAULT_SCORING, ...(prev.settings.scoring || {}) },
     };
-    try { validateSquadRules(cand); settings = cand; } catch { /* keep defaults */ }
+    settings = { ...cand, ...fixedSquadSettings() };
   }
   return {
     phase: 'setup',
@@ -1464,8 +1440,7 @@ function cleanSettingsSection(sIn) {
   for (const k of Object.keys(sIn)) {
     if (!['squadSize', 'posMin', 'posMax', 'pickTimer', 'scoring', 'lobusBonus'].includes(k)) importError(`settings key "${k}"`);
   }
-  const cand = { ...DEFAULT_SETTINGS(), ...sIn };
-  validateSquadRules(cand); // throws its own HttpsError on nonsense
+  const cand = { ...DEFAULT_SETTINGS(), ...sIn, ...fixedSquadSettings() };
   if (sIn.scoring != null) {
     if (!isPlainObj(sIn.scoring)) importError('scoring');
     for (const [k, v] of Object.entries(sIn.scoring)) {
@@ -1488,17 +1463,10 @@ function cleanSettingsPatch(sIn) {
   for (const k of Object.keys(sIn)) {
     if (!['squadSize', 'posMin', 'posMax', 'pickTimer', 'scoring', 'lobusBonus'].includes(k)) importError(`settings key "${k}"`);
   }
-  for (const k of ['squadSize', 'pickTimer', 'lobusBonus']) {
+  for (const k of ['pickTimer', 'lobusBonus']) {
     if (sIn[k] !== undefined) {
       if (typeof sIn[k] !== 'number' || !Number.isFinite(sIn[k])) importError(`settings "${k}"`);
       out[k] = sIn[k];
-    }
-  }
-  for (const k of ['posMin', 'posMax']) {
-    if (sIn[k] !== undefined) {
-      if (!isPlainObj(sIn[k])) importError(k);
-      for (const pos of ['GK', 'DF', 'MF', 'FW']) if (typeof sIn[k][pos] !== 'number' || !Number.isFinite(sIn[k][pos])) importError(`${k}.${pos}`);
-      out[k] = { GK: sIn[k].GK, DF: sIn[k].DF, MF: sIn[k].MF, FW: sIn[k].FW };
     }
   }
   if (sIn.scoring !== undefined) {
@@ -1557,7 +1525,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
         || m.rivals.some(r => !midSeen.has(r) || r === m.id)) importError('manager rivals');
     }
   }
-  if (s.settings != null) cleanSettingsSection(s.settings);
+  if (s.settings != null) s.settings = cleanSettingsSection(s.settings);
   const arrayCaps = { transfers: 5000, trades: 1000, covenants: 500 };
   for (const [k, cap] of Object.entries(arrayCaps)) {
     if (s[k] != null && toArr(s[k]).length > cap) importError(`${k} too long`);
