@@ -93,6 +93,15 @@ h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spa
 .btn.ghost { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
 .btn.danger { background: var(--red); color: #fff; }
 .btn.small { padding: 6px 12px; font-size: 12px; }
+.btn.icon-btn {
+  width: 32px; height: 32px; min-width: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; flex: none;
+}
+.header-icon-btn {
+  width: 30px; height: 30px; padding: 0; display: inline-flex;
+  align-items: center; justify-content: center; cursor: pointer;
+}
 .home-btn {
   min-height: 36px; padding: 8px 14px; display: inline-flex;
   align-items: center; justify-content: center; gap: 6px; font-size: 13px;
@@ -143,7 +152,26 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 /* grid children default to min-width:auto, so one unwrappable squad row can
    push the whole document wider than a small phone — never let it */
 .draft-layout > * { min-width: 0; }
-@media (max-width: 980px) { .draft-layout { grid-template-columns: 1fr; } }
+@media (max-width: 980px) {
+  .draft-layout { grid-template-columns: 1fr; }
+  /* The same prep queue already lives in the thumb drawer at this width. */
+  .draft-prep-layout .draft-side { display: none; }
+}
+
+.draft-intro { margin-bottom: 14px; padding: 0; overflow: hidden; }
+.draft-intro > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 15px 18px;
+}
+.draft-intro > summary::-webkit-details-marker { display: none; }
+.draft-intro > summary::after { content: '＋'; color: var(--muted); font-size: 16px; }
+.draft-intro[open] > summary::after { content: '−'; }
+.draft-intro > summary b { font-size: 15px; }
+.draft-intro > summary span { margin-left: auto; color: var(--muted); font-size: 11px; }
+.draft-intro-body { padding: 0 18px 14px; border-top: 1px solid rgba(38,50,80,.55); }
+.draft-intro-body .rules-p { margin: 12px 0 0; }
+.draft-intro-body > .muted { margin-top: 7px; font-size: 12px; }
 
 .on-clock {
   display: grid; grid-template-columns: 1fr auto auto; gap: 3px 14px; align-items: center;
@@ -183,7 +211,6 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 
 .pool-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .pool-controls input[type=text] { flex: 1; min-width: 180px; }
-.pool-toolbar { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-bottom: 4px; flex-wrap: wrap; }
 .row-actions { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -192,11 +219,11 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pool-table { width: 100%; border-collapse: collapse; }
 .pool-table th {
   text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
-  color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line);
+  color: var(--muted); padding: 7px 8px; border-bottom: 1px solid var(--line);
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 .pool-table th:hover { color: var(--text); }
-.pool-table td { padding: 8px 10px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 14px; }
+.pool-table td { padding: 6px 8px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 13.5px; }
 .pool-table tr:hover td { background: rgba(45,212,167,.05); }
 /* action column pinned to the right edge so Sign/Claim/Draft never scrolls out of view on phones */
 .pool-table th.act, .pool-table td.act {
@@ -205,7 +232,7 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   box-shadow: -10px 0 10px -8px rgba(0,0,0,.55);
 }
 .pool-table tr:hover td.act { background: var(--card2); }
-.pcell { display: flex; align-items: center; gap: 10px; }
+.pcell { display: flex; align-items: center; gap: 8px; }
 .pcell > div:last-child { min-width: 0; }
 /* the NAME ellipsizes in its own span; the flag sits outside the clip so it
    can never render half-Italy-as-Algeria (Marc, 2 Aug) */
@@ -214,15 +241,22 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pcell .pname .pn-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pcell .pname .nat-flag { flex: none; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
+.player-copy { min-width: 0; }
+.player-mobile-meta { display: none; color: var(--muted); font-size: 10px; line-height: 1.2; margin-top: 2px; }
 /* phones: cap the player cell so name + flag stop short of the sticky
    action column instead of sliding underneath it (Marc's screenshot — a
    display-zoomed iPhone put the Sign overlay on top of Tonali's flag), and
    compare goes icon-only so the action column stops being a third of the
    screen. max-width must sit on .pcell — table auto-layout ignores it on td */
 @media (max-width: 700px) {
-  /* 192px ≈ sticky action column + cell padding at its widest (trough) —
-     leaves the whole name+flag visible at scroll 0 even on a 320px screen */
-  .pool-table td.pcol .pcell { max-width: calc(100vw - 192px); }
+  /* Player, Rate and the action remain together; club/position move beneath
+     the name instead of forcing a sideways scroll (Ben, 5 Aug). */
+  .draft-pool .col-club, .draft-pool .col-pos, .draft-pool .col-status { display: none; }
+  .draft-pool td.pcol .pcell { width: clamp(112px, 37vw, 150px); max-width: calc(100vw - 188px); }
+  .draft-pool .player-mobile-meta { display: block; }
+  .draft-pool th.act, .draft-pool td.act { width: 77px; min-width: 77px; padding-left: 4px; padding-right: 4px; }
+  .draft-pool .act [data-compare], .draft-pool .act .icon-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; }
+  .draft-pool.is-live .act [data-compare] { display: none; }
   .pool-table .act .cmp-txt { display: none; }
   .pool-table .act [data-compare]::before { content: '\2942'; font-size: 14px; }
 }
@@ -614,7 +648,7 @@ tr.gone-row td.act { opacity: .8; }
 /* the playoff cutoff: dashed so it reads as a line in the sand, not a border */
 .playoff-line td { border-bottom: 2px dashed var(--accent); }
 .headshot { width: 28px; height: 36px; border-radius: 5px; object-fit: cover; object-position: top; background: var(--bg2); flex-shrink: 0; }
-.pool-table .headshot { width: 32px; height: 41px; }
+.pool-table .headshot { width: 30px; height: 38px; }
 .kit { width: 22px; height: 28px; object-fit: contain; flex-shrink: 0; }
 [data-pcard] { cursor: pointer; }
 .pcard { max-width: 480px; width: 94%; }
@@ -821,6 +855,8 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
   body { padding-bottom: 66px; }
+  main { padding: 16px 10px 80px; }
+  .card { padding: 14px; }
   /* the pitch must read as a formation: rows NEVER wrap — a back four
      spilling onto two lines made every shape look illegal. Five across
      fits a 390px screen with slimmer chips and smaller shirts. */
@@ -841,16 +877,16 @@ tr.st-red .pname { color: #ff9c9c; }
   .on-clock > .pick-clock { font-size: 34px; padding: 10px; width: 100%; box-sizing: border-box; }
   .on-clock .oc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .on-clock .oc-btns .btn { width: 100%; padding: 11px 8px; }
-  .brand { gap: 8px; }
-  .brand-crest { width: 30px; height: 30px; border-radius: 8px; }
-  .brand h1 { font-size: 17px; }
+  .brand { gap: 7px; min-width: 0; flex: 1; }
+  .brand-crest { width: 28px; height: 28px; border-radius: 7px; }
+  .brand h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
   .brand-sub { display: none; }
   .sync-txt { display: none; }
   .pitch-hint { display: none; }
   /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
      containing block for position:fixed descendants, pinning the bottom nav
      (and the More menu) to the header instead of the viewport */
-  .topbar { gap: 10px; padding: 12px 14px; position: static; backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .topbar { gap: 8px; padding: 8px 10px; flex-wrap: nowrap; position: static; backdrop-filter: none; -webkit-backdrop-filter: none; }
   /* the phone tab bar — icons over labels, like a proper app */
   .nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
@@ -893,13 +929,16 @@ tr.st-red .pname { color: #ff9c9c; }
   .nav-more-menu .nav-dot { position: static; margin-top: -2px; }
   .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nav.setup-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .sync-area { order: 2; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+  .sync-area { order: 2; margin-left: auto; gap: 6px; flex: none; flex-wrap: nowrap; justify-content: flex-end; }
+  .sync-area #whoBtn { max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-btn {
-    width: auto; min-width: 110px; height: 44px; min-height: 44px;
-    padding: 0 14px; border-radius: 12px;
+    width: 36px; min-width: 36px; height: 36px; min-height: 36px;
+    padding: 0; border-radius: 10px;
   }
   .home-btn svg { width: 17px; height: 17px; }
-  .home-btn .sync-txt { display: inline; }
+  .home-btn .sync-txt { display: none; }
+  .header-icon-btn { width: 34px; height: 34px; }
+  .sync-area #muteBtn { display: none; }
   .home-btn.is-current {
     color: #07120e; background: var(--accent); border-color: var(--accent);
   }
@@ -1048,6 +1087,7 @@ tr.st-red .pname { color: #ff9c9c; }
 /* phones: thumb-sized tap targets */
 @media (max-width: 700px) {
   .btn.small { padding: 9px 14px; font-size: 12.5px; }
+  .btn.small.icon-btn { width: 36px; height: 36px; min-width: 36px; padding: 0; }
   .lrow input[type=checkbox] { width: 20px; height: 20px; }
   /* waiver claim up/down: proper thumb targets (Marc's ask — no drag-drop) */
   .claim-btns .btn.small { min-width: 42px; padding: 10px 0; text-align: center; }
@@ -1122,13 +1162,28 @@ tr.st-red .pname { color: #ff9c9c; }
 /* ----- private Scouting Desk ----- */
 .scout-desk {
   display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-  padding: 8px 10px; margin: 2px 0 9px;
-  border: 1px solid var(--line); border-radius: 9px;
-  background: rgba(255,255,255,.025);
+}
+.scout-tools { position: relative; width: max-content; max-width: 100%; margin: 0 0 8px auto; z-index: 5; }
+.scout-tools > summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.scout-tools > summary::-webkit-details-marker { display: none; }
+.scout-tools-panel {
+  position: absolute; top: calc(100% + 7px); right: 0; z-index: 7;
+  width: min(680px, calc(100vw - 44px)); max-height: min(620px, 72vh); overflow-y: auto;
+  display: grid; gap: 12px; padding: 13px;
+  background: #131c31; border: 1px solid var(--line); border-radius: 11px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.5);
 }
 .scout-title { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 .scout-desk select { min-width: 150px; padding: 7px 9px; font-size: 12px; }
-.scout-private { margin-left: auto; font-size: 10.5px; }
+.scout-columns { border-top: 1px solid var(--line); padding-top: 11px; }
+.scout-column-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; margin-top: 8px; }
+.scout-col-option {
+  display: grid; grid-template-columns: 18px 38px minmax(0, 1fr); gap: 6px;
+  align-items: start; min-width: 0; cursor: pointer; font-size: 11px; line-height: 1.3;
+}
+.scout-col-option input { margin-top: 1px; }
+.scout-col-option b { color: var(--text); }
+.scout-col-option span { min-width: 0; }
 .compare-on { border-color: var(--accent) !important; color: var(--accent) !important; }
 .compare-fab {
   position: fixed; left: 18px; bottom: 18px; z-index: 55;
@@ -1157,7 +1212,11 @@ tr.st-red .pname { color: #ff9c9c; }
 .compare-runway small { color: var(--muted); }
 .compare-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
 @media (max-width: 700px) {
-  .scout-private { width: 100%; margin-left: 0; }
+  .scout-tools-panel { width: calc(100vw - 40px); }
+  .scout-desk { align-items: stretch; }
+  .scout-desk .scout-title { width: 100%; }
+  .scout-desk select { flex: 1; min-width: 0; }
+  .scout-column-grid { grid-template-columns: 1fr; }
   .compare-fab { bottom: calc(62px + env(safe-area-inset-bottom)); left: 10px; }
   .compare-grid { grid-template-columns: 1fr; }
   .compare-player { display: grid; grid-template-columns: minmax(0, 1fr); }

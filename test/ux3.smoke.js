@@ -678,10 +678,10 @@ const SEED_SEASON = `(() => {
       },
     };
   });
-  chk('G1b/G18: 320px header controls are usable; search fits and Dashboard is a labelled pill',
+  chk('G1b/G18: 320px header is compact; search fits and Home remains accessible',
     g18.open && g18.rows > 0 && g18.scrollW <= 320
-      && g18.home.w >= 110 && g18.home.h >= 44
-      && g18.home.label === 'Dashboard' && g18.home.textVisible,
+      && g18.home.w >= 36 && g18.home.h >= 36
+      && g18.home.label === 'Dashboard' && !g18.home.textVisible,
     JSON.stringify(g18));
   await g320.close();
 

@@ -42,6 +42,7 @@ const chk = (name, ok, detail = '') => {
     return {
       managers: state.managers.length,
       desk: !!document.querySelector('.scout-desk'),
+      tools: !!document.querySelector('.scout-tools'),
       compares: document.querySelectorAll('[data-compare]').length,
       stars: document.querySelectorAll('[data-auto]').length,
       bulkControls: document.querySelectorAll('[data-bulk-pid], [data-bulk-add], [data-bulk-all]').length,
@@ -49,7 +50,7 @@ const chk = (name, ok, detail = '') => {
     };
   });
   chk('SC1 live draft pool opens by Rate with one queue control per player',
-    seeded.managers === 12 && seeded.desk && seeded.compares > 3 && seeded.stars > 3
+    seeded.managers === 12 && seeded.desk && seeded.tools && seeded.compares > 3 && seeded.stars > 3
       && seeded.bulkControls === 0 && seeded.sort === 'rate',
     JSON.stringify(seeded));
 
@@ -174,12 +175,15 @@ const chk = (name, ok, detail = '') => {
     state.view = 'transfers';
     transfersView.tab = 'trough';
     render();
+    const tools = document.querySelector('.scout-tools');
+    if (tools) tools.open = true;
     const buttons = [...document.querySelectorAll('[data-compare]')].slice(0, 2);
     buttons.forEach(b => b.click());
     showScoutCompare();
     const card = document.querySelector('.compare-card');
     const desk = document.querySelector('.scout-desk');
     return {
+      tools: !!tools && tools.offsetParent !== null,
       desk: !!desk && desk.offsetParent !== null,
       card: !!card && card.offsetParent !== null,
       compareCards: card?.querySelectorAll('.compare-player').length,
@@ -188,7 +192,7 @@ const chk = (name, ok, detail = '') => {
     };
   });
   chk('SC9: Scouting Desk and two-player compare fit a real 320px viewport',
-    m320.desk && m320.card && m320.compareCards === 2 && m320.viewport === 320 && m320.scrollW <= 320,
+    m320.tools && m320.desk && m320.card && m320.compareCards === 2 && m320.viewport === 320 && m320.scrollW <= 320,
     JSON.stringify(m320));
 
   chk('SC10: no uncaught browser errors', errors.length === 0, errors.join(' | '));

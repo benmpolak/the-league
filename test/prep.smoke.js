@@ -27,6 +27,7 @@ const chk = (name, ok, detail = '') => {
   const errors = [];
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
+  await page.setViewport({ width: 1280, height: 800 });
   page.on('pageerror', e => errors.push(e.message));
   page.on('dialog', d => d.accept());
   await page.goto(baseUrl + '?nosync&prep-test=1', { waitUntil: 'networkidle2' });
@@ -64,12 +65,17 @@ const chk = (name, ok, detail = '') => {
       .every((n, i, a) => i === 0 || a[i - 1] >= n),
     draftBtns: document.querySelectorAll('[data-pick]').length,
     clock: !!document.querySelector('.on-clock'),
+    introOpen: document.querySelector('.draft-intro')?.open,
+    tools: document.querySelectorAll('.scout-tools').length,
+    duplicateToolbars: document.querySelectorAll('.pool-toolbar, .col-toggle').length,
+    columnsInsideTools: !!document.querySelector('.scout-tools [data-coltoggle="rate"]'),
     hash: location.hash,
   }));
   chk('P2 scouting floor: one name, star control, no bulk checkboxes, Rate order',
     p2.view === 'draft' && p2.pool && p2.rows > 3 && p2.stars > 3 && p2.drags > 3 &&
     p2.bulkControls === 0 && p2.duplicateNames === 0 && p2.sort === 'rate' && p2.rateDescending &&
-    p2.draftBtns === 0 && !p2.clock && p2.hash === '#draft',
+    p2.draftBtns === 0 && !p2.clock && p2.introOpen && p2.tools === 1 &&
+    p2.duplicateToolbars === 0 && p2.columnsInsideTools && p2.hash === '#draft',
     JSON.stringify(p2));
 
   // ---- P2b: only duplicate short names gain an initial; full names still search
@@ -228,9 +234,10 @@ const chk = (name, ok, detail = '') => {
     phase: state.phase, view: state.view,
     list: toArr(state.autolists[whoami]),
     rows: document.querySelectorAll('.qrow').length,
+    introCollapsed: document.querySelector('.draft-intro')?.open === false,
   }));
   chk('P7 list + scouting floor survive a reload',
-    p7.phase === 'setup' && p7.view === 'draft' && p7.list.length >= 3 && p7.rows >= p7.list.length &&
+    p7.phase === 'setup' && p7.view === 'draft' && p7.list.length >= 3 && p7.rows >= p7.list.length && p7.introCollapsed &&
     JSON.stringify(p7.list) === JSON.stringify(savedList),
     `rows=${p7.rows} list=${p7.list.length}/${savedList.length}`);
 
@@ -539,6 +546,28 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P11b trough flags lead the name and clear the sticky Sign column at 320px',
     p11b.flag && p11b.clear && p11b.first && p11b.w > 10, JSON.stringify(p11b));
+
+  // P11c: the clean mobile draft default keeps the decision row on one screen
+  const p11c = await page.evaluate(() => {
+    state = freshState(); state.view = 'draft'; whoami = state.managers[0].id; render();
+    const table = document.querySelector('.draft-pool');
+    const wrap = table?.parentElement;
+    const row = table?.querySelector('tbody tr');
+    const player = row?.querySelector('td.pcol')?.getBoundingClientRect();
+    const rate = row?.querySelector('td[data-stat="rate"]')?.getBoundingClientRect();
+    const act = row?.querySelector('td.act')?.getBoundingClientRect();
+    const visibleStats = [...table.querySelectorAll('thead [data-stat]')].filter(el => getComputedStyle(el).display !== 'none').map(el => el.dataset.stat);
+    return {
+      table: !!table, visibleStats,
+      fits: wrap.scrollWidth <= wrap.clientWidth + 1,
+      ordered: player && rate && act ? player.right <= rate.left + 1 && rate.right <= act.left + 1 : false,
+      docW: document.documentElement.scrollWidth, viewport: innerWidth,
+      duplicateQueue: document.querySelector('.draft-prep-layout .draft-side')?.offsetParent !== null,
+    };
+  });
+  chk('P11c 320px draft keeps Player, Rate and action together without a duplicate queue',
+    p11c.table && JSON.stringify(p11c.visibleStats) === JSON.stringify(['rate']) && p11c.fits && p11c.ordered &&
+    p11c.docW <= p11c.viewport && !p11c.duplicateQueue, JSON.stringify(p11c));
 
   chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 

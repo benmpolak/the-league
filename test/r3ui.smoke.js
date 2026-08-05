@@ -240,12 +240,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   /* 5 — a stale saved `price` column preference cannot resurrect the column */
   const priceChk = await p.evaluate(() => {
-    localStorage.setItem('tl2627-cols', JSON.stringify(['vs', 'price', 'ppg', 'pts']));
+    localStorage.setItem(COL_PREFS_KEY, JSON.stringify(['vs', 'price', 'ppg', 'pts']));
     _colPrefs = undefined; // force a re-read of the stale preference
     state.view = 'transfers'; transfersView.tab = 'trough'; render();
     const heads = [...document.querySelectorAll('#trResults thead th')].map(th => th.textContent.trim());
     const keys = ALL_STAT_COLS(false).map(c => c.k).concat(ALL_STAT_COLS(true).map(c => c.k));
-    localStorage.removeItem('tl2627-cols'); _colPrefs = undefined;
+    localStorage.removeItem(COL_PREFS_KEY); _colPrefs = undefined;
     return { heads, hasPriceKey: keys.includes('price') };
   });
   chk('price column is gone from the catalogue', !priceChk.hasPriceKey);

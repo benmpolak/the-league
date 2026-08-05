@@ -1592,7 +1592,7 @@ function showClubProfile(mid) {
   ov.id = 'clubProfileOverlay';
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card club-profile-ov" role="dialog" aria-modal="true" aria-label="${esc(teamName(mid))} — club profile">
-    <div style="display:flex;justify-content:flex-end;margin-bottom:-6px"><button class="btn ghost small" id="profClose" aria-label="Close profile">&#10005;</button></div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:-6px"><button class="btn ghost small icon-btn" id="profClose" aria-label="Close profile">&#10005;</button></div>
     ${clubProfileHtml(mid, { editable })}
   </div>`;
   ov.onclick = e => { if (e.target === ov || e.target.id === 'profClose') closeOv(ov); };
@@ -3291,8 +3291,8 @@ function renderSyncArea() {
     const homeLabel = state.phase === 'setup' ? 'Waiting room' : 'Dashboard';
     bits.push(`<button id="homeBtn" class="btn home-btn${state.view === 'dash' ? ' is-current' : ''}" aria-label="${homeLabel}" title="${state.phase === 'setup' ? 'Back to the waiting room' : 'Back to the Dashboard'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 3l9 8"/><path d="M5 10v11h14V10"/></svg><span class="sync-txt">${homeLabel}</span></button>`);
   }
-  bits.push(`<button class="tag" id="gSearchBtn" style="cursor:pointer" aria-label="Search players" title="Search every player (Ctrl+K or /)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-1px"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>`);
-  bits.push(`<button class="tag" id="muteBtn" style="cursor:pointer" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
+  bits.push(`<button class="tag header-icon-btn" id="gSearchBtn" aria-label="Search players" title="Search every player (Ctrl+K or /)"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-1px"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.8-4.8"/></svg></button>`);
+  bits.push(`<button class="tag header-icon-btn" id="muteBtn" aria-label="${soundOn() ? 'Mute' : 'Unmute'} broadcast sound" title="Broadcast sound (Ian's mute button)">${soundOn() ? '&#128266;' : '&#128263;'}</button>`);
   el.innerHTML = bits.join('');
   const gsb = $('#gSearchBtn');
   if (gsb) gsb.onclick = () => openPlayerSearch();
@@ -4122,13 +4122,16 @@ function viewDraft() {
 // their homework here and the list is waiting when the real board opens.
 function viewDraftPrep() {
   const canQueue = whoami && whoami !== -1;
+  const introOpen = window._draftIntroOpen === undefined ? _draftIntroFirstVisit : window._draftIntroOpen;
   return `
-  <div class="card" style="margin-bottom:14px">
-    <h2>The Draft Console &mdash; scouting floor</h2>
-    <p class="rules-p">The draft hasn&rsquo;t started. Until it does, this is where the homework happens: browse the pool, &#9733; star your targets and put them in order. On the night your list doubles as a shortlist &mdash; and if your clock ever hits zero, the top available name on it goes in automatically.</p>
-    ${!canQueue && netOn() ? '<p class="muted" style="margin-top:8px">Sign in (top right) to build your list &mdash; it saves to your account and will be waiting on draft night.</p>' : ''}
-  </div>
-  <div class="draft-layout">
+  <details class="card draft-intro" ${introOpen ? 'open' : ''}>
+    <summary><b>The Draft Console &mdash; scouting floor</b><span>How the shortlist works</span></summary>
+    <div class="draft-intro-body">
+      <p class="rules-p">The draft hasn&rsquo;t started. Browse the pool, &#9733; star your targets and put them in order. On the night the top available name on your list goes in automatically if your clock hits zero.</p>
+      ${!canQueue && netOn() ? '<p class="muted">Sign in (top right) to build your list &mdash; it saves to your account and will be waiting on draft night.</p>' : ''}
+    </div>
+  </details>
+  <div class="draft-layout draft-prep-layout">
     <div class="card" id="poolCard">
       ${poolControlsHtml(PLAYERS.length)}
       ${poolTable()}
@@ -4146,7 +4149,16 @@ function viewDraftPrep() {
   </div>
   ${queueDrawerHtml()}`;
 }
-function bindDraftPrep() { bindPoolControls(); }
+const DRAFT_INTRO_SEEN_KEY = `${LS_NS}-draft-intro-seen`;
+let _draftIntroFirstVisit = (() => { try { return !localStorage.getItem(DRAFT_INTRO_SEEN_KEY); } catch { return true; } })();
+function bindDraftPrep() {
+  const intro = document.querySelector('.draft-intro');
+  if (intro) {
+    try { localStorage.setItem(DRAFT_INTRO_SEEN_KEY, '1'); } catch {}
+    intro.ontoggle = () => { window._draftIntroOpen = intro.open; };
+  }
+  bindPoolControls();
+}
 
 // shared by the live console and the scouting floor
 function poolControlsHtml(availableCount) {
@@ -4170,7 +4182,7 @@ function queueDrawerHtml() {
   <button class="btn queue-fab" id="queueFab">&#9733; Queue <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></button>
   <div class="queue-drawer${window._queueOpen ? ' open' : ''}" id="queueDrawer">
     <h2 style="display:flex;align-items:center">My autopick queue <span class="tag" style="margin-left:8px">${toArr(state.autolists?.[whoami]).length}</span>
-      <button class="btn ghost small" id="queueClose" style="margin-left:auto">&#10005;</button></h2>
+      <button class="btn ghost small icon-btn" id="queueClose" style="margin-left:auto" aria-label="Close queue">&#10005;</button></h2>
     <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist — the clock takes the top available name. Star players in the pool to add them.</p>
     ${autolistRows()}
   </div>`;
@@ -4204,9 +4216,9 @@ function autolistRows() {
       <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
       <span style="margin-left:auto;display:flex;gap:4px">
-        <button class="btn ghost small" data-autoup="${k}" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
-        <button class="btn ghost small" data-autodown="${k}" ${k === list.length - 1 ? 'disabled' : ''}>&#9660;</button>
-        <button class="btn ghost small" data-autodel="${k}">&#10005;</button>
+        <button class="btn ghost small icon-btn" data-autoup="${k}" ${k === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
+        <button class="btn ghost small icon-btn" data-autodown="${k}" ${k === list.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
+        <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>
       </span></div>`;
   }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
 }
@@ -4481,35 +4493,31 @@ const ALL_STAT_COLS = live => [
   { k: 'rate', h: 'Rate', t: 'The board’s rating — 75% last-season production rescored under THE LEAGUE’s rules, 25% current FPL valuation; valuation carries more when the sample is thin', v: (m, p) => Math.round(rating(p)) },
 ];
 const DEFAULT_COL_KEYS = live => live
-  ? ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'f5', 'gw', 'ppg', 'pts', 'rate']
-  : ['vs', 'apps', 'g', 'a', 'cs', 'xgi', 'ppg', 'pts', 'rate'];
-// phones default to the essentials — tap any player for the full story, or
-// add columns back via the Columns toggle (a saved preference wins everywhere)
-const MOBILE_COL_KEYS = live => live ? ['vs', 'f5', 'ppg', 'rate'] : ['vs', 'ppg', 'rate'];
+  ? ['vs', 'f5', 'ppg', 'pts', 'rate']
+  : ['vs', 'ppg', 'pts', 'rate'];
+// phones default to the one decision number — tap any player for the full
+// story, or deliberately add columns back from Scouting tools.
+const MOBILE_COL_KEYS = () => ['rate'];
+// V2 deliberately retires the old, sprawling defaults once. Managers can
+// still add anything back; a clean first render now fits (Ben, 5 Aug).
+const COL_PREFS_KEY = `${LS_NS}-cols-v2`;
 let _colPrefs;
 function visibleColKeys(live) {
-  if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem('tl2627-cols')); } catch { _colPrefs = null; } }
+  if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem(COL_PREFS_KEY)); } catch { _colPrefs = null; } }
   return _colPrefs || (matchMedia('(max-width: 700px)').matches ? MOBILE_COL_KEYS(live) : DEFAULT_COL_KEYS(live));
 }
 const STAT_COLS = live => ALL_STAT_COLS(live).filter(c => visibleColKeys(live).includes(c.k));
-window._colsOpen = false;
-function colToggleHtml(live) {
+function colOptionsHtml(live) {
   const vis = visibleColKeys(live);
-  return `<details class="col-toggle" style="position:relative;margin-left:auto" ${window._colsOpen ? 'open' : ''}>
-    <summary class="btn ghost small" style="list-style:none;display:inline-block">Columns &#9881;</summary>
-    <div style="position:absolute;right:0;z-index:6;background:#131c31;border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:5px;min-width:230px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
-      ${ALL_STAT_COLS(live).map(c => `<label style="font-size:12px;display:flex;gap:7px;align-items:center;cursor:pointer"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b style="min-width:30px">${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`).join('')}
-    </div>
-  </details>`;
+  return ALL_STAT_COLS(live).map(c => `<label class="scout-col-option"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b>${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`).join('');
 }
 function bindColToggle(rerender) {
-  document.querySelectorAll('.col-toggle').forEach(d => d.ontoggle = () => { window._colsOpen = d.open; });
   document.querySelectorAll('[data-coltoggle]').forEach(cb => cb.onchange = () => {
     const live = seasonHasStats();
     const set = new Set(visibleColKeys(live));
     cb.checked ? set.add(cb.dataset.coltoggle) : set.delete(cb.dataset.coltoggle);
     _colPrefs = ALL_STAT_COLS(live).map(c => c.k).filter(k => set.has(k)); // keep column order
-    localStorage.setItem('tl2627-cols', JSON.stringify(_colPrefs));
+    localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
     rerender();
   });
 }
@@ -4553,17 +4561,23 @@ function writeScoutViews(views) {
 function scoutViewHtml(surface) {
   const saved = scoutViews();
   const active = scoutActiveView[surface] || '';
-  return `<div class="scout-desk">
-    <span class="scout-title">Scouting desk</span>
-    <select data-scout-view aria-label="Open a scouting view">
-      <option value="" ${active ? '' : 'selected'}>Open a view…</option>
-      <optgroup label="Built in">${SCOUT_PRESETS.map(v => `<option value="preset:${v.id}" ${active === `preset:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>
-      ${saved.length ? `<optgroup label="My saved views">${saved.map(v => `<option value="saved:${esc(v.id)}" ${active === `saved:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>` : ''}
-    </select>
-    <button class="btn ghost small" data-scout-save>Save current</button>
-    ${saved.length ? `<button class="btn ghost small" data-scout-delete ${active.startsWith('saved:') ? '' : 'disabled'}>Delete</button>` : ''}
-    <span class="muted scout-private">Private to this device</span>
-  </div>`;
+  window._scoutToolsOpen = window._scoutToolsOpen || {};
+  return `<details class="scout-tools" data-scout-tools="${surface}" ${window._scoutToolsOpen[surface] ? 'open' : ''}>
+    <summary class="btn ghost small">Scouting tools <span aria-hidden="true">&#9881;</span></summary>
+    <div class="scout-tools-panel">
+      <div class="scout-desk">
+        <span class="scout-title">Saved views</span>
+        <select data-scout-view aria-label="Open a scouting view">
+          <option value="" ${active ? '' : 'selected'}>Open a view…</option>
+          <optgroup label="Built in">${SCOUT_PRESETS.map(v => `<option value="preset:${v.id}" ${active === `preset:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>
+          ${saved.length ? `<optgroup label="My saved views">${saved.map(v => `<option value="saved:${esc(v.id)}" ${active === `saved:${v.id}` ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</optgroup>` : ''}
+        </select>
+        <button class="btn ghost small" data-scout-save>Save current</button>
+        ${saved.length ? `<button class="btn ghost small" data-scout-delete ${active.startsWith('saved:') ? '' : 'disabled'}>Delete</button>` : ''}
+      </div>
+      <div class="scout-columns"><span class="scout-title">Columns</span><div class="scout-column-grid">${colOptionsHtml(seasonHasStats())}</div></div>
+    </div>
+  </details>`;
 }
 function scoutSnapshot(surface) {
   const src = surface === 'draft' ? poolFilter : transfersView;
@@ -4581,7 +4595,7 @@ function applyScoutView(v, surface) {
   const clean = cleanScoutView(v);
   if (!clean) return false;
   _colPrefs = clean.cols.length ? clean.cols : DEFAULT_COL_KEYS(seasonHasStats());
-  localStorage.setItem('tl2627-cols', JSON.stringify(_colPrefs));
+  localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else {
@@ -4590,6 +4604,9 @@ function applyScoutView(v, surface) {
   return true;
 }
 function bindScoutDesk(surface, rerender) {
+  document.querySelectorAll(`[data-scout-tools="${surface}"]`).forEach(tools => {
+    tools.ontoggle = () => { window._scoutToolsOpen[surface] = tools.open; };
+  });
   document.querySelectorAll('.scout-desk').forEach(desk => {
     const sel = desk.querySelector('[data-scout-view]');
     const del = desk.querySelector('[data-scout-delete]');
@@ -4696,7 +4713,7 @@ function showScoutCompare(addHistory = true) {
   ov.innerHTML = `<div class="card compare-card" role="dialog" aria-modal="true" aria-label="Player comparison">
     <div class="compare-head">
       <div><h2>Scouting comparison <span class="tag">${players.length}/3</span></h2><p class="muted">League scoring only. No bonus. No DEFCON.</p></div>
-      <button class="btn ghost small" data-compare-close aria-label="Close comparison">&#10005;</button>
+      <button class="btn ghost small icon-btn" data-compare-close aria-label="Close comparison">&#10005;</button>
     </div>
     <div class="compare-grid" style="--compare-count:${players.length}">
       ${players.map(p => {
@@ -4744,28 +4761,25 @@ function poolTable() {
   return `
   <div class="pool-wrap">
   ${scoutViewHtml('draft')}
-  <div class="pool-toolbar">
-    ${colToggleHtml(seasonHasStats())}
-  </div>
   <div style="overflow-x:auto">
-  <table class="pool-table">
+  <table class="pool-table draft-pool${live ? ' is-live' : ''}">
     <thead><tr>
-      <th data-sort="name">Player</th><th>Club</th><th>Pos</th>
-      <th></th>
-      ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
+      <th data-sort="name">Player</th><th class="col-club">Club</th><th class="col-pos">Pos</th>
+      <th class="col-status"></th>
+      ${cols.map(c => c.sortable === false ? `<th class="num" data-stat="${c.k}" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-stat="${c.k}" data-sort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
     </tr></thead>
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
-        <td class="pcol"><div class="pcell">${photoImg(p)}<button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button></div></td>
-        <td class="muted" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
-        <td><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-        <td>${statusChip(p)}</td>
-        ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(metricsFor(p), p)}</td>`).join('')}
+        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button><span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos}</span></div></div></td>
+        <td class="muted col-club" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
+        <td class="col-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
+        <td class="col-status">${statusChip(p)}</td>
+        ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(metricsFor(p), p)}</td>`).join('')}
         <td class="act" style="white-space:nowrap">${taken.has(p.id) ? (() => {
           const pk = state.draft.picks.find(x => x.playerId === p.id);
           return pk ? `<span class="tag gone-tag" title="Pick ${pk.n}">#${pk.n} ${esc(teamName(pk.managerId))}</span>` : '<span class="tag gone-tag">GONE</span>';
-        })() : `${live ? `<button class="btn small${draftRoomOpen() && canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}`}</td>
+        })() : `${live ? `<button class="btn small${draftRoomOpen() && canPick(mid, p) && canActFor(mid) ? '' : ' dim'}" data-pick="${p.id}">Draft</button>` : ''}${compareButtonHtml(p.id)}${showStar ? `<button class="btn ghost small icon-btn${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? ' star-on' : ''}${canQueue ? '' : ' dim'}" data-auto="${p.id}" aria-label="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}" title="${canQueue ? 'Add to my autopick list' : 'Sign in to build your list'}">${canQueue && toArr(state.autolists?.[whoami]).includes(p.id) ? '&#9733;' : '&#9734;'}</button>` : ''}`}</td>
       </tr>`).join('')}
     </tbody>
   </table>
@@ -5626,9 +5640,9 @@ function viewTransfers() {
         <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
-          <button class="btn ghost small" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''}>&#9650;</button>
-          <button class="btn ghost small" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''}>&#9660;</button>
-          <button class="btn ghost small" data-claimdel="${k}" title="Withdraw">&#10005;</button>
+          <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
+          <button class="btn ghost small icon-btn" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
+          <button class="btn ghost small icon-btn" data-claimdel="${k}" title="Withdraw" aria-label="Withdraw">&#10005;</button>
         </span>
       </div>`).join('');
     return `${head}${myPitchCard}${wdCard}<div class="card">
@@ -5939,7 +5953,7 @@ function bindTransfers() {
       <table class="pool-table">
         <thead><tr>
           <th data-trsort="name">Player</th><th></th>
-          ${cols.map(c => c.sortable === false ? `<th class="num" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
+          ${cols.map(c => c.sortable === false ? `<th class="num" data-stat="${c.k}" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-stat="${c.k}" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
         </tr></thead>
         <tbody>${shown.map(p => {
           const ownerMid = ownedBy[p.id];
@@ -5956,7 +5970,7 @@ function bindTransfers() {
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button><div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
-            ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
+            ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
           </tr>`;
         }).join('')}</tbody>
@@ -5973,7 +5987,6 @@ function bindTransfers() {
         <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
-        ${colToggleHtml(live)}
       </div>` + (shown.length ? table
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
         : '<span class="muted">The Trough is empty. Somehow.</span>');
@@ -6203,7 +6216,7 @@ function installCard(settingsPage = false) {
   return `<div class="card" style="margin-bottom:18px">
     <div style="display:flex;align-items:flex-start;gap:10px">
       <h2 style="flex:1;min-width:0">Get the app &#128241;</h2>
-      ${settingsPage ? '' : '<button class="btn ghost small" id="a2hsX" title="Dismiss — it lives in Settings" aria-label="Dismiss" style="padding:2px 9px;flex:none">&#10005;</button>'}
+      ${settingsPage ? '' : '<button class="btn ghost small icon-btn" id="a2hsX" title="Dismiss — it lives in Settings" aria-label="Dismiss">&#10005;</button>'}
     </div>
     <p class="muted" style="font-size:12.5px">The League installs straight from this page — no app store, no downloads, and it never needs updating. Same live league underneath.</p>
     ${how}
@@ -6690,7 +6703,7 @@ function gazetteSheet(gwIdx = null) {
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card gazette-room" role="dialog" aria-label="The League Gazette">
-    <button class="btn ghost small gz-close" id="gzClose" title="Fold the paper">&#10005;</button>
+    <button class="btn ghost small icon-btn gz-close" id="gzClose" title="Fold the paper" aria-label="Fold the paper">&#10005;</button>
     ${progMasthead(showing.edition, showing.gwN)}
     ${showing.article}
     ${archNav}
@@ -8019,7 +8032,7 @@ function viewTable() {
           return `
           <tr data-mgr-row="${m.id}" style="cursor:pointer" class="${!form && i === 7 ? 'playoff-line' : ''}">
             <td class="muted">${i + 1}</td>
-            <td><button class="btn ghost small" data-pitchview="${m.id}" title="See this team on the pitch" style="padding:2px 7px">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${moveTag(m)} ${!form && i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
+            <td><button class="btn ghost small icon-btn" data-pitchview="${m.id}" title="See this team on the pitch" aria-label="See this team on the pitch">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${moveTag(m)} ${!form && i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
             ${form
               ? `<td class="num muted">${form.counted}</td><td class="num gold act"><b>${m.win}</b></td>`
               : `<td class="num">${m.p}</td><td class="num">${m.w}</td><td class="num">${m.d}</td><td class="num">${m.l}</td>
@@ -8609,7 +8622,7 @@ function showPlayerCard(pid) {
         ${p.news ? `<p class="warn" style="font-size:12px;margin-top:4px">${statusChip(p)} ${esc(p.news)}</p>` : ''}
         <p class="muted" style="font-size:12px;margin-top:4px">${owner ? `Owned by <b style="color:var(--text)">${esc(teamName(owner.id))}</b>` : 'Free agent' + (state.phase === 'season' && onWaivers(p) ? ' \u2014 on waivers' : ' \u2014 in the Trough')}</p>
       </div>
-      <button class="btn ghost small" id="pcardClose" style="margin-left:auto">\u2715</button>
+      <button class="btn ghost small icon-btn" id="pcardClose" style="margin-left:auto" aria-label="Close player card">\u2715</button>
     </div>
     <div class="quota-bar" style="margin:10px 0">
       <span class="quota-pill">League pts <b class="gold">&nbsp;${pp.pts}</b></span>
@@ -8805,7 +8818,7 @@ function openPlayerSearch() {
     <div class="gs-head">
       <input type="text" id="gsq" placeholder="Search ${PLAYERS.length} players — name, club, position…" aria-label="Search players" autocomplete="off">
       <button class="btn ghost small" id="gsClear" aria-label="Clear search">Clear</button>
-      <button class="btn ghost small" id="gsClose" aria-label="Close search">&#10005;</button>
+      <button class="btn ghost small icon-btn" id="gsClose" aria-label="Close search">&#10005;</button>
     </div>
     <div id="gsResults"></div>
   </div>`;
@@ -8932,7 +8945,7 @@ if (staleSave) {
   bar.className = 'stale-bar';
   bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
     <button class="btn small" id="staleReload">Reload latest draft</button>
-    <button class="btn ghost small" id="staleDismiss">&#10005;</button>`;
+    <button class="btn ghost small icon-btn" id="staleDismiss" aria-label="Dismiss">&#10005;</button>`;
   document.body.appendChild(bar);
   bar.querySelector('#staleDismiss').onclick = () => bar.remove();
   bar.querySelector('#staleReload').onclick = async () => {
