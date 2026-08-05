@@ -157,6 +157,14 @@ const chk = (name, ok, detail = '') => {
     await page.setViewport({ width, height: width === 320 ? 568 : 844 });
     await fresh();
     const barrier = await page.evaluate(async () => {
+      // Once we leave demoMode this becomes a real-network page. Silence the
+      // already-attached listeners for this crafted client-only state or a
+      // slow CI snapshot can replace it between render() and the assertion.
+      window.onSharedSnapshot = () => {};
+      window.onPrivateSnapshot = () => {};
+      window.onMembershipSnapshot = () => {};
+      window.onAuthChanged = () => {};
+      window.onSyncConnection = () => {};
       demoMode = false; membership = { managerId: state.managers[0].id, role: 'commissioner' };
       whoami = membership.managerId; syncConnected = true;
       state.phase = 'draft'; state.view = 'draft'; state.settings.pickTimer = 30;
