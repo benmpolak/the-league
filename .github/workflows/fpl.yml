@@ -2,7 +2,10 @@ name: Refresh FPL data
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # every 5 minutes — GitHub's floor. Off-matchday passes are no-ops (the
+    # commit gate below only pushes on a real diff), matchday lag drops from
+    # ~15-20min to ~5-10min (scheduler jitter means 5 is a floor, not a promise)
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
