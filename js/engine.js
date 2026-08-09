@@ -457,6 +457,100 @@
       if (lastWaiverRun(state) < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
       return { open: true };
     }
+    /* ---- the Simulation Chamber's deterministic matchday (sandbox) ----
+     * VERBATIM parity with app.js mockScorelines/mockGwStats — the server
+     * must derive the SAME pretend stats the clients render, or waiver order
+     * adjudicates off a different table than the one on screen (Toby, 9 Aug:
+     * run processed reverse-DRAFT, screen showed reverse-mock-table). The RNG
+     * call ORDER is part of the contract: any drift in when rnd() is consumed
+     * changes every stat downstream. Guarded by test/mockparity (browser). */
+    const MOCK_KO_SPREAD = 0.6;
+    const mockFxElapsed = (ko, frac) => Math.round(90 * Math.max(0, Math.min(1, (frac - ko) / (1 - MOCK_KO_SPREAD))));
+    const mockRnd = seed => { let s = (seed >>> 0) || 1; return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648; };
+    function mockScorelines(state, gwIdx, seed) {
+      const gwN = GAMEWEEKS[gwIdx].n;
+      const score = rnd => { const r = rnd(); return r < 0.28 ? 0 : r < 0.62 ? 1 : r < 0.85 ? 2 : r < 0.96 ? 3 : 4; };
+      const fxSrc = Array.isArray(state.fixtures) && state.fixtures.length ? state.fixtures : FIXTURES;
+      const gwFx = fxSrc.filter(x => x.gw === gwN);
+      const stamps = gwFx.map(x => Date.parse(x.date || '') || 0);
+      const lo = Math.min(...stamps, Infinity), hi = Math.max(...stamps, -Infinity);
+      const koFor = (f, i) => {
+        if (hi > lo && Date.parse(f.date || '')) return (Date.parse(f.date) - lo) / (hi - lo) * MOCK_KO_SPREAD;
+        return gwFx.length > 1 ? (i / (gwFx.length - 1)) * MOCK_KO_SPREAD : 0;
+      };
+      const teams = {}, fixtures = [];
+      gwFx.forEach((f, i) => {
+        const rnd = mockRnd(seed * 6151 + (f.id || 0) * 30011);
+        const hs = score(rnd), as = score(rnd);
+        const ht = Array.from({ length: hs }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
+        const at = Array.from({ length: as }, () => Math.max(1, Math.ceil(rnd() * 90))).sort((a, b) => a - b);
+        const ko = koFor(f, i);
+        fixtures.push({ f, ht, at, ko });
+        teams[f.home] = { times: ht, oppTimes: at, ko };
+        teams[f.away] = { times: at, oppTimes: ht, ko };
+      });
+      return { teams, fixtures };
+    }
+    function mockGwStats(state, gwIdx, seed, frac) {
+      const ps = {};
+      const featured = new Set();
+      for (const m of state.managers) for (const p of squadAt(state, m.id, gwIdx)) featured.add(p.id);
+      for (const arr of Object.values(state.hamCup?.entries || {})) for (const pid of toArr(arr)) featured.add(+pid);
+      const { teams } = mockScorelines(state, gwIdx, seed);
+      const haveFixtures = Object.keys(teams).length > 0;
+      const roster = [];
+      for (const pid of featured) {
+        const p = PLAYER_BY_ID[pid];
+        if (!p) continue;
+        if (haveFixtures && !teams[p.team]) continue;
+        const el = haveFixtures ? mockFxElapsed(teams[p.team].ko, frac) : Math.round(90 * frac);
+        const rnd = mockRnd(seed * 7919 + pid * 104729);
+        if (rnd() < 0.07) continue;
+        const started = rnd() < 0.85;
+        const mins = started ? el : Math.max(0, el - 60);
+        if (!mins) continue;
+        roster.push({ p, rnd, started, mins, el });
+      }
+      const byTeam = {};
+      for (const r of roster) (byTeam[r.p.team] = byTeam[r.p.team] || []).push(r);
+      const goalW = { FW: 5, MF: 3, DF: 1, GK: 0.05 };
+      const credit = {};
+      for (const [team, sl] of Object.entries(teams)) {
+        const squad = byTeam[team] || [];
+        const rnd = mockRnd(seed * 13007 + team.split('').reduce((a, c) => a + c.charCodeAt(0), 0) * 251);
+        for (const t of sl.times) {
+          const pool = squad.filter(r => r.started || t > 60);
+          const tw = pool.reduce((a, r) => a + goalW[r.p.pos], 0);
+          if (pool.length && rnd() < Math.min(0.85, 0.25 + pool.length * 0.08)) {
+            let pickAt = rnd() * tw;
+            const scorer = pool.find(r => (pickAt -= goalW[r.p.pos]) <= 0) || pool[pool.length - 1];
+            (credit[scorer.p.id] = credit[scorer.p.id] || { g: [], a: [] }).g.push(t);
+            const helpers = pool.filter(r => r !== scorer && r.p.pos !== 'GK');
+            if (helpers.length && rnd() < 0.6) {
+              const h = helpers[Math.floor(rnd() * helpers.length)];
+              (credit[h.p.id] = credit[h.p.id] || { g: [], a: [] }).a.push(t);
+            }
+          }
+        }
+      }
+      for (const { p, rnd, started, mins, el } of roster) {
+        const sl = teams[p.team];
+        const conceded = sl ? sl.oppTimes.filter(t => t <= el).length : 0;
+        const fxFrac = el / 90;
+        const cr = credit[p.id] || { g: [], a: [] };
+        const s = {
+          min: mins, st: started ? 1 : 0, sub: started ? 0 : 1,
+          g: cr.g.filter(t => t <= el).length,
+          a: cr.a.filter(t => t <= el).length,
+          cs: sl && conceded === 0 && el >= 60 && mins >= 60 ? 1 : 0,
+          gc: conceded, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0,
+        };
+        if (rnd() < 0.10 && rnd() < fxFrac) s.yc = 1;
+        if (p.pos === 'GK') s.sv = Math.min(9, Math.floor(rnd() * 4 * fxFrac) + (conceded ? 1 : 0));
+        ps[p.id] = s;
+      }
+      return ps;
+    }
     function waiverOrder(state) {
       // reverse of the CURRENT table — every finished GW counts. Passing the
       // current GW index here silently dropped the round that just finished
@@ -537,6 +631,7 @@
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
       nextWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
+      mockScorelines, mockGwStats,
       gwKicks, postRunAt, preRunAt, waiverSchedule, troughWindow,
       wdActor,
     };

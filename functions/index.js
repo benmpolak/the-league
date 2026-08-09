@@ -146,6 +146,18 @@ function normalizeState(pub, ctx) {
   s.claims = {};
   if (s.windowDraft) { s.windowDraft.order = toArr(s.windowDraft.order); s.windowDraft.picks = toArr(s.windowDraft.picks); }
   s.matchStats = ctx.matchStats;
+  // a FINISHED Simulation Chamber round is real inside the sandbox: waiver
+  // order, standings and transferGw must see the same pretend scores the
+  // clients render (Toby, 9 Aug: the run adjudicated in reverse-DRAFT order
+  // while every screen showed the mock table). The stats are derived from the
+  // seed exactly as the clients derive them — engine port, parity-tested.
+  if (s.mock && s.mock.gw != null && s.mock.phase === 'final' && ctx.gameweeks[s.mock.gw]) {
+    const g = ctx.gameweeks[s.mock.gw];
+    s.matchStats = {
+      ...ctx.matchStats,
+      [`gw${g.n}`]: { gw: s.mock.gw, label: g.label, date: g.from, final: true, playerStats: ctx.eng.mockGwStats(s, s.mock.gw, +s.mock.seed || 1, 1) },
+    };
+  }
   return s;
 }
 async function loadState(league, ctx, { withPrivate = false } = {}) {
