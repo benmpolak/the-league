@@ -198,6 +198,8 @@ const chk = (name, ok, detail = '') => {
   chk('weekly and season award calculators expose exactly the rebuilt six (weekly plus the draw) at 2 and 33 finals',
     JSON.stringify(dataAudit.weeklyKeys) === weeklyKeys && JSON.stringify(dataAudit.twoKeys) === awardKeys
       && JSON.stringify(dataAudit.fullKeys) === awardKeys && dataAudit.noBenchTwo && dataAudit.noBenchFull, JSON.stringify(dataAudit));
+  // the charge sheet itself is covered in depth by cotw.smoke.js; here we only
+  // assert it survives a whole settled season without drawing lots
   chk('C*** of the Week is charged on evidence: stable across calls, real manager, proven not drawn',
     dataAudit.cotwStable && dataAudit.cotwReal && dataAudit.cotwWeeks > 0
       && dataAudit.cotwProven === dataAudit.cotwWeeks,
