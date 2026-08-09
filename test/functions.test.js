@@ -1165,6 +1165,30 @@ const SB = 'the-league-sandbox';
   chk('the stash survives its own restore (a mistaken restore can be reset again)',
     !(await T.mutate(SB, 'resetRestore', { peek: true }, sbTok1)).error);
 
+  /* ---------------- the Suggestion Box ---------------- */
+  const sug1 = await T.mutate(SB, 'suggestionAdd', { text: '  more klaxons  ' }, sbTok2);
+  const box1 = Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {});
+  chk('a manager\'s suggestion lands trimmed with author + noted status',
+    !sug1.error && box1.length === 1 && box1[0].text === 'more klaxons' && box1[0].by === 2 && box1[0].status === 'noted', JSON.stringify(sug1.error || box1));
+  chk('suggestion cooldown: one a minute per manager',
+    (await T.mutate(SB, 'suggestionAdd', { text: 'even more klaxons' }, sbTok2)).error?.status === 'RESOURCE_EXHAUSTED');
+  chk('another manager is not blocked by the first\'s cooldown',
+    !(await T.mutate(SB, 'suggestionAdd', { text: 'fewer klaxons' }, sbTok3)).error);
+  chk('empty suggestion refused', (await T.mutate(SB, 'suggestionAdd', { text: '   ' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('suggestion rulings are Chairman-only',
+    (await T.mutate(SB, 'suggestionAdmin', { id: box1[0].id, op: 'built' }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  await T.mutate(SB, 'suggestionAdmin', { id: box1[0].id, op: 'building' }, sbTok1);
+  const box2 = Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {});
+  chk('Chairman moves a suggestion to the workshop', box2.find(s => s.id === box1[0].id)?.status === 'building');
+  chk('junk ruling refused', (await T.mutate(SB, 'suggestionAdmin', { id: box1[0].id, op: 'yeeted' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  const binned = box2.find(s => s.by === 3);
+  await T.mutate(SB, 'suggestionAdmin', { id: binned.id, op: 'bin' }, sbTok1);
+  chk('Chairman bins a suggestion', !Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {}).some(s => s.id === binned.id));
+  await T.mutate(SB, 'resetLeague', { confirm: 'RESET' }, sbTok1);
+  const boxAfterReset = Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {});
+  chk('the Suggestion Box SURVIVES a league reset',
+    boxAfterReset.length === 1 && boxAfterReset[0].text === 'more klaxons' && boxAfterReset[0].status === 'building', JSON.stringify(boxAfterReset));
+
   server.close();
   run.done();
 })().catch(e => { console.error(e); process.exit(1); });

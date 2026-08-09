@@ -1470,12 +1470,16 @@ function canonicalSetupState(prevPub) {
     };
     settings = { ...cand, ...fixedSquadSettings() };
   }
-  return {
+  const out = {
     phase: 'setup',
     managers,
     settings,
     waiverMeta: { lastRun: null, control: 'auto' },
   };
+  // the Suggestion Box survives a reset — feature requests are ABOUT the
+  // game, not part of it, and a sandbox test night must not eat them
+  if (toArr(prev.suggestions).length) out.suggestions = toArr(prev.suggestions);
+  return out;
 }
 
 /* The empty live league: founders arrive to found clubs and mark ready before
@@ -1498,6 +1502,42 @@ const SETUP_SEED_ACTIONS = new Set(['clubSet', 'readySet', 'stadiumSet', 'settin
 /* A confirmed reset atomically installs a valid setup-state, clears private
  * game data (claims/autolists) and the waiver run log, preserves membership,
  * and leaves the commissioner able to start a new draft immediately. */
+/* ----- the Suggestion Box (Ben, 9 Aug: "a feature request section for
+ * people playing the game") — any manager may submit; the Committee sets
+ * status or bins. Lives in public/suggestions; survives resets. ----- */
+ACTIONS.suggestionAdd = async ({ league, a, data, state }) => {
+  const text = String(data.text || '').trim().slice(0, 240);
+  if (!text) throw new HttpsError('invalid-argument', 'say what you want built');
+  const sugs = toArr(state.suggestions);
+  if (sugs.length >= 200) throw new HttpsError('resource-exhausted', 'the box is full — the Committee must empty it first');
+  const mine = sugs.filter(s => s.by === a.managerId);
+  const last = mine.length ? Math.max(...mine.map(s => s.t || 0)) : 0;
+  if (Date.now() - last < 60e3) throw new HttpsError('resource-exhausted', 'one suggestion a minute — quality over quantity');
+  const rec = { id: `s${Date.now()}m${a.managerId}`, by: a.managerId, text, t: Date.now(), status: 'noted' };
+  const res = await db().ref(`${leagueBase(league)}/public/suggestions`).transaction(seeded(state.suggestions, arr => {
+    if (arr.some(s => s.id === rec.id)) return arr;
+    arr.push(rec);
+    return arr;
+  }));
+  if (!res.committed) throw new HttpsError('aborted', 'the box moved — try again');
+  return { ok: true, id: rec.id };
+};
+ACTIONS.suggestionAdmin = async ({ league, a, data, state }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  const id = String(data.id || '');
+  const op = String(data.op || '');
+  if (!['noted', 'building', 'built', 'bin'].includes(op)) throw new HttpsError('invalid-argument', 'unknown ruling');
+  const res = await db().ref(`${leagueBase(league)}/public/suggestions`).transaction(seeded(state.suggestions, arr => {
+    const i = arr.findIndex(s => s.id === id);
+    if (i < 0) return arr;
+    if (op === 'bin') arr.splice(i, 1);
+    else arr[i] = { ...arr[i], status: op };
+    return arr;
+  }));
+  if (!res.committed) throw new HttpsError('aborted', 'the box moved — try again');
+  return { ok: true };
+};
+
 ACTIONS.resetLeague = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   if (data.confirm !== 'RESET') throw new HttpsError('failed-precondition', 'type RESET to confirm');
@@ -1546,7 +1586,7 @@ const IMPORT_ALLOWED = new Set([
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
 // import into a league)
-const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock', 'heckles']);
+const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock', 'heckles', 'suggestions']);
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 
