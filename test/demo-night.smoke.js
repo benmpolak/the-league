@@ -152,6 +152,8 @@ const chk = (name, ok, detail = '') => {
     });
     trmView = { pos: '', club: '', sev: '' }; trmShowAll = false;
     const weeklyKeys = Object.keys(weeklyAwards(0)).sort();
+    // the drawn award must not reroll between renders, and must name a real manager
+    const cotwA = weeklyAwards(0).cotw, cotwB = weeklyAwards(0).cotw, cotwNext = weeklyAwards(1).cotw;
     const twoFinalState = { ...state.matchStats };
     state.matchStats = Object.fromEntries(Object.entries(state.matchStats).slice(0, 2));
     const two = seasonAwards();
@@ -170,6 +172,9 @@ const chk = (name, ok, detail = '') => {
     const dashRows = around ? [...around.querySelectorAll('tbody tr')] : [];
     return {
       weeklyKeys, twoKeys: two && Object.keys(two).sort(), fullKeys: full && Object.keys(full).sort(),
+      cotwStable: !!cotwA && cotwA.id === cotwB.id && cotwA.why === cotwB.why,
+      cotwReal: !!cotwA && state.managers.some(m => m.id === cotwA.id) && !!cotwA.why,
+      cotwMoves: !!cotwNext && (cotwNext.id !== cotwA.id || cotwNext.why !== cotwA.why),
       noBenchTwo: two?.bench === null, noBenchFull: full?.bench === null,
       minutes,
       dataHasAll: ['The Committee\'s Awards', 'Trough activity', 'Top players', 'The Treatment Room'].every(s => dataText.includes(s)),
@@ -184,11 +189,16 @@ const chk = (name, ok, detail = '') => {
     };
   });
   const awardKeys = JSON.stringify(['bench', 'hi', 'hiding', 'jammy', 'lo', 'robbed']);
-  chk('weekly and season award calculators expose exactly the rebuilt six at 2 and 33 finals',
-    JSON.stringify(dataAudit.weeklyKeys) === awardKeys && JSON.stringify(dataAudit.twoKeys) === awardKeys
+  // the weekly set carries the rebuilt six plus cotw, which is drawn not earned
+  const weeklyKeys = JSON.stringify(['bench', 'cotw', 'hi', 'hiding', 'jammy', 'lo', 'robbed']);
+  chk('weekly and season award calculators expose exactly the rebuilt six (weekly plus the draw) at 2 and 33 finals',
+    JSON.stringify(dataAudit.weeklyKeys) === weeklyKeys && JSON.stringify(dataAudit.twoKeys) === awardKeys
       && JSON.stringify(dataAudit.fullKeys) === awardKeys && dataAudit.noBenchTwo && dataAudit.noBenchFull, JSON.stringify(dataAudit));
+  chk('C*** of the Week is seeded per gameweek: stable across calls, real manager, moves on',
+    dataAudit.cotwStable && dataAudit.cotwReal && dataAudit.cotwMoves, JSON.stringify(dataAudit));
   chk('Committee Minutes contains only the surviving award set',
-    !/Handful|No-Footed/.test(dataAudit.minutes) && /Manager of the Week|Wooden Spoon/.test(dataAudit.minutes));
+    !/Handful|No-Footed/.test(dataAudit.minutes) && /Manager of the Week|Wooden Spoon/.test(dataAudit.minutes)
+      && /C\*\*\* of the Week/.test(dataAudit.minutes));
   chk('Data Room owns awards, team/player data and treatment; Table no longer duplicates moved cards',
     dataAudit.dataHasAll && dataAudit.tableConsolidated && dataAudit.dashTable.rows === 12
       && dataAudit.dashTable.eighth.includes('playoff-line') && dataAudit.dashTable.ownHighlighted && dataAudit.dashTable.fullButton

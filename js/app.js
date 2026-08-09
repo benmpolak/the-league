@@ -7369,6 +7369,35 @@ function lastFinalGw() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') last = i;
   return last;
 }
+// Marc, 9 Aug 2026: "cunt of the week… randomly assigned each week for
+// whatever reason". The Committee's stenographer declines to print it in full.
+// Citations are drawn from the same seed, so the charge fits the man for the
+// whole week and every phone reads the same one.
+const COTW_CITATIONS = [
+  'no reason was recorded',
+  'the Committee declines to elaborate',
+  'for the message sent at 23:41',
+  'for what happened at the draft',
+  'nothing specific. It was simply felt',
+  'for the celebration',
+  'the minutes on this point are sealed for thirty years',
+  'for tone',
+  'a matter arising',
+  'reasons available on request, in writing, to an address that does not exist',
+  'it was a quiet week and the trophy needed a home',
+  'for conduct in the group chat, unspecified',
+  'a complaint was received. It was anonymous. It was upheld',
+  'for the second reminder about the fifty quid',
+  'the Committee has moved on. The Committee has not moved on',
+];
+// seeded off the gameweek alone — same pattern as chantFor, for the same
+// reason: Math.random() would reroll on every render and name twelve
+// different men on twelve different phones
+function cotwFor(i) {
+  const seed = (i * 2246822519 + 3266489917) >>> 0;
+  const m = state.managers[seed % state.managers.length];
+  return m ? { id: m.id, why: COTW_CITATIONS[(seed >>> 8) % COTW_CITATIONS.length] } : null;
+}
 function weeklyAwards(last) {
   const scores = state.managers.map(m => ({ id: m.id, s: gwManagerPoints(m.id, last), waste: benchWaste(m.id, last) }));
   const hi = [...scores].sort((a, b) => b.s - a.s)[0];
@@ -7382,8 +7411,9 @@ function weeklyAwards(last) {
   const hiding = [...results].sort((a, b) => b.margin - a.margin)[0];
   const bench = [...scores].sort((a, b) => b.waste - a.waste)[0];
   // He's A Handful™ and the No-Footed Full Back retired by Committee order,
-  // 1 Aug 2026 (Marc: "so much in there" — the six that survive are the six)
-  return { hi, lo, jammy, robbed, hiding, bench };
+  // 1 Aug 2026 (Marc: "so much in there" — the six that survive are the six).
+  // cotw is the seventh and is not earned; it is drawn.
+  return { hi, lo, jammy, robbed, hiding, bench, cotw: cotwFor(last) };
 }
 // the same six awards judged across every settled gameweek — Marc's point:
 // "those 6 are actually good, but it's more useful over the season"
@@ -7413,7 +7443,7 @@ function seasonAwards() {
 function awardsCard() {
   const last = lastFinalGw();
   if (last < 0) return '';
-  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
+  const { hi, lo, jammy, robbed, hiding, bench, cotw } = weeklyAwards(last);
   const sa = seasonAwards();
   const row = (icon, label, text) => `<div class="award-row"><span class="award-icon" aria-hidden="true">${icon}</span><b class="award-label">${label}</b><span class="award-value">${text}</span></div>`;
   const gwTag = i => ` <span class="muted">(GW${GAMEWEEKS[i].n})</span>`;
@@ -7431,7 +7461,9 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
+      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}`) : ''}
     </div>
+    ${cotw ? '<p class="muted" style="font-size:10.5px;margin-top:6px">The C*** of the Week is drawn, not earned, and bears no relation to results. The Committee prints the citation it is handed and takes no questions.</p>' : ''}
     ${sa ? `${sect('Season so far')}
     <div class="awards-list">
       ${row('&#127942;', 'Highest Score', `<b>${esc(teamName(sa.hi.id))}</b> — ${sa.hi.s} points${gwTag(sa.hi.gw)}`)}
@@ -7449,7 +7481,7 @@ function awardsCard() {
 /* ----- the Committee Minutes: one tap, WhatsApp-ready recap ----- */
 function committeeMinutes(last) {
   const g = GAMEWEEKS[last];
-  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
+  const { hi, lo, jammy, robbed, hiding, bench, cotw } = weeklyAwards(last);
   const L = [`\u{1F3C6} THE LEAGUE — GW${g.n} COMMITTEE MINUTES`, '', '*Results*'];
   for (const [a, b] of pairingsFor(last)) {
     const sa = gwManagerPoints(a, last), sb = gwManagerPoints(b, last);
@@ -7464,6 +7496,7 @@ function committeeMinutes(last) {
   if (robbed) L.push(`\u{1F494} Robbed: ${teamName(robbed.l)} scored ${robbed.ls} and still lost`);
   if (hiding) L.push(`\u{1F528} Biggest Hiding: ${teamName(hiding.w)} ${hiding.ws}–${hiding.ls} ${teamName(hiding.l)}`);
   if (bench.waste > 0) L.push(`\u{1FAD1} Bench of the Week: ${teamName(bench.id)} left ${bench.waste} on the bench`);
+  if (cotw) L.push(`\u{1F6AB} C*** of the Week: ${teamName(cotw.id)} — ${cotw.why} (drawn at random; no appeal)`);
   const t = h2hStandings(false);
   L.push('', '*The Table*');
   t.slice(0, 4).forEach((r, i) => L.push(`${i + 1}. ${r.team || r.name} — ${r.pts}`));
