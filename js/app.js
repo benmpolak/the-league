@@ -633,7 +633,7 @@ async function enterDemo() {
   vidiStash = vidiFeed;
   vidiFeed = [
     { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
-    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — the certified lobus of ${teamName(8)} — has SCORED. Great feet for a big man.` },
+    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — certified lobus — has SCORED. Great feet for a big man.` },
     { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
     { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -5` },
     { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
@@ -2645,8 +2645,9 @@ function vidiDiff(gwIdx, oldPS, newPS) {
     // instead, so the gag needs no admin. Big units only.
     const dg = (s.g || 0) - (o.g || 0);
     if (dg > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l))) {
-      const owner = state.managers.find(m => managerSquad(m.id).some(x => x.id === +pid));
-      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name}${owner ? ` — the certified lobus of ${teamName(owner.id)} —` : ' — uncontracted, feral —'} has SCORED. Great feet for a big man.` });
+      // Marc, 9 Aug: a lobus belongs to no club. Declarations are long gone, so
+      // the klaxon speaks about the man himself — no owner, no "feral" branch.
+      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
       playSound('klaxon');
     }
   }
