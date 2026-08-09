@@ -1379,6 +1379,11 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
 
 ACTIONS.waiverRunNow = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  // A LIVE Chamber match means the pretend scores are still being invented —
+  // a run now adjudicates against the canonical feed instead of the mock
+  // table, then stamps lastRun as if the post-GW run had happened (sol R2 P1).
+  const mock = (await db().ref(`${leagueBase(league)}/public/mock`).get()).val();
+  if (mock && mock.phase === 'live') throw new HttpsError('failed-precondition', 'a Simulation Chamber match is live — waivers wait for full time');
   return runWaivers(league, data.runId ? `manual-${cleanText(data.runId, 40)}` : `manual-${Date.now()}`, `manual:${a.uid}`, EMULATED ? data.__failpoint : undefined);
 };
 
@@ -1530,18 +1535,25 @@ const SETUP_SEED_ACTIONS = new Set(['clubSet', 'readySet', 'stadiumSet', 'settin
 ACTIONS.suggestionAdd = async ({ league, a, data, state }) => {
   const text = String(data.text || '').trim().slice(0, 240);
   if (!text) throw new HttpsError('invalid-argument', 'say what you want built');
-  const sugs = toArr(state.suggestions);
-  if (sugs.length >= 200) throw new HttpsError('resource-exhausted', 'the box is full — the Committee must empty it first');
-  const mine = sugs.filter(s => s.by === a.managerId);
-  const last = mine.length ? Math.max(...mine.map(s => s.t || 0)) : 0;
-  if (Date.now() - last < 60e3) throw new HttpsError('resource-exhausted', 'one suggestion a minute — quality over quantity');
   const rec = { id: `s${Date.now()}m${a.managerId}`, by: a.managerId, text, t: Date.now(), status: 'noted' };
+  // cap and cooldown are enforced INSIDE the transaction: on contention the
+  // fn re-runs against the committed array, so three managers hitting a
+  // 199-deep box can't all land (sol R2 P3 — the pre-txn check raced)
+  let deny = null;
   const res = await db().ref(`${leagueBase(league)}/public/suggestions`).transaction(seeded(state.suggestions, arr => {
+    deny = null;
     if (arr.some(s => s.id === rec.id)) return arr;
+    if (arr.length >= 200) { deny = { code: 'resource-exhausted', msg: 'the box is full — the Committee must empty it first' }; return undefined; }
+    const mine = arr.filter(s => s.by === a.managerId);
+    const last = mine.length ? Math.max(...mine.map(s => s.t || 0)) : 0;
+    if (Date.now() - last < 60e3) { deny = { code: 'resource-exhausted', msg: 'one suggestion a minute — quality over quantity' }; return undefined; }
     arr.push(rec);
     return arr;
   }));
-  if (!res.committed) throw new HttpsError('aborted', 'the box moved — try again');
+  if (!res.committed) {
+    if (deny) throw new HttpsError(deny.code, deny.msg);
+    throw new HttpsError('aborted', 'the box moved — try again');
+  }
   return { ok: true, id: rec.id };
 };
 ACTIONS.suggestionAdmin = async ({ league, a, data, state }) => {
@@ -1711,6 +1723,11 @@ ACTIONS.importState = async ({ league, a, data }) => {
   for (const [k, cap] of Object.entries(arrayCaps)) {
     if (s[k] != null && toArr(s[k]).length > cap) importError(`${k} too long`);
     if (s[k] != null && toArr(s[k]).some(x => x != null && !isPlainObj(x))) importError(`${k} entries`);
+  }
+  // RTDB coerces a gw-keyed map whose keys are 0,1,2… into an ARRAY, and an
+  // exported file carries that shape back (sol R2 P2) — canonicalise, don't refuse
+  for (const k of ['adjustments', 'claims']) {
+    if (Array.isArray(s[k])) s[k] = Object.fromEntries(s[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
   }
   for (const k of ['lineups', 'benchOrders', 'shirtNums', 'tradeBlock', 'lobus', 'adjustments', 'claims', 'autolists']) {
     if (s[k] != null && !isPlainObj(s[k])) importError(k);

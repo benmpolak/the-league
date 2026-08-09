@@ -1098,12 +1098,19 @@ const SB = 'the-league-sandbox';
   const forcedOpenSign = await T.mutate(SB, 'troughSign', { inId: mockIn, outId: mockOut }, sbTok2);
   chk('live Simulation Chamber closes the trough even if manual control was left open',
     forcedOpenSign.error?.status === 'FAILED_PRECONDITION', JSON.stringify(forcedOpenSign));
+  // sol R2 P1: a manual run mid-Chamber-match adjudicated on the canonical
+  // feed while every screen showed the mock table, then stamped lastRun as if
+  // the post-GW run had happened. The callable now refuses until full time.
+  chk('waiverRunNow refuses while a Chamber match is live (sol R2 P1)',
+    (await T.mutate(SB, 'waiverRunNow', { runId: 'solp1-live' }, sbTok1)).error?.status === 'FAILED_PRECONDITION');
 
   // Exact UAT corruption repro: the mock is final and its waiver run has
   // completed after mock.t. The Trough may reopen, but the mounted mock must
   // still keep every transfer out of the settled simulated gameweek.
   await T.mutate(SB, 'mockMatchday', { op: 'final', gw: 3 }, sbTok1);
   const finalMock = (await db.ref(`v2/leagues/${SB}/public/mock`).get()).val();
+  const ftRun = await T.mutate(SB, 'waiverRunNow', { runId: 'solp1-ft' }, sbTok1);
+  chk('full time lifts the gate — the post-GW waiver run proceeds', !ftRun.error, JSON.stringify(ftRun.error || ftRun.result));
   await db.ref(`v2/leagues/${SB}/public/waiverMeta`).set({
     control: 'open', lastRun: new Date(finalMock.t + 1000).toISOString(),
   });
@@ -1212,6 +1219,27 @@ const SB = 'the-league-sandbox';
   await T.mutate(SB, 'adjustmentSet', { pid: players[0].id, gw: 0, value: 0 }, sbTok1);
   chk('zeroing an adjustment removes it',
     (await db.ref(`v2/leagues/${SB}/public/adjustments/0/${players[0].id}`).get()).val() === null);
+
+  // sol R2 P2: RTDB coerces a GW1-only adjustments map into an array; the
+  // exported file carried that shape and the import gate refused it.
+  const adjState = T.buildSeedState(players, 3);
+  adjState.adjustments = [{ [players[0].id]: 5 }]; // the array shape a real export carries
+  const adjImport = await T.mutate(SB, 'importState', { state: adjState }, sbTok1);
+  chk('import canonicalises array-shaped adjustments instead of refusing (sol R2 P2)',
+    !adjImport.error && (await db.ref(`v2/leagues/${SB}/public/adjustments/0/${players[0].id}`).get()).val() === 5,
+    JSON.stringify(adjImport.error || 'ok'));
+
+  // sol R2 P3: the 200 cap was checked before the transaction — concurrent
+  // submits at 199 all landed. Enforcement now lives inside the txn fn, which
+  // re-runs against the committed array on contention.
+  const boxKept = (await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val();
+  await db.ref(`v2/leagues/${SB}/public/suggestions`).set(
+    Array.from({ length: 200 }, (_, i) => ({ id: `s-stuff${i}`, by: 1, text: `filler ${i}`, t: 1, status: 'noted' })));
+  const overCap = await T.mutate(SB, 'suggestionAdd', { text: 'one too many' }, sbTok2);
+  const boxFull = Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {});
+  chk('a full box refuses INSIDE the transaction and stores nothing (sol R2 P3)',
+    overCap.error?.status === 'RESOURCE_EXHAUSTED' && boxFull.length === 200, `err=${overCap.error?.status} len=${boxFull.length}`);
+  await db.ref(`v2/leagues/${SB}/public/suggestions`).set(boxKept);
 
   server.close();
   run.done();

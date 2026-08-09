@@ -1926,6 +1926,10 @@ function setClaims(mid, arr) {
 // commissioner-only: resolve all pending claims, then open the Trough
 function processWaivers(manual = false) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman runs waivers'); return; }
+  // mid-Chamber-match the pretend scores don't exist yet — a run here would
+  // adjudicate on the canonical feed while every screen shows the mock table
+  // (sol R2 P1; server refuses too)
+  if (state.mock?.phase === 'live') { toast('A Simulation Chamber match is live — waivers wait for full time.'); return; }
   if (netOn()) {
     // online, the server resolves waivers (it can see everyone's blind claims;
     // this device can only see its own)
@@ -5818,7 +5822,7 @@ function viewTransfers() {
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-        <button class="btn small" id="runWaivers">Run waivers now</button>
+        <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Run waivers now</button>
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
         <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
         <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
@@ -8792,7 +8796,14 @@ function bindSettings() {
   const exportB = $('#exportBtn');
   if (!exportB) return; // non-commissioner: admin controls aren't rendered
   exportB.onclick = () => {
-    const blob = new Blob([JSON.stringify(state, null, 1)], { type: 'application/json' });
+    const out = JSON.parse(JSON.stringify(state));
+    // RTDB hands a gw-keyed map back as an ARRAY when its keys are 0,1,2… and
+    // the import gate requires plain objects (sol R2 P2) — canonicalise on the
+    // way out so the file always round-trips
+    for (const k of ['adjustments', 'claims']) {
+      if (Array.isArray(out[k])) out[k] = Object.fromEntries(out[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
+    }
+    const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'the-league-2627.json';
@@ -8808,9 +8819,19 @@ function bindSettings() {
         if (!imported.managers || !imported.draft) throw new Error('bad file');
         if (!imported.lineups) { imported.lineups = {}; imported.transfers = []; }
         if (!imported.waivers) imported.waivers = {};
+        // older exports carry the RTDB array shape (sol R2 P2) — canonicalise
+        for (const k of ['adjustments', 'claims']) {
+          if (Array.isArray(imported[k])) imported[k] = Object.fromEntries(imported[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
+        }
         state = imported;
-        if (netOn() && isCommissioner()) publishAll();
-        save(); render(); toast('League imported');
+        save(); render();
+        if (netOn() && isCommissioner()) {
+          // success reads AFTER the server accepts — "League imported" used to
+          // print optimistically while the publish was mid-flight or refused
+          serverAct('importState', { state: sharedSnapshot() })
+            .then(() => toast('League imported and published.'))
+            .catch(() => {}); // serverAct toasts the server's reason
+        } else toast('League imported');
       } catch { toast('That file doesn’t look like a league export'); }
     });
   };
