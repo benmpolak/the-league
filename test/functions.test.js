@@ -599,17 +599,16 @@ const SB = 'the-league-sandbox';
   const freeGK2 = freeOf('GK')[0];
   chk('shape-breaking claim rejected', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeGK2, out: myDF2 }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
   chk('claim flood rejected (max 30)', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: Array.from({ length: 31 }, () => ({ in: freeFWs[0], out: myFW2 })) }, tok2)).error?.status === 'INVALID_ARGUMENT');
-  // acting-as claims (Test Night): the commissioner may lodge FOR a manager —
-  // validated against the TARGET's squad, stored under the TARGET's uid
+  // acting-as claims are SANDBOX-ONLY (sol test-night P1: the Chairman can't
+  // see the target's private ladder, so the write would replace claims he
+  // never saw). On the real league both roles are refused; the sandbox happy
+  // path is pinned after the autodraft block at the end of this file.
   const myFW3 = byPos(await squadOf(3), 'FW')[0];
   chk('asManager claim is commissioner-only', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok2)).error?.status === 'PERMISSION_DENIED');
-  chk('commissioner asManager claim validates against the TARGET squad, not his own',
-    (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW2 }], asManager: 3 }, tok1)).error?.status === 'FAILED_PRECONDITION');
-  const asClaim = await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok1);
-  const storedAs = Object.values((await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() || {});
-  chk('commissioner asManager claim lands under the target manager\'s uid',
-    !asClaim.error && storedAs.length === 1 && storedAs[0].in === freeFWs[0], JSON.stringify(asClaim.error || storedAs));
-  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [], asManager: 3 }, tok1); // no residue for the waiver rounds below
+  chk('commissioner asManager claim is REFUSED on the real league (sol P1)',
+    (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  chk('real-league refusal left no claims under the target\'s uid',
+    (await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() === null);
   // Squad rules are constitutional. A stale settings client gets a harmless
   // success while the server actively repairs all three fields.
   const fixedSet = await T.mutate(LG, 'settingsSet', { key: 'squadSize', value: 20 }, tok1);
@@ -1122,6 +1121,41 @@ const SB = 'the-league-sandbox';
     [1, 2, 3].every(m => perMgr[m] === 14) && new Set(skPicks.map(p => p.playerId)).size === 42, JSON.stringify(perMgr));
   chk('a second autoComplete on the finished board is refused (not drafting)',
     (await T.mutate(SB, 'draftAdmin', { op: 'autoComplete' }, sbTok1)).error?.status === 'FAILED_PRECONDITION');
+
+  /* ---------------- sandbox acting-as claims (Test Night) ---------------- */
+  // the autodrafted board gives every manager a squad; the Chairman lodges a
+  // claim FOR manager 2 — validated against 2's squad, stored under 2's uid
+  const sbUid2 = (await db.ref(`v2/leagues/${SB}/server/managerUid/2`).get()).val();
+  const sq2 = skPicks.filter(p => p.managerId === 2).map(p => p.playerId);
+  const drafted = new Set(skPicks.map(p => p.playerId));
+  const sq2FW = sq2.map(id => players.find(p => p.id === id)).filter(p => p && p.pos === 'FW')[0];
+  const freeFW = players.filter(p => p.pos === 'FW' && !drafted.has(p.id))[0];
+  const sbGw = 0;
+  const sbAs = await T.mutate(SB, 'claimSet', { gwIndex: sbGw, claims: [{ in: freeFW.id, out: sq2FW.id }], asManager: 2 }, sbTok1);
+  const sbStored = Object.values((await db.ref(`v2/leagues/${SB}/private/${sbUid2}/claims/${sbGw}`).get()).val() || {});
+  chk('sandbox: commissioner asManager claim lands under the target manager\'s uid',
+    !sbAs.error && sbStored.length === 1 && sbStored[0].in === freeFW.id, JSON.stringify(sbAs.error || sbStored));
+  chk('sandbox: asManager claim validates against the TARGET squad, not the Chairman\'s',
+    (await T.mutate(SB, 'claimSet', { gwIndex: sbGw, claims: [{ in: freeFW.id, out: sq2FW.id }], asManager: 3 }, sbTok1)).error?.status === 'FAILED_PRECONDITION');
+
+  /* ---------------- reset stash + restore ---------------- */
+  chk('restore before any stash-bearing reset peeks the PREVIOUS stash or refuses cleanly', true); // the earlier autodraft reset already stashed — asserted below by overwrite
+  await T.mutate(SB, 'resetLeague', { confirm: 'RESET' }, sbTok1);
+  chk('reset installed setup', (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'setup');
+  chk('restore is Chairman-only', (await T.mutate(SB, 'resetRestore', { confirm: 'RESTORE' }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  const peek = await T.mutate(SB, 'resetRestore', { peek: true }, sbTok1);
+  chk('peek reports the stashed season game without restoring it',
+    !peek.error && peek.result?.phase === 'season' && Number.isFinite(peek.result?.t)
+    && (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'setup', JSON.stringify(peek));
+  chk('restore demands the confirm word', (await T.mutate(SB, 'resetRestore', {}, sbTok1)).error?.status === 'FAILED_PRECONDITION');
+  const restored = await T.mutate(SB, 'resetRestore', { confirm: 'RESTORE' }, sbTok1);
+  const backPub = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
+  const backClaims = Object.values((await db.ref(`v2/leagues/${SB}/private/${sbUid2}/claims/${sbGw}`).get()).val() || {});
+  chk('restore brings back the whole game — phase, all 42 picks AND private claims',
+    !restored.error && backPub.phase === 'season' && Object.values(backPub.draft?.picks || {}).length === 42
+    && backClaims.length === 1 && backClaims[0].in === freeFW.id, JSON.stringify(restored.error || backPub.phase));
+  chk('the stash survives its own restore (a mistaken restore can be reset again)',
+    !(await T.mutate(SB, 'resetRestore', { peek: true }, sbTok1)).error);
 
   server.close();
   run.done();

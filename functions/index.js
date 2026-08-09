@@ -766,8 +766,14 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
   const tgw = eng.transferGw(state);
   // the commissioner may lodge claims FOR a manager (asManager) — validation
-  // and storage both follow the target, so the claim adjudicates as theirs
+  // and storage both follow the target, so the claim adjudicates as theirs.
+  // SANDBOX ONLY (sol test-night P1): the client can't see the target's
+  // private ladder, so this write REPLACES claims the Chairman never saw —
+  // fine against test-night stand-ins, unacceptable against real managers.
   const mid = actingManager(a, data);
+  if (mid !== a.managerId && league !== 'the-league-sandbox') {
+    throw new HttpsError('failed-precondition', 'acting-as claims only exist in the sandbox');
+  }
   const squad = eng.squadAt(state, mid, tgw);
   const squadIds = new Set(squad.map(p => p.id));
   for (const c of claims) {
@@ -1497,12 +1503,36 @@ ACTIONS.resetLeague = async ({ league, a, data }) => {
   if (data.confirm !== 'RESET') throw new HttpsError('failed-precondition', 'type RESET to confirm');
   const base = leagueBase(league);
   const prevPub = (await db().ref(`${base}/public`).get()).val();
-  await db().ref().update({
+  const prevPriv = (await db().ref(`${base}/private`).get()).val();
+  const update = {
     [`${base}/public`]: canonicalSetupState(prevPub),
     [`${base}/private`]: null,
     [`${base}/server/waiverRuns`]: null,
+  };
+  // the outgoing game is STASHED, not destroyed (Ben: "preserve data for a
+  // bit even if we reset") — one reset's worth of regret insurance under the
+  // admin-only server subtree. The NEXT reset overwrites it; the hourly CI
+  // backups are the deeper archive.
+  if (prevPub) update[`${base}/server/resetStash`] = { t: Date.now(), by: a.managerId, public: prevPub, private: prevPriv || null };
+  await db().ref().update(update);
+  return { ok: true, stashed: !!prevPub };
+};
+
+// the other half of the stash: peek at what's held, or put it all back.
+// Restoring replaces the ENTIRE current game (public + private); the stash
+// itself survives a restore, so a mistaken restore can simply be reset again.
+ACTIONS.resetRestore = async ({ league, a, data }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  const base = leagueBase(league);
+  const stash = (await db().ref(`${base}/server/resetStash`).get()).val();
+  if (!stash || !stash.public) throw new HttpsError('failed-precondition', 'no game is held from before a reset');
+  if (data.peek) return { ok: true, t: stash.t, by: stash.by, phase: stash.public.phase || 'setup' };
+  if (data.confirm !== 'RESTORE') throw new HttpsError('failed-precondition', 'type RESTORE to confirm');
+  await db().ref().update({
+    [`${base}/public`]: stash.public,
+    [`${base}/private`]: stash.private || null,
   });
-  return { ok: true };
+  return { ok: true, t: stash.t };
 };
 
 /* importState is the commissioner's restore path (empty-cloud seed / file

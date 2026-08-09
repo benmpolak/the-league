@@ -206,8 +206,10 @@ function actGuard(mid, what = 'team') {
   if (netOn() && !demoMode && whoami !== mid && isCommissioner()) {
     // taking a chair via the Transfers-hub switcher IS the override confirm —
     // the banner stays up the whole time; re-asking per action made a test
-    // night twelve confirms deep
-    if (transfersView.as === mid) return true;
+    // night twelve confirms deep. Scoped HARD to the sandbox Transfers page
+    // (sol test-night P2: an unscoped skip silently widened the pen to
+    // lineups and the club office on other pages)
+    if (SANDBOX && state.view === 'transfers' && transfersView.as === mid) return true;
     return confirm(`COMMISSIONER OVERRIDE — you are changing ${managerName(mid)}'s ${what}, not your own. Proceed?`);
   }
   return true;
@@ -2998,6 +3000,10 @@ const SETUP_NAV = new Set(['draft', 'club', 'rules', 'settings']);
 let lastRenderedView = null;
 function render() {
   applyMock(); // sandbox Simulation Chamber overlay — no-op everywhere else
+  // the standing acting-as pen dies the moment the Chairman leaves the
+  // Transfers page (sol test-night P2 — covers navigation, phase flips,
+  // resets; hubActor additionally re-checks role and roster every call)
+  if (transfersView.as != null && state.view !== 'transfers') transfersView.as = null;
   // keep keyboard focus across re-renders (remote updates land mid-typing)
   const ae = document.activeElement;
   const focusId = ae && ae.id && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT') ? ae.id : null;
@@ -4923,9 +4929,13 @@ function bindDraft() {
   const fr = $('#forceRoom'); // rendered for the Chairman only, and only while the room waits
   if (fr) fr.onclick = async () => {
     const cer = draftCeremonyStatus();
+    // name the managers being marked present (sol test-night P3) — "4 of 12"
+    // hides who the Chairman is about to speak for
+    const ready = state.draft?.ceremonyReady || {};
+    const absent = toArr(state.draft?.order).filter(m => ready[m] !== true).map(m => managerName(m));
     if (!await confirmSheet({
       title: 'Declare the room open?',
-      body: `<p style="font-size:13.5px">Only ${cer.count} of ${cer.total} managers are through the ceremony. Opening the room starts pick one now — anyone absent is treated as arrived, and their clock autopicks from their list (or best available) when it dies.</p><p class="muted" style="font-size:12px">The proper use is a test night, or a real night where someone's phone is in a taxi.</p>`,
+      body: `<p style="font-size:13.5px">Only ${cer.count} of ${cer.total} managers are through the ceremony. Opening the room starts pick one now — the absent are treated as arrived, and their clocks autopick from their lists (or best available) when they die.</p><p style="font-size:12.5px"><b>Marked present in absentia:</b> ${esc(absent.join(', ') || 'nobody')}</p><p class="muted" style="font-size:12px">The proper use is a test night, or a real night where someone's phone is in a taxi.</p>`,
       yes: 'Open the room',
     })) return;
     serverAct('draftAdmin', { op: 'roomOpen' })
@@ -5565,7 +5575,9 @@ let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free'
 // already carries asManager when mid !== whoami, so the server records the
 // move as theirs. Built so Toby can test waivers/trades solo on the sandbox.
 function hubActor() {
-  if (transfersView.as != null && isCommissioner() && state.managers.some(m => m.id === transfersView.as)) return transfersView.as;
+  // SANDBOX only (sol test-night P1/P2): on the real league the Chairman
+  // keeps the old per-action override confirm, never a standing pen
+  if (SANDBOX && transfersView.as != null && isCommissioner() && state.managers.some(m => m.id === transfersView.as)) return transfersView.as;
   return (whoami && whoami !== -1) ? whoami : state.managers[0].id;
 }
 function viewTransfers() {
@@ -5581,7 +5593,7 @@ function viewTransfers() {
   const tgwHub = transferGw();
   const head = `<div class="team-controls card">
     ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
-    ${netOn() && isCommissioner() ? `<label class="tag" style="margin-left:auto">acting as&nbsp;<select id="actAsSel" style="font-size:11.5px">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(managerName(m.id))}${m.id === whoami ? ' (me)' : ''}</option>`).join('')}</select></label>`
+    ${SANDBOX && netOn() && isCommissioner() ? `<label class="tag" style="margin-left:auto">acting as&nbsp;<select id="actAsSel" style="font-size:11.5px">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(managerName(m.id))}${m.id === whoami ? ' (me)' : ''}</option>`).join('')}</select></label>`
       : `<span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>`}
     <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
   </div>
@@ -8528,8 +8540,9 @@ function viewSettings() {
         <button class="btn ghost" id="exportBtn">Export league file (backup)</button>
         <label class="btn ghost" style="text-align:center;cursor:pointer">Import league file<input type="file" id="importFile" accept=".json" style="display:none"></label>
         ${!netOn() || isCommissioner() ? '<button class="btn danger" id="resetBtn">Reset everything</button>' : ''}
+        ${netOn() && isCommissioner() ? '<button class="btn ghost" id="restoreBtn" title="Every reset stashes the outgoing game first — this puts the stashed one back">Restore the pre-reset game</button>' : ''}
       </div>
-      <p class="muted" style="font-size:12px;margin-top:10px">Backups only — the league syncs live on its own, no files to pass around. Export drops a snapshot to your device; import restores one if it all goes wrong.</p>
+      <p class="muted" style="font-size:12px;margin-top:10px">Backups only — the league syncs live on its own, no files to pass around. Export drops a snapshot to your device; import restores one if it all goes wrong. Reset stashes the outgoing game first — Restore brings the stashed one back (held until the next reset overwrites it).</p>
       <h3 style="margin-top:18px">Sign-in</h3>
       <p class="muted" style="font-size:12px;margin-bottom:8px">Managers sign in with an email link — no PINs, nothing to reset. Adding or changing a manager's email is done with the provisioning script (see the README).</p>
       <h3 style="margin-top:18px">Manual point adjustments</h3>
@@ -8560,7 +8573,7 @@ function viewSettings() {
       <h2>Test Night — the Chairman's runbook <span class="tag">sandbox only</span></h2>
       <p class="muted" style="font-size:12.5px">The full loop, solo, no Ben required. Draft a league, play two pretend gameweeks, do the transfer business in between. Everything here is sandbox — the real league can't be touched from this site.</p>
       <ol class="rules-p" style="font-size:13px;padding-left:18px;display:grid;gap:6px;margin-top:8px">
-        <li><b>Reset everything</b> (button below) — wipes the sandbox back to the waiting room. Sign-in survives.</li>
+        <li><b>Reset everything</b> (button below) — wipes the sandbox back to the waiting room. Sign-in survives, and the outgoing game is stashed: <b>Restore the pre-reset game</b> (same section) brings it back if you regret it.</li>
         <li>In the waiting room, set the draft order and <b>Start the draft</b>. Tip: drop the pick clock to 15–30s first for a fast solo draft.</li>
         <li>Sit through the ceremony (or use Ian's button). You land on the console. Alone in the room? Press <b>&#9878; Declare the room open</b> on the waiting card — pick one goes live and absent managers autopick when their clock dies.</li>
         <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> — or press <b>&#9193; Skip the draft</b> on the console to autodraft the whole board in one stroke and go straight to the season.</li>
@@ -8684,6 +8697,19 @@ function bindSettings() {
       localStorage.removeItem(`${LS_NS}-ceremony-seen`);
       save(); render();
     }
+  };
+  const rrb = $('#restoreBtn'); // the reset's regret button — puts the stashed game back
+  if (rrb) rrb.onclick = async () => {
+    let info;
+    try { info = await serverAct('resetRestore', { peek: true }); } catch { return; } // serverAct already toasts "no game is held"
+    if (!await confirmSheet({
+      title: 'Restore the pre-reset game?',
+      body: `<p style="font-size:13.5px">A game in its <b>${esc(info.phase)}</b> phase, stashed ${fmtWhen(info.t)} by ${esc(managerName(info.by))}, replaces EVERYTHING currently here — for every manager.</p><p class="muted" style="font-size:12px">The stash survives the restore, so a mistaken restore can simply be reset again.</p>`,
+      yes: 'Bring it back',
+    })) return;
+    serverAct('resetRestore', { confirm: 'RESTORE' })
+      .then(() => toast('The old game is back. The Committee denies it was ever gone.'))
+      .catch(() => {});
   };
   $('#adjApply').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner adjusts points'); return; }
