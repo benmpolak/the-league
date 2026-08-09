@@ -13,6 +13,11 @@ Firebase, deploys, or secrets; leave `functions/`, `js/sync.js` and the
 waiver engine alone; Committee voice in all user-facing copy; one idea
 per commit, plain-English commit messages.
 
+After every push to main, also sync the beta/sandbox site (it's a
+force-push mirror of this repo — never a place for separate work):
+
+    git push --force https://github.com/benmpolak/the-league-beta.git main:main
+
 ## DO NOT read app.js top to bottom
 
 `js/app.js` is ~8,000 lines and holds every view. Grep for the function you
