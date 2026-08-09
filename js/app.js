@@ -8222,15 +8222,28 @@ function viewTable() {
 // departed included (Marc, 9 Aug: the league table's breakdown only knows the
 // CURRENT squad, so anyone traded away or dropped vanishes from it entirely)
 function seasonContributors(mid) {
-  const tally = new Map();
+  const tally = new Map(), heldFor = new Map(), pickedFor = new Map();
   for (let i = 0; i < GAMEWEEKS.length; i++) {
+    // points stay unbounded — a week with no stats scores nothing anyway — but
+    // the GW counts only run to what has actually happened, or every current
+    // pick would read 38 (Marc, 9 Aug)
+    const played = gwUnderway(i);
+    if (played) for (const p of squadAt(mid, i)) heldFor.set(p.id, (heldFor.get(p.id) || 0) + 1);
     for (const pid of effectiveXI(mid, i).xi) {
       tally.set(pid, (tally.get(pid) || 0) + gwPlayerPoints(pid, i));
+      if (played) pickedFor.set(pid, (pickedFor.get(pid) || 0) + 1);
     }
   }
   const owned = new Set(managerSquad(mid).map(p => p.id));
+  const total = managerPoints(mid);
   return [...tally.entries()]
-    .map(([pid, pts]) => ({ p: PLAYER_BY_ID[pid], pts, gone: !owned.has(pid) }))
+    .map(([pid, pts]) => ({
+      p: PLAYER_BY_ID[pid], pts,
+      held: heldFor.get(pid) || 0,
+      picked: pickedFor.get(pid) || 0,
+      share: total ? (pts / total) * 100 : 0,
+      gone: !owned.has(pid),
+    }))
     .filter(x => x.p)
     .sort((a, b) => b.pts - a.pts);
 }
@@ -8273,15 +8286,27 @@ function seasonSquadCard() {
           <td class="num gold act"><b>${pts}</b></td>
         </tr>
         <tr class="bd-tr" id="sq-${m.id}" style="display:none"><td colspan="2">
-          ${contribs.map(({ p, pts: cp, gone }) => `
+          ${contribs.length ? `<div class="squad-row muted" style="font-size:10.5px;letter-spacing:.05em;text-transform:uppercase">
+            <span style="flex:1"></span>
+            <span style="flex:none;width:34px;text-align:right" title="Gameweeks this player has been in the squad">Own</span>
+            <span style="flex:none;width:30px;text-align:right" title="Gameweeks this player started, auto-subs included">XI</span>
+            <span style="flex:none;width:46px;text-align:right" title="Share of this team's season points">Share</span>
+            <span style="flex:none;width:40px;text-align:right;margin-left:0">Pts</span>
+          </div>` : ''}
+          ${contribs.map(({ p, pts: cp, gone, held, picked, share }) => `
             <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
             <span>${esc(p.name)}</span>
             <span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span>
             ${gone ? '' : '<span class="tag">Owned</span>'}
-            <span class="sp-pts">${cp}</span></div>`).join('')
+            <span class="muted" style="flex:none;margin-left:auto;width:34px;text-align:right;font-variant-numeric:tabular-nums">${held}</span>
+            <span class="muted" style="flex:none;width:30px;text-align:right;font-variant-numeric:tabular-nums">${picked}</span>
+            <span class="muted" style="flex:none;width:46px;text-align:right;font-variant-numeric:tabular-nums">${share < 10 ? share.toFixed(1) : Math.round(share)}%</span>
+            <span class="sp-pts" style="flex:none;width:40px;margin-left:0;text-align:right">${cp}</span></div>`).join('')
             || '<span class="muted">Nobody has banked a point for this team yet.</span>'}
-          ${lob ? `<div class="squad-row"><span class="muted" style="margin-left:8px;font-size:11.5px">&#128227; Lobus bonus</span><span class="sp-pts">${lob}</span></div>` : ''}
-          <p class="muted" style="font-size:11px;margin:6px 0 4px">Only points banked while in the starting XI. Bench weeks, Trough weeks and time served under another manager count for nothing here.</p>
+          ${lob ? `<div class="squad-row"><span class="muted" style="margin-left:8px;font-size:11.5px">&#128227; Lobus bonus</span>
+            <span style="flex:none;margin-left:auto;width:34px"></span><span style="flex:none;width:30px"></span><span style="flex:none;width:46px"></span>
+            <span class="sp-pts" style="flex:none;width:40px;margin-left:0;text-align:right">${lob}</span></div>` : ''}
+          <p class="muted" style="font-size:11px;margin:6px 0 4px">Own = gameweeks in the squad, XI = gameweeks started. Only points banked while in the starting XI count; bench weeks, Trough weeks and time served under another manager count for nothing here.</p>
         </td></tr>`;
       }).join('')}
       </tbody>
