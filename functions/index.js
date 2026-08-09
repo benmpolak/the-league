@@ -1608,7 +1608,7 @@ const IMPORT_ALLOWED = new Set([
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
 // import into a league)
-const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock', 'heckles', 'suggestions']);
+const IMPORT_DROPPED = new Set(['pins', 'matchStats', 'fixtures', 'lastSync', 'view', 'feedGenerated', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats']);
 const isPlainObj = v => v != null && typeof v === 'object' && !Array.isArray(v);
 function importError(msg) { throw new HttpsError('invalid-argument', `not a valid league export: ${msg}`); }
 

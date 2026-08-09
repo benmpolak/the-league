@@ -217,7 +217,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -475,6 +475,7 @@ function freshState() {
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
     heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
     suggestions: [],       // the Suggestion Box — feature requests from the floor, ruled on by the Committee
+    liveStats: null,       // live-match fast lane {n, t, playerStats} — CI-written, display-only overlay
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
@@ -492,7 +493,7 @@ function save() {
   // stats and fixtures re-fetch from the feed on load — persisting them would
   // balloon every save to multiple MB by spring and jank older phones
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ ...state, matchStats: {}, fixtures: [] }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ ...state, matchStats: {}, fixtures: [], liveStats: null }));
   } catch (e) { console.warn('[save]', e); }
 }
 // last season's FPL points (falls back to price until the new season's data rolls in)
@@ -1826,6 +1827,23 @@ function waiverClockLine() {
   events.sort((a, b) => a[0] - b[0]);
   return events.length ? `Trough open — ${events.map(e => e[1]).join(' &middot; ')}.` : 'Trough open.';
 }
+/* Live-match fast lane (Ben, 9 Aug: "shame it's not instant"): CI pushes the
+ * live gameweek's stats into public/liveStats roughly every minute during
+ * matches. This overlay is DISPLAY-ONLY freshness on top of the canonical
+ * Pages feed — it never outranks a fresher feed sync, never touches a final
+ * round, dies of staleness on its own, and stays out of the sandbox (the
+ * Chamber owns pretend matchdays) and the demo. */
+function applyLiveStats() {
+  const lv = state.liveStats;
+  if (!lv || !lv.playerStats || !lv.n) return;
+  if (SANDBOX || demoMode || state.mock) return;
+  if (Date.now() - (lv.t || 0) > 10 * 60e3) return; // stale — the feed is truth
+  if (state.feedGenerated && new Date(state.feedGenerated).getTime() > lv.t) return; // feed is fresher
+  const key = `gw${lv.n}`;
+  const ev = state.matchStats[key];
+  if (ev && ev.final) return; // a settled round is never repainted
+  state.matchStats[key] = { gw: lv.n - 1, label: ev?.label || `GW${lv.n}`, date: ev?.date, final: false, playerStats: lv.playerStats };
+}
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
   const tw = troughWindow();
@@ -3050,6 +3068,7 @@ const SETUP_NAV = new Set(['draft', 'club', 'rules', 'settings']);
 let lastRenderedView = null;
 function render() {
   applyMock(); // sandbox Simulation Chamber overlay — no-op everywhere else
+  applyLiveStats(); // real-league live-match fast lane — no-op everywhere else
   // the standing acting-as pen dies the moment the Chairman leaves the
   // Transfers page (sol test-night P2 — covers navigation, phase flips,
   // resets; hubActor additionally re-checks role and roster every call)

@@ -1,0 +1,44 @@
+name: Live-match fast lane
+
+# During live Premier League fixtures, push fresh player stats straight into
+# RTDB roughly every minute (fetch → push, looped inside one job). Outside
+# match windows the first pass finds no live fixture and the job stands down
+# in seconds. Display-only: Pages data/stats.json stays the canonical feed.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-fast-lane
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install firebase-admin (the functions' pinned version)
+        run: npm ci --prefix functions
+      - name: Fetch and push on a one-minute loop
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          for i in 1 2 3 4 5 6; do
+            python3 scripts/fetch_fpl.py
+            set +e
+            node scripts/push_live.js
+            code=$?
+            set -e
+            if [ "$code" = "3" ]; then echo "no live fixtures — standing down"; break; fi
+            if [ "$code" != "0" ]; then exit "$code"; fi
+            [ "$i" = "6" ] || sleep 45
+          done
