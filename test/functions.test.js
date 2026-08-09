@@ -1106,6 +1106,23 @@ const SB = 'the-league-sandbox';
   chk('troughSign racing mock-off never lands in the pretend next gameweek',
     raceShifted === 0, `shifted=${raceShifted}/8`);
 
+  /* ---------------- sandbox full autodraft (Test Night skip) ---------------- */
+  chk('autoComplete refused outside the sandbox', (await T.mutate(LG, 'draftAdmin', { op: 'autoComplete' }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  await T.mutate(SB, 'resetLeague', { confirm: 'RESET' }, sbTok1);
+  await T.mutate(SB, 'draftAdmin', { op: 'start', order: [1, 2, 3] }, sbTok1);
+  chk('autoComplete is Chairman-only', (await T.mutate(SB, 'draftAdmin', { op: 'autoComplete' }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  const skip = await T.mutate(SB, 'draftAdmin', { op: 'autoComplete' }, sbTok1);
+  const skPub = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
+  const skPicks = Object.values(skPub?.draft?.picks || {});
+  chk('autoComplete fills the whole board and flips to season',
+    !skip.error && skip.result?.total === 42 && skPicks.length === 42 && skPub.phase === 'season' && !skPub.draft.deadline,
+    JSON.stringify(skip.error || skip.result));
+  const perMgr = skPicks.reduce((m, p) => (m[p.managerId] = (m[p.managerId] || 0) + 1, m), {});
+  chk('autodraft gave every manager exactly 14 picks, no player twice',
+    [1, 2, 3].every(m => perMgr[m] === 14) && new Set(skPicks.map(p => p.playerId)).size === 42, JSON.stringify(perMgr));
+  chk('a second autoComplete on the finished board is refused (not drafting)',
+    (await T.mutate(SB, 'draftAdmin', { op: 'autoComplete' }, sbTok1)).error?.status === 'FAILED_PRECONDITION');
+
   server.close();
   run.done();
 })().catch(e => { console.error(e); process.exit(1); });

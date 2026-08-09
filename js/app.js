@@ -4068,6 +4068,7 @@ function viewDraft() {
       ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
       ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
       ${roomOpen ? '<button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>' : ''}
+      ${SANDBOX && (!netOn() || isCommissioner()) ? '<button class="btn ghost small" id="skipDraft" title="Sandbox only — autodraft every remaining pick and go straight to the season">&#9193; Skip the draft</button>' : ''}
       <button class="btn ghost small" id="heckleBtn" title="Random barb, your own words, or a player recommendation — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
     </div>
   </div>
@@ -4930,6 +4931,36 @@ function bindDraft() {
     serverAct('draftAdmin', { op: 'roomOpen' })
       .then(() => toast('The Chairman declares the room open. Pick one is live.'))
       .catch(() => {});
+  };
+  const skd = $('#skipDraft'); // sandbox-only: the Test Night fast-forward
+  if (skd) skd.onclick = async () => {
+    if (!await confirmSheet({
+      title: 'Skip the draft?',
+      body: '<p style="font-size:13.5px">Every remaining pick is autodrafted in one stroke — each manager\'s queue first, then best available — and the league goes straight to the season. Sandbox only; the real league will never have this button.</p>',
+      yes: 'Autodraft the lot',
+    })) return;
+    if (netOn()) {
+      serverAct('draftAdmin', { op: 'autoComplete' })
+        .then(r => toast(`${r.added} picks autodrafted. The Committee has ratified the instant minutes.`))
+        .catch(() => {});
+      return;
+    }
+    let guard = state.managers.length * SQUAD_RULES.size + 1;
+    let onClock;
+    while ((onClock = currentManagerId()) != null && guard-- > 0) {
+      const taken = draftedIds();
+      let best = toArr(state.autolists?.[onClock]).map(id => PLAYER_BY_ID[id])
+        .find(p => p && !taken.has(p.id) && canPick(onClock, p));
+      if (!best) best = PLAYERS.filter(p => !taken.has(p.id) && canPick(onClock, p))
+        .sort((a, b) => rating(b) - rating(a))[0];
+      if (!best) break;
+      state.draft.picks.push({ managerId: onClock, playerId: best.id, n: state.draft.picks.length + 1 });
+    }
+    state.phase = 'season';
+    state.draft.deadline = null;
+    state.view = 'dash';
+    toast('Board filled. The Committee has ratified the instant minutes.');
+    save(); render();
   };
   const up = $('#undoPick'); // rendered for the Chairman only (Marc, mock night)
   if (up) up.onclick = () => {
@@ -8532,7 +8563,7 @@ function viewSettings() {
         <li><b>Reset everything</b> (button below) — wipes the sandbox back to the waiting room. Sign-in survives.</li>
         <li>In the waiting room, set the draft order and <b>Start the draft</b>. Tip: drop the pick clock to 15–30s first for a fast solo draft.</li>
         <li>Sit through the ceremony (or use Ian's button). You land on the console. Alone in the room? Press <b>&#9878; Declare the room open</b> on the waiting card — pick one goes live and absent managers autopick when their clock dies.</li>
-        <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> to hurry them along.</li>
+        <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> — or press <b>&#9193; Skip the draft</b> on the console to autodraft the whole board in one stroke and go straight to the season.</li>
         <li>Open the Chamber below: <b>Kick off GW1</b> (20-min live matchday) or go straight to <b>Full time</b>.</li>
         <li>After full time: on the Transfers page, use the <b>acting as</b> switcher in the header to take any manager's chair — make drops, sign from the Trough, lodge waiver claims, propose and accept trades between clubs. It all lands as theirs.</li>
         <li>On the Waiver order tab, <b>Run waivers now</b> — that's Tuesday 8pm happening early. Check the claims resolved in reverse table order.</li>

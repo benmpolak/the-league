@@ -465,7 +465,7 @@ ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   return ACTIONS.draftPick({ league, a: { ...a, managerId: onClock }, data: { playerId: choice, expectedCount: state.draft.picks.length }, ctx, state, eng });
 };
 
-ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
+ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
   const base = leagueBase(league);
   const d = `${base}/public/draft`;
   const op = data.op;
@@ -556,6 +556,42 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     if (!res.committed) throw new HttpsError('aborted', 'the draft room moved on');
     const draft = res.snapshot.val() || {};
     return { ok: true, ...draftCeremonyStatus({ draft }), armed: !!draft.deadline };
+  }
+  if (op === 'autoComplete') {
+    // sandbox-only: autodraft every remaining pick in one stroke (Test Night —
+    // a solo Chairman needs a full board in ten seconds, not 168 taps).
+    // Exactly what the expiring clock would do, repeated: each manager's
+    // queue first, then best available. HARD-refused outside the sandbox —
+    // the real draft is the whole point of the real league.
+    if (league !== 'the-league-sandbox') throw new HttpsError('failed-precondition', 'the full autodraft only exists in the sandbox');
+    if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
+    const stateWithLists = await loadState(league, ctx, { withPrivate: true });
+    const sim = JSON.parse(JSON.stringify(stateWithLists));
+    const startCount = toArr(state.draft.picks).length;
+    const added = [];
+    let onClock;
+    while ((onClock = eng.currentManagerId(sim)) != null) {
+      const choice = eng.autoPickChoice(sim, onClock);
+      if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available mid-autodraft');
+      const rec = { managerId: onClock, playerId: choice, n: toArr(sim.draft.picks).length + 1 };
+      sim.draft.picks = [...toArr(sim.draft.picks), rec];
+      added.push(rec);
+    }
+    const ref = db().ref(`${base}/public`);
+    const seedSnap = (await ref.get()).val(); // raw server shape for the empty-cache first pass
+    const res = await ref.transaction(cur => {
+      const c = cur === null ? (seedSnap && JSON.parse(JSON.stringify(seedSnap))) : cur;
+      if (!c) return;
+      const picks = toArr(c.draft && c.draft.picks);
+      // CAS on the pick count: a pick or undo landing mid-computation aborts
+      // the skip rather than double-drafting anyone — press it again
+      if (c.phase !== 'draft' || picks.length !== startCount) return;
+      c.draft = { ...(c.draft || {}), picks: [...picks, ...added], deadline: null, paused: false };
+      c.phase = 'season';
+      return c;
+    }).catch(() => ({ committed: false }));
+    if (!res.committed) throw new HttpsError('aborted', 'the board moved mid-autodraft — press it again');
+    return { ok: true, added: added.length, total: startCount + added.length };
   }
   if (op === 'start') {
     if (state.phase !== 'setup') throw new HttpsError('failed-precondition', 'already started');
