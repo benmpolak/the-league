@@ -7376,6 +7376,209 @@ function lastFinalGw() {
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') last = i;
   return last;
 }
+// Marc, 9 Aug 2026: "cunt of the week… randomly assigned each week for
+// whatever reason" — then, an hour later, "can you make it for an actual
+// reason based on the gameplay". So it is earned. The Committee reads the
+// week's settled data against a ranked charge sheet and names the gravest
+// offence it can actually prove. No seed involved: the evidence is the same
+// on all twelve phones. The stenographer declines to print the title in full.
+//
+// The draw survives only for weeks where nobody did anything chargeable.
+const COTW_DRAWS = [
+  'no reason was recorded',
+  'the Committee declines to elaborate',
+  'for the message sent at 23:41',
+  'for what happened at the draft',
+  'nothing specific. It was simply felt',
+  'for the celebration',
+  'the minutes on this point are sealed for thirty years',
+  'for tone',
+  'a matter arising',
+  'reasons available on request, in writing, to an address that does not exist',
+  'it was a quiet week and the trophy needed a home',
+  'for conduct in the group chat, unspecified',
+  'a complaint was received. It was anonymous. It was upheld',
+  'for the second reminder about the fifty quid',
+  'the Committee has moved on. The Committee has not moved on',
+];
+// The charge sheet, gravest first (Marc, 9 Aug: "annoying things like…").
+// Every charge is provable from settled data — team sheets, the transfer log,
+// timestamps against the deadline. Nothing here rewards or punishes a score:
+// you get charged for the faffing, not for losing.
+function cotwCharges(i) {
+  const out = [];
+  const file = (gravity, id, why, weight = 1) => { if (id != null) out.push({ gravity, id, why, weight }); };
+  const nameOf = pid => PLAYER_BY_ID[pid]?.name || 'a player';
+  const gwT = j => Date.parse(GAMEWEEKS[j]?.from || '') || 0;
+  const deadline = gwT(i);
+  const moves = state.transfers.filter(t => t.gw === i);
+  const mins = pid => gwEvent(i)?.playerStats?.[pid]?.min || 0;
+  // a feed that carries no minutes at all is a gap in the data, not twelve
+  // negligent managers — the charges that read minutes stand down for the week
+  const anyMins = Object.values(gwEvent(i)?.playerStats || {}).some(s => (s?.min || 0) > 0);
+  // likewise the blank-gameweek charge: no fixture list, no accusation
+  const gwN = GAMEWEEKS[i]?.n;
+  const roundFx = state.fixtures.filter(f => f.gw === gwN);
+  const blankFor = team => roundFx.length > 0 && !roundFx.some(f => f.home === team || f.away === team);
+  const cup = state.hamCup && state.hamCup.status !== 'off' && GAMEWEEKS[state.hamCup.gw] ? state.hamCup : null;
+
+  for (const m of state.managers) {
+    const mid = m.id;
+    const stored = state.lineups[mid] || {};
+    const mine = moves.filter(t => t.managerId === mid);
+
+    // I. named a man whose club were not playing. Marc's favourite, and the
+    // one the fixture list proves outright
+    const blanks = lineupFor(mid, i).map(pid => PLAYER_BY_ID[pid]).filter(p => p && blankFor(p.team));
+    if (blanks.length) file(1, mid, blanks.length === 1
+      ? `for naming ${blanks[0].name}, whose club were not playing`
+      : `for naming ${blanks.length} men whose clubs were not playing, ${blanks[0].name} among them`, blanks.length);
+
+    // II. the revolving door: signed and binned inside a week
+    for (const t of mine) {
+      const took = state.transfers.find(u => u.managerId === mid && u.inId === t.outId && u.gw >= i - 1 && u.gw <= i && (u.t || 0) < (t.t || 0));
+      if (took) file(2, mid, `for signing ${nameOf(t.outId)} and binning him ${took.gw === i ? 'the same week' : 'seven days later'}, having seen enough`, took.gw === i ? 2 : 1);
+    }
+
+    // III. turned up short: an XI where the names outnumbered the participants
+    const played = effectiveXI(mid, i).xi.filter(pid => mins(pid) > 0).length;
+    if (anyMins && played <= 8) file(3, mid, `for naming eleven men and fielding ${played} who actually kicked a ball`, 11 - played);
+
+    // IV. binned a man who went straight out and hauled
+    for (const t of mine) {
+      const got = t.outId ? gwPlayerPoints(t.outId, i) : 0;
+      if (got >= 10) file(4, mid, `for binning ${nameOf(t.outId)}, who returned ${got} the same week`, got);
+    }
+
+    // V–VI. conduct in the XI they chose. Not their fault, strictly. The
+    // Committee is not a court and has never claimed to be
+    const xi = effectiveXI(mid, i).xi.map(pid => PLAYER_BY_ID[pid]).filter(Boolean);
+    const stat = pid => gwEvent(i)?.playerStats?.[pid] || {};
+    const redCard = xi.find(p => stat(p.id).rc);
+    if (redCard) file(5, mid, `for fielding ${redCard.name}, who was sent off`);
+    const ownGoal = xi.find(p => stat(p.id).og);
+    if (ownGoal) file(6, mid, `for fielding ${ownGoal.name}, who scored at the wrong end`);
+    const missedPen = xi.find(p => stat(p.id).pm);
+    if (missedPen) file(7, mid, `for fielding ${missedPen.name}, who was handed a penalty and declined it`);
+
+    // VIII. handed in an incomplete team sheet and left the repair to the app
+    const sheet = stored[i];
+    if (sheet && (sheet.length !== XI_RULES.size || !xiValid(sheet)))
+      file(8, mid, `for handing in a team sheet of ${sheet.length} name${sheet.length === 1 ? '' : 's'} and leaving the Committee to finish it`, Math.abs(XI_RULES.size - sheet.length) + 1);
+
+    // IX. a waiver claim spent on a man who never left the stands
+    const dud = mine.filter(t => t.waiver && !mins(t.inId));
+    if (anyMins && dud.length)
+      file(9, mid, `for spending a waiver claim on ${nameOf(dud[0].inId)}, who did not record a minute`, dud.length);
+
+    // X. selling your own declared Lobus (ledger #1). A constitutional matter
+    for (const t of mine) if (state.lobus?.[mid] && state.lobus[mid] === t.outId)
+      file(10, mid, `for selling ${nameOf(t.outId)}, their own declared Lobus. The klaxon has been disconnected`);
+
+    // XI. deadline faffing — business conducted in the last hour, as is traditional
+    const late = mine.filter(t => deadline && t.t && t.t < deadline && deadline - t.t <= 3600000)
+      .sort((a, b) => b.t - a.t)[0];
+    if (late) {
+      const left = Math.max(1, Math.round((deadline - late.t) / 60000));
+      file(11, mid, `for conducting business ${left} minute${left === 1 ? '' : 's'} before the deadline, as is traditional`, 61 - left);
+    }
+
+    // XII. offers out, all of them returned
+    const offers = toArr(state.trades).filter(t => t.from === mid && t.t >= deadline - 6048e5 && t.t < deadline);
+    if (offers.length >= 2 && offers.every(t => t.status === 'rejected' || t.status === 'withdrawn'))
+      file(12, mid, `for sending ${offers.length} trade offers in one week and having all ${offers.length} returned`, offers.length);
+
+    // XIII. the silent week: dead men in the squad, no claims, no moves. Claims
+    // are wiped once a run settles, so the unattended squad is the evidence
+    const dead = squadAt(mid, i).filter(p => !mins(p.id)).length;
+    if (anyMins && !mine.length && !toArr(state.claims?.[i]?.[mid]).length && dead >= 4)
+      file(13, mid, `for carrying ${dead} players who did not kick a ball and still not troubling the waiver list`, dead);
+
+    // XIV. churn for its own sake
+    if (mine.length >= 4) file(14, mid, `for making ${mine.length} transfers in a single week, none of which helped`, mine.length);
+
+    // XV. needed the app to fix the side it was handed, having never said
+    // which way round the bench should go
+    const subs = effectiveXI(mid, i).subs.length;
+    if (subs > 0 && !toArr(state.benchOrders?.[mid]?.[i]).length)
+      file(15, mid, `for needing ${subs} auto-sub${subs === 1 ? '' : 's'} having never set a bench order`, subs);
+
+    // XVI. never touched the team sheet this week
+    if (!sheet) file(16, mid, 'for not naming a side at all, and letting last week’s eleven turn up on its own');
+
+    /* ----- standing offences: not news, so they sit at the bottom of the
+       sheet and surface only in weeks where nobody managed anything better.
+       Marc, 9 Aug: these can and will land on the same man week after week. */
+
+    // XVII. the Palwin Ham Cup (ledger #6) asks for eleven names and nothing else
+    if (cup && i >= cup.gw && !toArr(cup.entries?.[mid]).length)
+      file(17, mid, 'for never entering the Palwin Ham Cup, a competition that asks for eleven names and nothing else');
+
+    if (!Object.keys(stored).length) file(18, mid, 'for never once naming a side all season, and letting the Committee pick one every week');
+
+    // XIX. a second keeper who has not played a minute since the draft
+    const keepers = squadAt(mid, i).filter(p => p.pos === 'GK');
+    if (i >= 9 && keepers.length > 1) {
+      const idle = keepers.find(p => !Array.from({ length: i + 1 }, (_, g) => g).some(g => gwStatus(g) === 'final' && appearedInGw(p.id, g)));
+      if (idle) file(19, mid, `for a squad place spent on ${idle.name}, who has not played a minute all season`);
+    }
+
+    // XX. Tussie's right to draft an entire club is constitutionally
+    // protected. It is not, however, above comment
+    const byClub = {};
+    for (const p of squadAt(mid, i)) byClub[p.team] = (byClub[p.team] || 0) + 1;
+    const hoard = Object.entries(byClub).sort((a, b) => b[1] - a[1])[0];
+    if (hoard && hoard[1] >= 5) file(20, mid, `for carrying ${hoard[1]} ${hoard[0]} players, which is permitted, and remains the problem`, hoard[1]);
+
+    // XXI. draft-night clock abuse. Two each, and they used both
+    const stalling = state.draft?.timewastes?.[mid] || 0;
+    if (stalling >= 2) file(21, mid, 'for using both draft timewastes and still not being ready when the clock came back');
+
+    // XXII. listed nobody, all season, while maintaining everyone else is the problem
+    if (state.phase === 'season' && !blockList(mid).length)
+      file(22, mid, 'for listing nobody on the trade block all season, while maintaining that everyone else’s squad is the problem');
+
+    // XXIII. covenants (ledger #7) that have quietly aged out
+    const stale = toArr(state.covenants).filter(c => c.from === mid && i - (c.gw ?? i) >= 10)
+      .sort((a, b) => (a.gw ?? 0) - (b.gw ?? 0))[0];
+    if (stale) file(23, mid, `for a covenant with ${teamName(stale.to)}, entered into in GW${GAMEWEEKS[stale.gw]?.n ?? '?'} and never mentioned again`, i - stale.gw);
+
+    // XXIV. the Suggestion Box, and the Committee's warm indifference to it
+    const noted = toArr(state.suggestions).filter(s => s.by === mid && s.status === 'noted');
+    if (noted.length >= 3) file(24, mid, `for ${noted.length} submissions to the Suggestion Box, every one of them still marked “noted”`, noted.length);
+
+    if (!toArr(state.autolists?.[mid]).length) file(25, mid, 'for arriving at the draft without an autopick list, and expecting sympathy');
+    if (state.phase === 'season' && !state.ready?.[mid]) file(26, mid, 'for never answering the pre-draft roll call');
+    if (!state.lobus?.[mid]) file(27, mid, 'for still not having declared a Lobus');
+    if (!state.heckles?.[mid]) file(28, mid, 'for going through an entire draft night without heckling anybody');
+  }
+  return out;
+}
+function cotwFor(i) {
+  if (!state.managers.length) return null;
+  // gravest charge wins, then the worst offence within it. Level offenders are
+  // separated on their whole record for the week — most charges, then heaviest
+  // — so it lands on merit and never on a coin toss (Marc, 9 Aug: "it shouldn't
+  // be random, you can be cunt of the week multiple weeks in a row")
+  const sheet = cotwCharges(i);
+  if (sheet.length) {
+    const rap = {};
+    for (const c of sheet) {
+      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0 };
+      r.n++; r.w += c.weight;
+    }
+    sheet.sort((a, b) => a.gravity - b.gravity || b.weight - a.weight
+      || rap[b.id].n - rap[a.id].n || rap[b.id].w - rap[a.id].w || a.id - b.id);
+    const top = sheet[0];
+    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1 };
+  }
+  // a week in which the league behaved itself. The trophy still needs a home,
+  // so the Committee draws lots — seeded off the gameweek the way chantFor is,
+  // because Math.random() would name a different man on every phone
+  const seed = (i * 2246822519 + 3266489917) >>> 0;
+  const m = state.managers[seed % state.managers.length];
+  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false } : null;
+}
 function weeklyAwards(last) {
   const scores = state.managers.map(m => ({ id: m.id, s: gwManagerPoints(m.id, last), waste: benchWaste(m.id, last) }));
   const hi = [...scores].sort((a, b) => b.s - a.s)[0];
@@ -7389,8 +7592,9 @@ function weeklyAwards(last) {
   const hiding = [...results].sort((a, b) => b.margin - a.margin)[0];
   const bench = [...scores].sort((a, b) => b.waste - a.waste)[0];
   // He's A Handful™ and the No-Footed Full Back retired by Committee order,
-  // 1 Aug 2026 (Marc: "so much in there" — the six that survive are the six)
-  return { hi, lo, jammy, robbed, hiding, bench };
+  // 1 Aug 2026 (Marc: "so much in there" — the six that survive are the six).
+  // cotw is the seventh and is not earned; it is drawn.
+  return { hi, lo, jammy, robbed, hiding, bench, cotw: cotwFor(last) };
 }
 // the same six awards judged across every settled gameweek — Marc's point:
 // "those 6 are actually good, but it's more useful over the season"
@@ -7420,7 +7624,7 @@ function seasonAwards() {
 function awardsCard() {
   const last = lastFinalGw();
   if (last < 0) return '';
-  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
+  const { hi, lo, jammy, robbed, hiding, bench, cotw } = weeklyAwards(last);
   const sa = seasonAwards();
   const row = (icon, label, text) => `<div class="award-row"><span class="award-icon" aria-hidden="true">${icon}</span><b class="award-label">${label}</b><span class="award-value">${text}</span></div>`;
   const gwTag = i => ` <span class="muted">(GW${GAMEWEEKS[i].n})</span>`;
@@ -7438,7 +7642,9 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
+      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''}`) : ''}
     </div>
+    ${cotw ? `<p class="muted" style="font-size:10.5px;margin-top:6px"><b>C*** of the Week:</b> charged on the week's evidence — team sheets, the transfer log, the fixture list and the clock — and ranked by gravity, not by score. You cannot earn it by playing badly, only by being annoying about it, and you keep it for as long as you keep earning it.${cotw.proven ? '' : ' Nobody offended this week, so the Committee drew lots.'} No appeal.</p>` : ''}
     ${sa ? `${sect('Season so far')}
     <div class="awards-list">
       ${row('&#127942;', 'Highest Score', `<b>${esc(teamName(sa.hi.id))}</b> — ${sa.hi.s} points${gwTag(sa.hi.gw)}`)}
@@ -7456,7 +7662,7 @@ function awardsCard() {
 /* ----- the Committee Minutes: one tap, WhatsApp-ready recap ----- */
 function committeeMinutes(last) {
   const g = GAMEWEEKS[last];
-  const { hi, lo, jammy, robbed, hiding, bench } = weeklyAwards(last);
+  const { hi, lo, jammy, robbed, hiding, bench, cotw } = weeklyAwards(last);
   const L = [`\u{1F3C6} THE LEAGUE — GW${g.n} COMMITTEE MINUTES`, '', '*Results*'];
   for (const [a, b] of pairingsFor(last)) {
     const sa = gwManagerPoints(a, last), sb = gwManagerPoints(b, last);
@@ -7471,6 +7677,7 @@ function committeeMinutes(last) {
   if (robbed) L.push(`\u{1F494} Robbed: ${teamName(robbed.l)} scored ${robbed.ls} and still lost`);
   if (hiding) L.push(`\u{1F528} Biggest Hiding: ${teamName(hiding.w)} ${hiding.ws}–${hiding.ls} ${teamName(hiding.l)}`);
   if (bench.waste > 0) L.push(`\u{1FAD1} Bench of the Week: ${teamName(bench.id)} left ${bench.waste} on the bench`);
+  if (cotw) L.push(`\u{1F6AB} C*** of the Week: ${teamName(cotw.id)} — ${cotw.why}${cotw.also > 0 ? ` (and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)` : ''}${cotw.proven ? '' : ' (a quiet week; the Committee drew lots)'}`);
   const t = h2hStandings(false);
   L.push('', '*The Table*');
   t.slice(0, 4).forEach((r, i) => L.push(`${i + 1}. ${r.team || r.name} — ${r.pts}`));
