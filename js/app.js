@@ -204,6 +204,10 @@ const canActFor = mid => demoMode || !syncOn() || whoami === mid || isCommission
 function actGuard(mid, what = 'team') {
   if (!canActFor(mid)) { toast(`That's ${managerName(mid)}'s ${what}, not yours`); return false; }
   if (netOn() && !demoMode && whoami !== mid && isCommissioner()) {
+    // taking a chair via the Transfers-hub switcher IS the override confirm —
+    // the banner stays up the whole time; re-asking per action made a test
+    // night twelve confirms deep
+    if (transfersView.as === mid) return true;
     return confirm(`COMMISSIONER OVERRIDE — you are changing ${managerName(mid)}'s ${what}, not your own. Proceed?`);
   }
   return true;
@@ -359,6 +363,7 @@ function applySharedSnapshot(data) {
   // rather than clinging to a stale local copy (that's how a cancelled Ham
   // Cup or cleared trade-block used to linger forever on other devices)
   const defaults = freshState();
+  const wasPhase = state.phase;
   for (const k of SHARED_KEYS) {
     // online, claims/autolists never travel in the public snapshot — they are
     // per-owner private data fed by onPrivateSnapshot. Keep the local copy.
@@ -366,6 +371,9 @@ function applySharedSnapshot(data) {
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
   applySquadRules(state.settings);
+  // the moment the league goes to draft, every device goes to the console —
+  // being left on the dashboard's GW1 card read as "it's broken" (Toby)
+  if (state.phase === 'draft' && wasPhase !== 'draft') state.view = 'draft';
   save(); render();
   reportCeremonyReady(); // a previously-finished device retries until its shared tick lands
   const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
@@ -1846,7 +1854,7 @@ function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); 
 function setClaims(mid, arr) {
   const cur = currentGwIndex();
   if (netOn()) {
-    serverAct('claimSet', { gwIndex: cur, claims: arr }).catch(() => {});
+    serverAct('claimSet', { gwIndex: cur, claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
     // the private snapshot echoes the authoritative list back
   }
   (state.claims[cur] = state.claims[cur] || {})[mid] = arr;
@@ -3649,7 +3657,7 @@ function showCeremony() {
   let paradeTimer = null;
   const show = () => {
     clearInterval(paradeTimer);
-    if (i >= steps.length) { cerFinish(); ov.remove(); render(); return; }
+    if (i >= steps.length) { cerFinish(); ov.remove(); state.view = 'draft'; render(); return; }
     const s = steps[i];
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
@@ -3716,7 +3724,7 @@ function showCeremony() {
       paradeTimer = setInterval(walkOut, 6500);
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
+    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); state.view = 'draft'; render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
   };
   show();
 }
@@ -4046,7 +4054,7 @@ function viewDraft() {
     ? `<span class="oc-label" style="color:var(--accent)">&#9201; YOUR PICK</span><span class="oc-name" style="color:var(--accent)">${esc(managerName(mid))}, you're on the clock</span>`
     : `<span class="oc-label">ON THE CLOCK</span><span class="oc-name">${esc(managerName(mid))}</span>${picksUntilMine ? `<span class="oc-sub">your pick in ${picksUntilMine}${state.settings.pickTimer ? ` (~${Math.ceil(picksUntilMine * state.settings.pickTimer / 60)} min)` : ''}</span>` : ''}`;
   return `
-  ${!roomOpen ? `<div class="ceremony-wait" role="status"><b>The first pick is locked.</b><span>${ceremony.count}/${ceremony.total} managers have finished or skipped the opening ceremony. The clock starts automatically when the last manager arrives.</span></div>` : ''}
+  ${!roomOpen ? `<div class="ceremony-wait" role="status"><b>The first pick is locked.</b><span>${ceremony.count}/${ceremony.total} managers have finished or skipped the opening ceremony. The clock starts automatically when the last manager arrives.</span>${netOn() && isCommissioner() ? `<button class="btn small" id="forceRoom" style="margin-top:8px">&#9878; Declare the room open (Chairman)</button>` : ''}</div>` : ''}
   <div class="on-clock${iAmUp ? ' me-up' : ''}">
     <div class="who">${whoLine}</div>
     ${state.settings.pickTimer ? '<span class="pick-clock" id="pickClock">–:––</span>' : ''}
@@ -4911,6 +4919,18 @@ function bindDraft() {
     save(); render();
   };
   bindPoolControls();
+  const fr = $('#forceRoom'); // rendered for the Chairman only, and only while the room waits
+  if (fr) fr.onclick = async () => {
+    const cer = draftCeremonyStatus();
+    if (!await confirmSheet({
+      title: 'Declare the room open?',
+      body: `<p style="font-size:13.5px">Only ${cer.count} of ${cer.total} managers are through the ceremony. Opening the room starts pick one now — anyone absent is treated as arrived, and their clock autopicks from their list (or best available) when it dies.</p><p class="muted" style="font-size:12px">The proper use is a test night, or a real night where someone's phone is in a taxi.</p>`,
+      yes: 'Open the room',
+    })) return;
+    serverAct('draftAdmin', { op: 'roomOpen' })
+      .then(() => toast('The Chairman declares the room open. Pick one is live.'))
+      .catch(() => {});
+  };
   const up = $('#undoPick'); // rendered for the Chairman only (Marc, mock night)
   if (up) up.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner can undo a pick'); return; }
@@ -5508,9 +5528,17 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false };
+let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false, as: null };
+// the whole hub acts as ONE manager. Normally that's you; the Chairman may
+// take any chair (the switcher in the hub header) — every action downstream
+// already carries asManager when mid !== whoami, so the server records the
+// move as theirs. Built so Toby can test waivers/trades solo on the sandbox.
+function hubActor() {
+  if (transfersView.as != null && isCommissioner() && state.managers.some(m => m.id === transfersView.as)) return transfersView.as;
+  return (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+}
 function viewTransfers() {
-  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  const mid = hubActor();
   const cur = currentGwIndex();
   const ownedNow = ownedIdsAt(cur);
   const tabs = [['trough', 'The Trough & Waivers'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
@@ -5522,9 +5550,11 @@ function viewTransfers() {
   const tgwHub = transferGw();
   const head = `<div class="team-controls card">
     ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
-    <span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>
+    ${netOn() && isCommissioner() ? `<label class="tag" style="margin-left:auto">acting as&nbsp;<select id="actAsSel" style="font-size:11.5px">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(managerName(m.id))}${m.id === whoami ? ' (me)' : ''}</option>`).join('')}</select></label>`
+      : `<span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>`}
     <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
-  </div>`;
+  </div>
+  ${netOn() && whoami && whoami !== mid ? `<p class="tag live-tag" style="display:inline-block;margin-bottom:8px">ACTING AS ${esc(teamName(mid))} — every signing, claim and trade on this page is theirs, not yours</p>` : ''}`;
   // your own squad, always in view while you deal (Ben, mock night: "i dont
   // like that you cant see your team on the transfer page")
   const mySquadCard = (() => {
@@ -5769,8 +5799,16 @@ function viewTransfers() {
   </div>`;
 }
 function bindTransfers() {
-  const mid = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+  const mid = hubActor();
   const cur = currentGwIndex();
+  const aas = $('#actAsSel');
+  if (aas) aas.onchange = () => {
+    const v = +aas.value;
+    transfersView.as = v === whoami ? null : v;
+    transfersView.out = null; // a drop selected from the last chair makes no sense in this one
+    render();
+    if (transfersView.as != null) toast(`You now hold ${managerName(v)}'s pen. Switch back to yourself when the business is done.`);
+  };
   document.querySelectorAll('[data-trtab]').forEach(b => b.onclick = () => { transfersView.tab = b.dataset.trtab; render(); });
   const cov = $('#covAdd');
   if (cov) cov.onclick = () => {
@@ -8487,6 +8525,25 @@ function viewSettings() {
       <p class="rules-p">&sect;7 The hydration break is inviolable.</p>
       <p class="rules-p muted" style="font-style:italic">Amendments require a Committee majority and will be ignored regardless. Full rules on the Rules page.</p>
     </div>
+    ${SANDBOX && (!netOn() || isCommissioner()) ? `<div class="card" style="border-color:var(--gold,#d4af37)">
+      <h2>Test Night — the Chairman's runbook <span class="tag">sandbox only</span></h2>
+      <p class="muted" style="font-size:12.5px">The full loop, solo, no Ben required. Draft a league, play two pretend gameweeks, do the transfer business in between. Everything here is sandbox — the real league can't be touched from this site.</p>
+      <ol class="rules-p" style="font-size:13px;padding-left:18px;display:grid;gap:6px;margin-top:8px">
+        <li><b>Reset everything</b> (button below) — wipes the sandbox back to the waiting room. Sign-in survives.</li>
+        <li>In the waiting room, set the draft order and <b>Start the draft</b>. Tip: drop the pick clock to 15–30s first for a fast solo draft.</li>
+        <li>Sit through the ceremony (or use Ian's button). You land on the console. Alone in the room? Press <b>&#9878; Declare the room open</b> on the waiting card — pick one goes live and absent managers autopick when their clock dies.</li>
+        <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> to hurry them along.</li>
+        <li>Open the Chamber below: <b>Kick off GW1</b> (20-min live matchday) or go straight to <b>Full time</b>.</li>
+        <li>After full time: on the Transfers page, use the <b>acting as</b> switcher in the header to take any manager's chair — make drops, sign from the Trough, lodge waiver claims, propose and accept trades between clubs. It all lands as theirs.</li>
+        <li>On the Waiver order tab, <b>Run waivers now</b> — that's Tuesday 8pm happening early. Check the claims resolved in reverse table order.</li>
+        <li>Chamber GW2, and round again.</li>
+      </ol>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn small" id="trGoTransfers">Open Transfers</button>
+        <button class="btn ghost small" id="trCopyReport">&#128203; Copy the test report template</button>
+      </div>
+      <p class="muted" style="font-size:10.5px;margin-top:6px">Fill the report in as you go and paste it into the group chat — that's the feedback the Committee wants.</p>
+    </div>` : ''}
     ${SANDBOX && (!netOn() || isCommissioner()) ? (() => {
       const mk = state.mock;
       const cur = currentGwIndex();
@@ -8510,6 +8567,29 @@ function viewSettings() {
 }
 function bindSettings() {
   bindInstall();
+  // Test Night runbook (sandbox-only, Chairman's solo test loop)
+  const tgt = $('#trGoTransfers');
+  if (tgt) tgt.onclick = () => { state.view = 'transfers'; transfersView.tab = 'trough'; save(); render(); };
+  const tcr = $('#trCopyReport');
+  if (tcr) tcr.onclick = () => {
+    const txt = [
+      'THE LEAGUE — SANDBOX TEST REPORT',
+      `Tested by: ${whoami && whoami !== -1 ? managerName(whoami) : 'the Chairman'}`,
+      '',
+      'DRAFT (reset → order → start → force open → picks): OK / issues:',
+      'CHAMBER GW1 (live matchday, scores, table): OK / issues:',
+      'TROUGH + TRADES (acting as other managers): OK / issues:',
+      'WAIVER CLAIMS + RUN NOW (right winners, right order?): OK / issues:',
+      'CHAMBER GW2 + second waiver round: OK / issues:',
+      '',
+      'Anything broken:',
+      'Anything confusing:',
+      'Anything DF did better:',
+    ].join('\n');
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
+      () => toast('Report template copied — fill it in as you test'),
+      () => { window.prompt('Copy the test report:', txt); });
+  };
   // the Simulation Chamber (sandbox-only; server refuses everywhere else)
   const mockAct = op => {
     const gw = +($('#mockGw')?.value ?? currentGwIndex());
@@ -8936,6 +9016,7 @@ document.addEventListener('visibilitychange', () => {
   else if (state.phase === 'setup' && SETUP_NAV.has(v0)) state.view = v0;
   else if (state.phase === 'setup') state.view = 'dash'; // the waiting room is home
   else if (state.phase === 'season') state.view = 'dash';
+  else if (state.phase === 'draft') state.view = 'draft'; // a live draft opens on the console, never the dashboard (Toby, sandbox)
 }
 render();
 manageWakeLock();

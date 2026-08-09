@@ -535,6 +535,28 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng }) => {
     return { ok: true };
   }
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  if (op === 'roomOpen') {
+    // Chairman force-start: a test night (or a no-show on the real night)
+    // can't wait forever for managers who are never going to arrive. Marks
+    // every manager in the order through the ceremony and arms the first
+    // clock in the SAME txn — absentees simply autopick when their clock
+    // dies. Idempotent; harmless once picks exist (the room is already open).
+    if (state.phase !== 'draft') throw new HttpsError('failed-precondition', 'not drafting');
+    const res = await db().ref(d).transaction(seededObj(state.draft, dr => {
+      const order = toArr(dr.order).map(Number);
+      if (!order.length) return dr;
+      const ready = dr.ceremonyReady && typeof dr.ceremonyReady === 'object' ? { ...dr.ceremonyReady } : {};
+      for (const mid of order) ready[mid] = true;
+      dr.ceremonyReady = ready;
+      if (state.settings.pickTimer && !dr.deadline && !dr.paused && !toArr(dr.picks).length) {
+        dr.deadline = Date.now() + state.settings.pickTimer * 1000;
+      }
+      return dr;
+    }));
+    if (!res.committed) throw new HttpsError('aborted', 'the draft room moved on');
+    const draft = res.snapshot.val() || {};
+    return { ok: true, ...draftCeremonyStatus({ draft }), armed: !!draft.deadline };
+  }
   if (op === 'start') {
     if (state.phase !== 'setup') throw new HttpsError('failed-precondition', 'already started');
     const order = intArray(data.order, 'order', 20);
@@ -707,7 +729,10 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out), t: Date.now() + Math.random() })); // fractional part: same-millisecond lodgings still get distinct identities
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
   const tgw = eng.transferGw(state);
-  const squad = eng.squadAt(state, a.managerId, tgw);
+  // the commissioner may lodge claims FOR a manager (asManager) — validation
+  // and storage both follow the target, so the claim adjudicates as theirs
+  const mid = actingManager(a, data);
+  const squad = eng.squadAt(state, mid, tgw);
   const squadIds = new Set(squad.map(p => p.id));
   for (const c of claims) {
     const inP = ctx.PLAYER_BY_ID[c.in];
@@ -716,7 +741,12 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
     if (!squadIds.has(c.out)) throw new HttpsError('failed-precondition', 'the drop player is not in your squad');
     if (!eng.squadShapeOk(state, [...squad.filter(p => p.id !== c.out), inP])) throw new HttpsError('failed-precondition', 'claim would leave an illegal squad shape');
   }
-  await db().ref(`${leagueBase(league)}/private/${a.uid}/claims/${g}`).set(claims);
+  let uid = a.uid;
+  if (mid !== a.managerId) {
+    uid = await uidForManager(league, mid);
+    if (!uid) throw new HttpsError('failed-precondition', 'that manager has no account to hold claims');
+  }
+  await db().ref(`${leagueBase(league)}/private/${uid}/claims/${g}`).set(claims);
   return { ok: true };
 };
 

@@ -517,6 +517,14 @@ const SB = 'the-league-sandbox';
   chk('heckle cooldown cannot be bypassed by alternating custom text to line',
     (await T.mutate(SB, 'heckle', { line: 2 }, sbTok2)).error?.status === 'RESOURCE_EXHAUSTED');
   chk('empty custom heckle refused', (await T.mutate(SB, 'heckle', { text: '   ' }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  // Chairman force-start (test nights / no-shows): only the commissioner may
+  // declare the room open, and doing so marks EVERY manager through and arms
+  // pick one in the same txn
+  chk('roomOpen is Chairman-only', (await T.mutate(SB, 'draftAdmin', { op: 'roomOpen' }, sbTok2)).error?.status === 'PERMISSION_DENIED');
+  const forced = await T.mutate(SB, 'draftAdmin', { op: 'roomOpen' }, sbTok1);
+  chk('Chairman roomOpen marks the whole order through and arms the clock',
+    !forced.error && forced.result?.complete === true && forced.result?.count === 3 && forced.result?.armed === true
+    && (await db.ref(`v2/leagues/${SB}/public/draft/deadline`).get()).val() > Date.now(), JSON.stringify(forced));
   await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok1);
   await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok2);
   const sbRoom = await T.mutate(SB, 'draftAdmin', { op: 'ceremonyReady' }, sbTok3);
@@ -591,6 +599,17 @@ const SB = 'the-league-sandbox';
   const freeGK2 = freeOf('GK')[0];
   chk('shape-breaking claim rejected', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeGK2, out: myDF2 }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
   chk('claim flood rejected (max 30)', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: Array.from({ length: 31 }, () => ({ in: freeFWs[0], out: myFW2 })) }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  // acting-as claims (Test Night): the commissioner may lodge FOR a manager —
+  // validated against the TARGET's squad, stored under the TARGET's uid
+  const myFW3 = byPos(await squadOf(3), 'FW')[0];
+  chk('asManager claim is commissioner-only', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok2)).error?.status === 'PERMISSION_DENIED');
+  chk('commissioner asManager claim validates against the TARGET squad, not his own',
+    (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW2 }], asManager: 3 }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  const asClaim = await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok1);
+  const storedAs = Object.values((await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() || {});
+  chk('commissioner asManager claim lands under the target manager\'s uid',
+    !asClaim.error && storedAs.length === 1 && storedAs[0].in === freeFWs[0], JSON.stringify(asClaim.error || storedAs));
+  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [], asManager: 3 }, tok1); // no residue for the waiver rounds below
   // Squad rules are constitutional. A stale settings client gets a harmless
   // success while the server actively repairs all three fields.
   const fixedSet = await T.mutate(LG, 'settingsSet', { key: 'squadSize', value: 20 }, tok1);
