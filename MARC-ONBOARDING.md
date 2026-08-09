@@ -9,14 +9,14 @@ file first — everything it needs is here or in `CLAUDE.md` (the codebase map).
 
 You have a Claude account. That's enough — recommended path:
 
-1. **GitHub account** — make one at github.com if you don't have one. Send Ben
-   your username so he can add you to the repo; until then, **fork**
-   `benmpolak/the-league` (it's public — the Fork button, top right).
+1. **GitHub invites** — you've been invited to `benmpolak/the-league` and
+   `benmpolak/the-league-beta`. Accept both (email from GitHub, or the banner
+   on the repo page).
 2. **Claude Code** — go to **claude.ai/code** in your browser (zero install),
    or install the Claude desktop app. Sign in with your Claude account and
    connect your GitHub when it asks.
-3. Open your fork (or the repo, once invited) in Claude Code and tell it what
-   you want in plain English. It reads `CLAUDE.md`, makes the changes, and
+3. Open `benmpolak/the-league` in Claude Code and tell it what you want in
+   plain English. It reads `CLAUDE.md`, makes the changes on a branch, and
    opens a **pull request** — Ben reviews and merges. You never push to main.
 
 Working locally instead (optional, Mac): install git, clone the repo,
