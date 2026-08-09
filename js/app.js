@@ -7175,8 +7175,8 @@ function viewData() {
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${sect('Team data')}
-  ${seasonSquadCard()}
   ${troughActivityCard()}
+  ${seasonSquadCard()}
   ${sect('Player data')}
   ${topPlayersCard()}
   ${treatmentRoomCard()}
