@@ -1,60 +1,91 @@
-# SOL 5.6 BRIEF — TEST-NIGHT ROUND 2 (9 Aug 2026): VERIFY THE GATE
+# SOL 5.6 BRIEF — TEST-NIGHT ROUND 2: THE FULL TRANSFER-SYSTEM AUDIT (9 Aug 2026, evening edition)
 
-Same rules of engagement as ever. Your round-1 verdict was GO (Toby's sandbox
-week) / NO-GO (real-league draft night) with a named gate: make acting-as
-sandbox-only end-to-end, scope the actGuard bypass, and you'd have accepted
-roomOpen as-is (P3 was non-blocking hardening). All three findings are
-addressed in commit d6761c0 (functions DEPLOYED, prod+beta Pages live), plus
-one NEW feature to attack.
+You are sol 5.6, adversarial reviewer for The League — same rules of
+engagement as every prior brief (read-only checkout, run any suite, findings
+as P0/P1/P2/P3 with repros, one-word verdicts at the end). Your round-1
+verdict was GO (Toby's sandbox week) / NO-GO (real league) with a named gate.
+Since then Toby field-tested all day and a LOT shipped. This round is
+deliberately consolidated: verify your round-1 findings dead, attack
+everything new, and give the TRANSFER SYSTEM one end-to-end adversarial
+sweep before real draft night (~21 Aug). Budget your depth accordingly —
+this is the pre-season MOT, not a spot check.
 
-## The fixes to verify dead
+## Part 1 — verify round-1 findings dead (commit d6761c0)
 
-- **P1** — `claimSet` now REFUSES `asManager` outside `the-league-sandbox`
-  (failed-precondition, checked immediately after `actingManager()` resolves).
-  Emu pins: real-league refusal for both roles, nothing written under the
-  target's uid; the sandbox happy path re-pinned at the end of
-  functions.test.js against the autodrafted board.
-- **P2** — `#actAsSel` renders only when `SANDBOX && netOn() &&
-  isCommissioner()`; `hubActor()` ignores `transfersView.as` unless SANDBOX;
-  the `actGuard` skip now requires `SANDBOX && state.view === 'transfers' &&
-  transfersView.as === mid`; and `render()` clears `transfersView.as` the
-  moment the view is not 'transfers' (covers navigation, phase flips, resets —
-  re-run your My-Team lineupSave repro and confirm the old confirm is back).
-- **P3** — the roomOpen confirm sheet now lists the absent managers by name
-  ("Marked present in absentia: …").
+- **P1**: `claimSet` refuses `asManager` outside the sandbox; the target's
+  blind ladder survives a refused attempt (emu-pinned with your exact
+  two-claim repro). Re-run your repro.
+- **P2**: `#actAsSel` renders only `SANDBOX && netOn() && isCommissioner()`;
+  `hubActor()` ignores the pen unless SANDBOX; the `actGuard` skip requires
+  `SANDBOX && state.view === 'transfers'`; `render()` clears the pen on
+  leaving Transfers. Re-run your My-Team lineupSave repro.
+- **P3**: roomOpen confirm names the absentees.
 
-## NEW since round 1 — attack this
+## Part 2 — new since your round 1, attack each
 
-**Reset stash + restore** (Ben's ask: "preserve data for a bit even if we
-reset everything"):
+1. **Reset stash/restore** (d6761c0): resetLeague snapshots public+private to
+   `server/resetStash` in the same multi-path update; `resetRestore` peeks or
+   restores both trees wholesale; stash survives restore. Attack: no CAS on
+   restore (argue whether Chairman-only + typed confirm suffices); 12 live
+   clients swallowing a wholesale swap; membership/managerUid deliberately
+   not stashed; backup/migrate tooling vs a multi-MB server key.
+2. **skipDraft / draftAdmin autoComplete** (5ce02e1): sandbox-HARD-refused,
+   Chairman-only, engine-computed remaining picks in ONE public txn with a
+   pick-count CAS. Attack the CAS honesty and the sandbox gate.
+3. **Chamber parity port** (99f4da1): `mockScorelines`/`mockGwStats` ported
+   VERBATIM into engine.js; `normalizeState` overlays a FINISHED mock round
+   into `s.matchStats` so server waiverOrder/standings/transferGw see what
+   clients render. `test/mockparity.smoke.js` pins app-vs-engine byte parity.
+   Attack: RNG call-order drift risks, the overlay leaking anywhere it
+   shouldn't (mock can only exist in the sandbox — prove the gates), LIVE
+   (non-final) mock rounds deliberately NOT overlaid (waiver runs during a
+   live mock — coherent?), and the parity test's honesty (it uses the demo
+   league — is that representative?).
+4. **Per-GW point adjustments** (b0bbe45): flat {pid:pts} retired and dropped
+   by every normalizer; canonical {gwIdx:{pid:delta}} consumed INSIDE
+   gwPlayerPoints (both engines) so H2H, table, records, Gazette and report
+   cards all re-score. `adjustmentSet` requires a gw. Attack: an adjustment
+   to a SETTLED gw rewrites history by design — probe every downstream
+   consumer for coherence (records "since records began", Gazette archive
+   determinism, report-card verdicts, waiver order at the next run); RTDB
+   array-coercion of the gw-keyed node; the UI's GW list capping at the
+   current gw.
+5. **Run-drop waiver lock** (b0bbe45): resolveWaivers records now stamp
+   `t = runStart + 1` (strictly after lastRun — run-executed drops were
+   instantly free, the reborn 6 Jul legacy bug); manual THROWN OPEN now
+   frees the pool but never fresh drops (drop-lock loop moved above the
+   ctl==='open' early return, app + server). Attack: anything assuming
+   t <= lastRun for run records; double-lock or deadlock scenarios (a drop
+   that can never clear); the +1ms colliding with the claim-stamp scheme.
+6. **Live-match fast lane** (ea13bad): live.yml pushes the live GW's stats
+   to `public/liveStats` ~every 60s during live fixtures (real league only);
+   client `applyLiveStats()` is a DISPLAY-ONLY overlay with staleness,
+   feed-freshness, final-round, sandbox/demo/Chamber guards
+   (test/livestats.smoke.js). THE PROPERTY TO BREAK: prove the overlay can
+   never affect an OUTCOME — settlement, waivers, auto-subs, records all
+   read the canonical feed. Also: rules deny client writes to liveStats?
+   A malicious/stale liveStats node shaping user decisions mid-window;
+   vidiprinter/win-prob coherence when overlay and feed interleave.
+7. **Suggestion Box** (1c3a1ff): public suggestions, 240ch, 1/min cooldown,
+   Chairman rulings, survives resets, dropped from imports. Attack: escaping
+   (manager-typed text), cooldown bypass, the 200 cap, reset-carry edge.
+8. **Waiver countdown + feed cadence** (e8eb8c7, 8d1c043): waiverClockLine
+   on Dashboard/Transfers, 30s in-place tick; fpl.yml at */5. Light touch —
+   DST correctness and the tick surviving view churn.
 
-- `resetLeague` now snapshots the outgoing `public` + `private` trees to
-  `server/resetStash` ({t, by, public, private}) in the SAME multi-path update
-  that installs the canonical setup state. One stash held; the next reset
-  overwrites it. Empty leagues stash nothing.
-- New `ACTIONS.resetRestore`: Chairman-only. `{peek:true}` returns {t, by,
-  phase} without writing. `{confirm:'RESTORE'}` puts BOTH trees back
-  wholesale. The stash survives its own restore.
-- Client: "Restore the pre-reset game" beside Reset on Settings (netOn +
-  commissioner), peek → confirmSheet naming phase/time/who → typed-confirm
-  action.
+## Part 3 — the end-to-end transfer sweep
 
-Attack surfaces: stash under `server/` must be invisible to every client read
-path (rules); restore-over-a-live-game semantics (12 devices watching the
-public node get a wholesale snapshot swap — does every client reconcile, does
-anything cache draft/mock state across it); the restore racing a concurrent
-mutate (no CAS on restore — argue whether one is needed or whether
-Chairman-only + typed confirm suffices); membership/managerUid deliberately
-NOT stashed or restored (verify a provision run between stash and restore
-can't strand anything); backup/migrate/repair tooling meeting a multi-MB
-`server/resetStash` key (backup schema check, manifest count comparison,
-restore_league.js). Emu pins: 10 new checks (functions 286) — stash/peek/
-restore round-trip incl. private claims, Chairman-only, typed confirm,
-stash-survives-restore.
+One adversarial pass over the WHOLE transfer system as it will run on real
+draft night + GW1: trough signing, drop-locks, blind-claim ladders and
+fallbacks, adjudication order vs the displayed table (build the
+emulator-backed order pin I skipped — you were right that it was missing),
+trades incl. multi-player + covenants, window-draft locks, transferGw
+landing rules mid-round, and the interaction matrix of manual overrides ×
+chamber × real clock. DF canon (docs.draftfantasy.com) is the reference
+where the rules PDF is silent.
 
-## The question
+## Verdicts
 
-Re-answer both verdicts:
-1. GO/NO-GO — Toby's solo sandbox week (now with skip-draft + stash/restore).
-2. GO/NO-GO — the REAL league for draft night (~21 Aug): roomOpen + the
-   P1/P2 gates as shipped + reset stash/restore live there too.
+1. GO/NO-GO — Toby's sandbox week continuing on current main.
+2. GO/NO-GO — the REAL league for draft night (~21 Aug), everything as
+   shipped. If NO-GO, name the cheapest gate that buys the GO.
