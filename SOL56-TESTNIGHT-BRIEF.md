@@ -40,6 +40,19 @@ emu (functions 272), plus a 12-check scratchpad smoke.
 5. **Test Night runbook card** (app.js, sandbox Settings): Chairman-gated
    card with the 8-step loop, a jump button to Transfers, and a WhatsApp
    test-report template on the clipboard.
+6. **`draftAdmin` op `autoComplete`** (5ce02e1, functions DEPLOYED): sandbox
+   HARD-refused elsewhere, Chairman-only. Computes every remaining pick via
+   the engine (each manager's queue, then best available), writes them in ONE
+   public-node txn with a pick-count CAS (a concurrent pick/undo aborts the
+   skip), flips phase to season, deadline null. Console `#skipDraft` button
+   (SANDBOX gate) + local-mode client loop + runbook step. Attack: the CAS
+   honesty (does the abort actually protect against a mid-computation pick?),
+   the engine-vs-server pick parity, lineups/waiver-order downstream of a
+   board that arrived without any deadline ever firing, and whether the
+   sandbox gate can be spoofed (league id comes from the callable's league
+   field — verify the mutate dispatcher pins it). Emu: 5 checks (functions
+   277) incl. real-league refusal, per-manager 14/no-dupes, second-press
+   refusal.
 
 ## Attack surfaces — what worries me most, in order
 
