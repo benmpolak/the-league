@@ -217,7 +217,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -335,6 +335,7 @@ function applySharedSnapshot(data) {
   // first sight of a fresh draft on this device → roll the opening ceremony
   const fresh = data.phase === 'draft' && data.draft.picks.length === 0;
   data.transfers = toArr(data.transfers);
+  data.suggestions = toArr(data.suggestions);
   data.trades = toArr(data.trades);
   data.covenants = toArr(data.covenants);
   data.autolists = data.autolists || {};
@@ -468,6 +469,7 @@ function freshState() {
     windowDraft: null,     // {status: live|done, order, turn, passes, picks} — post-window mini-draft of arrivals
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
     heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
+    suggestions: [],       // the Suggestion Box — feature requests from the floor, ruled on by the Committee
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
     lobus: {},             // managerId -> pid — each manager's declared Lobus (ledger #1)
     hamCup: null,          // {gw, drawnAt, entries: {managerId: [pid x11]}} — the Palwin Ham Cup (ledger #6)
@@ -679,6 +681,7 @@ function load() {
     if (s && s.windowDraft === undefined) s.windowDraft = null;
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.heckles) s.heckles = {};
+    if (s && !s.suggestions) s.suggestions = [];
     if (s && !s.benchOrders) s.benchOrders = {};
     if (s && !s.lobus) s.lobus = {};
     if (s && !s.ready) s.ready = {};
@@ -1784,6 +1787,37 @@ function troughWindow() {
   if (lastWaiverRun() < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
   return { open: true };
 }
+// the waiver clock, spoken plainly with a countdown (Toby via Committee,
+// 9 Aug: the times move with the fixtures, so the app must do the tracking)
+function waiverClockLine() {
+  const tw = troughWindow();
+  const t = Date.now();
+  const fmtIn = ms => {
+    if (ms <= 60000) return 'any minute now';
+    const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 3600e3), m = Math.floor(ms % 3600e3 / 60000);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  };
+  if (tw.mock) return `Trough shut — ${tw.why}.`;
+  const ctl = waiverControl();
+  if (ctl === 'open') return 'The Trough is thrown open by the Chairman — no clock tonight.';
+  if (ctl === 'closed') return 'The Trough is closed by the Chairman until further notice.';
+  if (!tw.open) {
+    return tw.until
+      ? `Trough shut — ${tw.why}. Waivers run in <b>${fmtIn(tw.until - t)}</b> (${fmtWhen(tw.until)}).`
+      : `Trough shut — ${tw.why}.`;
+  }
+  const run = nextWaiverRun(Math.max(lastWaiverRun(), t)).getTime();
+  let shut = null;
+  for (let g = 0; g < GAMEWEEKS.length; g++) {
+    const k = gwKicks(g);
+    if (k && k.first - 90 * 60000 > t) { shut = k.first - 90 * 60000; break; }
+  }
+  const events = [];
+  if (run) events.push([run, `claims process in <b>${fmtIn(run - t)}</b> (${fmtWhen(run)})`]);
+  if (shut != null) events.push([shut, `Trough shuts in <b>${fmtIn(shut - t)}</b> (${fmtWhen(shut)})`]);
+  events.sort((a, b) => a[0] - b[0]);
+  return events.length ? `Trough open — ${events.map(e => e[1]).join(' &middot; ')}.` : 'Trough open.';
+}
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
   const tw = troughWindow();
@@ -2776,6 +2810,14 @@ function applyMock() {
 }
 // the live sim advances on its own — nudge the page along once a minute
 setInterval(() => { if (SANDBOX && !demoMode && state.mock?.phase === 'live') { if (applyMock()) render(); } }, 60e3);
+// the waiver countdown ticks in place — no full re-render under the reader
+setInterval(() => {
+  if (document.hidden) return;
+  for (const id of ['wvClock', 'wvClock2']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = waiverClockLine();
+  }
+}, 30e3);
 function vidiCard(compact = false) {
   vidiEraCheck();
   const live = anyMatchLive();
@@ -5711,7 +5753,7 @@ function viewTransfers() {
       : ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
-      : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span>`;
+      : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span> <span class="tag" id="wvClock2">${waiverClockLine()}</span>`;
     const claimRows = claims.map((c, k) => `
       <div class="lrow claim-row" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
         <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
@@ -6378,11 +6420,7 @@ function viewDash() {
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
-      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} ${(() => {
-        const tw = troughWindow();
-        if (tw.mock) return `Trough shut — ${tw.why}.`; // the sim outranks manual controls (sol r2 P2)
-        return waiverControl() === 'auto' ? `Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.` : waiverControl() === 'open' ? 'The Trough is thrown open.' : 'The Trough is closed.';
-      })()}</p>
+      <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} <span id="wvClock">${waiverClockLine()}</span></p>
       ${(() => {
         const lastRes = [];
         for (let k = cur; k >= 0 && lastRes.length < 3; k--) {
@@ -8563,6 +8601,30 @@ function viewSettings() {
         `<div class="score-row"><span>${esc(PLAYER_BY_ID[pid]?.name)}</span><span class="gold">${v > 0 ? '+' : ''}${v}</span></div>`).join('')}
     </div>` : `<div class="card"><h2>League admin <span class="tag">Chairman only</span></h2><p class="muted" style="font-size:12.5px">Scoring, resets and point adjustments are the Chairman's (${esc(managerName(state.managers[0]?.id))}'s). Backups and demo mode live there too.</p><button class="btn ghost" id="demoBtn2" style="margin-top:10px">Demo mode — preview with fake results</button></div>`}
     <div class="card">
+      <h2>The Suggestion Box <span class="tag">${toArr(state.suggestions).length}</span></h2>
+      <p class="muted" style="font-size:12.5px">Feature requests from the floor. The Committee reads everything and rules on nothing quickly.</p>
+      <div style="display:flex;gap:6px;margin:8px 0;flex-wrap:wrap">
+        <input id="sugText" maxlength="240" placeholder="What should the game do that it doesn't?" style="flex:1;min-width:200px" ${netOn() && (!whoami || whoami === -1) ? 'disabled' : ''}>
+        <button class="btn small${netOn() && (!whoami || whoami === -1) ? ' dim' : ''}" id="sugSend">${netOn() && (!whoami || whoami === -1) ? 'Sign in to suggest' : 'Submit to the Committee'}</button>
+      </div>
+      ${(() => {
+        const sugs = [...toArr(state.suggestions)].sort((a, b) => (b.t || 0) - (a.t || 0));
+        if (!sugs.length) return '<p class="muted" style="font-size:12px">The box is empty. History will record who broke the silence.</p>';
+        const stTag = s => s.status === 'built' ? '<span class="tag" style="color:var(--accent)">BUILT</span>'
+          : s.status === 'building' ? '<span class="tag live-tag">IN THE WORKSHOP</span>'
+          : '<span class="tag">MINUTED</span>';
+        return sugs.map(s => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap;gap:6px">
+          ${stTag(s)} <b>${esc(s.text)}</b>
+          <span class="muted" style="font-size:11px">— ${esc(managerName(s.by))}, ${fmtWhen(s.t)}</span>
+          ${(!netOn() || isCommissioner()) ? `<span style="margin-left:auto;display:flex;gap:4px">
+            ${s.status !== 'building' ? `<button class="btn ghost small" data-sugadm="${esc(s.id)}:building" title="The Committee is on it">Workshop</button>` : ''}
+            ${s.status !== 'built' ? `<button class="btn ghost small" data-sugadm="${esc(s.id)}:built" title="It shipped">Built</button>` : ''}
+            <button class="btn ghost small icon-btn" data-sugadm="${esc(s.id)}:bin" title="Minuted and ignored" aria-label="Bin">&#128465;</button>
+          </span>` : ''}
+        </div>`).join('');
+      })()}
+    </div>
+    <div class="card">
       <h2>The Constitution <span class="muted" style="font-weight:400;font-size:12px">read-only, as all constitutions should be</span></h2>
       <p class="rules-p">&sect;1 The title is the playoffs. The table is for arguing.</p>
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
@@ -8638,6 +8700,37 @@ function bindSettings() {
       () => toast('Report template copied — fill it in as you test'),
       () => { window.prompt('Copy the test report:', txt); });
   };
+  // the Suggestion Box
+  const ss = $('#sugSend');
+  if (ss) ss.onclick = () => {
+    if (netOn() && (!whoami || whoami === -1)) { toast('Sign in (top right) to make suggestions'); return; }
+    const inp = $('#sugText');
+    const text = (inp?.value || '').trim();
+    if (!text) { toast('Say what you want built'); return; }
+    if (netOn()) {
+      serverAct('suggestionAdd', { text })
+        .then(() => { toast('Minuted. The Committee will pretend to deliberate.'); })
+        .catch(() => {});
+      inp.value = '';
+      return;
+    }
+    const by = (whoami && whoami !== -1) ? whoami : state.managers[0].id;
+    state.suggestions = toArr(state.suggestions);
+    state.suggestions.push({ id: `s${Date.now()}m${by}`, by, text: text.slice(0, 240), t: Date.now(), status: 'noted' });
+    save(); render();
+    toast('Minuted. The Committee will pretend to deliberate.');
+  };
+  document.querySelectorAll('[data-sugadm]').forEach(b => b.onclick = () => {
+    const [id, op] = b.dataset.sugadm.split(':');
+    if (netOn() && !isCommissioner()) { toast('Only the Chairman rules on the box'); return; }
+    if (netOn()) { serverAct('suggestionAdmin', { id, op }).catch(() => {}); return; }
+    state.suggestions = toArr(state.suggestions);
+    const i = state.suggestions.findIndex(s => s.id === id);
+    if (i < 0) return;
+    if (op === 'bin') state.suggestions.splice(i, 1);
+    else state.suggestions[i] = { ...state.suggestions[i], status: op };
+    save(); render();
+  });
   // the Simulation Chamber (sandbox-only; server refuses everywhere else)
   const mockAct = op => {
     const gw = +($('#mockGw')?.value ?? currentGwIndex());
