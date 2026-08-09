@@ -7174,6 +7174,7 @@ function viewData() {
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${sect('Team data')}
+  ${seasonSquadCard()}
   ${troughActivityCard()}
   ${sect('Player data')}
   ${topPlayersCard()}
@@ -7183,6 +7184,11 @@ function viewData() {
 }
 function bindData() {
   bindAwardsBits();
+  bindPitchLinks();
+  document.querySelectorAll('[data-sqrow]').forEach(row => row.onclick = () => {
+    const bd = $(`#sq-${row.dataset.sqrow}`);
+    bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
+  });
 }
 // the awards + treatment desk handlers, shared by whichever page hosts them
 function bindAwardsBits() {
@@ -8211,6 +8217,76 @@ function viewTable() {
     </div>`;
 }
 // team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
+// every player who has banked a point in this manager's XI this season, the
+// departed included (Marc, 9 Aug: the league table's breakdown only knows the
+// CURRENT squad, so anyone traded away or dropped vanishes from it entirely)
+function seasonContributors(mid) {
+  const tally = new Map();
+  for (let i = 0; i < GAMEWEEKS.length; i++) {
+    for (const pid of effectiveXI(mid, i).xi) {
+      tally.set(pid, (tally.get(pid) || 0) + gwPlayerPoints(pid, i));
+    }
+  }
+  const owned = new Set(managerSquad(mid).map(p => p.id));
+  return [...tally.entries()]
+    .map(([pid, pts]) => ({ p: PLAYER_BY_ID[pid], pts, gone: !owned.has(pid) }))
+    .filter(x => x.p)
+    .sort((a, b) => b.pts - a.pts);
+}
+// the Lobus bonus rides on the manager's total but belongs to no single player,
+// so it gets its own line — otherwise the rows quietly fail to sum (ledger #1)
+function lobusBonusTotal(mid) {
+  const bonus = +state.settings.lobusBonus || 0;
+  if (!bonus) return 0;
+  const lob = state.lobus?.[mid];
+  if (!lob) return 0;
+  let t = 0;
+  for (let i = 0; i < GAMEWEEKS.length; i++) {
+    if (!effectiveXI(mid, i).xi.includes(lob)) continue;
+    const s = gwEvent(i)?.playerStats?.[lob];
+    if (s && (s.g || 0) + (s.a || 0) > 0) t += bonus;
+  }
+  return t;
+}
+// Marc, 9 Aug: the season ledger — every team, its total, and on tap the men
+// who actually earned it, biggest first
+function seasonSquadCard() {
+  const rows = state.managers.map(m => ({ m, pts: managerPoints(m.id) }))
+    .sort((a, b) => b.pts - a.pts);
+  if (!rows.some(r => r.pts !== 0)) {
+    return `<div class="card toplist" style="margin-top:14px">
+      <h2>The season ledger</h2>
+      <p class="muted" style="font-size:12.5px">Nothing has been settled yet. The ledger opens when the football does.</p></div>`;
+  }
+  return `<div class="card toplist" style="margin-top:14px">
+    <h2>The season ledger <span class="muted" style="font-weight:400;font-size:12px">tap a team for who actually earned it</span></h2>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Team</th><th class="num act">Points</th></tr></thead>
+      <tbody>
+      ${rows.map(({ m, pts }) => {
+        const contribs = seasonContributors(m.id);
+        const lob = lobusBonusTotal(m.id);
+        return `
+        <tr data-sqrow="${m.id}" style="cursor:pointer">
+          <td><button class="btn ghost small icon-btn" data-pitchview="${m.id}" title="See this team on the pitch" aria-label="See this team on the pitch">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span></td>
+          <td class="num gold act"><b>${pts}</b></td>
+        </tr>
+        <tr class="bd-tr" id="sq-${m.id}" style="display:none"><td colspan="2">
+          ${contribs.map(({ p, pts: cp, gone }) => `
+            <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
+            <span>${esc(p.name)}</span>
+            <span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span>
+            ${gone ? '' : '<span class="tag">Owned</span>'}
+            <span class="sp-pts">${cp}</span></div>`).join('')
+            || '<span class="muted">Nobody has banked a point for this team yet.</span>'}
+          ${lob ? `<div class="squad-row"><span class="muted" style="margin-left:8px;font-size:11.5px">&#128227; Lobus bonus</span><span class="sp-pts">${lob}</span></div>` : ''}
+          <p class="muted" style="font-size:11px;margin:6px 0 4px">Only points banked while in the starting XI. Bench weeks, Trough weeks and time served under another manager count for nothing here.</p>
+        </td></tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+}
 function troughActivityCard() {
   const rows = state.managers.map(m => {
     const mine = state.transfers.filter(t => t.managerId === m.id);
