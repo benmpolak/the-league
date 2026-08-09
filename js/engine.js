@@ -304,7 +304,11 @@
     }
     function gwPlayerPoints(state, pid, gwIdx) {
       const s = gwEvent(state, gwIdx)?.playerStats?.[pid];
-      return s ? statPoints(state.settings.scoring, PLAYER_BY_ID[pid], s) : 0;
+      const base = s ? statPoints(state.settings.scoring, PLAYER_BY_ID[pid], s) : 0;
+      // the Chairman's per-gameweek correction — applies even when the feed
+      // missed the appearance entirely (that IS the use case), and flows into
+      // H2H results, the table and records because everything derives from here
+      return base + (+(((state.adjustments || {})[gwIdx] || {})[pid]) || 0);
     }
     function appearedInGw(state, pid, gwIdx) {
       const s = gwEvent(state, gwIdx)?.playerStats?.[pid];
@@ -594,7 +598,11 @@
             if (!inP || ownedIdsAt(work, tgw).has(c.in)) continue;
             if (!squadAt(work, mid, tgw).some(x => x.id === c.out)) continue;
             if (!squadShapeOk(work, [...squadAt(work, mid, tgw).filter(x => x.id !== c.out), inP])) continue;
-            const rec = { managerId: mid, outId: c.out, inId: c.in, gw: tgw, t: runStart, waiver: true };
+            // t must be STRICTLY after this run's lastRun stamp or the player
+            // dropped BY the run is instantly free — the drop-lock test is
+            // t > lastRun (Toby, 9 Aug: "dropped in waivers are put in trough";
+            // same bug the legacy engine fixed on 6 Jul, reborn in the port)
+            const rec = { managerId: mid, outId: c.out, inId: c.in, gw: tgw, t: runStart + 1, waiver: true };
             work.transfers.push(rec);
             records.push(rec);
             const lu = work.lineups[mid]?.[tgw];

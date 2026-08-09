@@ -354,6 +354,11 @@ function applySharedSnapshot(data) {
   }
   data.waiverMeta = data.waiverMeta || { lastRun: null, control: 'auto' };
   data.adjustments = data.adjustments || {};
+  // pre-Aug-2026 flat {pid: pts} season adjustments: retired shape, dropped —
+  // the canonical shape is {gwIdx: {pid: delta}} and lands inside GW scoring
+  for (const k of Object.keys(data.adjustments)) {
+    if (data.adjustments[k] != null && typeof data.adjustments[k] !== 'object') delete data.adjustments[k];
+  }
   data.shirtNums = data.shirtNums || {};
   // Firebase strips empty arrays/objects, so a live windowDraft comes back
   // missing picks/order — restore them or the first sign throws on .push
@@ -682,6 +687,9 @@ function load() {
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.heckles) s.heckles = {};
     if (s && !s.suggestions) s.suggestions = [];
+    if (s && s.adjustments) for (const k of Object.keys(s.adjustments)) {
+      if (s.adjustments[k] != null && typeof s.adjustments[k] !== 'object') delete s.adjustments[k]; // retired flat shape
+    }
     if (s && !s.benchOrders) s.benchOrders = {};
     if (s && !s.lobus) s.lobus = {};
     if (s && !s.ready) s.ready = {};
@@ -1823,13 +1831,14 @@ function onWaivers(p) {
   const tw = troughWindow();
   if (tw.mock) return true; // the chamber's clock beats every manual control
   const ctl = waiverControl();
-  if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  if (!tw.open) return true;
-  // recently dropped players wait for the next processing
+  // a fresh drop waits for the next run EVEN under a Chairman's manual open —
+  // "thrown open" frees the pool, never the waiver rule (Toby, 9 Aug; DF canon)
   for (const t of state.transfers) {
     if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
   }
+  if (ctl === 'open') return false;
+  if (!tw.open) return true;
   return false;
 }
 
@@ -2286,7 +2295,9 @@ function statPoints(player, s, skipAppearance) {
 }
 function gwPlayerPoints(pid, gwIdx) {
   const s = gwEvent(gwIdx)?.playerStats?.[pid];
-  return s ? statPoints(PLAYER_BY_ID[pid], s) : 0;
+  const base = s ? statPoints(PLAYER_BY_ID[pid], s) : 0;
+  // per-gameweek Chairman's correction — mirrors engine.js exactly
+  return base + (+(((state.adjustments || {})[gwIdx] || {})[pid]) || 0);
 }
 // did the player get on the pitch at all this gameweek?
 function appearedInGw(pid, gwIdx) {
@@ -2369,10 +2380,7 @@ function managerPoints(mid) {
   for (let i = 0; i < GAMEWEEKS.length; i++) {
     pts += gwManagerPoints(mid, i); // zero unless results exist in that window
   }
-  const squadIds = new Set(managerSquad(mid).map(p => p.id));
-  for (const [pid, adj] of Object.entries(state.adjustments)) {
-    if (adj && squadIds.has(+pid)) pts += adj;
-  }
+  // per-GW adjustments already land inside gwManagerPoints — no flat add-on
   return pts;
 }
 // points a player has banked for this manager (only weeks he was in the XI)
@@ -2381,7 +2389,7 @@ function contributedPoints(mid, pid) {
   for (let i = 0; i < GAMEWEEKS.length; i++) {
     if (effectiveXI(mid, i).xi.includes(pid)) pts += gwPlayerPoints(pid, i);
   }
-  return pts + (state.adjustments[pid] || 0);
+  return pts; // per-GW adjustments ride inside gwPlayerPoints
 }
 // raw all-season breakdown for tooltips / top players
 function playerPoints(pid) {
@@ -5751,7 +5759,7 @@ function viewTransfers() {
     // them here too — "THROWN OPEN" during a live mock was a lie (sol r2 P2)
     const status = tw.mock ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is claim-only until the run</span>`
       : ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
-      : ctl === 'open' ? '<span class="tag">THROWN OPEN — everything is free</span>'
+      : ctl === 'open' ? '<span class="tag">THROWN OPEN — free agents sign instantly; fresh drops still clear at the next run</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
       : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span> <span class="tag" id="wvClock2">${waiverClockLine()}</span>`;
     const claimRows = claims.map((c, k) => `
@@ -8588,17 +8596,20 @@ function viewSettings() {
       <h3 style="margin-top:18px">Sign-in</h3>
       <p class="muted" style="font-size:12px;margin-bottom:8px">Managers sign in with an email link — no PINs, nothing to reset. Adding or changing a manager's email is done with the provisioning script (see the README).</p>
       <h3 style="margin-top:18px">Manual point adjustments</h3>
-      <p class="muted" style="font-size:12px;margin-bottom:8px">If a stat feed gets something wrong, add/subtract points per player.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:8px">If a stat feed gets something wrong, add/subtract points per player <b>in a named gameweek</b> — the matchup, table and records all re-score.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <select id="adjPlayer" style="flex:1;min-width:200px">
           <option value="">Pick a player…</option>
           ${state.managers.flatMap(m => managerSquad(m.id).map(p => `<option value="${p.id}">${esc(p.name)} (${esc(m.name)})</option>`)).join('')}
         </select>
+        <select id="adjGw" style="width:90px">
+          ${GAMEWEEKS.slice(0, Math.min(currentGwIndex() + 1, GAMEWEEKS.length)).map((g, i) => `<option value="${i}" ${i === Math.max(0, lastFinalGw()) ? 'selected' : ''}>GW${g.n}</option>`).join('')}
+        </select>
         <input type="number" id="adjPts" placeholder="±pts" style="width:90px">
         <button class="btn small" id="adjApply">Apply</button>
       </div>
-      ${Object.entries(state.adjustments).filter(([, v]) => v).map(([pid, v]) =>
-        `<div class="score-row"><span>${esc(PLAYER_BY_ID[pid]?.name)}</span><span class="gold">${v > 0 ? '+' : ''}${v}</span></div>`).join('')}
+      ${Object.entries(state.adjustments).flatMap(([g, m]) => Object.entries(m || {}).filter(([, v]) => v).map(([pid, v]) =>
+        `<div class="score-row"><span><span class="tag">GW${GAMEWEEKS[+g]?.n ?? '?'}</span> ${esc(PLAYER_BY_ID[pid]?.name || `#${pid}`)}</span><span class="gold">${v > 0 ? '+' : ''}${v}</span></div>`)).join('')}
     </div>` : `<div class="card"><h2>League admin <span class="tag">Chairman only</span></h2><p class="muted" style="font-size:12.5px">Scoring, resets and point adjustments are the Chairman's (${esc(managerName(state.managers[0]?.id))}'s). Backups and demo mode live there too.</p><button class="btn ghost" id="demoBtn2" style="margin-top:10px">Demo mode — preview with fake results</button></div>`}
     <div class="card">
       <h2>The Suggestion Box <span class="tag">${toArr(state.suggestions).length}</span></h2>
@@ -8810,15 +8821,16 @@ function bindSettings() {
   };
   $('#adjApply').onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner adjusts points'); return; }
-    const pid = +$('#adjPlayer').value, pts = +$('#adjPts').value || 0;
-    if (!pid) return;
+    const pid = +$('#adjPlayer').value, pts = +$('#adjPts').value || 0, gw = +($('#adjGw')?.value ?? -1);
+    if (!pid || gw < 0) return;
+    const cur = +(((state.adjustments || {})[gw] || {})[pid]) || 0;
     if (netOn()) {
-      serverAct('adjustmentSet', { pid, value: (state.adjustments[pid] || 0) + pts })
-        .then(() => toast('Adjustment applied')).catch(() => {});
+      serverAct('adjustmentSet', { pid, gw, value: cur + pts })
+        .then(() => toast(`Adjustment lands in GW${GAMEWEEKS[gw].n} — everything re-scores`)).catch(() => {});
       return;
     }
-    state.adjustments[pid] = (state.adjustments[pid] || 0) + pts;
-    save(); render(); toast('Adjustment applied');
+    (state.adjustments[gw] = state.adjustments[gw] || {})[pid] = cur + pts;
+    save(); render(); toast(`Adjustment lands in GW${GAMEWEEKS[gw].n} — everything re-scores`);
   };
 }
 

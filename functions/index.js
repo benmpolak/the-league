@@ -141,6 +141,11 @@ function normalizeState(pub, ctx) {
   s.tradeBlock = s.tradeBlock || {};
   s.lobus = s.lobus || {};
   s.adjustments = s.adjustments || {};
+  // pre-Aug-2026 flat {pid: pts} adjustments: retired shape (never scored a
+  // GW anyway) — canonical is {gwIdx: {pid: delta}}, consumed in gwPlayerPoints
+  for (const k of Object.keys(s.adjustments)) {
+    if (s.adjustments[k] != null && typeof s.adjustments[k] !== 'object') delete s.adjustments[k];
+  }
   s.waiverMeta = s.waiverMeta || { lastRun: null, control: 'auto' };
   s.autolists = {};
   s.claims = {};
@@ -828,10 +833,12 @@ function onWaiversServer(state, p, eng) {
   const tw = eng.troughWindow(state);
   if (tw.mock) return true;
   const ctl = eng.waiverControl(state);
-  if (ctl === 'open') return false;
   if (ctl === 'closed') return true;
-  if (!tw.open) return true;
+  // a fresh drop waits for the next run EVEN under a Chairman's manual open —
+  // "thrown open" frees the pool, never the waiver rule (Toby, 9 Aug; DF canon)
   for (const t of state.transfers) if (t.outId === p.id && (t.t || 0) > eng.lastWaiverRun(state)) return true;
+  if (ctl === 'open') return false;
+  if (!tw.open) return true;
   return false;
 }
 
@@ -1352,11 +1359,14 @@ ACTIONS.settingsSet = async ({ league, a, data, state }) => {
   throw new HttpsError('invalid-argument', 'unknown setting');
 };
 
-ACTIONS.adjustmentSet = async ({ league, a, data }) => {
+ACTIONS.adjustmentSet = async ({ league, a, data, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
-  const pid = Number(data.pid), v = Number(data.value);
+  const pid = Number(data.pid), v = Number(data.value), g = Number(data.gw);
   if (!Number.isInteger(pid) || !Number.isFinite(v) || Math.abs(v) > 1000) throw new HttpsError('invalid-argument', 'bad adjustment');
-  await db().ref(`${leagueBase(league)}/public/adjustments/${pid}`).set(v || null);
+  // adjustments land IN a gameweek — that is what makes them change results
+  // (Toby, 9 Aug: the old flat shape never touched a single H2H score)
+  if (!Number.isInteger(g) || g < 0 || g >= ctx.gameweeks.length) throw new HttpsError('invalid-argument', 'adjustments land in a named gameweek');
+  await db().ref(`${leagueBase(league)}/public/adjustments/${g}/${pid}`).set(v || null);
   return { ok: true };
 };
 

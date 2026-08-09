@@ -704,6 +704,18 @@ const SB = 'the-league-sandbox';
   const fp1done = (await db.ref(`v2/leagues/${LG}/server/waiverRuns/manual-fp1`).get()).val();
   chk('audit record: done, executed and applied recorded', fp1done?.status === 'done' && Array.isArray(fp1done?.executed) && fp1done?.applied === 1, JSON.stringify(fp1done?.status));
   chk('re-running a done run is a no-op skip', (await T.mutate(LG, 'waiverRunNow', { runId: 'fp1' }, tok1)).result?.skipped === 'already processed');
+  // the player dropped BY the run sits on waivers until the NEXT run — even
+  // under a Chairman's manual open (Toby, 9 Aug: run drops were instantly
+  // free; the t=runStart stamp lost strictly-greater against lastRun)
+  const runDrop = claimFor2.out;
+  const dropSign1 = await T.mutate(LG, 'troughSign', { inId: runDrop, outId: byPos(await squadOf(3), 'FW')[0] }, tok3);
+  chk('run-executed drop is claim-only straight after the run',
+    dropSign1.error?.status === 'FAILED_PRECONDITION' && /waiver/i.test(dropSign1.error?.message || ''), JSON.stringify(dropSign1.error));
+  await T.mutate(LG, 'waiverControl', { mode: 'open' }, tok1);
+  const dropSign2 = await T.mutate(LG, 'troughSign', { inId: runDrop, outId: byPos(await squadOf(3), 'FW')[0] }, tok3);
+  chk('manual THROWN OPEN frees the pool, never the fresh drop',
+    dropSign2.error?.status === 'FAILED_PRECONDITION' && /waiver/i.test(dropSign2.error?.message || ''), JSON.stringify(dropSign2.error));
+  await T.mutate(LG, 'waiverControl', { mode: 'auto' }, tok1);
   // crash AFTER transfers landed, BEFORE claims cleared: replay must not duplicate
   const claimFor3 = { in: wFree[1], out: byPos(await squadOf(3), 'FW')[0] };
   chk('second claim lodged', !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [claimFor3] }, tok3)).error);
@@ -1188,6 +1200,18 @@ const SB = 'the-league-sandbox';
   const boxAfterReset = Object.values((await db.ref(`v2/leagues/${SB}/public/suggestions`).get()).val() || {});
   chk('the Suggestion Box SURVIVES a league reset',
     boxAfterReset.length === 1 && boxAfterReset[0].text === 'more klaxons' && boxAfterReset[0].status === 'building', JSON.stringify(boxAfterReset));
+
+  /* ---------------- per-GW point adjustments (Toby, 9 Aug) ---------------- */
+  chk('adjustment without a gameweek is refused (flat shape retired)',
+    (await T.mutate(SB, 'adjustmentSet', { pid: players[0].id, value: 5 }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('adjustment beyond the calendar refused',
+    (await T.mutate(SB, 'adjustmentSet', { pid: players[0].id, gw: 99, value: 5 }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
+  await T.mutate(SB, 'adjustmentSet', { pid: players[0].id, gw: 0, value: 5 }, sbTok1);
+  chk('per-GW adjustment lands nested under its gameweek',
+    (await db.ref(`v2/leagues/${SB}/public/adjustments/0/${players[0].id}`).get()).val() === 5);
+  await T.mutate(SB, 'adjustmentSet', { pid: players[0].id, gw: 0, value: 0 }, sbTok1);
+  chk('zeroing an adjustment removes it',
+    (await db.ref(`v2/leagues/${SB}/public/adjustments/0/${players[0].id}`).get()).val() === null);
 
   server.close();
   run.done();
