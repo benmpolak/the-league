@@ -5606,11 +5606,15 @@ function viewTransfers() {
     // next week is already yours to deal (Toby: "I don't own Vicario!")
     const sq = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
     if (!sq.length) return '';
+    // the fixture, not last season's points (Marc, 9 Aug: "it should always
+    // just say the fixture there on the transfer screen") — you deal on who
+    // they play next, and pre-GW1 the pts read as this season's
+    const tgwN = GAMEWEEKS[transferGw()].n;
     return `<details class="card" style="margin-bottom:14px" ${window._trSquadOpen ? 'open' : ''} id="trMySquad">
       <summary style="cursor:pointer;font-weight:800">&#128101; ${esc(teamName(mid))} — my squad <span class="tag">${sq.length}</span> <span class="muted" style="font-weight:400;font-size:11.5px">tap to ${window._trSquadOpen ? 'hide' : 'view'}</span></summary>
       <div class="quota-bar" style="margin:8px 0 4px">${quotaPills(mid)}</div>
       <div class="side-squad">${sq.map(p => `
-        <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}<span class="muted" style="margin-left:auto;font-size:11px">${metricsFor(p).pts} pts</span></div>`).join('')}
+        <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}<span class="muted" style="margin-left:auto;font-size:11px">${nextOppHtml(p.team, tgwN)}</span></div>`).join('')}
       </div>
     </details>`;
   })();
@@ -5633,7 +5637,7 @@ function viewTransfers() {
           <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
-            <span class="pitch-vs">${metricsFor(p).pts} pts</span>
+            <span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
           </div>`;
     return `<div class="card" style="margin-bottom:14px">
       <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
