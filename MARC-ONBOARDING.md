@@ -16,8 +16,10 @@ You have a Claude account. That's enough — recommended path:
    or install the Claude desktop app. Sign in with your Claude account and
    connect your GitHub when it asks.
 3. Open `benmpolak/the-league` in Claude Code and tell it what you want in
-   plain English. It reads `CLAUDE.md`, makes the changes on a branch, and
-   opens a **pull request** — Ben reviews and merges. You never push to main.
+   plain English. It reads the rules itself (`CLAUDE.md` loads automatically),
+   makes the changes, runs the tests, and pushes. The site updates within a
+   few minutes. If something looks broken afterwards, say so in the group
+   chat — Ben's AI reverts it in one command. Nothing is unfixable.
 
 Working locally instead (optional, Mac): install git, clone the repo,
 run `python3 -m http.server 8749` from the repo root, and open
@@ -35,9 +37,9 @@ you can act as any manager including the Chairman.
   bundlers, React, or TypeScript. The whole site is static files.
 - **Match the voice.** All user-facing copy is dry, in-world,
   Committee-voiced. Read the neighbouring strings before writing new ones.
-- **Small PRs.** One idea per PR, with a plain-English description of what
-  changed and why. Run `npm run check && npm run test:offline` before opening
-  it (Claude Code will do this if you ask).
+- **Tests before every push.** `npm run check && npm run test:offline` —
+  your AI does this automatically; if it reports failures, don't push.
+  One idea per commit, plain-English commit messages.
 - The rules PDF is canon. Squad limits, playoff format, scoring — not up for
   reinterpretation in code. Take format arguments to the group chat, where
   they will be minuted and ignored.

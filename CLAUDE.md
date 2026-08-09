@@ -4,6 +4,15 @@ Ben's real 12-man EPL fantasy league. Live at benmpolak.github.io/the-league.
 Vanilla JS, no build step, no framework. Firebase RTDB + Functions for the real
 league; everything also runs fully offline.
 
+## If you're working for Marc (or anyone who isn't Ben)
+
+Read `MARC-ONBOARDING.md` before touching anything. The short version:
+pushing to `main` puts it LIVE on the real site within minutes, so run
+`npm run check && npm run test:offline` before every push; never touch
+Firebase, deploys, or secrets; leave `functions/`, `js/sync.js` and the
+waiver engine alone; Committee voice in all user-facing copy; one idea
+per commit, plain-English commit messages.
+
 ## DO NOT read app.js top to bottom
 
 `js/app.js` is ~8,000 lines and holds every view. Grep for the function you
