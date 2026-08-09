@@ -609,6 +609,14 @@ const SB = 'the-league-sandbox';
     (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }], asManager: 3 }, tok1)).error?.status === 'FAILED_PRECONDITION');
   chk('real-league refusal left no claims under the target\'s uid',
     (await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() === null);
+  // sol's exact P1 repro, pinned: a manager's own two-claim ladder SURVIVES a
+  // refused Chairman acting-as attempt untouched
+  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[0], out: myFW3 }, { in: freeFWs[1], out: myFW3 }] }, tok3);
+  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeFWs[2], out: myFW3 }], asManager: 3 }, tok1);
+  const ladder3 = Object.values((await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/claims/${curGw}`).get()).val() || {});
+  chk('sol P1 repro dead: the target\'s own blind ladder survives the refused overwrite',
+    ladder3.length === 2 && ladder3[0].in === freeFWs[0] && ladder3[1].in === freeFWs[1], JSON.stringify(ladder3));
+  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [] }, tok3); // no residue for the waiver rounds below
   // Squad rules are constitutional. A stale settings client gets a harmless
   // success while the server actively repairs all three fields.
   const fixedSet = await T.mutate(LG, 'settingsSet', { key: 'squadSize', value: 20 }, tok1);
