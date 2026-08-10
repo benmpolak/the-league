@@ -5547,7 +5547,7 @@ function assistantCard(mid, gw) {
   }
   tips.sort((a, b) => b.gain - a.gain);
   const tipRows = tips.slice(0, 3).map(t =>
-    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth a blind claim.' : 'Free in the Trough. I’d move.'}</div>`).join('');
+    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth a claim.' : 'Free in the Trough. I’d move.'}</div>`).join('');
   const brief = lines.length
     ? lines.map(l => `<div class="lrow" style="font-size:12.5px">${l}</div>`).join('')
     : `<p class="muted" style="font-size:12.5px">The XI picks itself for GW${gwN}. I've nothing, gaffer. Good session though.</p>`;
@@ -5887,13 +5887,13 @@ function viewTransfers() {
       </div>`).join('');
     return `${head}${myPitchCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a blind claim if on waivers.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a waiver claim if he&rsquo;s on the wire.</p>
       ${(() => {
         // ALWAYS show the claims desk (Ben, UAT night: "is there a waiver list
         // you add to? i can't see it" — it only rendered once you had one; the
         // rule, learned three times now: never hide a feature, explain it)
         const claimsBlock = `<h3>${esc(managerName(mid))}'s waiver claims</h3>` + (claims.length ? claimRows
-          : `<p class="muted" style="font-size:12px;margin-bottom:8px">None lodged. Sign a player who's <b>on waivers</b> and he lands here as a ranked blind claim — top of the list gets tried first at the run.</p>`);
+          : `<p class="muted" style="font-size:12px;margin-bottom:8px">None lodged. Sign a player who's <b>on waivers</b> and he lands here as a ranked waiver claim — top of the list gets tried first at the run.</p>`);
         // and the window's completed business, so a multi-move session is
         // visible as you go ("what if you want to do multiple transfers at
         // once… you should be able to see what you are doing")
@@ -5980,20 +5980,41 @@ function viewTransfers() {
     </div>`;
   }
   if (tab === 'history') {
-    // filterable by how the deal happened (Marc, UAT night)
+    // filterable by how the deal happened (Marc, UAT night); redesigned to
+    // speak the Dashboard's Transfer Wire language — kind marks, GW sections,
+    // out → in flow (Ben, 10 Aug: "this page could be better designed")
     const kindOf = t => t.trade ? 'trade' : t.waiver ? 'waiver' : t.windowDraft ? 'window' : 'trough';
+    const marks = { trade: '&#8644;', waiver: 'W', window: '&#9638;', trough: '+' };
     const hf = transfersView.histKind || '';
-    const rows = [...state.transfers].reverse().filter(t => !hf || kindOf(t) === hf).map(t => `<div class="lrow" style="font-size:12.5px">
-      <span class="muted" style="width:44px">GW${GAMEWEEKS[t.gw].n}</span>
-      <span class="tag">${kindOf(t)}</span>
-      <b style="min-width:120px">${esc(teamName(t.managerId))}</b>
-      ${pname(PLAYER_BY_ID[t.outId])} <span class="muted">→</span> <b>${pname(PLAYER_BY_ID[t.inId])}</b>
-      <button class="btn ghost small" data-rc="${t.n}" style="margin-left:auto;font-size:10px;padding:1px 7px">report card</button>
-    </div><div class="rc-slot" data-rcslot="${t.n}" style="display:none;border-left:2px solid var(--line);margin:0 0 6px 8px;padding-left:8px"></div>`).join('');
-    const fbtn = (k, label) => `<button class="btn small ${hf === k ? '' : 'ghost'}" data-histkind="${k}">${label}</button>`;
-    return `${head}<div class="card"><h2>Every move, on the record</h2>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${fbtn('', 'All')}${fbtn('trough', 'Trough')}${fbtn('waiver', 'Waivers')}${fbtn('trade', 'Trades')}${fbtn('window', 'Window')}</div>
-      ${rows || '<p class="muted">Nothing yet. Cowards.</p>'}</div>`;
+    const all = [...state.transfers].reverse();
+    const counts = {};
+    all.forEach(t => { const k = kindOf(t); counts[k] = (counts[k] || 0) + 1; });
+    const shown = all.filter(t => !hf || kindOf(t) === hf);
+    const sections = [];
+    for (const t of shown) {
+      const last = sections[sections.length - 1];
+      if (last && last.gw === t.gw) last.rows.push(t); else sections.push({ gw: t.gw, rows: [t] });
+    }
+    const pbit = (p, cls) => p
+      ? `<span class="hist-p ${cls}"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="hist-club">${esc(p.club)}</span></span>`
+      : '<span class="muted">&mdash;</span>';
+    const rowHtml = t => `<div class="hist-row">
+      <span class="business-mark business-${kindOf(t)}" aria-hidden="true">${marks[kindOf(t)]}</span>
+      <div class="hist-main">
+        <div class="business-who">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b> <span class="tag">${kindOf(t)}</span></div>
+        <div class="hist-flow">${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}<span class="hist-arrow" aria-hidden="true">&#8594;</span>${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}</div>
+      </div>
+      <button class="btn ghost small hist-rcbtn" data-rc="${t.n}">Report card <span aria-hidden="true">&#9662;</span></button>
+    </div><div class="rc-slot hist-rc" data-rcslot="${t.n}" style="display:none"></div>`;
+    const sectionHtml = s => `<div class="hist-gw"><b>Gameweek ${GAMEWEEKS[s.gw].n}</b> ${s.rows.length} ${s.rows.length === 1 ? 'move' : 'moves'}</div>${s.rows.map(rowHtml).join('')}`;
+    const fbtn = (k, label) => `<button class="btn small ${hf === k ? '' : 'ghost'}" data-histkind="${k}">${label}${counts[k] || (!k && all.length) ? ` <span class="hist-count">${k ? counts[k] : all.length}</span>` : ''}</button>`;
+    return `${head}<div class="card hist-card">
+      <div class="business-head">
+        <div><span class="business-kicker">The Transfer Wire</span><h2>Every move, on the record</h2></div>
+        <span class="muted">THE FULL LEDGER &middot; NOBODY FORGETS</span>
+      </div>
+      <div class="hist-filters">${fbtn('', 'All')}${fbtn('trough', 'Trough')}${fbtn('waiver', 'Waivers')}${fbtn('trade', 'Trades')}${fbtn('window', 'Window')}</div>
+      ${sections.map(sectionHtml).join('') || '<p class="muted" style="margin-top:12px">Nothing yet. Cowards.</p>'}</div>`;
   }
   // order
   const order = waiverOrder();
@@ -6003,7 +6024,7 @@ function viewTransfers() {
     <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
       <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} claim${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} pending</span></div>`).join('')}
-    <p class="muted" style="font-size:11px;margin-top:8px">Claims are blind — counts are public, targets are not. Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">Claims stay private until the run — counts are public, targets are not. Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
     <h3 style="margin-top:16px">Waiver history</h3>
     ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> claimed ${pname(PLAYER_BY_ID[t.inId])} <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">No claims have landed yet.</p>'}
   </div>`;
@@ -6270,7 +6291,7 @@ function bindTransfers() {
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Blind claim #${myClaims(mid).length} on your list — resolves ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
+            note: `Waiver claim #${myClaims(mid).length} on your list — resolves ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
           return;
         }
         const tgw = transferGw();
