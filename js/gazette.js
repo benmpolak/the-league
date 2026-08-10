@@ -73,7 +73,7 @@ window.Gazette = (() => {
     if (!prov) return compact ? 'SOURCE UNKNOWN' : '';
     if (prov.kind === 'draft') return compact ? `DRAFT R${prov.round} · PICK ${prov.n}` : `drafted in round ${prov.round} (No. ${prov.n} overall)`;
     if (prov.kind === 'trough') return compact ? 'TROUGH SIGNING' : 'plucked from the Trough for nothing';
-    if (prov.kind === 'waiver') return compact ? 'WAIVER CLAIM' : 'claimed off waivers';
+    if (prov.kind === 'waiver') return compact ? 'ON WAIVERS' : 'taken on waivers';
     if (prov.kind === 'trade') return compact ? 'TRADE ARRIVAL' : 'landed in a trade';
     if (prov.kind === 'window') return compact ? 'WINDOW DRAFT' : 'taken in the Window Draft';
     return compact ? 'SOURCE UNKNOWN' : '';
@@ -584,7 +584,7 @@ window.Gazette = (() => {
       .filter(x => x.p && x.pts >= 6).sort((x, y) => y.pts - x.pts);
     if (pickups.length) {
       const x = pickups[0];
-      out.push(`<div class="prog-sec">The Trough Watch</div><p>${esc(`${x.p.name} — ${x.t.waiver ? 'claimed off waivers' : 'signed from the Trough'} by ${teamName(x.t.managerId)} — returned ${x.pts} this week. The market sees everything, eventually.`)}</p>`);
+      out.push(`<div class="prog-sec">The Trough Watch</div><p>${esc(`${x.p.name} — ${x.t.waiver ? 'taken on waivers' : 'signed from the Trough'} by ${teamName(x.t.managerId)} — returned ${x.pts} this week. The market sees everything, eventually.`)}</p>`);
     }
     // Tactical Negligence — the week's worst bench, if it's actually bad
     const worstBench = state.managers.map(m => ({ mid: m.id, w: benchWasteOf(m.id, gwIdx) })).sort((a, b) => b.w - a.w)[0];

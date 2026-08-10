@@ -1822,7 +1822,7 @@ function waiverClockLine() {
     if (k && k.first - 90 * 60000 > t) { shut = k.first - 90 * 60000; break; }
   }
   const events = [];
-  if (run) events.push([run, `claims process in <b>${fmtIn(run - t)}</b> (${fmtWhen(run)})`]);
+  if (run) events.push([run, `waivers process in <b>${fmtIn(run - t)}</b> (${fmtWhen(run)})`]);
   if (shut != null) events.push([shut, `Trough shuts in <b>${fmtIn(shut - t)}</b> (${fmtWhen(shut)})`]);
   events.sort((a, b) => a[0] - b[0]);
   return events.length ? `Trough open — ${events.map(e => e[1]).join(' &middot; ')}.` : 'Trough open.';
@@ -1938,7 +1938,7 @@ function processWaivers(manual = false) {
       if (res?.skipped) { toast(`Waivers skipped — ${res.skipped}.`); return; }
       toast(ex.length
         ? `Waivers processed — ${ex.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
-        : 'Waivers processed — no claims landed. The Trough is open.');
+        : 'Waivers processed — nothing went through. The Trough is open.');
     }).catch(() => {});
     return;
   }
@@ -2005,7 +2005,7 @@ function processWaivers(manual = false) {
     save(); render();
     toast(executed.length
       ? `Waivers processed — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}. The Trough is open.`
-      : `Waivers processed — no claims landed. The Trough is open.`);
+      : `Waivers processed — nothing went through. The Trough is open.`);
   });
 }
 function setWaiverControl(mode) {
@@ -2974,7 +2974,7 @@ function receiptSheet({ title, inP, outP, gw, note = '', mid = whoami, wasStarti
   // nothing yet and must never masquerade as completed business.
   const started = wasStarting == null ? !!(outP && mid && lineupFor(mid, gw).includes(outP.id)) : !!wasStarting;
   const impact = !outP ? ''
-    : pending ? `No XI change yet — ${esc(outP.name)} stays in your GW${GAMEWEEKS[gw].n} side unless the claim lands.`
+    : pending ? `No XI change yet — ${esc(outP.name)} stays in your GW${GAMEWEEKS[gw].n} side unless the waiver goes through.`
     : started ? `${esc(outP.name)} was in your GW${GAMEWEEKS[gw].n} XI — pick his replacement on My Team.`
     : `Your XI is untouched — ${esc(outP.name)} was on the bench.`;
   const ov = document.createElement('div');
@@ -5760,7 +5760,7 @@ function viewTransfers() {
       : `<span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>`}
     <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
   </div>
-  ${netOn() && whoami && whoami !== mid ? `<p class="tag live-tag" style="display:inline-block;margin-bottom:8px">ACTING AS ${esc(teamName(mid))} — every signing, claim and trade on this page is theirs, not yours</p>` : ''}`;
+  ${netOn() && whoami && whoami !== mid ? `<p class="tag live-tag" style="display:inline-block;margin-bottom:8px">ACTING AS ${esc(teamName(mid))} — every signing, waiver and trade on this page is theirs, not yours</p>` : ''}`;
   // your own squad, always in view while you deal (Ben, mock night: "i dont
   // like that you cant see your team on the transfer page")
   const mySquadCard = (() => {
@@ -5870,7 +5870,7 @@ function viewTransfers() {
     // players go on waivers") — closed window means EVERYONE free is claim-only
     // the chamber outranks manual controls in ENFORCEMENT, so it must outrank
     // them here too — "THROWN OPEN" during a live mock was a lie (sol r2 P2)
-    const status = tw.mock ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is claim-only until the run</span>`
+    const status = tw.mock ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every signing goes through waivers until it reopens</span>`
       : ctl === 'closed' ? '<span class="tag">CLOSED by the Chairman</span>'
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — free agents sign instantly; fresh drops still clear at the next run</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
@@ -5887,20 +5887,20 @@ function viewTransfers() {
       </div>`).join('');
     return `${head}${myPitchCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a waiver claim if he&rsquo;s on the wire.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a waiver request if he&rsquo;s on waivers.</p>
       ${(() => {
         // ALWAYS show the claims desk (Ben, UAT night: "is there a waiver list
         // you add to? i can't see it" — it only rendered once you had one; the
         // rule, learned three times now: never hide a feature, explain it)
-        const claimsBlock = `<h3>${esc(managerName(mid))}'s waiver claims</h3>` + (claims.length ? claimRows
-          : `<p class="muted" style="font-size:12px;margin-bottom:8px">None lodged. Sign a player who's <b>on waivers</b> and he lands here as a ranked waiver claim — top of the list gets tried first at the run.</p>`);
+        const claimsBlock = `<h3>${esc(managerName(mid))}'s waiver list</h3>` + (claims.length ? claimRows
+          : `<p class="muted" style="font-size:12px;margin-bottom:8px">Nothing on the list. Sign a player who's <b>on waivers</b> and he joins your waiver list — top of the list gets tried first when waivers process.</p>`);
         // and the window's completed business, so a multi-move session is
         // visible as you go ("what if you want to do multiple transfers at
         // once… you should be able to see what you are doing")
         const tgw = transferGw();
         const moves = state.transfers.filter(t => t.managerId === mid && t.gw === tgw);
         const movesBlock = moves.length ? `<h3 style="margin-top:10px">Done this window</h3>` + moves.map(t => `
-          <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver claim, landed' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
+          <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver, went through' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
           </div>`).join('') : '';
         return claimsBlock + movesBlock;
       })()}
@@ -5912,14 +5912,14 @@ function viewTransfers() {
       <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-        <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Run waivers now</button>
+        <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Process waivers now</button>
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
         <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
         <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
       </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>`
       : demoMode ? `<div style="margin-top:10px">
-        <button class="btn small" id="runWaivers">&#9889; Run waivers now (demo)</button>
-        <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run on the fixture clock — the evening after a gameweek finishes and the evening before the next kicks off. In the demo you ARE the Chairman: lodge a claim on anyone marked "waivers", then run the round and watch it resolve.</p>
+        <button class="btn small" id="runWaivers">&#9889; Process waivers now (demo)</button>
+        <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run on the fixture clock — the evening after a gameweek finishes and the evening before the next kicks off. In the demo you ARE the Chairman: put in a waiver request on anyone marked "waivers", then process the round and watch it resolve.</p>
       </div>` : ''}
     </div>`;
   }
@@ -6023,10 +6023,10 @@ function viewTransfers() {
   return `${head}<div class="card">
     <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
-      <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} claim${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} pending</span></div>`).join('')}
+      <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} waiver${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} in</span></div>`).join('')}
     <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
     <h3 style="margin-top:16px">Waiver history</h3>
-    ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> claimed ${pname(PLAYER_BY_ID[t.inId])} <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">No claims have landed yet.</p>'}
+    ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> took ${pname(PLAYER_BY_ID[t.inId])} on waivers <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">Nothing has gone through yet.</p>'}
   </div>`;
 }
 function bindTransfers() {
@@ -6172,7 +6172,7 @@ function bindTransfers() {
   if (msq) msq.ontoggle = () => { window._trSquadOpen = msq.open; };
   // Chairman's office
   const rw = $('#runWaivers');
-  if (rw) rw.onclick = () => { if (confirm('Run waivers now for everyone? Claims resolve in reverse table order and the Trough opens.')) processWaivers(true); };
+  if (rw) rw.onclick = () => { if (confirm('Process waivers now for everyone? Requests go through in reverse table order and the Trough opens.')) processWaivers(true); };
   ['open', 'closed', 'auto'].forEach(m => { const b = $(`#ctl${m[0].toUpperCase()}${m.slice(1)}`); if (b) b.onclick = () => setWaiverControl(m); });
   if (results) {
     const cur = currentGwIndex();
@@ -6216,7 +6216,7 @@ function bindTransfers() {
       const total = pool.length;
       const shown = pool.slice(0, transfersView.limit);
       const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
-        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — tap a player on your pitch above to unlock signing and claiming. Tap a column to sort.</div>';
+        : '<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Browsing the Trough — tap a player on your pitch above to unlock signings and waivers. Tap a column to sort.</div>';
       const table = `
       <div style="overflow-x:auto">
       <table class="pool-table">
@@ -6291,7 +6291,7 @@ function bindTransfers() {
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Waiver claim #${myClaims(mid).length} on your list — resolves ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
+            note: `Waiver request #${myClaims(mid).length} on your list — processes ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
           return;
         }
         const tgw = transferGw();
@@ -9356,7 +9356,7 @@ function viewSettings() {
         <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> — or press <b>&#9193; Skip the draft</b> on the console to autodraft the whole board in one stroke and go straight to the season.</li>
         <li>Open the Chamber below: <b>Kick off GW1</b> (20-min live matchday) or go straight to <b>Full time</b>.</li>
         <li>After full time: on the Transfers page, use the <b>acting as</b> switcher in the header to take any manager's chair — make drops, sign from the Trough, lodge waiver claims, propose and accept trades between clubs. It all lands as theirs.</li>
-        <li>On the Waiver order tab, <b>Run waivers now</b> — that's Tuesday 8pm happening early. Check the claims resolved in reverse table order.</li>
+        <li>On the Waiver order tab, <b>Process waivers now</b> — that's Tuesday 8pm happening early. Check the requests went through in reverse table order.</li>
         <li>Chamber GW2, and round again.</li>
       </ol>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
@@ -9400,7 +9400,7 @@ function bindSettings() {
       'DRAFT (reset → order → start → force open → picks): OK / issues:',
       'CHAMBER GW1 (live matchday, scores, table): OK / issues:',
       'TROUGH + TRADES (acting as other managers): OK / issues:',
-      'WAIVER CLAIMS + RUN NOW (right winners, right order?): OK / issues:',
+      'WAIVER LIST + PROCESS NOW (right winners, right order?): OK / issues:',
       'CHAMBER GW2 + second waiver round: OK / issues:',
       '',
       'Anything broken:',
@@ -9605,7 +9605,7 @@ function showPlayerCard(pid) {
       for (const t of state.transfers) {
         if (t.inId === pid) {
           const wf = transferWindowFacts(t, 6) || transferWindowFacts(t, 3);
-          hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'claimed off waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}${wf ? ` — the report card reads ${transferVerdict(wf, wf.gws.length)} (${wf.diff >= 0 ? '+' : ''}${wf.diff} over ${wf.gws.length})` : ''}`);
+          hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'taken on waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}${wf ? ` — the report card reads ${transferVerdict(wf, wf.gws.length)} (${wf.diff >= 0 ? '+' : ''}${wf.diff} over ${wf.gws.length})` : ''}`);
         }
         else if (t.outId === pid && !t.trade) hist.push(`GW${GAMEWEEKS[t.gw].n}: dropped by ${teamName(t.managerId)}`);
       }

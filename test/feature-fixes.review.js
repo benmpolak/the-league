@@ -53,7 +53,7 @@ const chk = (name, ok, detail = '') => {
     return document.querySelector('.overlay .card')?.innerText || '';
   });
   chk('pending waiver receipt says no XI change has happened',
-    /Would count from GW\d+/.test(pending) && /No XI change yet/.test(pending) && /unless the claim lands/.test(pending), pending);
+    /Would count from GW\d+/.test(pending) && /No XI change yet/.test(pending) && /unless the waiver goes through/.test(pending), pending);
 
   await fresh();
   const archive = await page.evaluate(async () => {
