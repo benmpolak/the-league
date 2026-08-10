@@ -4700,7 +4700,10 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // to research and cut the data — the scout desk already does that, it was just
 // locked to the two pages where you're mid-transaction). Read-only: no claims,
 // no squad shape, no action column. Defaults to everyone, owners included.
-let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40 };
+// minMin is the minutes floor. Per-90 rates are nonsense on tiny samples — one
+// chance in twenty minutes reads as 3.60 xG90 and tops the sort (Marc, 10 Aug)
+let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40, minMin: 0 };
+const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
   if (!v || typeof v !== 'object') return null;
@@ -4714,7 +4717,10 @@ function cleanScoutView(v) {
   // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
   // still collapses to 'free', as it always did
   const scope = v.scope === 'all' || v.scope === 'owned' ? v.scope : 'free';
-  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope };
+  // minutes floor for the Data Room explorer; 0 on the surfaces that have none
+  const mm = +v.minMin;
+  const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
+  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope, minMin };
 }
 function scoutViews() {
   try {
@@ -4757,6 +4763,7 @@ function scoutSnapshot(surface) {
     pos: src.pos,
     team: surface === 'draft' ? src.team : src.club,
     scope: surface === 'draft' ? 'free' : src.scope,
+    minMin: src.minMin || 0,
   });
 }
 function applyScoutView(v, surface) {
@@ -4767,7 +4774,7 @@ function applyScoutView(v, surface) {
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
   } else {
     transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
@@ -8714,6 +8721,10 @@ function playerExplorerCard() {
     : [...PLAYERS];
   if (dataView.pos) pool = pool.filter(p => p.pos === dataView.pos);
   if (dataView.club) pool = pool.filter(p => p.team === dataView.club);
+  // filter on p.mp — FPL's own minutes — because that is the denominator the
+  // per-90 figures are divided by. Using our match-stat minutes would gate the
+  // rates on a different number entirely and hide everyone early season.
+  if (dataView.minMin) pool = pool.filter(p => (p.mp || 0) >= dataView.minMin);
   if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
   pool.sort(dataView.sort === 'owner'
     ? (a, b) => String(teamName(ownedBy[a.id]) || '~').localeCompare(String(teamName(ownedBy[b.id]) || '~')) || rating(b) - rating(a)
@@ -8734,6 +8745,9 @@ function playerExplorerCard() {
         ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${dataView.pos === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
       <select id="dxClub" aria-label="Club"><option value="">All clubs</option>
         ${clubs.map(c => `<option value="${esc(c)}" ${dataView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+      <select id="dxMin" aria-label="Minimum minutes played" title="Per-90 columns are meaningless on a small sample — set a floor before trusting them">
+        ${MIN_MINUTES_STEPS.map(n => `<option value="${n}" ${dataView.minMin === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
+      </select>
     </div>
     ${scoutViewHtml('data')}
     <div style="overflow-x:auto"><table class="pool-table">
@@ -8774,6 +8788,8 @@ function bindExplorer() {
     if (el) el.onchange = e => { dataView = { ...dataView, [key]: e.target.value, limit: 40 }; redraw(false); };
   };
   pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
+  const mm = document.getElementById('dxMin');
+  if (mm) mm.onchange = e => { dataView = { ...dataView, minMin: +e.target.value, limit: 40 }; redraw(false); };
   document.querySelectorAll('[data-dxsort]').forEach(th => th.onclick = () => {
     dataView = { ...dataView, sort: th.dataset.dxsort };
     scoutActiveView.data = ''; // hand-sorting means you've left the saved view
