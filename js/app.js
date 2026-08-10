@@ -4624,7 +4624,12 @@ const SCOUT_PRESETS = [
 ];
 const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
-let scoutActiveView = { draft: '', transfers: '' };
+let scoutActiveView = { draft: '', transfers: '', data: '' };
+// the Data Room's own filter state (Marc, 9 Aug: the Data Room is where you go
+// to research and cut the data — the scout desk already does that, it was just
+// locked to the two pages where you're mid-transaction). Read-only: no claims,
+// no squad shape, no action column. Defaults to everyone, owners included.
+let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40 };
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
   if (!v || typeof v !== 'object') return null;
@@ -4635,7 +4640,9 @@ function cleanScoutView(v) {
   const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'rate';
   const pos = SCOUT_POS.has(v.pos) ? v.pos : '';
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
-  const scope = v.scope === 'all' ? 'all' : 'free';
+  // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
+  // still collapses to 'free', as it always did
+  const scope = v.scope === 'all' || v.scope === 'owned' ? v.scope : 'free';
   return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope };
 }
 function scoutViews() {
@@ -4669,7 +4676,7 @@ function scoutViewHtml(surface) {
   </details>`;
 }
 function scoutSnapshot(surface) {
-  const src = surface === 'draft' ? poolFilter : transfersView;
+  const src = surface === 'draft' ? poolFilter : surface === 'data' ? dataView : transfersView;
   return cleanScoutView({
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: 'view',
@@ -4677,7 +4684,7 @@ function scoutSnapshot(surface) {
     sort: src.sort,
     pos: src.pos,
     team: surface === 'draft' ? src.team : src.club,
-    scope: surface === 'transfers' ? src.scope : 'free',
+    scope: surface === 'draft' ? 'free' : src.scope,
   });
 }
 function applyScoutView(v, surface) {
@@ -4687,6 +4694,8 @@ function applyScoutView(v, surface) {
   localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
+  } else if (surface === 'data') {
+    dataView = { ...dataView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 40 };
   } else {
     transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
@@ -7170,6 +7179,8 @@ function bracketCard() {
 function viewData() {
   const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
   return `
+  ${sect('Research')}
+  ${playerExplorerCard()}
   ${sect('League data')}
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
@@ -7187,6 +7198,7 @@ function viewData() {
 function bindData() {
   bindAwardsBits();
   bindPitchLinks();
+  bindExplorer();
   document.querySelectorAll('[data-sqrow]').forEach(row => row.onclick = () => {
     const bd = $(`#sq-${row.dataset.sqrow}`);
     bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
@@ -8455,6 +8467,95 @@ function seasonContributors(mid) {
     }))
     .filter(x => x.p)
     .sort((a, b) => b.pts - a.pts);
+}
+/* The player explorer (Marc, 9 Aug): the Data Room's research surface. The
+   scout desk — saved views, presets, the column picker — already existed but
+   was reachable only from the Draft Console and the Transfers hub, both of
+   which are places you go to DO something. This is the same apparatus with the
+   transactional half removed: no claims, no squad-shape checks, no action
+   column. What it adds is the owner, always on and always sortable — the one
+   thing a twelve-man draft league knows for certain and the public tools can
+   only estimate. */
+function playerExplorerCard() {
+  const live = seasonHasStats();
+  const cols = STAT_COLS(live);
+  const ownedBy = {};
+  for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
+  const q = normName(dataView.q || '');
+  let pool = dataView.scope === 'owned' ? PLAYERS.filter(p => ownedBy[p.id] != null)
+    : dataView.scope === 'free' ? PLAYERS.filter(p => ownedBy[p.id] == null)
+    : [...PLAYERS];
+  if (dataView.pos) pool = pool.filter(p => p.pos === dataView.pos);
+  if (dataView.club) pool = pool.filter(p => p.team === dataView.club);
+  if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
+  pool.sort(dataView.sort === 'owner'
+    ? (a, b) => String(teamName(ownedBy[a.id]) || '~').localeCompare(String(teamName(ownedBy[b.id]) || '~')) || rating(b) - rating(a)
+    : metricSort(dataView.sort));
+  const total = pool.length;
+  const shown = pool.slice(0, dataView.limit);
+  const clubs = [...new Set(PLAYERS.map(p => p.team))].sort();
+  return `<div class="card" style="margin-top:14px">
+    <h2>The player explorer <span class="muted" style="font-weight:400;font-size:12px">every player, every stat, and who has him</span></h2>
+    <div class="pool-controls">
+      <input type="text" id="dxQ" placeholder="Search ${PLAYERS.length} players&hellip;" value="${esc(dataView.q)}">
+      <select id="dxScope" aria-label="Ownership">
+        <option value="all" ${dataView.scope === 'all' ? 'selected' : ''}>Everyone</option>
+        <option value="owned" ${dataView.scope === 'owned' ? 'selected' : ''}>Owned only</option>
+        <option value="free" ${dataView.scope === 'free' ? 'selected' : ''}>In the Trough</option>
+      </select>
+      <select id="dxPos" aria-label="Position"><option value="">All positions</option>
+        ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${dataView.pos === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
+      <select id="dxClub" aria-label="Club"><option value="">All clubs</option>
+        ${clubs.map(c => `<option value="${esc(c)}" ${dataView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
+    </div>
+    ${scoutViewHtml('data')}
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr>
+        <th data-dxsort="name">Player</th>
+        <th data-dxsort="owner">Owner ${dataView.sort === 'owner' ? '&#9662;' : ''}</th>
+        ${cols.map(c => c.sortable === false
+          ? `<th class="num" title="${esc(c.t)}">${c.h}</th>`
+          : `<th class="num" data-dxsort="${c.k}" title="${esc(c.t)}">${c.h} ${dataView.sort === c.k ? '&#9662;' : ''}</th>`).join('')}
+      </tr></thead>
+      <tbody>${shown.map(p => {
+        const m = metricsFor(p);
+        const om = ownedBy[p.id];
+        return `<tr>
+          <td><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></td>
+          <td>${om != null ? `<span class="tag">${esc(teamName(om))}</span>` : '<span class="muted" style="font-size:11.5px">Trough</span>'}</td>
+          ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
+        </tr>`;
+      }).join('') || `<tr><td colspan="${cols.length + 2}" class="muted">Nobody matches that.</td></tr>`}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:11.5px;margin-top:6px">Showing ${shown.length} of ${total}${total > shown.length ? ' &middot; <button class="btn ghost small" id="dxMore">Show more</button>' : ''} &middot; tap a column to sort.</p>
+  </div>`;
+}
+function bindExplorer() {
+  if (!document.getElementById('dxQ')) return;
+  // render() replaces the input, so the caret has to be put back or typing a
+  // second character sends focus to the top of the page
+  const redraw = (refocus) => {
+    render();
+    if (!refocus) return;
+    const box = document.getElementById('dxQ');
+    if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  };
+  const q = document.getElementById('dxQ');
+  q.oninput = e => { dataView = { ...dataView, q: e.target.value, limit: 40 }; redraw(true); };
+  const pick = (id, key) => {
+    const el = document.getElementById(id);
+    if (el) el.onchange = e => { dataView = { ...dataView, [key]: e.target.value, limit: 40 }; redraw(false); };
+  };
+  pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
+  document.querySelectorAll('[data-dxsort]').forEach(th => th.onclick = () => {
+    dataView = { ...dataView, sort: th.dataset.dxsort };
+    scoutActiveView.data = ''; // hand-sorting means you've left the saved view
+    redraw(false);
+  });
+  const more = document.getElementById('dxMore');
+  if (more) more.onclick = () => { dataView = { ...dataView, limit: dataView.limit + 40 }; redraw(false); };
+  bindScoutDesk('data', () => redraw(false));
+  bindColToggle(() => redraw(false));
 }
 // the Lobus bonus rides on the manager's total but belongs to no single player,
 // so it gets its own line — otherwise the rows quietly fail to sum (ledger #1)
