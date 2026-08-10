@@ -4627,16 +4627,18 @@ function colOrderHtml(live) {
   const vis = visibleColKeys(live);
   const all = ALL_STAT_COLS(live);
   if (vis.length < 2) return '';
-  return `<div class="scout-columns"><span class="scout-title">Order</span>
-    <div class="scout-column-grid">${vis.map((k, i) => {
+  // phones only — on a laptop you drag the table's own headers. A 30px header
+  // is far too small a drag target on a touchscreen, so the arrows stay there.
+  return `<div class="scout-columns order-only"><span class="scout-title">Order</span>
+    <div class="scout-order-strip">${vis.map((k, i) => {
       const c = all.find(x => x.k === k);
       if (!c) return '';
-      return `<div class="scout-col-option" draggable="true" data-coldrag="${esc(k)}" title="${esc(c.t)}">
-        <span style="cursor:grab" aria-hidden="true">&#8942;</span> <b>${c.h}</b>
+      return `<div class="scout-col-order" title="${esc(c.t)}"><b>${c.h}</b>
         <button class="btn ghost small icon-btn" data-colmove="${i}:-1" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(c.h)} earlier">&#9650;</button>
         <button class="btn ghost small icon-btn" data-colmove="${i}:1" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(c.h)} later">&#9660;</button>
       </div>`;
-    }).join('')}</div></div>`;
+    }).join('')}</div>
+    <p class="muted" style="font-size:10.5px;margin-top:4px">On a laptop, drag the column headings themselves.</p></div>`;
 }
 function bindColOrder(rerender) {
   const live = seasonHasStats();
@@ -4653,19 +4655,33 @@ function bindColOrder(rerender) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
     write(arr);
   });
-  document.querySelectorAll('[data-coldrag]').forEach(el => {
-    el.ondragstart = e => { e.dataTransfer.setData('text/plain', `col:${el.dataset.coldrag}`); e.dataTransfer.effectAllowed = 'move'; };
-    el.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
-    el.ondrop = e => {
-      e.preventDefault();
+  /* Drag the table's own headings, the way a spreadsheet does. Bound generically
+     off whichever data-*sort attribute the surface uses, so the Draft Console,
+     the Transfers hub and the Data Room explorer all get it without their
+     markup knowing. A click still sorts — HTML5 drag never fires one. */
+  const vis = visibleColKeys(live);
+  const move = (from, onto) => {
+    if (!from || from === onto) return;
+    const arr = vis.filter(k => k !== from);
+    const at = onto ? arr.indexOf(onto) : -1;
+    arr.splice(at < 0 ? arr.length : at, 0, from);
+    write(arr);
+  };
+  document.querySelectorAll('.pool-table thead th').forEach(th => {
+    const key = Object.values(th.dataset || {}).find(v => vis.includes(v));
+    if (!key) return;
+    th.setAttribute('draggable', 'true');
+    th.title = `${th.title || ''}${th.title ? ' · ' : ''}Drag to reorder`.trim();
+    th.ondragstart = e => { e.dataTransfer.setData('text/plain', `col:${key}`); e.dataTransfer.effectAllowed = 'move'; };
+    // dragover cannot read the payload (browsers withhold it until drop), so
+    // highlight optimistically and verify the prefix when it lands
+    th.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; th.classList.add('col-drop'); };
+    th.ondragleave = () => th.classList.remove('col-drop');
+    th.ondragend = () => document.querySelectorAll('.col-drop').forEach(x => x.classList.remove('col-drop'));
+    th.ondrop = e => {
+      e.preventDefault(); e.stopPropagation(); th.classList.remove('col-drop');
       const d = String(e.dataTransfer.getData('text/plain') || '');
-      if (!d.startsWith('col:')) return;
-      const from = d.slice(4), onto = el.dataset.coldrag;
-      if (from === onto) return;
-      const arr = [...visibleColKeys(live)].filter(k => k !== from);
-      const at = arr.indexOf(onto);
-      arr.splice(at < 0 ? arr.length : at, 0, from);
-      write(arr);
+      if (d.startsWith('col:')) move(d.slice(4), key);
     };
   });
 }
@@ -8805,8 +8821,8 @@ function playerExplorerCard() {
         <th data-dxsort="name">Player</th>
         <th data-dxsort="owner">Owner ${dataView.sort === 'owner' ? '&#9662;' : ''}</th>
         ${cols.map(c => c.sortable === false
-          ? `<th class="num" title="${esc(c.t)}">${c.h}</th>`
-          : `<th class="num" data-dxsort="${c.k}" title="${esc(c.t)}">${c.h} ${dataView.sort === c.k ? '&#9662;' : ''}</th>`).join('')}
+          ? `<th class="num" data-stat="${c.k}" title="${esc(c.t)}">${c.h}</th>`
+          : `<th class="num" data-stat="${c.k}" data-dxsort="${c.k}" title="${esc(c.t)}">${c.h} ${dataView.sort === c.k ? '&#9662;' : ''}</th>`).join('')}
       </tr></thead>
       <tbody>${shown.map(p => {
         const m = metricsFor(p);

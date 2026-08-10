@@ -1239,6 +1239,20 @@ tr.st-red .pname { color: #ff9c9c; }
   display: grid; grid-template-columns: 18px 38px minmax(0, 1fr); gap: 6px;
   align-items: start; min-width: 0; cursor: pointer; font-size: 11px; line-height: 1.3;
 }
+/* Column reordering (Marc, 10 Aug): drag the table's own headers, the way a
+   spreadsheet does. The menu strip survives as the PHONE path only — HTML5
+   drag is a laptop luxury and a header is far too small a target on a phone. */
+.pool-table th[draggable="true"] { cursor: grab; }
+.pool-table th[draggable="true"]:active { cursor: grabbing; }
+.pool-table th.col-drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.scout-order-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.scout-col-order {
+  display: flex; align-items: center; gap: 5px; font-size: 11.5px;
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--card2); user-select: none;
+}
+.scout-col-order b { color: var(--text); }
+@media (min-width: 701px) { .scout-columns.order-only { display: none; } }
 .scout-col-option input { margin-top: 1px; }
 .scout-col-option b { color: var(--text); }
 .scout-col-option span { min-width: 0; }
