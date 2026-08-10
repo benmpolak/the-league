@@ -2858,7 +2858,7 @@ function vidiCard(compact = false) {
   return `<div class="card" style="margin-top:14px">
     <h2>The Vidiprinter ${live ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">every incident, straight off the wire</span></h2>
     <div class="vidi-tape">${rows || '<div class="vidi-line" style="color:var(--muted)">The tape is quiet. Kick-off will fix that.</div>'}</div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px">Sponsored by Ceefax page 302. Lines land as the feed refreshes (~15 min on matchdays); the tape lives on this device.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Sponsored by Ceefax page 302. Lines land as the feed refreshes (~5&ndash;10 min on matchdays); the tape lives on this device.</p>
   </div>`;
 }
 
@@ -2904,7 +2904,7 @@ async function syncNow(manual = false) {
   }
   const b2 = $('#syncBtn');
   if (b2) { b2.disabled = false; renderSyncArea(); } // rebuild the stamp whatever happened
-  // keep tapping while matches are in play (the Action refreshes every 15 min)
+  // keep tapping while matches are in play (the Action refreshes every ~5-10 min)
   clearTimeout(liveTimer);
   if (anyMatchLive()) liveTimer = setTimeout(() => syncNow(false), 5 * 60 * 1000);
 }
@@ -3359,7 +3359,7 @@ function renderSyncArea() {
   // the feed going quiet on a matchday should be visible, not discovered
   if (state.feedGenerated && anyMatchLive()) {
     const ageH = (Date.now() - new Date(state.feedGenerated).getTime()) / 3600000;
-    if (ageH > 1.5) bits.push(`<span class="tag" style="background:#4a3a10;color:#ffd98a" title="The stats feed normally refreshes every 15 minutes on matchdays. Scores may be lagging.">&#9888; feed ${ageH < 2 ? '90m' : Math.round(ageH) + 'h'} stale</span>`);
+    if (ageH > 1.5) bits.push(`<span class="tag" style="background:#4a3a10;color:#ffd98a" title="The stats feed normally refreshes every few minutes on matchdays. Scores may be lagging.">&#9888; feed ${ageH < 2 ? '90m' : Math.round(ageH) + 'h'} stale</span>`);
   }
   if (syncOn()) {
     bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Offline — the league is read-only until you reconnect'}" title="${syncConnected ? 'Live sync: connected' : 'Offline — the league is read-only until you reconnect'}">&#9679;</span>`);
@@ -3372,7 +3372,7 @@ function renderSyncArea() {
   }
   if (state.phase === 'season') {
     const last = state.lastSync ? new Date(state.lastSync).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'never';
-    bits.push(`<button class="tag" id="syncBtn" title="Scores auto-refresh every ~15 min on matchdays — tap to refresh now">&#8635;<span class="sync-txt"> ${last}</span></button>`);
+    bits.push(`<button class="tag" id="syncBtn" title="Scores auto-refresh every ~5&ndash;10 min on matchdays — tap to refresh now">&#8635;<span class="sync-txt"> ${last}</span></button>`);
   }
   if (state.phase !== 'draft') {
     // Home: the Dashboard in season, the waiting room pre-draft
@@ -5732,7 +5732,7 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false, as: null };
+let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // the whole hub acts as ONE manager. Normally that's you; the Chairman may
 // take any chair (the switcher in the hub header) — every action downstream
 // already carries asManager when mid !== whoami, so the server records the
@@ -6011,13 +6011,34 @@ function viewTransfers() {
     </div><div class="rc-slot hist-rc" data-rcslot="${t.n}" style="display:none"></div>`;
     const sectionHtml = s => `<div class="hist-gw"><b>Gameweek ${GAMEWEEKS[s.gw].n}</b> ${s.rows.length} ${s.rows.length === 1 ? 'move' : 'moves'}</div>${s.rows.map(rowHtml).join('')}`;
     const fbtn = (k, label) => `<button class="btn small ${hf === k ? '' : 'ghost'}" data-histkind="${k}">${label}${counts[k] || (!k && all.length) ? ` <span class="hist-count">${k ? counts[k] : all.length}</span>` : ''}</button>`;
+    // pages back to the start of the season (Ben, 10 Aug) — packed by whole
+    // GW sections so a page never opens mid-gameweek, ~15 moves a page which
+    // reads well on a laptop and stays a short thumb-scroll on a phone
+    const PAGE_TARGET = 15;
+    const pages = [];
+    for (const s of sections) {
+      const last = pages[pages.length - 1];
+      if (last && last.count < PAGE_TARGET) { last.secs.push(s); last.count += s.rows.length; }
+      else pages.push({ secs: [s], count: s.rows.length });
+    }
+    const pi = Math.min(transfersView.histPage || 0, Math.max(0, pages.length - 1));
+    const pg = pages[pi];
+    const gwSpan = p => {
+      const hi = GAMEWEEKS[p.secs[0].gw].n, lo = GAMEWEEKS[p.secs[p.secs.length - 1].gw].n;
+      return hi === lo ? `GW${hi}` : `GW${hi}–${lo}`;
+    };
+    const pager = pages.length > 1 ? `<div class="hist-pager">
+      <button class="btn ghost small" data-histpage="${pi - 1}" ${pi === 0 ? 'disabled' : ''}>&#8592; Newer</button>
+      <span class="hist-pager-label">${gwSpan(pg)} &middot; page ${pi + 1} of ${pages.length}</span>
+      <button class="btn ghost small" data-histpage="${pi + 1}" ${pi === pages.length - 1 ? 'disabled' : ''}>Older &#8594;</button>
+    </div>` : '';
     return `${head}<div class="card hist-card">
       <div class="business-head">
         <div><span class="business-kicker">The Transfer Wire</span><h2>Every move, on the record</h2></div>
         <span class="muted">THE FULL LEDGER &middot; NOBODY FORGETS</span>
       </div>
       <div class="hist-filters">${fbtn('', 'All')}${fbtn('trough', 'Trough')}${fbtn('waiver', 'Waivers')}${fbtn('trade', 'Trades')}${fbtn('window', 'Window')}</div>
-      ${sections.map(sectionHtml).join('') || '<p class="muted" style="margin-top:12px">Nothing yet. Cowards.</p>'}</div>`;
+      ${pg ? pg.secs.map(sectionHtml).join('') : '<p class="muted" style="margin-top:12px">Nothing yet. Cowards.</p>'}${pager}</div>`;
   }
   // order
   const order = waiverOrder();
@@ -6126,7 +6147,8 @@ function bindTransfers() {
   // faff on the pitch") — same state as the pitch taps, either works
   const trOut = $('#trOut');
   if (trOut) trOut.onchange = () => { transfersView.out = +trOut.value || null; render(); };
-  document.querySelectorAll('[data-histkind]').forEach(b => b.onclick = () => { transfersView.histKind = b.dataset.histkind; render(); });
+  document.querySelectorAll('[data-histkind]').forEach(b => b.onclick = () => { transfersView.histKind = b.dataset.histkind; transfersView.histPage = 0; render(); });
+  document.querySelectorAll('[data-histpage]').forEach(b => b.onclick = () => { transfersView.histPage = Math.max(0, +b.dataset.histpage); render(); });
   // ledger team names open that club's squad (Ben, 10 Aug) — same jump as the report-card overlay
   document.querySelectorAll('[data-histteam]').forEach(b => b.onclick = () => { state.view = 'team'; teamView.mid = +b.dataset.histteam; save(); render(); });
   document.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => {
@@ -7431,7 +7453,7 @@ function treatmentRoomCard() {
       ${q.dgw.length ? `<span>DOUBLE: <b>${q.dgw.map(short).join(', ')}</b></span>` : ''}
       ${q.bgw.length ? `<span class="muted">BLANK: ${q.bgw.map(short).join(', ')}</span>` : ''}</div>`).join('')
       : '<p class="muted" style="font-size:12.5px">No blank or double gameweeks on the horizon.</p>'}
-    <p class="muted" style="font-size:10.5px;margin-top:8px">Injury lines from the official FPL feed (Premier Injuries data), refreshed every 15 minutes. Deep cuts: <a href="https://x.com/BenDinnery" target="_blank" rel="noopener" style="color:var(--accent)">@BenDinnery</a> · <a href="https://x.com/BenCrellin" target="_blank" rel="noopener" style="color:var(--accent)">@BenCrellin</a>.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Injury lines from the official FPL feed (Premier Injuries data), refreshed every few minutes on matchdays. Deep cuts: <a href="https://x.com/BenDinnery" target="_blank" rel="noopener" style="color:var(--accent)">@BenDinnery</a> · <a href="https://x.com/BenCrellin" target="_blank" rel="noopener" style="color:var(--accent)">@BenCrellin</a>.</p>
   </div>`;
 }
 /* ----- points grid: every score, every week — Draft Fantasy's Points tab ----- */
