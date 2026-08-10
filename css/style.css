@@ -821,7 +821,14 @@ tr.gone-row td.act { opacity: .8; }
   margin-top: 5px; font-size: 12.5px; line-height: 1.4;
 }
 .hist-p { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
-.hist-arrow { color: var(--accent); font-weight: 900; flex: none; }
+.hist-team {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); font: inherit; font-size: 12.5px;
+}
+.hist-team:hover b { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.hist-flow .business-label { flex: none; }
+.hist-flow .business-label-out { margin-left: 10px; }
 .hist-out, .hist-out .plink { color: var(--muted); font-weight: 500; }
 .hist-out .plink { text-decoration-color: rgba(155,164,184,.35); }
 .hist-in { font-weight: 700; }

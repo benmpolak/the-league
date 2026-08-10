@@ -6001,8 +6001,11 @@ function viewTransfers() {
     const rowHtml = t => `<div class="hist-row">
       <span class="business-mark business-${kindOf(t)}" aria-hidden="true">${marks[kindOf(t)]}</span>
       <div class="hist-main">
-        <div class="business-who">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b> <span class="tag">${kindOf(t)}</span></div>
-        <div class="hist-flow">${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}<span class="hist-arrow" aria-hidden="true">&#8594;</span>${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}</div>
+        <div class="business-who"><button class="hist-team" data-histteam="${t.managerId}" title="Open ${esc(teamName(t.managerId))}'s squad">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b></button> <span class="tag">${kindOf(t)}</span></div>
+        <div class="hist-flow">
+          <span class="business-label business-label-in">&#8593; IN</span> ${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}
+          <span class="business-label business-label-out">&#8595; OUT</span> ${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}
+        </div>
       </div>
       <button class="btn ghost small hist-rcbtn" data-rc="${t.n}">Report card <span aria-hidden="true">&#9662;</span></button>
     </div><div class="rc-slot hist-rc" data-rcslot="${t.n}" style="display:none"></div>`;
@@ -6124,6 +6127,8 @@ function bindTransfers() {
   const trOut = $('#trOut');
   if (trOut) trOut.onchange = () => { transfersView.out = +trOut.value || null; render(); };
   document.querySelectorAll('[data-histkind]').forEach(b => b.onclick = () => { transfersView.histKind = b.dataset.histkind; render(); });
+  // ledger team names open that club's squad (Ben, 10 Aug) — same jump as the report-card overlay
+  document.querySelectorAll('[data-histteam]').forEach(b => b.onclick = () => { state.view = 'team'; teamView.mid = +b.dataset.histteam; save(); render(); });
   document.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => {
     const slot = document.querySelector(`[data-rcslot="${b.dataset.rc}"]`);
     if (!slot) return;
