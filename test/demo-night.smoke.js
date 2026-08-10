@@ -181,7 +181,7 @@ const chk = (name, ok, detail = '') => {
       cotwWeeks: cotwAll.length,
       noBenchTwo: two?.bench === null, noBenchFull: full?.bench === null,
       minutes,
-      dataHasAll: ['The Committee\'s Awards', 'Trough activity', 'Top players', 'The Treatment Room'].every(s => dataText.includes(s)),
+      dataHasAll: ['The Committee\'s Awards', 'Trough activity', 'The season ledger', 'The Treatment Room'].every(s => dataText.includes(s)),
       tableConsolidated: !tableText.includes('Trough activity') && !tableText.includes('Top players'),
       dashTable: {
         rows: dashRows.length,

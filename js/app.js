@@ -7178,10 +7178,12 @@ function viewData() {
   ${troughActivityCard()}
   ${seasonSquadCard()}
   ${sect('Player data')}
-  ${topPlayersCard()}
   ${treatmentRoomCard()}
   ${sect('The archive')}
-  ${recordBookCards()}`;
+  ${recordBookCards() ? `<details class="card draft-intro">
+    <summary><b>Last season &mdash; 2025/26</b> <span>records, draft night, the cup, head-to-head</span></summary>
+    <div class="draft-intro-body">${recordBookCards()}</div>
+  </details>` : ''}`;
 }
 function bindData() {
   bindAwardsBits();
@@ -8553,20 +8555,6 @@ function troughActivityCard() {
     </table></div>
     ${hot.length ? `<h3 style="margin-top:16px">Hot potatoes &#129364; <span class="muted" style="font-weight:400;font-size:11.5px">most passed through the Trough</span></h3>
       ${hot.map(({ p, n }) => `<div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${pname(p)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span><span class="sp-pts">${n} moves</span></div>`).join('')}` : ''}
-  </div>`;
-}
-// player data: top scorers among everyone drafted or signed (Data Room, 1 Aug)
-function topPlayersCard() {
-  const allDrafted = [...new Set(state.draft.picks.map(pk => pk.playerId).concat(state.transfers.map(t => t.inId)))]
-    .map(pid => ({ p: PLAYER_BY_ID[pid], pts: playerPoints(pid).pts }))
-    .filter(x => x.p)
-    .sort((a, b) => b.pts - a.pts).slice(0, 10);
-  return `<div class="card toplist" style="margin-top:14px">
-    <h2>Top players (all drafted &amp; signed)</h2>
-    ${allDrafted.map(({ p, pts }) => `
-      <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
-      <span>${esc(p.name)}</span> <span class="muted" style="font-size:11px">${esc(p.club)}</span>
-      <span class="sp-pts gold">${pts}</span></div>`).join('') || '<span class="muted">Points appear once matches are played and synced.</span>'}
   </div>`;
 }
 // any [data-pitchview] jumps straight to that team's pitch (Lee's ask:
