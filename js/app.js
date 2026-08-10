@@ -5547,7 +5547,7 @@ function assistantCard(mid, gw) {
   }
   tips.sort((a, b) => b.gain - a.gain);
   const tipRows = tips.slice(0, 3).map(t =>
-    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth a claim.' : 'Free in the Trough. I’d move.'}</div>`).join('');
+    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth putting a waiver in.' : 'Free in the Trough. I’d move.'}</div>`).join('');
   const brief = lines.length
     ? lines.map(l => `<div class="lrow" style="font-size:12.5px">${l}</div>`).join('')
     : `<p class="muted" style="font-size:12.5px">The XI picks itself for GW${gwN}. I've nothing, gaffer. Good session though.</p>`;
@@ -6024,7 +6024,7 @@ function viewTransfers() {
     <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
       <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} claim${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} pending</span></div>`).join('')}
-    <p class="muted" style="font-size:11px;margin-top:8px">Claims stay private until the run — counts are public, targets are not. Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
     <h3 style="margin-top:16px">Waiver history</h3>
     ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> claimed ${pname(PLAYER_BY_ID[t.inId])} <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">No claims have landed yet.</p>'}
   </div>`;
