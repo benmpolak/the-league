@@ -13,6 +13,13 @@ let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
   if (ok) pass++; else { fail++; console.log(`FAIL  ${name}${detail ? ' — ' + detail : ''}`); }
 };
+// page.click() resolves an element handle, then scrolls it into view, then
+// clicks it. render() replaces nodes wholesale, so a re-render landing between
+// those steps detaches the handle and the suite dies on "Node is detached from
+// document" — at random, and far more often on CI's slower runners than here
+// (Marc, 9 Aug: three red builds in an evening, none of them a real fault).
+// Re-query inside the page instead, the way the #clubCancel step already does.
+const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(sel, el => el.click()); };
 
 (async () => {
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
@@ -125,7 +132,7 @@ const chk = (name, ok, detail = '') => {
   await new Promise(r => setTimeout(r, 300));
   chk('setup: waiting room renders without a forced overlay', await p2.evaluate(() =>
     !document.querySelector('#whoOverlay') && !!document.querySelector('#whoBtn')));
-  await p2.click('#whoBtn');
+  await tap(p2, '#whoBtn');
   await new Promise(r => setTimeout(r, 200));
   chk('setup: header Sign in summons the email overlay (sol P1.2)', await p2.evaluate(() =>
     !!document.querySelector('#whoOverlay #whoEmail')));
@@ -147,15 +154,15 @@ const chk = (name, ok, detail = '') => {
   });
   await new Promise(r => setTimeout(r, 200));
   await p2.evaluate(() => { state.view = 'club'; render(); });
-  await p2.click('#clubEdit');
+  await tap(p2, '#clubEdit');
   chk('office opens with keyboard focus inside', await p2.evaluate(() => document.activeElement?.id === 'clubName'));
-  await p2.click('#clubSave');
+  await tap(p2, '#clubSave');
   await new Promise(r => setTimeout(r, 250));
   chk('rejected save keeps the office open, Save re-enabled, not marked founded (sol P2.1)', await p2.evaluate(() =>
     !!document.querySelector('.club-office') && !document.querySelector('#clubSave').disabled
     && !localStorage.getItem('tl2627-founded-2')));
   await p2.evaluate(() => window.__saveMode('hang'));
-  await p2.click('#clubSave');
+  await tap(p2, '#clubSave');
   await new Promise(r => setTimeout(r, 100));
   chk('Cancel is dead while the save is in flight (sol r2 P3)', await p2.evaluate(() => {
     document.querySelector('#clubCancel').click();
