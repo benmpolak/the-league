@@ -223,6 +223,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 .pool-table th:hover { color: var(--text); }
+/* .pool-table th's text-align:left outranks .num on specificity, so numeric
+   headers sat left over right-aligned figures. Invisible on one-letter headers
+   like P/W/D, obvious the moment a column is wide (Marc, 10 Aug) */
+.pool-table th.num { text-align: right; }
 .pool-table td { padding: 6px 8px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 13.5px; }
 .pool-table tr:hover td { background: rgba(45,212,167,.05); }
 /* action column pinned to the right edge so Sign/Claim/Draft never scrolls out of view on phones */

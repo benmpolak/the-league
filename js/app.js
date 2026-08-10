@@ -7317,6 +7317,7 @@ function viewData() {
   ${awardsHonoursCard()}
   ${sect('Team data')}
   ${troughActivityCard()}
+  ${tradeRecordCard()}
   ${seasonSquadCard()}
   ${sect('Player data')}
   ${treatmentRoomCard()}
@@ -7331,6 +7332,7 @@ function bindData() {
   bindPitchLinks();
   bindExplorer();
   bindFixtureMatrix();
+  bindTradeRecord();
   document.querySelectorAll('[data-sqrow]').forEach(row => row.onclick = () => {
     const bd = $(`#sq-${row.dataset.sqrow}`);
     bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
@@ -7799,7 +7801,7 @@ function awardsHonoursCard() {
   };
   return `<div class="card" style="margin-top:14px">${head}
     <div style="overflow-x:auto"><table class="pool-table">
-      <thead><tr><th>Award</th>${medals.map(m => `<th class="num">${m}</th>`).join('')}</tr></thead>
+      <thead><tr><th style="width:28%">Award</th>${medals.map(m => `<th style="width:24%">${m}</th>`).join('')}</tr></thead>
       <tbody>${AWARD_HONOURS.map(def => {
         const tally = {};
         for (const a of weekly) { const id = def.pick(a); if (id != null) tally[id] = (tally[id] || 0) + 1; }
@@ -7808,7 +7810,7 @@ function awardsHonoursCard() {
         const tiers = levels.map(c => ranked.filter(r => r.n === c));
         return `<tr>
           <td style="white-space:nowrap"><span aria-hidden="true">${def.icon}</span> ${esc(def.name)}</td>
-          ${[0, 1, 2].map(i => `<td class="num" style="white-space:nowrap;font-size:12px">${cell(tiers[i])}</td>`).join('')}
+          ${[0, 1, 2].map(i => `<td style="white-space:nowrap;font-size:12px">${cell(tiers[i])}</td>`).join('')}
         </tr>`;
       }).join('')}</tbody>
     </table></div>
@@ -8849,6 +8851,12 @@ function bindExplorer() {
   bindColToggle(() => redraw(false));
   bindColOrder(() => redraw(false));
 }
+function bindTradeRecord() {
+  document.querySelectorAll('[data-traderec]').forEach(b => b.onclick = () => {
+    tradeView = { scope: b.dataset.traderec };
+    render();
+  });
+}
 function bindFixtureMatrix() {
   const w = document.getElementById('fdrWeeks');
   if (w) w.onchange = e => { fdrView = { ...fdrView, weeks: +e.target.value }; render(); };
@@ -8919,6 +8927,69 @@ function seasonSquadCard() {
       }).join('')}
       </tbody>
     </table></div>
+  </div>`;
+}
+/* The trade record (Marc, 10 Aug). Transfer Report Cards already judge every
+   completed move one at a time; nothing ever rolled them up. This is the
+   league table of that — who has come out ahead across all their business.
+
+   Trades only by default, because a trade is the only move with an opponent:
+   the player you gave up goes to a NAMED manager who then benefits. A Trough
+   signing's discard goes back to the Trough and nobody gains, so its net
+   measures your own squad management, not a contest. Lumping them together
+   produces a number that means two things at once.
+
+   Scored on the 6-gameweek window where it has closed, the 3 where it hasn't,
+   and each row says which — so nobody can argue the horizon was cherry-picked. */
+let tradeView = { scope: 'trades' }; // 'trades' | 'all'
+function tradeRecordCard() {
+  const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, n: 0, net: 0, best: null, worst: null, h3: 0 }]));
+  const seen = new Set();
+  state.transfers.forEach((t, i) => {
+    if (tradeView.scope === 'trades' && !t.trade) return;
+    // a 2-for-2 trade is several rows in state.transfers; judge the batch once
+    const key = t.trade ? `${t.managerId}:${t.trade}` : `solo:${i}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const w6 = transferWindowFacts(t, 6);
+    const wf = w6 || transferWindowFacts(t, 3);
+    if (!wf) return; // window still open — the Gazette does not judge early
+    const r = rows[t.managerId];
+    if (!r) return;
+    r.n++; r.net += wf.diff;
+    if (!w6) r.h3++;
+    const label = `${wf.inn.map(x => x.p.name).join(' + ') || '—'} for ${wf.out.map(x => x.p.name).join(' + ') || '—'}`;
+    if (!r.best || wf.diff > r.best.diff) r.best = { diff: wf.diff, label };
+    if (!r.worst || wf.diff < r.worst.diff) r.worst = { diff: wf.diff, label };
+  });
+  const list = Object.values(rows).filter(r => r.n).sort((a, b) => b.net - a.net || b.n - a.n);
+  const toggle = `<div class="pool-controls" style="margin:0 0 10px">
+      <button class="btn small ${tradeView.scope === 'trades' ? '' : 'ghost'}" data-traderec="trades">Trades only</button>
+      <button class="btn small ${tradeView.scope === 'all' ? '' : 'ghost'}" data-traderec="all">All moves</button>
+    </div>`;
+  const head = `<h2>The trade record <span class="muted" style="font-weight:400;font-size:12px">who has come out ahead</span></h2>`;
+  if (!list.length) {
+    return `<div class="card toplist" style="margin-top:14px">${head}${toggle}
+      <p class="muted" style="font-size:12.5px">${tradeView.scope === 'trades'
+        ? 'No trade has completed its three-gameweek review window yet. The Committee will not judge a deal before it has had a chance to go wrong.'
+        : 'No move has completed its three-gameweek review window yet.'}</p></div>`;
+  }
+  const sign = n => `${n >= 0 ? '+' : ''}${n}`;
+  const deal = d => d ? `<span class="muted" style="font-size:11.5px">${esc(d.label)}</span> <b>${sign(d.diff)}</b>` : '<span class="muted">&mdash;</span>';
+  return `<div class="card toplist" style="margin-top:14px">${head}${toggle}
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Team</th><th class="num">Judged</th><th class="num act">Net</th><th>Best</th><th>Worst</th></tr></thead>
+      <tbody>${list.map((r, i) => `<tr>
+        <td style="white-space:nowrap"><b>${esc(teamName(r.id))}</b> <span class="muted" style="font-size:11px">${esc(managerName(r.id))}</span>
+          ${i === 0 && r.net > 0 ? '<span class="tag">&#129461; robbing the league</span>' : ''}
+          ${i === list.length - 1 && r.net < 0 && list.length > 1 ? '<span class="tag">generous to a fault</span>' : ''}</td>
+        <td class="num">${r.n}${r.h3 ? `<span class="muted" style="font-size:10.5px" title="${r.h3} of these are judged on the 3-gameweek window; the rest on 6"> (${r.h3}&times;3GW)</span>` : ''}</td>
+        <td class="num act"><b style="color:${r.net > 0 ? '#3fb96d' : r.net < 0 ? '#e05555' : 'inherit'}">${sign(r.net)}</b></td>
+        <td>${deal(r.best)}</td>
+        <td>${deal(r.worst)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Net is points in minus points shipped, over each move's review window &mdash; six gameweeks where that has closed, three where it hasn't. ${tradeView.scope === 'trades' ? 'Trades only: the one move type with an opponent on the other end.' : 'All completed business, including waivers and the Trough &mdash; where the discard goes back to the pool and nobody gains.'}</p>
   </div>`;
 }
 function troughActivityCard() {
