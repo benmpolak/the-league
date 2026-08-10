@@ -4541,6 +4541,12 @@ function metricsFor(p) {
       : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
   }
   m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
+  // the xG family comes straight off the player record — FPL's season-to-date
+  // figures, refreshed with the feed — so it is identical in both branches
+  // above (Marc, 10 Aug). After the July wipe these read 0 until the new
+  // season produces some, which is honest rather than borrowed from last year.
+  m.xg = p.xg || 0; m.xa = p.xa || 0; m.xgc = p.xgc || 0;
+  m.xg90 = p.xg90 || 0; m.xa90 = p.xa90 || 0; m.xgi90 = p.xgi90 || 0; m.xgc90 = p.xgc90 || 0;
   _metricsCache.set(p.id, m);
   return m;
 }
@@ -4569,7 +4575,15 @@ const ALL_STAT_COLS = live => [
   { k: 'g', h: 'G', t: 'Goals', v: m => m.g },
   { k: 'a', h: 'A', t: 'Assists', v: m => m.a },
   { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
+  { k: 'xg', h: 'xG', t: 'Expected goals', v: m => m.xg.toFixed(2), cls: ' muted' },
+  { k: 'xa', h: 'xA', t: 'Expected assists', v: m => m.xa.toFixed(2), cls: ' muted' },
   { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(1), cls: ' muted' },
+  { k: 'xgc', h: 'xGC', t: 'Expected goals conceded while on the pitch — the defensive read', v: m => m.xgc.toFixed(1), cls: ' muted' },
+  // per 90: the only fair way to compare a squad player to a nailed starter
+  { k: 'xg90', h: 'xG90', t: 'Expected goals per 90 minutes', v: m => m.xg90.toFixed(2), cls: ' muted' },
+  { k: 'xa90', h: 'xA90', t: 'Expected assists per 90 minutes', v: m => m.xa90.toFixed(2), cls: ' muted' },
+  { k: 'xgi90', h: 'xGI90', t: 'Expected goals + assists per 90 minutes', v: m => m.xgi90.toFixed(2), cls: ' muted' },
+  { k: 'xgc90', h: 'xGC90', t: 'Expected goals conceded per 90 minutes — lower is better', v: m => m.xgc90.toFixed(2), cls: ' muted' },
   { k: 'f5', h: 'F5', t: 'Form — average points over the last five gameweeks (league scoring)', v: m => m.f5.toFixed(1) },
   { k: 'xp1', h: 'P1', t: 'Projected points — next gameweek (per-game expectation × scheduled fixtures)', v: m => m.xp1.toFixed(1), cls: ' muted' },
   { k: 'xp3', h: 'P3', t: 'Projected points — next three gameweeks (blanks and doubles counted)', v: m => m.xp3.toFixed(1), cls: ' muted' },
@@ -4679,7 +4693,7 @@ const SCOUT_PRESETS = [
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
   { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xgi', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Data Room's own filter state (Marc, 9 Aug: the Data Room is where you go
