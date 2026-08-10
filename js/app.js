@@ -4595,17 +4595,74 @@ function visibleColKeys(live) {
   if (_colPrefs === undefined) { try { _colPrefs = JSON.parse(localStorage.getItem(COL_PREFS_KEY)); } catch { _colPrefs = null; } }
   return _colPrefs || (matchMedia('(max-width: 700px)').matches ? MOBILE_COL_KEYS(live) : DEFAULT_COL_KEYS(live));
 }
-const STAT_COLS = live => ALL_STAT_COLS(live).filter(c => visibleColKeys(live).includes(c.k));
+// Marc, 10 Aug: follow the user's order, not the master list's. Vs was pinned
+// first for no better reason than being first in ALL_STAT_COLS.
+const STAT_COLS = live => {
+  const all = ALL_STAT_COLS(live);
+  return visibleColKeys(live).map(k => all.find(c => c.k === k)).filter(Boolean);
+};
 function colOptionsHtml(live) {
   const vis = visibleColKeys(live);
   return ALL_STAT_COLS(live).map(c => `<label class="scout-col-option"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b>${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`).join('');
 }
+/* Column order strip (Marc, 10 Aug). Drag on a laptop, arrows on a phone —
+   the same pairing the draft order, the autopick queue and the claims ladder
+   already use. HTML5 drag is a luxury; the arrows are the path that always
+   works. Shared by all three scouting surfaces. */
+function colOrderHtml(live) {
+  const vis = visibleColKeys(live);
+  const all = ALL_STAT_COLS(live);
+  if (vis.length < 2) return '';
+  return `<div class="scout-columns"><span class="scout-title">Order</span>
+    <div class="scout-column-grid">${vis.map((k, i) => {
+      const c = all.find(x => x.k === k);
+      if (!c) return '';
+      return `<div class="scout-col-option" draggable="true" data-coldrag="${esc(k)}" title="${esc(c.t)}">
+        <span style="cursor:grab" aria-hidden="true">&#8942;</span> <b>${c.h}</b>
+        <button class="btn ghost small icon-btn" data-colmove="${i}:-1" ${i === 0 ? 'disabled' : ''} aria-label="Move ${esc(c.h)} earlier">&#9650;</button>
+        <button class="btn ghost small icon-btn" data-colmove="${i}:1" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move ${esc(c.h)} later">&#9660;</button>
+      </div>`;
+    }).join('')}</div></div>`;
+}
+function bindColOrder(rerender) {
+  const live = seasonHasStats();
+  const write = arr => {
+    _colPrefs = arr;
+    try { localStorage.setItem(COL_PREFS_KEY, JSON.stringify(arr)); } catch { /* fine */ }
+    rerender();
+  };
+  document.querySelectorAll('[data-colmove]').forEach(b => b.onclick = () => {
+    const [i, d] = b.dataset.colmove.split(':').map(Number);
+    const arr = [...visibleColKeys(live)];
+    const j = i + d;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    write(arr);
+  });
+  document.querySelectorAll('[data-coldrag]').forEach(el => {
+    el.ondragstart = e => { e.dataTransfer.setData('text/plain', `col:${el.dataset.coldrag}`); e.dataTransfer.effectAllowed = 'move'; };
+    el.ondragover = e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+    el.ondrop = e => {
+      e.preventDefault();
+      const d = String(e.dataTransfer.getData('text/plain') || '');
+      if (!d.startsWith('col:')) return;
+      const from = d.slice(4), onto = el.dataset.coldrag;
+      if (from === onto) return;
+      const arr = [...visibleColKeys(live)].filter(k => k !== from);
+      const at = arr.indexOf(onto);
+      arr.splice(at < 0 ? arr.length : at, 0, from);
+      write(arr);
+    };
+  });
+}
 function bindColToggle(rerender) {
   document.querySelectorAll('[data-coltoggle]').forEach(cb => cb.onchange = () => {
     const live = seasonHasStats();
-    const set = new Set(visibleColKeys(live));
-    cb.checked ? set.add(cb.dataset.coltoggle) : set.delete(cb.dataset.coltoggle);
-    _colPrefs = ALL_STAT_COLS(live).map(c => c.k).filter(k => set.has(k)); // keep column order
+    const cur = [...visibleColKeys(live)];
+    const k = cb.dataset.coltoggle;
+    // ticking a column appends it; it no longer snaps the whole set back to the
+    // master order, which used to throw away any arrangement you'd made
+    _colPrefs = cb.checked ? (cur.includes(k) ? cur : [...cur, k]) : cur.filter(x => x !== k);
     localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
     rerender();
   });
@@ -4672,6 +4729,7 @@ function scoutViewHtml(surface) {
         ${saved.length ? `<button class="btn ghost small" data-scout-delete ${active.startsWith('saved:') ? '' : 'disabled'}>Delete</button>` : ''}
       </div>
       <div class="scout-columns"><span class="scout-title">Columns</span><div class="scout-column-grid">${colOptionsHtml(seasonHasStats())}</div></div>
+      ${colOrderHtml(seasonHasStats())}
     </div>
   </details>`;
 }
@@ -5157,6 +5215,7 @@ function bindPoolTable() {
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   bindColToggle(refreshPool);
+  bindColOrder(refreshPool);
   bindQueueDnD();
   const sm = $('#showMore');
   if (sm) sm.onclick = () => { poolFilter.limit += 100; refreshPool(); };
@@ -6169,6 +6228,7 @@ function bindTransfers() {
       results.querySelectorAll('[data-trsort]').forEach(th => th.onclick = () => { transfersView.sort = th.dataset.trsort; renderTrResults(); });
       bindScoutDesk('transfers', renderTrResults);
       bindColToggle(renderTrResults);
+      bindColOrder(renderTrResults);
       const more = results.querySelector('#trMore');
       if (more) more.onclick = () => { transfersView.limit += 50; renderTrResults(); };
       const showAll = results.querySelector('#trAll');
@@ -8709,6 +8769,7 @@ function bindExplorer() {
   if (more) more.onclick = () => { dataView = { ...dataView, limit: dataView.limit + 40 }; redraw(false); };
   bindScoutDesk('data', () => redraw(false));
   bindColToggle(() => redraw(false));
+  bindColOrder(() => redraw(false));
 }
 function bindFixtureMatrix() {
   const w = document.getElementById('fdrWeeks');
