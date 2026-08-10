@@ -5854,7 +5854,7 @@ function viewTransfers() {
     } else if (arrivals.length) {
       wdCard = `<div class="card" style="margin-bottom:14px">
         <h2>The Window <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
-        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough.</p>
+        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough. No more WhatsApp draft, no more Ben Levy day.</p>
         <p style="font-size:12px;margin-top:6px"><b>In the holding pen:</b> ${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `${pname(p)} <span class="muted">(${esc(p.club)})</span>`).join(' · ')}${arrivals.length > 15 ? ` <span class="muted">+${arrivals.length - 15} more</span>` : ''}</p>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wdStart">Start the Window Draft</button>

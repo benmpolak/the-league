@@ -256,6 +256,7 @@ window.Gazette = (() => {
     ],
     'collapse-lead': [
       ['cl1', f => `Crisis club watch: ${f.tl} have now lost ${f.stL.l} on the spin after going down ${f.ws}–${f.ls} to ${f.tw}. ${f.gaffL ? `The board has given ${f.gaffL} its dreaded full backing.` : 'The board is understood to be monitoring the situation.'}`],
+      ['cl2', f => `${f.stL.l} defeats in a row for ${f.tl}, the latest a ${f.ws}–${f.ls} loss to ${f.tw}. A CLUB STATEMENT is understood to be in preparation: the board, the gaffer and the group chat have been informed, in that order.`],
     ],
     'draw-lead': [
       ['nl1', f => `${f.ta} ${f.sa}, ${f.tb} ${f.sb}. A game of two halves, both of them cagey. Nobody enjoyed it, least of all the neutrals, of which this league contains none.`],
@@ -283,6 +284,14 @@ window.Gazette = (() => {
       ['cr6', () => 'There are no easy games at this level. There are, however, several easy managers.'],
       ['cr7', () => 'The table never lies, although it has retained excellent lawyers.'],
       ['cr8', () => 'Form is temporary. Screenshots in the group chat are permanent.'],
+      /* the archive lines (Ben, 10 Aug: "100% sprinkle in all of the bits") —
+         AOE, -gate, filth, dip, sons: eleven years of group-chat canon */
+      ['cr9', () => 'The Committee continues to monitor the Axis of Evil, which continues to deny existing.'],
+      ['cr10', () => 'The Committee thanks all clubs for their concern for the integrity of the league, expressed exclusively after defeats.'],
+      ['cr11', () => 'The Gazette has a name ready for the next scandal. It ends in -gate. It always ends in -gate.'],
+      ['cr12', () => 'The Committee confirms dip will be provided on draft night. The events of 2017 must never be repeated.'],
+      ['cr13', () => 'Filth remains available in the Trough for any club bold enough to go wheeling and/or dealing.'],
+      ['cr14', () => 'That is the paper. Goodnight, sons.'],
     ],
   };
 
