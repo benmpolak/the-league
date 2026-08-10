@@ -518,7 +518,10 @@ window.Gazette = (() => {
       if (aw.lo) cards.push({ k: 'WOODEN SPOON', v: teamName(aw.lo.id), d: `${aw.lo.s} points. One for the mantelpiece, preferably face-down.` });
       if (aw.jammy) cards.push({ k: 'GOT AWAY WITH IT', v: teamName(aw.jammy.w), d: `Won with ${aw.jammy.ws}. Do not ask how; do ask how often.` });
       if (aw.robbed) cards.push({ k: 'ROBBED', v: teamName(aw.robbed.l), d: `${aw.robbed.ls} points and nothing. Contact the authorities.` });
-      if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 4).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
+      // Marc's charge-sheet award closes the page (Ben, 10 Aug: "in the
+      // gazette too") — the citation is the story, so it gets the d-slot
+      if (aw.cotw) cards.push({ k: 'C*** OF THE WEEK', v: teamName(aw.cotw.id), d: `${aw.cotw.why[0].toUpperCase()}${aw.cotw.why.slice(1)}.${aw.cotw.proven ? '' : ' (A quiet week; the Committee drew lots.)'} No appeal.` });
+      if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 5).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
     }
 
     // Every manager's consequential team-sheet calls, not merely the winner's
