@@ -331,10 +331,13 @@ const chk = (name, ok, detail = '') => {
   chk('P8c FDR tints fire on the 26/27 1–5 strength scale',
     p8c.hard === 'fdr-hard' && p8c.easy === 'fdr-easy' && p8c.mid === '', JSON.stringify(p8c));
 
-  // ---- P8d: the projected playoff bracket lives in the Data Room
+  // ---- P8d: the projected playoff bracket lives under the League Table
+  // (Marc, 9 Aug: it is seeded straight off the table, so it belongs beside it
+  // — and the Data Room is being freed up for research rather than narrative.
+  // It sits BELOW the table: Lee asked twice that the table come first.)
   const p8d = await page.evaluate(() => {
     state = buildDemoState();
-    state.view = 'data';
+    state.view = 'table';
     whoami = state.managers[0].id;
     render();
     const card = [...document.querySelectorAll('.card h2')].find(h => h.textContent.includes('Playoff Bracket'));

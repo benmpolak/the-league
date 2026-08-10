@@ -7171,7 +7171,6 @@ function viewData() {
   const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
   return `
   ${sect('League data')}
-  ${bracketCard()}
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${sect('Team data')}
@@ -8424,7 +8423,8 @@ function viewTable() {
       </table>
       </div>
       <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
-    </div>`;
+    </div>
+    ${bracketCard()}`;
 }
 // team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
 // every player who has banked a point in this manager's XI this season, the
