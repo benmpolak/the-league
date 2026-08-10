@@ -7181,9 +7181,11 @@ function viewData() {
   return `
   ${sect('Research')}
   ${playerExplorerCard()}
+  ${fixtureMatrixCard()}
   ${sect('League data')}
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
+  ${awardsHonoursCard()}
   ${sect('Team data')}
   ${troughActivityCard()}
   ${seasonSquadCard()}
@@ -7199,6 +7201,7 @@ function bindData() {
   bindAwardsBits();
   bindPitchLinks();
   bindExplorer();
+  bindFixtureMatrix();
   document.querySelectorAll('[data-sqrow]').forEach(row => row.onclick = () => {
     const bd = $(`#sq-${row.dataset.sqrow}`);
     bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
@@ -7633,6 +7636,55 @@ function seasonAwards() {
     }
   }
   return finals >= 2 ? { hi, lo, jammy, robbed, hiding, bench } : null;
+}
+/* The honours board (Marc, 9 Aug). The awards card shows this gameweek and a
+   single season-best instance; neither tells you who has actually collected the
+   most of anything. This tallies every settled gameweek and hands out gold,
+   silver and bronze per category. Ties share a medal — two managers on four
+   Wooden Spoons are both gold, and nobody gets silver. */
+const AWARD_HONOURS = [
+  { icon: '&#127942;', name: 'Manager of the Week', pick: a => a.hi?.id },
+  { icon: '&#129348;', name: 'The Wooden Spoon', pick: a => a.lo?.id },
+  { icon: '&#127808;', name: 'Jammiest Win', pick: a => a.jammy?.w },
+  { icon: '&#128148;', name: 'Robbed', pick: a => a.robbed?.l },
+  { icon: '&#128296;', name: 'Biggest Hiding', pick: a => a.hiding?.w },
+  { icon: '&#129681;', name: 'Bench of the Week', pick: a => (a.bench?.waste > 0 ? a.bench.id : null) },
+  { icon: '&#128683;', name: 'C*** of the Week', pick: a => a.cotw?.id },
+];
+function awardsHonoursCard() {
+  const gws = [];
+  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') gws.push(i);
+  const head = `<h2>The honours board <span class="muted" style="font-weight:400;font-size:12px">who has actually collected what</span></h2>`;
+  if (!gws.length) {
+    return `<div class="card" style="margin-top:14px">${head}
+      <p class="muted" style="font-size:12.5px">Nothing settled yet. The cabinet is empty and the polish is unopened.</p></div>`;
+  }
+  const weekly = gws.map(i => weeklyAwards(i));
+  const medals = ['&#129351;', '&#129352;', '&#129353;'];
+  // early season everyone is level on one, and twelve names in a cell is not a
+  // medal — show three and count the rest
+  const cell = tier => {
+    if (!tier) return '<span class="muted">&mdash;</span>';
+    const shown = tier.slice(0, 3).map(r => `<b>${esc(teamName(r.id))}</b> <span class="muted">${r.n}</span>`).join('<br>');
+    return tier.length > 3 ? `${shown}<br><span class="muted">+${tier.length - 3} more level</span>` : shown;
+  };
+  return `<div class="card" style="margin-top:14px">${head}
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Award</th>${medals.map(m => `<th class="num">${m}</th>`).join('')}</tr></thead>
+      <tbody>${AWARD_HONOURS.map(def => {
+        const tally = {};
+        for (const a of weekly) { const id = def.pick(a); if (id != null) tally[id] = (tally[id] || 0) + 1; }
+        const ranked = Object.entries(tally).map(([id, n]) => ({ id: +id, n })).sort((a, b) => b.n - a.n);
+        const levels = [...new Set(ranked.map(r => r.n))].slice(0, 3);
+        const tiers = levels.map(c => ranked.filter(r => r.n === c));
+        return `<tr>
+          <td style="white-space:nowrap"><span aria-hidden="true">${def.icon}</span> ${esc(def.name)}</td>
+          ${[0, 1, 2].map(i => `<td class="num" style="white-space:nowrap;font-size:12px">${cell(tiers[i])}</td>`).join('')}
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Across ${gws.length} settled gameweek${gws.length === 1 ? '' : 's'}. The number is how many times it has been won. Level pegging shares the medal.</p>
+  </div>`;
 }
 function awardsCard() {
   const last = lastFinalGw();
@@ -8333,7 +8385,49 @@ function bindCup() {
    dedupe audit — the Matches page leads with exactly that, one tab away */
 /* form table: the same table, judged over a shorter memory. Informational
    only — official standings, seeding and waivers never read this. */
-let tableView = { mode: 'overall' }; // 'overall' | 3 | 5 — survives the session, never persisted
+// mode 'overall' | 'form'; n = how many finished gameweeks the form window covers
+// (Marc, 9 Aug: the two fixed Last 3 / Last 5 buttons become any number you like)
+let tableView = { mode: 'overall', n: 5 }; // survives the session, never persisted
+/* Head-to-head grid for the season in progress (Marc, 9 Aug). The Record Book
+   has carried one for 2025/26 since the archive was recovered; the live season
+   never had one. Row's record against column, W-D-L. */
+function h2hMatrixCard() {
+  const ms = state.managers;
+  const at = Object.fromEntries(ms.map((m, i) => [m.id, i]));
+  const grid = ms.map(() => ms.map(() => ({ w: 0, d: 0, l: 0 })));
+  let met = 0;
+  for (let g = 0; g < REGULAR_GWS; g++) {
+    if (gwStatus(g) !== 'final') continue;
+    for (const [a, b] of pairingsFor(g)) {
+      const ia = at[a], ib = at[b];
+      if (ia == null || ib == null) continue;
+      const pa = gwManagerPoints(a, g), pb = gwManagerPoints(b, g);
+      met++;
+      if (pa > pb) { grid[ia][ib].w++; grid[ib][ia].l++; }
+      else if (pa < pb) { grid[ia][ib].l++; grid[ib][ia].w++; }
+      else { grid[ia][ib].d++; grid[ib][ia].d++; }
+    }
+  }
+  const init = t => esc(String(t).split(/\s+/).map(w => (w.codePointAt(0) < 128 ? w[0] : '')).join('').slice(0, 3).toUpperCase() || String(t).slice(0, 3).toUpperCase());
+  if (!met) {
+    return `<div class="card" style="margin-top:14px">
+      <h2>Head-to-head <span class="muted" style="font-weight:400;font-size:12px">row's record vs column</span></h2>
+      <p class="muted" style="font-size:12.5px">No gameweek has been settled yet. Grudges are still theoretical.</p></div>`;
+  }
+  return `<div class="card" style="margin-top:14px">
+    <h2>Head-to-head <span class="muted" style="font-weight:400;font-size:12px">row's record vs column (W-D-L), this season</span></h2>
+    <div style="overflow-x:auto">
+    <table class="pool-table" style="font-size:11px">
+      <thead><tr><th></th>${ms.map(c => `<th class="num" title="${esc(teamName(c.id))}">${init(teamName(c.id))}</th>`).join('')}</tr></thead>
+      <tbody>${ms.map((r, i) => `<tr>
+        <td style="white-space:nowrap"><b title="${esc(managerName(r.id))}">${esc(teamName(r.id))}</b></td>
+        ${ms.map((c, j) => i === j ? '<td class="num muted">&mdash;</td>'
+          : `<td class="num" style="white-space:nowrap;${grid[i][j].w > grid[i][j].l ? 'color:#3fb96d' : grid[i][j].w < grid[i][j].l ? 'color:#e05555' : ''}">${grid[i][j].w}-${grid[i][j].d}-${grid[i][j].l}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">${met} meeting${met === 1 ? '' : 's'} settled so far. Each pair meets three times across the regular season.</p>
+  </div>`;
+}
 function finishedGwIdxs() {
   const out = [];
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') out.push(i);
@@ -8367,13 +8461,21 @@ function viewTable() {
   const cur = currentGwIndex();
   const liveNow = anyMatchLive();
   const mode = tableView.mode;
-  const form = mode === 'overall' ? null : formStandings(mode);
+  // Marc, 9 Aug: Last 3 / Last 5 become any window you like, capped at the
+  // number of gameweeks that have actually finished — offering "last 12" in
+  // September would just be a longer way of saying Overall
+  const maxN = Math.max(1, finishedGwIdxs().length);
+  const formN = Math.min(Math.max(1, tableView.n || 5), maxN);
+  const form = mode === 'overall' ? null : formStandings(formN);
   const standings = form ? null : h2hStandings(true);
   const rowsData = form ? form.rows : standings;
   const toggles = `<div class="pool-controls" style="margin:0 0 10px">
       <button class="btn small ${mode === 'overall' ? '' : 'ghost'}" data-tblmode="overall">Overall</button>
-      <button class="btn small ${mode === 3 ? '' : 'ghost'}" data-tblmode="3">Last 3</button>
-      <button class="btn small ${mode === 5 ? '' : 'ghost'}" data-tblmode="5">Last 5</button>
+      <button class="btn small ${mode === 'overall' ? 'ghost' : ''}" data-tblmode="form">Form</button>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">over the last
+        <select id="tblFormN" aria-label="How many gameweeks the form table covers">
+          ${Array.from({ length: maxN }, (_, i) => i + 1).map(n => `<option value="${n}" ${formN === n ? 'selected' : ''}>${n}</option>`).join('')}
+        </select> gameweek${formN === 1 ? '' : 's'}</label>
     </div>`;
   const formNote = form ? (form.counted === 0
     ? '<p class="muted" style="font-size:11.5px;margin-bottom:8px">Form begins after GW1 — nothing has finished yet, so this is the constitutional order.</p>'
@@ -8387,7 +8489,7 @@ function viewTable() {
       : d < 0 ? `<span class="form-move down" title="vs overall position">&#9660;${-d}</span>`
       : '<span class="form-move flat" title="vs overall position">&ndash;</span>';
   };
-  const nCols = form ? 4 : 11;
+  const nCols = form ? 4 : 10; // QF column retired — the bracket below carries it now
   return `
     <div class="card" style="margin-bottom:14px">
       <h2>The table ${liveNow && !form ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points'}</span></h2>
@@ -8397,19 +8499,12 @@ function viewTable() {
       <table class="pool-table">
         <thead>${form
           ? '<tr><th></th><th>Team</th><th class="num" title="Finished gameweeks counted">GWs</th><th class="num act">Pts</th></tr>'
-          : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th><th class="num" title="The quarter-final handicap this position earns (top 4) or concedes (5th–8th)">QF</th></tr>'}</thead>
+          : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th></tr>'}</thead>
         <tbody>
         ${rowsData.map((m, i) => {
           // table gag tags all retired (Marc/Ben, 2 Aug: "committee fraud
           // nonsense" — under-review, investigation and Chumpionship alike)
           const commTag = '';
-          const qfCell = form ? '' : (() => {
-            if (i >= 8) return '<td class="num"></td>';
-            const k = Math.min(i, 7 - i);
-            const h = qfHandicap(standings[k].pts, standings[7 - k].pts);
-            if (!h) return '<td class="num"><span class="muted">0</span></td>';
-            return `<td class="num">${i < 4 ? `<span class="gold">+${h}</span>` : `<span style="color:#e05555">&minus;${h}</span>`}</td>`;
-          })();
           return `
           <tr data-mgr-row="${m.id}" style="cursor:pointer" class="${!form && i === 7 ? 'playoff-line' : ''}">
             <td class="muted">${i + 1}</td>
@@ -8419,8 +8514,7 @@ function viewTable() {
               : `<td class="num">${m.p}</td><td class="num">${m.w}</td><td class="num">${m.d}</td><td class="num">${m.l}</td>
                  <td class="num muted">${m.pf}</td><td class="num muted">${m.pa}</td>
                  <td class="num gold act"><b>${m.pts}</b></td>
-                 <td class="num muted">${managerPoints(m.id)}</td>
-                 ${qfCell}`}
+                 <td class="num muted">${managerPoints(m.id)}</td>`}
           </tr>
           <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="${nCols}">
             ${(() => { const md = supportersMood(m.id); return `<p style="font-size:12.5px;margin-bottom:2px">&#128227; <b>${esc(md.t)}</b> <span class="muted" style="font-size:11.5px">${esc(md.line)}</span></p>`; })()}
@@ -8436,6 +8530,7 @@ function viewTable() {
       </div>
       <p class="muted" style="font-size:11px;margin-top:6px">Tap a row for where the points came from &middot; &#9917; for the pitch.</p>
     </div>
+    ${h2hMatrixCard()}
     ${bracketCard()}`;
 }
 // team data: who can't leave the Trough alone (moved to the Data Room, 1 Aug)
@@ -8467,6 +8562,64 @@ function seasonContributors(mid) {
     }))
     .filter(x => x.p)
     .sort((a, b) => b.pts - a.pts);
+}
+/* Fixture difficulty matrix (Marc, 9 Aug): the Vs column shows one fixture and
+   P3/P6 bake difficulty into a single number. This lays the run out club by
+   club so you can see WHERE the good weeks are, over any window up to ten.
+   Blanks show as a dash, doubles stack in the same cell. */
+let fdrView = { weeks: 6, sort: 'easiest' }; // 'easiest' | 'hardest' | 'club'
+function fdrOf(team) {
+  const s = TEAM_BY_NAME[team]?.str || 0;
+  if (!s) return 3;
+  // the feed has shipped both a 1–5 scale and an FPL-style ~1000–1400 one
+  return s > 100 ? (s >= 1240 ? 5 : s >= 1180 ? 4 : s >= 1100 ? 3 : s >= 1060 ? 2 : 1) : s;
+}
+const FDR_BG = { 1: 'rgba(63,185,109,.28)', 2: 'rgba(63,185,109,.14)', 3: 'transparent', 4: 'rgba(224,85,85,.16)', 5: 'rgba(224,85,85,.3)' };
+function fixtureMatrixCard() {
+  const fx = state.fixtures || [];
+  if (!fx.length) {
+    return `<div class="card" style="margin-top:14px"><h2>Fixture difficulty</h2>
+      <p class="muted" style="font-size:12.5px">No fixtures loaded yet. Refresh to pull the season's schedule.</p></div>`;
+  }
+  const weeks = Math.min(Math.max(1, fdrView.weeks || 6), 10);
+  const start = currentGwIndex();
+  const gwNs = [];
+  for (let i = start; i < GAMEWEEKS.length && gwNs.length < weeks; i++) gwNs.push(GAMEWEEKS[i].n);
+  const rows = Object.keys(TEAM_BY_NAME).map(team => {
+    const cells = gwNs.map(n => fx.filter(f => f.gw === n && (f.home === team || f.away === team))
+      .map(f => { const opp = f.home === team ? f.away : f.home; return { opp, home: f.home === team, fdr: fdrOf(opp) }; }));
+    const flat = cells.flat();
+    return { team, cells, total: flat.reduce((t, c) => t + c.fdr, 0), games: flat.length };
+  });
+  rows.sort(fdrView.sort === 'club' ? (a, b) => a.team.localeCompare(b.team)
+    : fdrView.sort === 'hardest' ? (a, b) => b.total - a.total || a.team.localeCompare(b.team)
+    : (a, b) => a.total - b.total || a.team.localeCompare(b.team));
+  const short = t => TEAM_BY_NAME[t]?.short || t.slice(0, 3).toUpperCase();
+  return `<div class="card" style="margin-top:14px">
+    <h2>Fixture difficulty <span class="muted" style="font-weight:400;font-size:12px">the run ahead, club by club</span></h2>
+    <div class="pool-controls">
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">next
+        <select id="fdrWeeks" aria-label="How many gameweeks ahead">
+          ${Array.from({ length: 10 }, (_, i) => i + 1).map(n => `<option value="${n}" ${weeks === n ? 'selected' : ''}>${n}</option>`).join('')}
+        </select> gameweek${weeks === 1 ? '' : 's'}</label>
+      <select id="fdrSort" aria-label="Sort order">
+        <option value="easiest" ${fdrView.sort === 'easiest' ? 'selected' : ''}>Easiest run first</option>
+        <option value="hardest" ${fdrView.sort === 'hardest' ? 'selected' : ''}>Hardest run first</option>
+        <option value="club" ${fdrView.sort === 'club' ? 'selected' : ''}>Club A&ndash;Z</option>
+      </select>
+    </div>
+    <div style="overflow-x:auto"><table class="pool-table" style="font-size:11.5px">
+      <thead><tr><th>Club</th>${gwNs.map(n => `<th class="num">GW${n}</th>`).join('')}<th class="num" title="Total opponent difficulty over the window — lower is kinder">FDR</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td style="white-space:nowrap"><b>${esc(short(r.team))}</b> <span class="muted">${esc(r.team)}</span></td>
+        ${r.cells.map(c => c.length
+          ? `<td class="num" style="white-space:nowrap;background:${FDR_BG[Math.round(c.reduce((t, x) => t + x.fdr, 0) / c.length)] || 'transparent'}">${c.map(x => `${esc(short(x.opp))} <span class="muted">(${x.home ? 'H' : 'A'})</span>`).join('<br>')}</td>`
+          : '<td class="num muted" title="Blank gameweek">&mdash;</td>').join('')}
+        <td class="num gold act"><b>${r.total}</b>${r.games !== gwNs.length ? ` <span class="muted" style="font-weight:400">${r.games}g</span>` : ''}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Green is kind, red is not. FDR totals opponent strength across the window, so a double gameweek scores higher than a blank &mdash; the games count is shown where it isn't ${gwNs.length}.</p>
+  </div>`;
 }
 /* The player explorer (Marc, 9 Aug): the Data Room's research surface. The
    scout desk — saved views, presets, the column picker — already existed but
@@ -8556,6 +8709,12 @@ function bindExplorer() {
   if (more) more.onclick = () => { dataView = { ...dataView, limit: dataView.limit + 40 }; redraw(false); };
   bindScoutDesk('data', () => redraw(false));
   bindColToggle(() => redraw(false));
+}
+function bindFixtureMatrix() {
+  const w = document.getElementById('fdrWeeks');
+  if (w) w.onchange = e => { fdrView = { ...fdrView, weeks: +e.target.value }; render(); };
+  const s = document.getElementById('fdrSort');
+  if (s) s.onchange = e => { fdrView = { ...fdrView, sort: e.target.value }; render(); };
 }
 // the Lobus bonus rides on the manager's total but belongs to no single player,
 // so it gets its own line — otherwise the rows quietly fail to sum (ledger #1)
@@ -8679,9 +8838,11 @@ function bindPitchLinks() {
 function bindTable() {
   bindPitchLinks();
   document.querySelectorAll('[data-tblmode]').forEach(b => b.onclick = () => {
-    tableView.mode = b.dataset.tblmode === 'overall' ? 'overall' : +b.dataset.tblmode;
+    tableView = { ...tableView, mode: b.dataset.tblmode === 'overall' ? 'overall' : 'form' };
     render();
   });
+  const fn = $('#tblFormN');
+  if (fn) fn.onchange = e => { tableView = { ...tableView, n: +e.target.value, mode: 'form' }; render(); };
   document.querySelectorAll('[data-mgr-row]').forEach(row => row.onclick = () => {
     const bd = $(`#bd-${row.dataset.mgrRow}`);
     bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row

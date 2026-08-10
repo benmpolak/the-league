@@ -388,11 +388,12 @@ const chk = (name, ok, detail = '') => {
     gwManagerPoints = (id, i) => i === 33 ? raw[id] : 0;
     const pre = playoffState();
     const card = playoffCard();
-    // the standings (and QF column) live on the League Table page now
+    // Marc, 9 Aug: the QF column is retired from the League Table — the bracket
+    // moved onto that page and carries the handicaps, so the column was saying
+    // it twice. The handicap maths is still asserted via playoffState and the
+    // card badges below; only the duplicated column rendering goes.
     tableView.mode = 'overall';
     state.view = 'table'; render();
-    const col = [...document.querySelectorAll('.pool-table tbody tr[data-mgr-row]')].slice(0, 8)
-      .map(r => r.lastElementChild.textContent.trim().replace('−', '-'));
     qfFinal = true;
     const settled = playoffState();
     state.view = 'rules'; render();
@@ -404,7 +405,6 @@ const chk = (name, ok, detail = '') => {
     return {
       handicaps: pre.handicaps,
       cardBadges: ['+40', '+22', '+11'].every(x => card.includes(x)) && !card.includes('starts +0'),
-      col,
       winners: settled.qfWinners,
       expectedWinners: [ids[0], ids[1], ids[2], ids[4]],
       rules: /full table-Points gap/.test(rules) && !/capped/.test(rules),
@@ -412,8 +412,6 @@ const chk = (name, ok, detail = '') => {
   });
   chk('QF handicap is [40,22,11,0] (full Points gap) in playoffState and the playoff card',
     JSON.stringify(qf.handicaps) === JSON.stringify([40, 22, 11, 0]) && qf.cardBadges, JSON.stringify(qf));
-  chk('QF H2H column pairs 1v8, 2v7, 3v6, 4v5 with mirrored signs',
-    JSON.stringify(qf.col) === JSON.stringify(['+40', '+22', '+11', '0', '0', '-11', '-22', '-40']), JSON.stringify(qf.col));
   chk('QF winner maths applies the same handicap and Rules states the same formula',
     JSON.stringify(qf.winners) === JSON.stringify(qf.expectedWinners) && qf.rules, JSON.stringify(qf));
 

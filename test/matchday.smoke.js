@@ -368,7 +368,9 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
     tableView.mode = 'overall';
     state.view = 'table'; render();
     const sub = document.querySelector('h2 .muted').textContent;
-    document.querySelector('[data-tblmode="3"]').click();
+    // Marc, 9 Aug: the two fixed Last 3 / Last 5 buttons are now one Form
+    // button plus a window selector, so the window is set on tableView.n
+    document.querySelector('[data-tblmode="form"]').click();
     const note = document.querySelector('.card p.muted')?.textContent || '';
     const mids = [...document.querySelectorAll('[data-mgr-row]')].map(r => +r.dataset.mgrRow);
     document.querySelector('[data-tblmode="overall"]').click();
@@ -402,8 +404,8 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   })()`);
   chk('F precondition: 4 finished GWs and a live 5th', JSON.stringify(f1.finals) === '[0,1,2,3]' && f1.status4 === 'live', JSON.stringify(f1));
   const f2 = await p.evaluate(`(() => {
-    document.querySelector('[data-tblmode="3"]')?.click?.();
-    tableView.mode = 3; render();
+    document.querySelector('[data-tblmode="form"]')?.click?.();
+    tableView = { mode: 'form', n: 3 }; render();
     const idxs3 = finishedGwIdxs().slice(-3);
     const rows = [...document.querySelectorAll('[data-mgr-row]')];
     const top = +rows[0].dataset.mgrRow;
@@ -412,7 +414,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
     const gwsCol = rows[0].querySelectorAll('td')[2].textContent.trim();
     // live GW4 (idx 4) must be excluded: manually add its points and prove the shown number ignores them
     const withLive = manual + gwManagerPoints(top, 4);
-    tableView.mode = 5; render();
+    tableView = { mode: 'form', n: 5 }; render();
     const rows5 = [...document.querySelectorAll('[data-mgr-row]')];
     const top5 = +rows5[0].dataset.mgrRow;
     const shown5 = +rows5[0].querySelector('.act b').textContent;
@@ -449,9 +451,9 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   /* F7: switching views mutates nothing official */
   const f7 = await p.evaluate(`(() => {
     const before = JSON.stringify({ t: state.transfers, l: state.lineups, h: h2hStandings(false).map(r => r.id), pts: state.managers.map(m => managerPoints(m.id)) });
-    tableView.mode = 3; render();
-    tableView.mode = 5; render();
-    tableView.mode = 'overall'; render();
+    tableView = { mode: 'form', n: 3 }; render();
+    tableView = { mode: 'form', n: 5 }; render();
+    tableView = { mode: 'overall', n: 5 }; render();
     const after = JSON.stringify({ t: state.transfers, l: state.lineups, h: h2hStandings(false).map(r => r.id), pts: state.managers.map(m => managerPoints(m.id)) });
     return before === after;
   })()`);
@@ -459,7 +461,7 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
 
   /* F8/F9: expansion + pitch button still behave in a form view */
   const f8 = await p.evaluate(`(() => {
-    tableView.mode = 3; render();
+    tableView = { mode: 'form', n: 3 }; render();
     const row = document.querySelector('[data-mgr-row]');
     const mid = +row.dataset.mgrRow;
     let rowFired = 0;
@@ -487,10 +489,10 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
     const m = state.managers[3];
     const old = m.team;
     m.team = '<img src=x onerror=window.__ftx=1>';
-    tableView.mode = 3; state.view = 'table'; render();
+    tableView = { mode: 'form', n: 3 }; state.view = 'table'; render();
     const row = document.querySelector('[data-mgr-row="' + m.id + '"]');
     const out = { literal: row.textContent.includes('<img src=x'), injected: !!row.querySelector('img'), xss: !!window.__ftx };
-    m.team = old; tableView.mode = 'overall'; render();
+    m.team = old; tableView = { mode: 'overall', n: 5 }; render();
     return out;
   })()`);
   chk('F10: hostile club name renders literally in the form table', f10.literal && !f10.injected && !f10.xss, JSON.stringify(f10));
@@ -499,12 +501,16 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
   const f320 = await newPage(ctx, baseUrl + '?demo', { width: 320, height: 650 });
   const f11 = await f320.evaluate(() => {
     state.view = 'table'; render();
-    document.querySelector('[data-tblmode="3"]').click();
+    document.querySelector('[data-tblmode="form"]').click();
     const btns = [...document.querySelectorAll('[data-tblmode]')];
-    return { btns: btns.length, allVisible: btns.every(b => b.offsetParent !== null), scrollW: document.documentElement.scrollWidth, mode3: !!document.querySelector('[data-tblmode="3"]:not(.ghost)') };
+    const sel = document.getElementById('tblFormN');
+    return { btns: btns.length, allVisible: btns.every(b => b.offsetParent !== null), scrollW: document.documentElement.scrollWidth,
+      formActive: !!document.querySelector('[data-tblmode="form"]:not(.ghost)'), windowSelector: !!sel && sel.offsetParent !== null };
   });
-  chk('F11: 320px — three toggles visible, form view active, no horizontal overflow',
-    f11.btns === 3 && f11.allVisible && f11.mode3 && f11.scrollW <= 320, JSON.stringify(f11));
+  // two toggles now (Overall / Form) plus the window selector that replaced the
+  // fixed Last 3 and Last 5 buttons — all three must still fit 320px
+  chk('F11: 320px — both toggles and the window selector visible, form view active, no horizontal overflow',
+    f11.btns === 2 && f11.allVisible && f11.formActive && f11.windowSelector && f11.scrollW <= 320, JSON.stringify(f11));
   await f320.close();
 
   /* ═══════════════ NEXT SIX ═══════════════ */
