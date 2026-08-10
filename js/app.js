@@ -4718,7 +4718,8 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // no squad shape, no action column. Defaults to everyone, owners included.
 // minMin is the minutes floor. Per-90 rates are nonsense on tiny samples — one
 // chance in twenty minutes reads as 3.60 xG90 and tops the sort (Marc, 10 Aug)
-let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40, minMin: 0 };
+let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40, minMin: 0,
+  compare: [], comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null };
 const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
@@ -4732,7 +4733,7 @@ function cleanScoutView(v) {
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
   // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
   // still collapses to 'free', as it always did
-  const scope = v.scope === 'all' || v.scope === 'owned' ? v.scope : 'free';
+  const scope = ['all', 'owned', 'waivers'].includes(v.scope) ? v.scope : 'free';
   // minutes floor for the Data Room explorer; 0 on the surfaces that have none
   const mm = +v.minMin;
   const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
@@ -7325,6 +7326,7 @@ function viewData() {
   const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
   return `
   ${sect('Research')}
+  ${compareCard()}
   ${playerExplorerCard()}
   ${fixtureMatrixCard()}
   ${sect('League data')}
@@ -8768,6 +8770,81 @@ function fixtureMatrixCard() {
     <p class="muted" style="font-size:10.5px;margin-top:6px">Green is kind, red is not. FDR totals opponent strength across the window, so a double gameweek scores higher than a blank &mdash; the games count is shown where it isn't ${gwNs.length}.</p>
   </div>`;
 }
+/* Head-to-head player comparison (Marc, 10 Aug). Tick two players, hit Compare,
+   get a card that ranks them metric by metric.
+
+   Windows: everything backward-looking honours "last N settled gameweeks",
+   everything forward-looking honours "next N". The ONE exception is xG and xA,
+   which FPL only publishes as season-to-date totals in the feed we pull —
+   per-fixture xG lives behind a per-player endpoint the page CSP forbids us
+   from calling. Those rows say SEASON rather than quietly pretending to
+   respect a window they cannot. */
+const COMPARE_METRICS = [
+  { k: 'min', name: 'Minutes played', win: 'back', get: w => w.min },
+  { k: 'xg', name: 'xG', win: 'season', get: (w, p) => p.xg || 0, dp: 2 },
+  { k: 'xa', name: 'xA', win: 'season', get: (w, p) => p.xa || 0, dp: 2 },
+  { k: 'form', name: 'Form (pts per GW)', win: 'back', get: w => w.form, dp: 1 },
+  { k: 'g', name: 'Goals', win: 'back', get: w => w.g },
+  { k: 'a', name: 'Assists', win: 'back', get: w => w.a },
+  { k: 'cs', name: 'Clean sheets', win: 'back', get: w => w.cs },
+  { k: 'proj', name: 'Projected points', win: 'fwd', get: (w, p, fwd) => projPts(p, fwd), dp: 1 },
+];
+function compareWindowStats(pid, back) {
+  const p = PLAYER_BY_ID[pid];
+  const finals = [];
+  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') finals.push(i);
+  const w = finals.slice(-back);
+  let min = 0, g = 0, a = 0, cs = 0, pts = 0;
+  for (const i of w) {
+    const s = gwEvent(i)?.playerStats?.[pid];
+    if (!s) continue;
+    min += s.min || 0; g += s.g || 0; a += s.a || 0; cs += s.cs || 0;
+    pts += statPoints(p, s);
+  }
+  return { gws: w.length, min, g, a, cs, pts, form: w.length ? pts / w.length : 0 };
+}
+function compareCard() {
+  const ids = (dataView.compare || []).filter(id => PLAYER_BY_ID[id]).slice(0, 2);
+  if (ids.length !== 2 || !dataView.comparing) return '';
+  const back = dataView.backWeeks || 6, fwd = dataView.fwdWeeks || 6;
+  const ps = ids.map(id => PLAYER_BY_ID[id]);
+  const ws = ids.map(id => compareWindowStats(id, back));
+  const on = new Set(dataView.compareCols || COMPARE_METRICS.map(m => m.k));
+  const live = COMPARE_METRICS.filter(m => on.has(m.k));
+  const valsOf = m => [0, 1].map(i => +m.get(ws[i], ps[i], fwd) || 0);
+  const rows = live.map(m => {
+    const vals = valsOf(m);
+    const win = vals[0] === vals[1] ? -1 : (vals[0] > vals[1] ? 0 : 1);
+    const fmt = v => m.dp ? v.toFixed(m.dp) : Math.round(v);
+    const tag = m.win === 'season' ? '<span class="muted" style="font-size:10px"> season</span>'
+      : m.win === 'fwd' ? `<span class="muted" style="font-size:10px"> next ${fwd}</span>`
+      : `<span class="muted" style="font-size:10px"> last ${ws[0].gws || back}</span>`;
+    return `<tr><td>${esc(m.name)}${tag}</td>
+      ${[0, 1].map(i => `<td class="num"${win === i ? ' style="color:#3fb96d;font-weight:700"' : ''}>${fmt(vals[i])}${win === i ? ' &#9650;' : ''}</td>`).join('')}</tr>`;
+  });
+  const tally = [0, 1].map(i => live.reduce((n, m) => { const v = valsOf(m); return n + (v[i] > v[1 - i] ? 1 : 0); }, 0));
+  const verdict = tally[0] === tally[1] ? 'Nothing to choose between them.'
+    : `<b>${esc(ps[tally[0] > tally[1] ? 0 : 1].name)}</b> leads ${Math.max(...tally)}&ndash;${Math.min(...tally)}.`;
+  return `<div class="card" style="margin-top:14px;border:1px solid var(--accent)">
+    <h2>Head to head <span class="muted" style="font-weight:400;font-size:12px">${esc(ps[0].name)} v ${esc(ps[1].name)}</span></h2>
+    <div class="pool-controls">
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">last
+        <select id="cmpBack" aria-label="Backward window">${[1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => `<option value="${n}" ${back === n ? 'selected' : ''}>${n}</option>`).join('')}</select> GWs</label>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">next
+        <select id="cmpFwd" aria-label="Forward window">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}" ${fwd === n ? 'selected' : ''}>${n}</option>`).join('')}</select> GWs</label>
+      <button class="btn ghost small" id="cmpClose">Close</button>
+    </div>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Metric</th>${ps.map(p => `<th class="num">${esc(p.name)} <span class="muted">${esc(p.club)}</span></th>`).join('')}</tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table></div>
+    <p style="font-size:13px;margin-top:8px">${verdict}</p>
+    <div class="scout-columns"><span class="scout-title">Metrics</span><div class="scout-column-grid">
+      ${COMPARE_METRICS.map(m => `<label class="scout-col-option"><input type="checkbox" data-cmpcol="${m.k}" ${on.has(m.k) ? 'checked' : ''}> <b>${esc(m.name)}</b></label>`).join('')}
+    </div></div>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Green marks the better figure. xG and xA are season-to-date &mdash; FPL publishes no per-gameweek xG in the feed this app may read, so those two cannot honour the window.</p>
+  </div>`;
+}
 /* The player explorer (Marc, 9 Aug): the Data Room's research surface. The
    scout desk — saved views, presets, the column picker — already existed but
    was reachable only from the Draft Console and the Transfers hub, both of
@@ -8783,7 +8860,10 @@ function playerExplorerCard() {
   for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
   const q = normName(dataView.q || '');
   let pool = dataView.scope === 'owned' ? PLAYERS.filter(p => ownedBy[p.id] != null)
-    : dataView.scope === 'free' ? PLAYERS.filter(p => ownedBy[p.id] == null)
+    // claim-only: dropped, and waiting on the next waiver run before the Trough
+    // reopens them to anyone (Marc, 10 Aug)
+    : dataView.scope === 'waivers' ? PLAYERS.filter(p => ownedBy[p.id] == null && !arrivalLocked(p) && onWaivers(p))
+    : dataView.scope === 'free' ? PLAYERS.filter(p => ownedBy[p.id] == null && !onWaivers(p))
     : [...PLAYERS];
   if (dataView.pos) pool = pool.filter(p => p.pos === dataView.pos);
   if (dataView.club) pool = pool.filter(p => p.team === dataView.club);
@@ -8805,6 +8885,7 @@ function playerExplorerCard() {
       <select id="dxScope" aria-label="Ownership">
         <option value="all" ${dataView.scope === 'all' ? 'selected' : ''}>Everyone</option>
         <option value="owned" ${dataView.scope === 'owned' ? 'selected' : ''}>Owned only</option>
+        <option value="waivers" ${dataView.scope === 'waivers' ? 'selected' : ''}>On waivers</option>
         <option value="free" ${dataView.scope === 'free' ? 'selected' : ''}>In the Trough</option>
       </select>
       <select id="dxPos" aria-label="Position"><option value="">All positions</option>
@@ -8815,9 +8896,19 @@ function playerExplorerCard() {
         ${MIN_MINUTES_STEPS.map(n => `<option value="${n}" ${dataView.minMin === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
       </select>
     </div>
+    ${(() => {
+      const n = (dataView.compare || []).length;
+      const names = (dataView.compare || []).map(id => PLAYER_BY_ID[id]?.name).filter(Boolean);
+      return `<div class="pool-controls" style="margin:0 0 10px">
+        <button class="btn small ${n === 2 ? '' : 'ghost'}" id="dxCompare" ${n === 2 ? '' : 'disabled'} title="${n === 2 ? 'Compare these two' : 'Tick two players first'}">&#9878; Compare${n ? ` (${n}/2)` : ''}</button>
+        ${n ? `<span class="muted" style="font-size:11.5px">${names.map(esc).join(' v ')}</span>
+        <button class="btn ghost small" id="dxClearCmp">Clear</button>` : '<span class="muted" style="font-size:11.5px">Tick two players to compare them.</span>'}
+      </div>`;
+    })()}
     ${scoutViewHtml('data')}
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr>
+        <th title="Tick two players to compare them" aria-label="Compare"></th>
         <th data-dxsort="name">Player</th>
         <th data-dxsort="owner">Owner ${dataView.sort === 'owner' ? '&#9662;' : ''}</th>
         ${cols.map(c => c.sortable === false
@@ -8827,12 +8918,16 @@ function playerExplorerCard() {
       <tbody>${shown.map(p => {
         const m = metricsFor(p);
         const om = ownedBy[p.id];
-        return `<tr>
+        const picked = (dataView.compare || []).includes(p.id);
+        return `<tr${picked ? ' style="background:rgba(45,212,167,.06)"' : ''}>
+          <td><input type="checkbox" data-cmp="${p.id}" ${picked ? 'checked' : ''} aria-label="Compare ${esc(p.name)}"></td>
           <td><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></td>
-          <td>${om != null ? `<span class="tag">${esc(teamName(om))}</span>` : '<span class="muted" style="font-size:11.5px">Trough</span>'}</td>
+          <td>${om != null ? `<span class="tag">${esc(teamName(om))}</span>`
+            : onWaivers(p) ? '<span class="tag" title="Claim-only until the next waiver run">On waivers</span>'
+            : '<span class="muted" style="font-size:11.5px">Trough</span>'}</td>
           ${cols.map(c => `<td class="num${c.cls || ''}">${c.v(m, p)}</td>`).join('')}
         </tr>`;
-      }).join('') || `<tr><td colspan="${cols.length + 2}" class="muted">Nobody matches that.</td></tr>`}</tbody>
+      }).join('') || `<tr><td colspan="${cols.length + 3}" class="muted">Nobody matches that.</td></tr>`}</tbody>
     </table></div>
     <p class="muted" style="font-size:11.5px;margin-top:6px">Showing ${shown.length} of ${total}${total > shown.length ? ' &middot; <button class="btn ghost small" id="dxMore">Show more</button>' : ''} &middot; tap a column to sort.</p>
   </div>`;
@@ -8856,6 +8951,31 @@ function bindExplorer() {
   pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
   const mm = document.getElementById('dxMin');
   if (mm) mm.onchange = e => { dataView = { ...dataView, minMin: +e.target.value, limit: 40 }; redraw(false); };
+  // comparison: tick two, then Compare. A third tick replaces the older pick
+  // rather than refusing — refusing makes you hunt for what to untick.
+  document.querySelectorAll('[data-cmp]').forEach(cb => cb.onchange = () => {
+    const id = +cb.dataset.cmp;
+    let sel = [...(dataView.compare || [])].filter(x => x !== id);
+    if (cb.checked) sel = [...sel, id].slice(-2);
+    dataView = { ...dataView, compare: sel, comparing: dataView.comparing && sel.length === 2 };
+    redraw(false);
+  });
+  const cmp = document.getElementById('dxCompare');
+  if (cmp) cmp.onclick = () => { dataView = { ...dataView, comparing: true }; redraw(false); };
+  const clr = document.getElementById('dxClearCmp');
+  if (clr) clr.onclick = () => { dataView = { ...dataView, compare: [], comparing: false }; redraw(false); };
+  const cb2 = document.getElementById('cmpBack');
+  if (cb2) cb2.onchange = e => { dataView = { ...dataView, backWeeks: +e.target.value }; redraw(false); };
+  const cf = document.getElementById('cmpFwd');
+  if (cf) cf.onchange = e => { dataView = { ...dataView, fwdWeeks: +e.target.value }; redraw(false); };
+  const cc = document.getElementById('cmpClose');
+  if (cc) cc.onclick = () => { dataView = { ...dataView, comparing: false }; redraw(false); };
+  document.querySelectorAll('[data-cmpcol]').forEach(box => box.onchange = () => {
+    const cur = new Set(dataView.compareCols || COMPARE_METRICS.map(m => m.k));
+    box.checked ? cur.add(box.dataset.cmpcol) : cur.delete(box.dataset.cmpcol);
+    dataView = { ...dataView, compareCols: COMPARE_METRICS.map(m => m.k).filter(k => cur.has(k)) };
+    redraw(false);
+  });
   document.querySelectorAll('[data-dxsort]').forEach(th => th.onclick = () => {
     dataView = { ...dataView, sort: th.dataset.dxsort };
     scoutActiveView.data = ''; // hand-sorting means you've left the saved view
