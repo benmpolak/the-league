@@ -8553,8 +8553,14 @@ function troughActivityCard() {
         <td class="num gold">${r.total}</td>
       </tr>`).join('')}</tbody>
     </table></div>
-    ${hot.length ? `<h3 style="margin-top:16px">Hot potatoes &#129364; <span class="muted" style="font-weight:400;font-size:11.5px">most passed through the Trough</span></h3>
-      ${hot.map(({ p, n }) => `<div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${pname(p)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span><span class="sp-pts">${n} moves</span></div>`).join('')}` : ''}
+    <h3 style="margin-top:16px">Hot potatoes &#129364; <span class="muted" style="font-weight:400;font-size:11.5px">most passed through the Trough</span></h3>
+    ${hot.length
+      ? hot.map(({ p, n }) => `<div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}<span>${pname(p)}</span><span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span><span class="sp-pts">${n} moves</span></div>`).join('')
+      // Marc, 9 Aug: it holds its place and says something rather than vanishing
+      // the moment nobody has been passed around twice
+      : `<p class="muted" style="font-size:12.5px;margin:6px 0 2px">${Object.keys(counts).length
+        ? 'One move each so far. Nobody has been passed around twice.'
+        : 'Waiting for those first snouts to hit the sweet, sweet Trough.'}</p>`}
   </div>`;
 }
 // any [data-pitchview] jumps straight to that team's pitch (Lee's ask:
