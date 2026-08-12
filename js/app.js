@@ -5847,7 +5847,7 @@ function viewTransfers() {
         <option value="">Player out — pick here or tap him on the pitch…</option>
         ${squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
-      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
+      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers">Run waivers now</button>
@@ -6133,9 +6133,14 @@ function bindTransfers() {
       const claimPairs = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
       const ownedBy = {};
       for (const mm of state.managers) for (const sp of squadAt(mm.id, transferGw())) ownedBy[sp.id] = mm.id;
+      // Free agents means SIGNABLE RIGHT NOW. It used to mean merely unowned,
+      // so the waiver crowd and the locked new arrivals sat in it too and the
+      // filter was a superset of the one beside it (Toby, sandbox 12 Aug:
+      // "surely it should only be the everyone filter that has both"). Waivers
+      // has its own chip; Everyone still shows the lot, owned included.
       let pool = transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
-        : PLAYERS.filter(p => !owned.has(p.id));
+        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -6192,7 +6197,11 @@ function bindTransfers() {
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
       </div>` + (shown.length ? table
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
-        : '<span class="muted">The Trough is empty. Somehow.</span>');
+        // now that Free agents means signable, it empties honestly in the hours
+        // after a gameweek, when everyone spare is still claim-only
+        : PLAYERS.some(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
+          ? '<span class="muted">Nothing to sign outright — everyone spare is on waivers. Lodge a claim under <b>On waivers</b>.</span>'
+          : '<span class="muted">The Trough is empty. Somehow.</span>');
       const clubSel = results.querySelector('#trClub');
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
       results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
