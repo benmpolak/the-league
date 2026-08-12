@@ -24,6 +24,27 @@ function stubMissingPlayers(s) {
   }
   return need.size > 0;
 }
+// the same warning, wherever the mismatch turns up — at load, or later from a
+// snapshot the cloud sends while we're sitting here
+function showStaleBar() {
+  if (document.querySelector('.stale-bar')) return;
+  const bar = document.createElement('div');
+  bar.className = 'stale-bar';
+  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
+    <button class="btn small" id="staleReload">Reload latest draft</button>
+    <button class="btn ghost small icon-btn" id="staleDismiss" aria-label="Dismiss">&#10005;</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
+  bar.querySelector('#staleReload').onclick = async () => {
+    if (!await confirmSheet({
+      title: 'Reload the latest draft?',
+      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
+      yes: 'Reload',
+    })) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  };
+}
 
 /* ---- last season's archive (js/history25.js) ----
    The FPL API zeroes every aggregate when it flips to 26/27 in July. The
@@ -379,6 +400,17 @@ function applySharedSnapshot(data) {
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
   applySquadRules(state.settings);
+  /* The cloud can name players this device's feed has never heard of. The
+     server autodrafts from data/data.json fetched live; the browser draws from
+     the js/data.js it loaded at page load, and the feed is regenerated every
+     five minutes — so the two disagree the moment either drifts. Unstubbed,
+     ONE unknown id threw inside render() and killed the Draft Console, My
+     Team, Transfers, the table and Matches: a dead screen, no toast, nothing
+     to read (Toby, sandbox 12 Aug — "I skipped draft and it froze", then the
+     recovery bar on refresh). The load path has always stubbed; the snapshot
+     path never did. Now it does, so a feed mismatch degrades to a visible
+     "#579 (unknown)" and an offer to reload, instead of a locked page. */
+  if (stubMissingPlayers(state)) { staleSave = true; showStaleBar(); }
   // the moment the league goes to draft, every device goes to the console —
   // being left on the dashboard's GW1 card read as "it's broken" (Toby)
   if (state.phase === 'draft' && wasPhase !== 'draft') state.view = 'draft';
@@ -9223,24 +9255,7 @@ document.addEventListener('visibilitychange', () => {
 render();
 manageWakeLock();
 // stale save detected at load: offer recovery rather than a subtly-broken game
-if (staleSave) {
-  const bar = document.createElement('div');
-  bar.className = 'stale-bar';
-  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
-    <button class="btn small" id="staleReload">Reload latest draft</button>
-    <button class="btn ghost small icon-btn" id="staleDismiss" aria-label="Dismiss">&#10005;</button>`;
-  document.body.appendChild(bar);
-  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
-  bar.querySelector('#staleReload').onclick = async () => {
-    if (!await confirmSheet({
-      title: 'Reload the latest draft?',
-      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
-      yes: 'Reload',
-    })) return;
-    localStorage.removeItem(LS_KEY);
-    location.reload();
-  };
-}
+if (staleSave) showStaleBar();
 // local mode: a refresh mid-ceremony replays the pomp, exactly like the online
 // snapshot path — otherwise the reload skips straight to a live clock (sol r5)
 if (!netOn() && state.phase === 'draft') {
