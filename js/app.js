@@ -6067,6 +6067,12 @@ function bindTransfers() {
       const pid = +chip.dataset.trout;
       transfersView.out = transfersView.out === pid ? null : pid;
       document.querySelectorAll('[data-trout]').forEach(c => c.classList.toggle('sel', +c.dataset.trout === transfersView.out));
+      // and Marc's dropdown follows the pitch. It used to sit there still
+      // naming the last man you picked in it while a DIFFERENT player went out
+      // — the sign button reads transfersView.out, not the select (Toby,
+      // sandbox 12 Aug: "the drop down doesn't change but the player selected
+      // from the pitch is the one transferred out")
+      if (trOut) trOut.value = transfersView.out || '';
       renderTrResults();
     });
     search.oninput = renderTrResults;
