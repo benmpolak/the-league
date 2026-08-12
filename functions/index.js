@@ -1028,10 +1028,17 @@ ACTIONS.covenantAdd = async ({ league, a, data, state }) => {
 ACTIONS.blockToggle = async ({ league, a, data, state, eng }) => {
   const mid = actingManager(a, data);
   const pid = Number(data.pid);
-  const squad = eng.squadAt(state, mid, eng.currentGwIndex());
-  if (!squad.some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
   const cur = toArr(state.tradeBlock[mid]);
-  const next = cur.includes(pid) ? cur.filter(x => x !== pid) : [...cur, pid];
+  const listing = !cur.includes(pid);
+  // Ownership gates LISTING only. It used to gate both ways, so signing away a
+  // listed player left him advertised forever with no way to pull him down —
+  // the delist was refused for the very reason it was needed (Toby, sandbox
+  // 12 Aug). Taking your own name off a list is always allowed.
+  if (listing) {
+    const squad = eng.squadAt(state, mid, eng.currentGwIndex());
+    if (!squad.some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
+  }
+  const next = listing ? [...cur, pid] : cur.filter(x => x !== pid);
   await db().ref(`${leagueBase(league)}/public/tradeBlock/${mid}`).set(next);
   return { listed: next.includes(pid) };
 };

@@ -5830,12 +5830,23 @@ function viewTransfers() {
     </div>`;
   }
   if (tab === 'trades') {
-    const block = state.managers.flatMap(m => blockList(m.id).map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid] })).filter(x => x.p));
+    // A listing outlives the player: sign him away and he stayed up here for
+    // sale, with everyone else invited to bid for someone you no longer own
+    // (Toby, sandbox 12 Aug: "I transferred out Senesi but can't take him off
+    // the list as he's not my player"). Nobody else sees a phantom now; the
+    // lister still does, so he can clear it down.
+    const block = state.managers.flatMap(m => {
+      const own = new Set(managerSquad(m.id).map(p => p.id));
+      return blockList(m.id)
+        .map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid], gone: !own.has(pid) }))
+        .filter(x => x.p && (!x.gone || x.mid === mid));
+    });
     return `${head}${mySquadCard}<div class="card" style="margin-bottom:14px">
       <h2>The Transfer List <span class="muted" style="font-weight:400;font-size:12px">publicly up for grabs — make an offer</span></h2>
-      ${block.length ? block.map(({ mid: bm, p }) => `<div class="lrow" style="font-size:12.5px">
+      ${block.length ? block.map(({ mid: bm, p, gone }) => `<div class="lrow" style="font-size:12.5px">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
         <b style="margin-left:6px">${esc(teamName(bm))}</b>
+        ${gone ? '<span class="tag">already gone — only you can see this</span>' : ''}
         <span style="margin-left:auto">${bm === mid
           ? `<button class="btn ghost small" data-unblock="${p.id}">Delist</button>`
           : `<button class="btn small" data-blocktrade="${bm}:${p.id}">Make an offer</button>`}</span>
