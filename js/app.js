@@ -24,6 +24,27 @@ function stubMissingPlayers(s) {
   }
   return need.size > 0;
 }
+// the same warning, wherever the mismatch turns up — at load, or later from a
+// snapshot the cloud sends while we're sitting here
+function showStaleBar() {
+  if (document.querySelector('.stale-bar')) return;
+  const bar = document.createElement('div');
+  bar.className = 'stale-bar';
+  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
+    <button class="btn small" id="staleReload">Reload latest draft</button>
+    <button class="btn ghost small icon-btn" id="staleDismiss" aria-label="Dismiss">&#10005;</button>`;
+  document.body.appendChild(bar);
+  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
+  bar.querySelector('#staleReload').onclick = async () => {
+    if (!await confirmSheet({
+      title: 'Reload the latest draft?',
+      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
+      yes: 'Reload',
+    })) return;
+    localStorage.removeItem(LS_KEY);
+    location.reload();
+  };
+}
 
 /* ---- last season's archive (js/history25.js) ----
    The FPL API zeroes every aggregate when it flips to 26/27 in July. The
@@ -379,6 +400,17 @@ function applySharedSnapshot(data) {
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
   applySquadRules(state.settings);
+  /* The cloud can name players this device's feed has never heard of. The
+     server autodrafts from data/data.json fetched live; the browser draws from
+     the js/data.js it loaded at page load, and the feed is regenerated every
+     five minutes — so the two disagree the moment either drifts. Unstubbed,
+     ONE unknown id threw inside render() and killed the Draft Console, My
+     Team, Transfers, the table and Matches: a dead screen, no toast, nothing
+     to read (Toby, sandbox 12 Aug — "I skipped draft and it froze", then the
+     recovery bar on refresh). The load path has always stubbed; the snapshot
+     path never did. Now it does, so a feed mismatch degrades to a visible
+     "#579 (unknown)" and an offer to reload, instead of a locked page. */
+  if (stubMissingPlayers(state)) { staleSave = true; showStaleBar(); }
   // the moment the league goes to draft, every device goes to the console —
   // being left on the dashboard's GW1 card read as "it's broken" (Toby)
   if (state.phase === 'draft' && wasPhase !== 'draft') state.view = 'draft';
@@ -5926,7 +5958,7 @@ function viewTransfers() {
         <option value="">Player out — pick here or tap him on the pitch…</option>
         ${squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
-      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.length - ownedNow.size} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
+      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Process waivers now</button>
@@ -5941,12 +5973,23 @@ function viewTransfers() {
     </div>`;
   }
   if (tab === 'trades') {
-    const block = state.managers.flatMap(m => blockList(m.id).map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid] })).filter(x => x.p));
+    // A listing outlives the player: sign him away and he stayed up here for
+    // sale, with everyone else invited to bid for someone you no longer own
+    // (Toby, sandbox 12 Aug: "I transferred out Senesi but can't take him off
+    // the list as he's not my player"). Nobody else sees a phantom now; the
+    // lister still does, so he can clear it down.
+    const block = state.managers.flatMap(m => {
+      const own = new Set(managerSquad(m.id).map(p => p.id));
+      return blockList(m.id)
+        .map(pid => ({ mid: m.id, p: PLAYER_BY_ID[pid], gone: !own.has(pid) }))
+        .filter(x => x.p && (!x.gone || x.mid === mid));
+    });
     return `${head}${mySquadCard}<div class="card" style="margin-bottom:14px">
       <h2>The Transfer List <span class="muted" style="font-weight:400;font-size:12px">publicly up for grabs — make an offer</span></h2>
-      ${block.length ? block.map(({ mid: bm, p }) => `<div class="lrow" style="font-size:12.5px">
+      ${block.length ? block.map(({ mid: bm, p, gone }) => `<div class="lrow" style="font-size:12.5px">
         <span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)} · ${metricsFor(p).pts} pts</span>
         <b style="margin-left:6px">${esc(teamName(bm))}</b>
+        ${gone ? '<span class="tag">already gone — only you can see this</span>' : ''}
         <span style="margin-left:auto">${bm === mid
           ? `<button class="btn ghost small" data-unblock="${p.id}">Delist</button>`
           : `<button class="btn small" data-blocktrade="${bm}:${p.id}">Make an offer</button>`}</span>
@@ -6226,6 +6269,12 @@ function bindTransfers() {
       const pid = +chip.dataset.trout;
       transfersView.out = transfersView.out === pid ? null : pid;
       document.querySelectorAll('[data-trout]').forEach(c => c.classList.toggle('sel', +c.dataset.trout === transfersView.out));
+      // and Marc's dropdown follows the pitch. It used to sit there still
+      // naming the last man you picked in it while a DIFFERENT player went out
+      // — the sign button reads transfersView.out, not the select (Toby,
+      // sandbox 12 Aug: "the drop down doesn't change but the player selected
+      // from the pitch is the one transferred out")
+      if (trOut) trOut.value = transfersView.out || '';
       renderTrResults();
     });
     search.oninput = renderTrResults;
@@ -6243,9 +6292,14 @@ function bindTransfers() {
       const claimPairs = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
       const ownedBy = {};
       for (const mm of state.managers) for (const sp of squadAt(mm.id, transferGw())) ownedBy[sp.id] = mm.id;
+      // Free agents means SIGNABLE RIGHT NOW. It used to mean merely unowned,
+      // so the waiver crowd and the locked new arrivals sat in it too and the
+      // filter was a superset of the one beside it (Toby, sandbox 12 Aug:
+      // "surely it should only be the everyone filter that has both"). Waivers
+      // has its own chip; Everyone still shows the lot, owned included.
       let pool = transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
-        : PLAYERS.filter(p => !owned.has(p.id));
+        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -6302,7 +6356,11 @@ function bindTransfers() {
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
       </div>` + (shown.length ? table
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
-        : '<span class="muted">The Trough is empty. Somehow.</span>');
+        // now that Free agents means signable, it empties honestly in the hours
+        // after a gameweek, when everyone spare is still claim-only
+        : PLAYERS.some(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
+          ? '<span class="muted">Nothing to sign outright — everyone spare is on waivers. Lodge a claim under <b>On waivers</b>.</span>'
+          : '<span class="muted">The Trough is empty. Somehow.</span>');
       const clubSel = results.querySelector('#trClub');
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
       results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
@@ -10138,24 +10196,7 @@ document.addEventListener('visibilitychange', () => {
 render();
 manageWakeLock();
 // stale save detected at load: offer recovery rather than a subtly-broken game
-if (staleSave) {
-  const bar = document.createElement('div');
-  bar.className = 'stale-bar';
-  bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
-    <button class="btn small" id="staleReload">Reload latest draft</button>
-    <button class="btn ghost small icon-btn" id="staleDismiss" aria-label="Dismiss">&#10005;</button>`;
-  document.body.appendChild(bar);
-  bar.querySelector('#staleDismiss').onclick = () => bar.remove();
-  bar.querySelector('#staleReload').onclick = async () => {
-    if (!await confirmSheet({
-      title: 'Reload the latest draft?',
-      body: `<p style="font-size:13.5px">This device's copy is thrown away and replaced by the league's latest saved state${netOn() ? ' from the cloud' : ''}. Your sign-in is kept.</p>`,
-      yes: 'Reload',
-    })) return;
-    localStorage.removeItem(LS_KEY);
-    location.reload();
-  };
-}
+if (staleSave) showStaleBar();
 // local mode: a refresh mid-ceremony replays the pomp, exactly like the online
 // snapshot path — otherwise the reload skips straight to a live clock (sol r5)
 if (!netOn() && state.phase === 'draft') {
