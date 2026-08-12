@@ -392,16 +392,29 @@ const SB = 'the-league-sandbox';
     && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/gaffer`, { owner: true })).val == null);
   chk('junk hoarding number rejected', (await T.mutate(SB, 'clubSet', { boards: [99] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
 
+  // the College of Arms (Lee, 12 Aug): crest bounds enforced server-side
+  chk('crest cut and saved', !(await T.mutate(SB, 'clubSet', { crest: { shape: 1, div: 2, charge: 5, c1: '#0B1A3A', c2: '#E8B64C' } }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest/charge`, { owner: true })).val === 5);
+  chk('crest colours normalised to lowercase', (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest/c2`, { owner: true })).val === '#e8b64c');
+  chk('a charge off the end of the catalogue rejected', (await T.mutate(SB, 'clubSet', { crest: { shape: 0, div: 0, charge: 16, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('junk crest shape rejected', (await T.mutate(SB, 'clubSet', { crest: { shape: 'heater', div: 0, charge: 0, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('monogram crest (charge null) accepted', !(await T.mutate(SB, 'clubSet', { crest: { shape: 2, div: 1, charge: null, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error);
+  chk('crest back to house-issue', !(await T.mutate(SB, 'clubSet', { crest: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest`, { owner: true })).val == null);
+
   /* sol P2.2: server bounds pinned to the REAL catalogues in js/lore.js —
      values the client can't render must not validate */
   const loreCtx = {};
   require('vm').createContext(loreCtx);
   require('vm').runInContext(
     require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'lore.js'), 'utf8')
-    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length; this.__A = ASSISTANTS.length;', loreCtx);
+    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length; this.__A = ASSISTANTS.length;'
+    + '\nthis.__CS = CREST_SHAPES.length; this.__CD = CREST_DIVISIONS.length; this.__CC = CREST_CHARGES.length;', loreCtx);
   const fnSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'functions', 'index.js'), 'utf8');
   const GC = +fnSrc.match(/GAFFER_COUNT = (\d+)/)[1], BC = +fnSrc.match(/BOARD_COUNT = (\d+)/)[1], AC = +fnSrc.match(/ASSISTANT_COUNT = (\d+)/)[1];
   chk('server catalogue bounds match js/lore.js', loreCtx.__G === GC && loreCtx.__B === BC && loreCtx.__A === AC, `lore ${loreCtx.__G}/${loreCtx.__B}/${loreCtx.__A} vs functions ${GC}/${BC}/${AC}`);
+  const CS = +fnSrc.match(/CREST_SHAPE_COUNT = (\d+)/)[1], CD = +fnSrc.match(/CREST_DIVISION_COUNT = (\d+)/)[1], CC = +fnSrc.match(/CREST_CHARGE_COUNT = (\d+)/)[1];
+  chk('crest bounds match the College of Arms in js/lore.js', loreCtx.__CS === CS && loreCtx.__CD === CD && loreCtx.__CC === CC, `lore ${loreCtx.__CS}/${loreCtx.__CD}/${loreCtx.__CC} vs functions ${CS}/${CD}/${CC}`);
   chk('last gaffer on the stable accepted, first off the end rejected',
     !(await T.mutate(SB, 'clubSet', { gaffer: GC - 1 }, sbTok2)).error
     && (await T.mutate(SB, 'clubSet', { gaffer: GC }, sbTok2)).error?.status === 'INVALID_ARGUMENT');

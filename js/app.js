@@ -1133,6 +1133,26 @@ function kitSvgRaw(k, sponsor, size, uid) {
     : '';
   return `<svg class="club-kit" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true"><defs><clipPath id="${uid}"><path d="${body}"/></clipPath></defs><path d="${body}" fill="${k.c1}"/><g clip-path="url(#${uid})" fill="${k.c2}">${pat}</g><path d="M15 1 Q20 5 25 1 L23 3 Q20 6 17 3 Z" fill="${k.c2}"/><path d="${body}" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/>${sp}</svg>`;
 }
+/* ----- the crest: heraldry off the College of Arms in js/lore.js (Lee,
+   12 Aug — "upload your own club badge"; hosting twelve JPEGs was never on).
+   crest = { shape, div, charge, c1, c2 }, charge null = the monogram; crest
+   null entirely = house-issue (kit colours, chief, initials). Bounds mirrored
+   by cleanCrest in functions/. */
+const crestMonogram = name => String(name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+function crestSvg(mid, size = 18) {
+  const m = state.managers.find(x => x.id === mid);
+  return crestSvgRaw(m?.crest || null, kitFor(mid), teamName(mid), size, `cs${mid}-${size}`);
+}
+function crestSvgRaw(c, kit, name, size, uid) {
+  const shape = (c && CREST_SHAPES[c.shape]) || CREST_SHAPES[0];
+  const div = c ? (CREST_DIVISIONS[c.div] || CREST_DIVISIONS[0]) : CREST_DIVISIONS[1];
+  const c1 = c?.c1 || kit.c1, c2 = c?.c2 || kit.c2;
+  const chg = c && Number.isInteger(c.charge) ? CREST_CHARGES[c.charge] : null;
+  const inner = chg
+    ? `<g transform="translate(8,13)" stroke="${c1}" stroke-width="0.6" paint-order="stroke">${chg.m.replace(/__C__/g, c2).replace(/__F__/g, c1)}</g>`
+    : `<text x="20" y="30.5" text-anchor="middle" font-size="13" font-weight="800" font-family="inherit" fill="${c2}" stroke="${c1}" stroke-width="0.9" paint-order="stroke" letter-spacing=".3">${esc(crestMonogram(name))}</text>`;
+  return `<svg class="club-crest" viewBox="0 0 40 44" width="${size}" height="${Math.round(size * 1.1)}" aria-hidden="true"><defs><clipPath id="${uid}"><path d="${shape.d}"/></clipPath></defs><path d="${shape.d}" fill="${c1}"/><g clip-path="url(#${uid})" fill="${c2}">${div.m}</g><g clip-path="url(#${uid})">${inner}</g><path d="${shape.d}" fill="none" stroke="${c2}" stroke-width="1.4" opacity="0.85"/><path d="${shape.d}" fill="none" stroke="rgba(0,0,0,.45)" stroke-width="1.2"/></svg>`;
+}
 // name + shirt, for everywhere a team is written down
 function teamTag(mid) { return `${kitSvg(mid)} ${esc(teamName(mid))}`; }
 // declared rivalries: mutual = a clásico, one-sided = a derby only one of them
@@ -1188,13 +1208,18 @@ function clubEditor(mid) {
   const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
   const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
   const savedAssistant = typeof m?.assistant === 'number' && !ASSISTANTS[m.assistant] ? null : (m?.assistant ?? null);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant };
+  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
   const stock = AD_BOARDS.map(b => b.t);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   const paint = () => {
     const prev = ov.querySelector('#kitPreview');
     if (prev) prev.innerHTML = kitSvgRaw(draft.kit, draft.sponsor, 120, 'kprev');
+    const cprev = ov.querySelector('#crestPreview');
+    if (cprev) cprev.innerHTML = crestSvgRaw(draft.crest, draft.kit, draft.team, 78, 'crprev');
+    ov.querySelectorAll('[data-cshape]').forEach(b => b.classList.toggle('active', !!draft.crest && +b.dataset.cshape === draft.crest.shape));
+    ov.querySelectorAll('[data-cdiv]').forEach(b => b.classList.toggle('active', !!draft.crest && +b.dataset.cdiv === draft.crest.div));
+    ov.querySelectorAll('[data-ccharge]').forEach(b => b.classList.toggle('active', !!draft.crest && (b.dataset.ccharge === '' ? draft.crest.charge == null : +b.dataset.ccharge === draft.crest.charge)));
     ov.querySelectorAll('[data-pat]').forEach(b => b.classList.toggle('active', b.dataset.pat === draft.kit.pattern));
     ov.querySelectorAll('[data-board]').forEach(b => b.classList.toggle('active', draft.boards.includes(+b.dataset.board)));
     ov.querySelectorAll('[data-gaffer]').forEach(b => b.classList.toggle('active', draft.gaffer === +b.dataset.gaffer));
@@ -1230,6 +1255,27 @@ function clubEditor(mid) {
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:14px">
       <label class="muted" style="font-size:11px">SHIRT <input type="color" id="clubC1" value="${draft.kit.c1}"></label>
       <label class="muted" style="font-size:11px">TRIM <input type="color" id="clubC2" value="${draft.kit.c2}"></label>
+    </div>
+    <label class="muted" style="font-size:11px">THE CREST — house-issue monogram, or cut your own at the College of Arms</label>
+    <div style="display:flex;gap:12px;align-items:flex-start;margin:6px 0 12px">
+      <div id="crestPreview" style="flex-shrink:0"></div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+          ${CREST_SHAPES.map((s, i) => `<button class="btn ghost small" data-cshape="${i}" style="font-size:10.5px">${esc(s.t)}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:5px">
+          ${CREST_DIVISIONS.map((d, i) => `<button class="btn ghost small" data-cdiv="${i}" style="font-size:10.5px">${esc(d.t)}</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px">
+          <button class="btn ghost small icon-btn" data-ccharge="" title="The monogram — your initials, house style" style="font-weight:800">${esc(crestMonogram(draft.team))}</button>
+          ${CREST_CHARGES.map((ch, i) => `<button class="btn ghost small icon-btn" data-ccharge="${i}" title="${esc(ch.t)}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${ch.m.replace(/__C__/g, 'currentColor').replace(/__F__/g, 'var(--card)')}</svg></button>`).join('')}
+        </div>
+        <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+          <label class="muted" style="font-size:11px">FIELD <input type="color" id="crestC1" value="${draft.crest?.c1 || draft.kit.c1}"></label>
+          <label class="muted" style="font-size:11px">CHARGE <input type="color" id="crestC2" value="${draft.crest?.c2 || draft.kit.c2}"></label>
+          <button class="btn ghost small" id="crestReset" title="Back to the house-issue crest — kit colours, your initials">House-issue</button>
+        </div>
+      </div>
     </div>
     <label class="muted" style="font-size:11px">YOUR GROUND</label>
     <input id="clubStadium" maxlength="40" value="${esc(draft.stadium)}" style="width:100%;margin:4px 0 10px" />
@@ -1283,13 +1329,23 @@ function clubEditor(mid) {
   const savedCustom = {
     kit: !!m?.kit, sponsor: !!m?.sponsor, boards: savedBoards.length > 0,
     gaffer: savedGaffer != null, assistant: savedAssistant != null, stadium: !!m?.stadium,
+    crest: !!m?.crest,
   };
   const touched = new Set();
-  const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'assistant', 'stadium'].filter(f => !savedCustom[f] && !touched.has(f));
+  const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'assistant', 'stadium', 'crest'].filter(f => !savedCustom[f] && !touched.has(f));
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
   ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { touched.add('kit'); draft.kit.pattern = b.dataset.pat; paint(); });
   ov.querySelector('#clubC1').oninput = e => { touched.add('kit'); draft.kit.c1 = e.target.value; paint(); };
   ov.querySelector('#clubC2').oninput = e => { touched.add('kit'); draft.kit.c2 = e.target.value; paint(); };
+  // the College of Arms: first touch of any control materialises a crest off
+  // the house-issue; the reset button hands it back
+  const crest0 = () => draft.crest || (draft.crest = { shape: 0, div: 1, charge: null, c1: draft.kit.c1, c2: draft.kit.c2 });
+  ov.querySelectorAll('[data-cshape]').forEach(b => b.onclick = () => { touched.add('crest'); crest0().shape = +b.dataset.cshape; paint(); });
+  ov.querySelectorAll('[data-cdiv]').forEach(b => b.onclick = () => { touched.add('crest'); crest0().div = +b.dataset.cdiv; paint(); });
+  ov.querySelectorAll('[data-ccharge]').forEach(b => b.onclick = () => { touched.add('crest'); crest0().charge = b.dataset.ccharge === '' ? null : +b.dataset.ccharge; paint(); });
+  ov.querySelector('#crestC1').oninput = e => { touched.add('crest'); crest0().c1 = e.target.value; paint(); };
+  ov.querySelector('#crestC2').oninput = e => { touched.add('crest'); crest0().c2 = e.target.value; paint(); };
+  ov.querySelector('#crestReset').onclick = () => { touched.add('crest'); draft.crest = null; ov.querySelector('#crestC1').value = draft.kit.c1; ov.querySelector('#crestC2').value = draft.kit.c2; paint(); toast('Back to the house-issue crest.'); };
   const spSel = ov.querySelector('#clubSpSel'), spOwn = ov.querySelector('#clubSpOwn');
   spSel.onchange = () => {
     touched.add('sponsor');
@@ -1377,6 +1433,22 @@ function clubEditor(mid) {
       } else if (f === 'stadium') {
         draft.stadium = pick(SURPRISE_STADIA);
         ov.querySelector('#clubStadium').value = draft.stadium;
+      } else if (f === 'crest') {
+        const c1 = pick(SURPRISE_KIT_COLOURS);
+        const start = Math.floor(R() * SURPRISE_KIT_COLOURS.length);
+        let c2 = c1;
+        for (let k = 0; k < SURPRISE_KIT_COLOURS.length; k++) {
+          const cand = SURPRISE_KIT_COLOURS[(start + k) % SURPRISE_KIT_COLOURS.length];
+          if (cand !== c1 && kitContrast(c1, cand) >= 2) { c2 = cand; break; }
+        }
+        draft.crest = {
+          shape: Math.floor(R() * CREST_SHAPES.length) % CREST_SHAPES.length,
+          div: Math.floor(R() * CREST_DIVISIONS.length) % CREST_DIVISIONS.length,
+          charge: Math.floor(R() * CREST_CHARGES.length) % CREST_CHARGES.length,
+          c1, c2,
+        };
+        ov.querySelector('#crestC1').value = c1;
+        ov.querySelector('#crestC2').value = c2;
       }
     }
     paint();
@@ -1400,7 +1472,7 @@ function clubEditor(mid) {
       const cnl = ov.querySelector('#clubCancel');
       saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
-        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, ...(mid !== whoami && { asManager: mid }) });
+        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest, ...(mid !== whoami && { asManager: mid }) });
       } catch {
         saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
         return; // serverAct already toasted why
@@ -1411,7 +1483,7 @@ function clubEditor(mid) {
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant };
+    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest ? { ...draft.crest } : null };
     localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
@@ -1426,10 +1498,10 @@ function foundingCard() {
   const m = state.managers.find(x => x.id === mid);
   if (!m || m.kit || localStorage.getItem(`${LS_NS}-founded-${mid}`)) return '';
   return `<div class="card" style="border-color:var(--accent)">
-    <h2>Found your club ${kitSvg(mid, 22)}</h2>
+    <h2>Found your club ${kitSvg(mid, 22)} ${crestSvg(mid, 20)}</h2>
     <p class="rules-p">You've inherited <b>${esc(teamName(mid))}</b>. Keep the name or take a new one —
-    then cut your kit, sign a shirt sponsor, name your ground, line it with hoardings, appoint your
-    gaffer and declare your biggest rival. It all goes on show across the league.</p>
+    then cut your kit and crest, sign a shirt sponsor, name your ground, line it with hoardings,
+    appoint your gaffer and declare your biggest rival. It all goes on show across the league.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn" id="foundBtn" data-mid="${mid}">Open the club office</button>
       <button class="btn ghost small" id="foundLater" data-mid="${mid}">Maybe later</button>
@@ -1551,7 +1623,7 @@ function clubProfileHtml(mid, { editable = false } = {}) {
   const recRows = clubRecordsHtml(mid);
   return `
   <div class="card" style="text-align:center">
-    <div style="display:flex;justify-content:center;margin:6px 0 10px">${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, `clubpage${mid}${editable ? '' : 'p'}`)}</div>
+    <div style="display:flex;justify-content:center;align-items:center;gap:20px;margin:6px 0 10px">${crestSvgRaw(m?.crest || null, kitFor(mid), teamName(mid), 84, `clubcrest${mid}${editable ? '' : 'p'}`)}${kitSvgRaw(kitFor(mid), sponsorFor(mid), 140, `clubpage${mid}${editable ? '' : 'p'}`)}</div>
     <h2 style="margin-bottom:2px">${esc(teamName(mid))}</h2>
     <p class="muted" style="font-size:12px">${esc(managerName(mid))} &middot; est. 2015 &middot; ${esc(stadium(mid))}</p>
     ${sponsorFor(mid) ? `<p class="muted" style="font-size:11.5px">Principal partner: <b>${esc(sponsorFor(mid))}</b></p>` : ''}
@@ -1617,7 +1689,7 @@ function viewDirectory() {
     const dirRivals = rivalsOf(mid);
     const opened = !!m?.kit; // server-backed: clubSet always saves a kit
     return `<button type="button" class="dir-card" data-dirmid="${mid}" aria-label="${esc(teamName(mid))} — club profile">
-      <div class="dir-kit">${kitSvg(mid, 44, true)}</div>
+      <div class="dir-kit">${kitSvg(mid, 44, true)}${crestSvg(mid, 30)}</div>
       <div class="dir-body">
         <b class="dir-team">${esc(teamName(mid))}</b>
         <span class="muted dir-line">${esc(managerName(mid))} &middot; ${esc(stadium(mid))}</span>
@@ -5465,7 +5537,7 @@ function viewTeam() {
             </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
       </div><div class="duel-side">
-        <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
+        <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
     ${(() => {
       // browsing someone else's team: every chip opens the player card.
@@ -8164,7 +8236,7 @@ function showMatchup(a, b, i) {
     .map(p => `<div class="lrow" style="font-size:12px"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="sp-pts ${started && gwPlayerPoints(p.id, i) > 0 ? 'gold' : 'muted'}" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : playerXp(p).toFixed(1)}</span></div>`).join('')}
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
-    <h3 style="text-align:center">${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
     ${gafferFor(mid) ? `<p class="muted" style="text-align:center;font-size:10.5px;margin:-4px 0 4px">${gafferChip(mid)}</p>` : ''}
     <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}

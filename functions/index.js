@@ -1133,6 +1133,21 @@ const cleanAssistant = g => {
   }
   throw new HttpsError('invalid-argument', 'assistant is an archetype number or a name + bio');
 };
+// the College of Arms (Lee, 12 Aug): a shield shape and division off the
+// stable, a charge off the catalogue (null = the house monogram), two hex
+// colours. crest null entirely = back to house-issue. Counts pinned to
+// js/lore.js by functions.test.js — grow them together or the suite fails.
+const CREST_SHAPE_COUNT = 4;
+const CREST_DIVISION_COUNT = 6;
+const CREST_CHARGE_COUNT = 16;
+const cleanCrest = c => {
+  if (c === null) return null;
+  const idx = (v, n) => Number.isInteger(v) && v >= 0 && v < n;
+  if (!c || typeof c !== 'object' || !idx(c.shape, CREST_SHAPE_COUNT) || !idx(c.div, CREST_DIVISION_COUNT)
+    || (c.charge != null && !idx(c.charge, CREST_CHARGE_COUNT))
+    || !hexOk(c.c1) || !hexOk(c.c2)) throw new HttpsError('invalid-argument', 'a crest is shape + division + charge + two hex colours');
+  return { shape: c.shape, div: c.div, charge: c.charge ?? null, c1: c.c1.toLowerCase(), c2: c.c2.toLowerCase() };
+};
 const cleanBoards = b0 => {
   // up to three hoardings off the league's stable to line the home ground.
   // RAW length is checked before dedupe — a thousand-entry array must not
@@ -1206,6 +1221,7 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
   if (data.assistant !== undefined) up.assistant = cleanAssistant(data.assistant);
   if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
+  if (data.crest !== undefined) up.crest = cleanCrest(data.crest);
   if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
   await managerMerge(league, state, mid, up);
   return { ok: true };
@@ -1736,6 +1752,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
     if (m.gaffer != null) m.gaffer = cleanGaffer(m.gaffer);
     if (m.assistant != null) m.assistant = cleanAssistant(m.assistant);
     if (m.boards != null) m.boards = cleanBoards(m.boards);
+    if (m.crest != null) m.crest = cleanCrest(m.crest);
   }
   for (const m of managers) {
     if (m.rival != null && (!midSeen.has(m.rival) || m.rival === m.id)) importError('manager rival');

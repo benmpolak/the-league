@@ -143,6 +143,46 @@ const AD_BOARDS = [
   { t: 'GATLEY TANDOORI', s: 'the post-match curry of champions', c: '#ffb88a', bg: '#241004' },
 ];
 
+// ================= The College of Arms =================
+// Crest heraldry (Lee, 12 Aug: "should be able to upload your own club badge
+// IMO" — the Committee counters with a College of Arms; nobody is hosting
+// twelve JPEGs). Shapes and divisions are the shield's architecture; charges
+// are the symbol on it, drawn in a 24×24 box, __C__ = charge colour, __F__ =
+// field colour. Counts are pinned by functions.test.js against cleanCrest's
+// bounds in functions/index.js — grow them together or the suite fails.
+const CREST_SHAPES = [
+  { t: 'heater', d: 'M4 4 H36 V22 Q36 35 20 42 Q4 35 4 22 Z' },
+  { t: 'kite', d: 'M4 4 H36 V26 L20 42 L4 26 Z' },
+  { t: 'roundel', d: 'M20 5 a17.5 17.5 0 1 0 0.01 0 Z' },
+  { t: 'banner', d: 'M4 4 H36 V38 L28 33 L20 41 L12 33 L4 38 Z' },
+];
+const CREST_DIVISIONS = [
+  { t: 'clean', m: '' },
+  { t: 'the chief', m: '<rect x="0" y="0" width="40" height="13"/>' },
+  { t: 'the fess', m: '<rect x="0" y="17" width="40" height="10"/>' },
+  { t: 'the pale', m: '<rect x="14" y="0" width="12" height="44"/>' },
+  { t: 'the bend', m: '<rect x="16" y="-10" width="9" height="64" transform="rotate(35 20 22)"/>' },
+  { t: 'per pale', m: '<rect x="20" y="0" width="20" height="44"/>' },
+];
+const CREST_CHARGES = [
+  { t: 'The Star of the Show', m: '<path fill="__C__" d="M12 1 L14.7 8.28 L22.46 8.6 L16.37 13.42 L18.47 20.9 L12 16.6 L5.53 20.9 L7.63 13.42 L1.54 8.6 L9.3 8.28 Z"/>' },
+  { t: 'The Match Ball', m: '<circle cx="12" cy="12" r="10.5" fill="__C__"/><path fill="__F__" d="M12 7.5 L16.3 10.6 L14.7 15.6 L9.3 15.6 L7.7 10.6 Z"/><path fill="none" stroke="__F__" stroke-width="1.2" d="M12 7.5 L12 2.2 M16.3 10.6 L21 8.6 M14.7 15.6 L17.6 20 M9.3 15.6 L6.4 20 M7.7 10.6 L3 8.6"/>' },
+  { t: 'The Crown', m: '<path fill="__C__" d="M2 18.5 V7.5 L7 11.5 L12 3.5 L17 11.5 L22 7.5 V18.5 Z"/><rect fill="__C__" x="2" y="20" width="20" height="2.6"/>' },
+  { t: 'The Bolt', m: '<path fill="__C__" d="M14 1 L4 14 L10.5 14 L8 23 L20 9 L13 9 Z"/>' },
+  { t: 'The Celebratory Pint', m: '<path fill="__C__" d="M4 5 H16 V22 H4 Z"/><path fill="__C__" d="M16 7.5 H19 Q22.5 7.5 22.5 12.5 Q22.5 17.5 19 17.5 H16 V15 H18.8 Q20 14.6 20 12.5 Q20 10.4 18.8 10 H16 Z"/><circle fill="__C__" cx="6.5" cy="4.6" r="2.6"/><circle fill="__C__" cx="10.5" cy="3.8" r="2.9"/><circle fill="__C__" cx="14" cy="4.6" r="2.6"/><rect fill="__F__" x="5.2" y="8.6" width="9.6" height="1.5"/>' },
+  { t: 'The Right Boot', m: '<path fill="__C__" d="M4 3 H11 V12 L21 17 Q22.6 18 22.4 21.5 H3 Q2.7 17 4 12 Z"/><path fill="none" stroke="__F__" stroke-width="1.1" d="M11.2 5 L14.8 6.4 M11.2 8 L14.6 9.4"/>' },
+  { t: 'The Pot', m: '<path fill="__C__" d="M6 2 H18 V8 Q18 14 12 15.2 Q6 14 6 8 Z"/><path fill="none" stroke="__C__" stroke-width="2" d="M6 3.5 Q1 3.5 3 9 Q4 11.5 6.5 12.2 M18 3.5 Q23 3.5 21 9 Q20 11.5 17.5 12.2"/><path fill="__C__" d="M10.8 15 H13.2 L14 19 H10 Z"/><rect fill="__C__" x="7" y="19" width="10" height="3" rx="0.8"/>' },
+  { t: 'The Loyal Paw', m: '<path fill="__C__" d="M12 12.5 Q17.2 12.5 17.6 17.3 Q17.9 21.8 12 21.8 Q6.1 21.8 6.4 17.3 Q6.8 12.5 12 12.5 Z"/><circle fill="__C__" cx="5.3" cy="9.5" r="2.4"/><circle fill="__C__" cx="9.8" cy="6.6" r="2.5"/><circle fill="__C__" cx="14.2" cy="6.6" r="2.5"/><circle fill="__C__" cx="18.7" cy="9.5" r="2.4"/>' },
+  { t: 'The Mighty Duck', m: '<ellipse fill="__C__" cx="11" cy="16.5" rx="8" ry="5.2"/><path fill="__C__" d="M4.6 13.5 Q2.2 11.5 3.4 9 Q5.6 11.8 8 12 Z"/><circle fill="__C__" cx="17" cy="8" r="4.5"/><rect fill="__C__" x="13.5" y="9" width="5" height="5"/><path fill="__C__" d="M21 6.4 L24.4 7.8 L21 9.2 Z"/><circle fill="__F__" cx="18.3" cy="7" r="0.95"/>' },
+  { t: 'The Trough King', m: '<circle fill="__C__" cx="12" cy="12.5" r="9.8"/><path fill="__C__" d="M4.5 6 L9 3 L9.8 7.8 Z M19.5 6 L15 3 L14.2 7.8 Z"/><ellipse fill="__F__" cx="12" cy="14.8" rx="4.1" ry="3"/><circle fill="__C__" cx="10.4" cy="14.8" r="0.95"/><circle fill="__C__" cx="13.6" cy="14.8" r="0.95"/><circle fill="__F__" cx="8.4" cy="9.4" r="1.15"/><circle fill="__F__" cx="15.6" cy="9.4" r="1.15"/>' },
+  { t: 'The Crossed Swords', m: '<g fill="__C__" transform="rotate(45 12 12)"><rect x="11" y="0" width="2" height="18.5"/><rect x="7.6" y="15" width="8.8" height="1.8" rx="0.6"/><rect x="10.7" y="16.8" width="2.6" height="4.6" rx="1"/></g><g fill="__C__" transform="rotate(-45 12 12)"><rect x="11" y="0" width="2" height="18.5"/><rect x="7.6" y="15" width="8.8" height="1.8" rx="0.6"/><rect x="10.7" y="16.8" width="2.6" height="4.6" rx="1"/></g>' },
+  { t: 'The Draft Snake', m: '<path fill="none" stroke="__F__" stroke-width="5.4" stroke-linecap="round" d="M5 4.5 H16 Q20 4.5 20 8.25 Q20 12 16 12 H8 Q4 12 4 15.75 Q4 19.5 8 19.5 H18.5"/><path fill="none" stroke="__C__" stroke-width="3.4" stroke-linecap="round" d="M5 4.5 H16 Q20 4.5 20 8.25 Q20 12 16 12 H8 Q4 12 4 15.75 Q4 19.5 8 19.5 H18.5"/><circle fill="__C__" cx="19.8" cy="19.5" r="2.7"/><path fill="none" stroke="__C__" stroke-width="1.1" d="M22.3 19.5 L24.3 18.6 M22.3 19.5 L24.3 20.4"/>' },
+  { t: 'The Long Season', m: '<path fill="__C__" d="M12 2 Q20.5 2 20.5 10 Q20.5 14.5 17.5 16 V19.5 H6.5 V16 Q3.5 14.5 3.5 10 Q3.5 2 12 2 Z"/><rect fill="__C__" x="8" y="19.5" width="8" height="3" rx="1"/><circle fill="__F__" cx="8.6" cy="10.5" r="2.2"/><circle fill="__F__" cx="15.4" cy="10.5" r="2.2"/><path fill="__F__" d="M12 13 L13.5 15.8 H10.5 Z"/>' },
+  { t: 'The Crossed Hammers', m: '<g fill="__C__" transform="rotate(40 12 12)"><rect x="10.8" y="2.5" width="2.4" height="19" rx="1"/><rect x="6.4" y="1.2" width="11.2" height="4.6" rx="1.2"/></g><g fill="__C__" transform="rotate(-40 12 12)"><rect x="10.8" y="2.5" width="2.4" height="19" rx="1"/><rect x="6.4" y="1.2" width="11.2" height="4.6" rx="1.2"/></g>' },
+  { t: 'The Corner Flag', m: '<rect fill="__C__" x="6.2" y="2" width="1.9" height="19"/><path fill="__C__" d="M8.1 2.4 L20.5 5.2 L8.1 8.4 Z"/><path fill="__C__" d="M2.5 22.5 Q7 19 11.8 22.5 Z"/>' },
+  { t: 'The Anchor', m: '<circle fill="__C__" cx="12" cy="4" r="3.1"/><circle fill="__F__" cx="12" cy="4" r="1.5"/><rect fill="__C__" x="10.9" y="6.6" width="2.2" height="12.8"/><rect fill="__C__" x="6.6" y="9.2" width="10.8" height="2.1" rx="0.8"/><path fill="__C__" d="M12 21.5 Q5.6 21.2 3.4 15.2 L6.6 14.6 Q8.2 18.4 12 18.8 Q15.8 18.4 17.4 14.6 L20.6 15.2 Q18.4 21.2 12 21.5 Z"/>' },
+];
+
 // Per-manager hoardings — commissioned by the group chat, 22 Jul 2026.
 // A manager's home fixtures lead with one of THEIR sponsors; the general
 // boards fill the rest. (Ben vetoed Liverpool sponsors for his own ground.)

@@ -159,6 +159,7 @@ const SEED_SEASON = `(() => {
     const m = state.managers[2];
     m.kit = { pattern: 'plain', c1: '#101010', c2: '#ffffff' };
     m.sponsor = 'T8'; m.boards = [1]; m.gaffer = 0; m.assistant = 0; m.stadium = 'Saved Park';
+    m.crest = { shape: 0, div: 1, charge: 3, c1: '#101010', c2: '#ffffff' }; // College of Arms joined the luck fields, 12 Aug
     clubEditor(m.id);
     const ov = document.querySelector('.club-office').closest('.overlay');
     ov.querySelector('#clubLuck').click();
