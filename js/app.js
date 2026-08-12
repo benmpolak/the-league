@@ -1752,12 +1752,13 @@ function shirtNum(mid, pid) {
 }
 
 /* ---------------- waivers & the Trough ----------------
-   Committee timing (Toby, Jul 2026), anchored to the fixtures: the post-run at
-   8pm (London) the day AFTER a gameweek's last fixture, the pre-run at 8pm the
-   day BEFORE the next gameweek's first fixture. The Trough closes 90 minutes
-   before a gameweek's first kick-off and reopens once the post-run has
-   executed. Claims are ranked and blind; order = reverse standings, winners
-   drop to the back; dropped players go back on waivers. Mirrors js/engine.js. */
+   Committee timing v2 (Toby, 12 Aug 2026): runs at 10am (London) every Tuesday
+   and Friday — fixed days, no longer chasing the fixture list; the Chairman
+   can skip one named run by exception. The Trough closes 90 minutes before a
+   gameweek's first kick-off and reopens once the first run after its last
+   fixture has executed. Claims are ranked and blind; order = reverse
+   standings, winners drop to the back; dropped players go back on waivers.
+   Mirrors js/engine.js. */
 
 const gwKicks = g => {
   const ts = state.fixtures.filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
@@ -1768,13 +1769,36 @@ function londonOffsetMin(ms) {
   const m = s.match(/(\d+)\/(\d+)\/(\d+),? (\d+):(\d+)/);
   return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] % 24, +m[5]) - ms) / 60000) : 0;
 }
-function london20(ms, dayOffset) {
+/* The waiver clock, v2 (Committee, 12 Aug 2026): runs at 10:00 Europe/London
+ * every TUESDAY and FRIDAY. The Chairman can skip one named run by exception
+ * (waiverMeta.skip); claims stay lodged and roll to the next run. Mirrors
+ * js/engine.js — the server adjudicates with the same arithmetic. */
+const WAIVER_DAYS = [2, 5]; // getUTCDay() of the London wall-date: Tue, Fri
+const WAIVER_HOUR = 10;     // 10:00 Europe/London
+const WAIVER_EPOCH = Date.UTC(2026, 7, 13); // schedule v2 begins 13 Aug 2026
+function londonAt(ms, dayOffset, hour) {
   const wall = new Date(ms + londonOffsetMin(ms) * 60000);
-  const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, 20, 0);
+  const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, hour, 0);
   return naive - londonOffsetMin(naive) * 60000;
 }
-const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
-const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
+const londonWall = at => new Date(at + londonOffsetMin(at) * 60000);
+const waiverSlotId = at => {
+  const d = londonWall(at);
+  return `wv-${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+};
+// first Tue/Fri 10:00 London slot strictly after ms (never before the epoch)
+function nextSlotAt(ms) {
+  const from = Math.max(ms, WAIVER_EPOCH - 3600e3);
+  for (let off = 0; off <= 8; off++) {
+    const at = londonAt(from, off, WAIVER_HOUR);
+    if (at <= from) continue;
+    if (WAIVER_DAYS.includes(londonWall(at).getUTCDay())) return at;
+  }
+  return null;
+}
+// the first run that can clear a finished gameweek (kick-offs are never at
+// 10am London, so a slot can't land mid-match)
+const gwClearAt = g => { const k = gwKicks(g); return k ? nextSlotAt(k.last) : null; };
 /* Ham Cup selection window: opens 7 days before the tie's first kickoff (or
  * at the draw / Chairman's early-open if later); the Trough freezes at open */
 const HAM_WINDOW_MS = 7 * 24 * 3600e3;
@@ -1788,21 +1812,22 @@ function hamOpensAt(hc) {
 }
 function nextWaiverRun(afterTs) {
   const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
-  let best = null;
-  for (let g = 0; g < GAMEWEEKS.length; g++) {
-    for (const x of [postRunAt(g), preRunAt(g)]) if (x != null && x > t && (best == null || x < best)) best = x;
-  }
-  return new Date(best ?? (t + 7 * 864e5));
+  return new Date(nextSlotAt(t) ?? (t + 7 * 864e5));
+}
+// the next run that will actually PROCESS — steps over a Chairman-skipped slot
+function nextLiveWaiverRun(afterTs) {
+  let run = nextWaiverRun(afterTs).getTime();
+  if (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
+  return new Date(run);
 }
 const waiverControl = () => state.waiverMeta?.control || 'auto';
 const lastWaiverRun = () => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
 function waiverRunDue() {
   if (state.phase !== 'season' || waiverControl() !== 'auto') return false;
   const t = Date.now(), lr = lastWaiverRun();
-  for (let g = 0; g < GAMEWEEKS.length; g++) {
-    for (const x of [postRunAt(g), preRunAt(g)]) {
-      if (x != null && x <= t && t - x < 48 * 3600e3 && x > lr) return true;
-    }
+  for (let at = nextSlotAt(t - 48 * 3600e3); at != null && at <= t; at = nextSlotAt(at)) {
+    // a Chairman-skipped slot is not due — its claims roll to the next run
+    if (at > lr && waiverSlotId(at) !== state.waiverMeta?.skip) return true;
   }
   return false;
 }
@@ -1822,7 +1847,7 @@ function troughWindow() {
     else if (k && cur >= 0) break;
   }
   if (cur < 0) return { open: true };
-  const post = postRunAt(cur);
+  const post = gwClearAt(cur);
   if (post == null) return { open: true };
   if (t < post) return { open: false, until: post, why: 'the gameweek is underway' };
   if (lastWaiverRun() < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
@@ -1847,14 +1872,16 @@ function waiverClockLine() {
       ? `Trough shut — ${tw.why}. Waivers run in <b>${fmtIn(tw.until - t)}</b> (${fmtWhen(tw.until)}).`
       : `Trough shut — ${tw.why}.`;
   }
-  const run = nextWaiverRun(Math.max(lastWaiverRun(), t)).getTime();
+  const scheduled = nextWaiverRun(Math.max(lastWaiverRun(), t)).getTime();
+  const skipped = state.waiverMeta?.skip === waiverSlotId(scheduled);
+  const run = skipped ? nextWaiverRun(scheduled).getTime() : scheduled;
   let shut = null;
   for (let g = 0; g < GAMEWEEKS.length; g++) {
     const k = gwKicks(g);
     if (k && k.first - 90 * 60000 > t) { shut = k.first - 90 * 60000; break; }
   }
   const events = [];
-  if (run) events.push([run, `waivers process in <b>${fmtIn(run - t)}</b> (${fmtWhen(run)})`]);
+  if (run) events.push([run, `waivers process in <b>${fmtIn(run - t)}</b> (${fmtWhen(run)})${skipped ? ` — the Chairman skipped ${fmtWhen(scheduled)}'s run` : ''}`]);
   if (shut != null) events.push([shut, `Trough shuts in <b>${fmtIn(shut - t)}</b> (${fmtWhen(shut)})`]);
   events.sort((a, b) => a[0] - b[0]);
   return events.length ? `Trough open — ${events.map(e => e[1]).join(' &middot; ')}.` : 'Trough open.';
@@ -2046,7 +2073,15 @@ function setWaiverControl(mode) {
   else { state.waiverMeta = { ...state.waiverMeta, control: mode }; save(); render(); }
   toast(mode === 'open' ? 'The Trough is thrown open — everything is free to sign.'
     : mode === 'closed' ? 'The Trough is closed. The Chairman has spoken.'
-    : 'Back on schedule — waivers follow the fixtures (8pm after the gameweek, 8pm before the next).');
+    : 'Back on schedule — waivers run 10am every Tuesday and Friday.');
+}
+// one-shot exception (Committee, 12 Aug): skip a named run, claims roll over
+function setWaiverSkip(id) {
+  if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
+  if (netOn()) { serverAct('waiverSkip', { id: id || null }).catch(() => {}); }
+  else { state.waiverMeta = { ...state.waiverMeta, skip: id || null }; save(); render(); }
+  toast(id ? 'Next run skipped — claims stay lodged and roll to the one after.'
+    : 'Run reinstated — waivers process as scheduled.');
 }
 // standings using ONLY gameweeks final before gwIdx — deterministic, can't reshuffle mid-round
 function standingsBefore(gwIdx) {
@@ -5913,7 +5948,7 @@ function viewTransfers() {
     }
     const ctl = waiverControl();
     const claims = myClaims(mid);
-    const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+    const nextRun = nextLiveWaiverRun(Math.max(lastWaiverRun(), Date.now()));
     const tw = troughWindow();
     // the state of play, spelled out (mock night: "it just doesn't know when
     // players go on waivers") — closed window means EVERYONE free is claim-only
@@ -5965,10 +6000,13 @@ function viewTransfers() {
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
         <button class="btn ghost small" id="ctlClosed" ${ctl === 'closed' ? 'disabled' : ''}>Close Trough</button>
         <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
+        ${state.waiverMeta?.skip
+          ? `<button class="btn ghost small" id="wvUnskip" title="Put the skipped run back on the schedule">Reinstate the skipped run</button>`
+          : `<button class="btn ghost small" id="wvSkip" data-slot="${waiverSlotId(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())).getTime())}" title="Miss one run by exception — double gameweek, rogue Wednesday finish. Claims stay lodged and roll to the run after.">Skip the next run</button>`}
       </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>`
       : demoMode ? `<div style="margin-top:10px">
         <button class="btn small" id="runWaivers">&#9889; Process waivers now (demo)</button>
-        <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run on the fixture clock — the evening after a gameweek finishes and the evening before the next kicks off. In the demo you ARE the Chairman: put in a waiver request on anyone marked "waivers", then process the round and watch it resolve.</p>
+        <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run at 10am every Tuesday and Friday. In the demo you ARE the Chairman: put in a waiver request on anyone marked "waivers", then process the round and watch it resolve.</p>
       </div>` : ''}
     </div>`;
   }
@@ -6261,6 +6299,10 @@ function bindTransfers() {
   const rw = $('#runWaivers');
   if (rw) rw.onclick = () => { if (confirm('Process waivers now for everyone? Requests go through in reverse table order and the Trough opens.')) processWaivers(true); };
   ['open', 'closed', 'auto'].forEach(m => { const b = $(`#ctl${m[0].toUpperCase()}${m.slice(1)}`); if (b) b.onclick = () => setWaiverControl(m); });
+  const sk = $('#wvSkip');
+  if (sk) sk.onclick = () => { if (confirm('Skip the next waiver run? Everyone\'s claims stay lodged and roll to the run after. The Trough stays on its normal clock.')) setWaiverSkip(sk.dataset.slot); };
+  const usk = $('#wvUnskip');
+  if (usk) usk.onclick = () => setWaiverSkip(null);
   if (results) {
     const cur = currentGwIndex();
     // tap a chip on the pitch to pick who makes way; tap again to change your
@@ -9385,7 +9427,7 @@ function viewRules() {
       ${Object.keys(DEFAULT_SCORING).filter(k => sc[k] !== 0).map(k => `<div class="score-row"><span>${SCORING_LABELS[k]}</span><b class="gold">${sc[k] > 0 ? '+' : ''}${sc[k]}</b></div>`).join('')}
       <p class="muted" style="font-size:11.5px;margin-top:8px">Raw stats from the official FPL feed, scored by our table above. No captains. No bonus points. <b>No defensive-contribution (DEFCON) points.</b> Double gameweeks score on the week's combined stats.</p>
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
-      <p class="rules-p"><b>Waivers:</b> the market follows the fixtures. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>8pm the day after the gameweek's last fixture</b> (reverse table order — win a claim, drop to the back), which reopens the Trough. A second run at <b>8pm the day before the next gameweek's first fixture</b> clears claims on freshly dropped players. The Chairman can run waivers early, or open/close the Trough entirely.</p>
+      <p class="rules-p"><b>Waivers:</b> the market runs to a fixed clock. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>10am every Tuesday and Friday</b> (reverse table order — win a claim, drop to the back); the first run after the gameweek's last fixture reopens the Trough. The Chairman can run waivers early, skip one run by exception (claims roll to the next), or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
       <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Nitty-gritty confirmed nearer the time, as is tradition.</p>
@@ -9547,7 +9589,7 @@ function preflightCard() {
   const ctl = waiverControl();
   const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
   rows.push(light(ctl === 'auto' ? 'ok' : 'warn', 'Waivers',
-    ctl === 'auto' ? `on the fixture clock — next run ${fmtWhen(nextRun)}` : `manual override active (${esc(ctl)}) — the scheduler stands down until it's back on auto`));
+    ctl === 'auto' ? `10am Tuesday and Friday — next run ${fmtWhen(nextRun)}${state.waiverMeta?.skip ? ' (one run skipped by the Chairman)' : ''}` : `manual override active (${esc(ctl)}) — the scheduler stands down until it's back on auto`));
   // 6. orphaned trades
   const stale = toArr(state.trades).filter(t => t.status === 'executing' || (t.status === 'pending' && Date.now() - (t.t || 0) > 7 * 864e5));
   rows.push(light(stale.length ? 'warn' : 'ok', 'Trade desk', stale.length ? `${stale.length} offer${stale.length > 1 ? 's' : ''} stuck or older than a week — worth a look` : 'no orphaned offers'));
@@ -9632,7 +9674,7 @@ function viewSettings() {
       <p class="rules-p">&sect;1 The title is the playoffs. The table is for arguing.</p>
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
-      <p class="rules-p">&sect;4 Waivers follow the fixtures: 8pm after the gameweek, 8pm before the next. Reverse table order. The Trough takes the rest.</p>
+      <p class="rules-p">&sect;4 Waivers run 10am Tuesday and Friday, reverse table order. The Chairman may skip a run by exception. The Trough takes the rest.</p>
       <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
       <p class="rules-p">&sect;6 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
       <p class="rules-p">&sect;7 The hydration break is inviolable.</p>
@@ -9648,7 +9690,7 @@ function viewSettings() {
         <li>Draft. Your picks are yours; on anyone else's clock press <b>Autopick</b> — or press <b>&#9193; Skip the draft</b> on the console to autodraft the whole board in one stroke and go straight to the season.</li>
         <li>Open the Chamber below: <b>Kick off GW1</b> (20-min live matchday) or go straight to <b>Full time</b>.</li>
         <li>After full time: on the Transfers page, use the <b>acting as</b> switcher in the header to take any manager's chair — make drops, sign from the Trough, lodge waiver claims, propose and accept trades between clubs. It all lands as theirs.</li>
-        <li>On the Waiver order tab, <b>Process waivers now</b> — that's Tuesday 8pm happening early. Check the requests went through in reverse table order.</li>
+        <li>On the Waiver order tab, <b>Process waivers now</b> — that's Tuesday 10am happening early. Check the requests went through in reverse table order.</li>
         <li>Chamber GW2, and round again.</li>
       </ol>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">

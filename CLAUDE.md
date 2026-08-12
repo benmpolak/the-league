@@ -55,7 +55,7 @@ python3 -m http.server 8749   # from repo root; it's a static site
 
 ## League glossary (the code speaks this language)
 
-- **The Trough** — free-agent pool. **Waivers** — blind claims, bottom of table feeds first, run on the fixture clock
+- **The Trough** — free-agent pool. **Waivers** — blind claims, bottom of table feeds first, run 10am London every Tue & Fri (Chairman can skip one run by exception)
 - **The Window Draft** — snake draft over new PL arrivals after the transfer window shuts; leftovers spill into the Trough
 - **The Chairman** — Ben (commissioner, managers[0]). **The Committee** — the league's voice in copy
 - **Lobus** — declared big man; klaxon when he scores. **Palwin Ham Cup** — ledger #6

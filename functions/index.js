@@ -303,6 +303,15 @@ async function runWaivers(league, runId, trigger, failAt) {
     if (!plan) {
       if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
       if (trigger === 'schedule' && eng.waiverControl(state) !== 'auto') { await runRef.update({ status: 'done', result: 'skipped: control!=auto', finishedAt: Date.now() }); return { skipped: 'control' }; }
+      // the Chairman skipped this named run (Committee, 12 Aug): mark it done
+      // in the ledger so it can never fire late, spend the one-shot flag, and
+      // leave lastRun alone — the Trough stays shut until a REAL run clears it,
+      // so nobody free-signs past the queue of rolled-over claims
+      if (trigger === 'schedule' && state.waiverMeta?.skip && runId === `sched-${state.waiverMeta.skip}`) {
+        await db().ref(`${base}/public/waiverMeta`).set({ ...state.waiverMeta, skip: null });
+        await runRef.update({ status: 'done', result: 'skipped: chairman', finishedAt: Date.now() });
+        return { skipped: 'chairman' };
+      }
       if (trigger === 'schedule' && !eng.waiverRunDue(state)) { await runRef.update({ status: 'done', result: 'skipped: not due', finishedAt: Date.now() }); return { skipped: 'not due' }; }
       const runStart = Date.now() - 1;
       const res = eng.resolveWaivers(state, runStart);
@@ -1382,6 +1391,17 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
   if (!['auto', 'open', 'closed'].includes(data.mode)) throw new HttpsError('invalid-argument', 'auto, open or closed');
   await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, control: data.mode });
   return { ok: true };
+};
+
+// skip one named run by exception (Toby, 12 Aug: double gameweeks, a rogue
+// Wednesday finish) — claims stay lodged and roll to the run after. id null
+// reinstates. The scheduled runner spends the flag when the slot comes due.
+ACTIONS.waiverSkip = async ({ league, a, data, state }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  const id = data.id == null ? null : String(data.id);
+  if (id != null && !/^wv-\d{4}-\d{2}-\d{2}$/.test(id)) throw new HttpsError('invalid-argument', 'not a waiver slot id');
+  await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, skip: id });
+  return { ok: true, skip: id };
 };
 
 ACTIONS.waiverRunNow = async ({ league, a, data }) => {

@@ -259,6 +259,15 @@ const SB = 'the-league-sandbox';
   // exactly-once on a shared run id: pre-claim a scheduled slot, then watch a re-claim skip
   await db.ref(`v2/leagues/${LG}/server/waiverRuns/sched-locked`).set({ status: 'done', finishedAt: Date.now() });
 
+  // the Chairman's one-shot skip (Committee, 12 Aug): a named run can be
+  // missed by exception; claims stay lodged and roll to the next run
+  chk('non-commissioner cannot skip a run', (await T.mutate(LG, 'waiverSkip', { id: 'wv-2026-09-01' }, tok2)).error?.status === 'PERMISSION_DENIED');
+  chk('a skip must name a real slot id', (await T.mutate(LG, 'waiverSkip', { id: 'gw1-post' }, tok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('commissioner skips a named run', (await T.mutate(LG, 'waiverSkip', { id: 'wv-2026-09-01' }, tok1)).result?.skip === 'wv-2026-09-01');
+  chk('skip recorded on waiverMeta', (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === 'wv-2026-09-01');
+  const unskip = await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
+  chk('commissioner reinstates the run', !unskip.error && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === null);
+
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));
   const theirMF = (await dropMine(2, 'MF'));

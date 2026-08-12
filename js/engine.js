@@ -396,41 +396,67 @@
       if (!m) return 0;
       return Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4] % 24, +m[5]) - ms) / 60000);
     }
-    // 20:00 Europe/London on (the London calendar day of `ms`) + dayOffset
-    function london20(ms, dayOffset) {
+    /* The waiver clock, v2 (Committee, 12 Aug 2026): runs at 10:00
+     * Europe/London every TUESDAY and FRIDAY — fixed days, no longer chasing
+     * the fixture list. The Chairman can skip one named run by exception
+     * (waiverMeta.skip = its slot id) for double gameweeks or a rogue
+     * Wednesday finish; claims stay lodged and roll to the next run. Slots
+     * exist only from the cutover epoch so the 14-day lookback can never
+     * resurrect the old fixture-anchored gwN-post/pre ids. */
+    const WAIVER_DAYS = [2, 5]; // getUTCDay() of the London wall-date: Tue, Fri
+    const WAIVER_HOUR = 10;     // 10:00 Europe/London
+    const WAIVER_EPOCH = Date.UTC(2026, 7, 13); // schedule v2 begins 13 Aug 2026
+    // `hour`:00 Europe/London on (the London calendar day of `ms`) + dayOffset
+    function londonAt(ms, dayOffset, hour) {
       const wall = new Date(ms + londonOffsetMin(ms) * 60000);
-      const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, 20, 0);
+      const naive = Date.UTC(wall.getUTCFullYear(), wall.getUTCMonth(), wall.getUTCDate() + dayOffset, hour, 0);
       return naive - londonOffsetMin(naive) * 60000;
     }
-    const postRunAt = g => { const k = gwKicks(g); return k ? london20(k.last, 1) : null; };
-    const preRunAt = g => { const k = gwKicks(g); return k ? london20(k.first, -1) : null; };
+    const londonWall = at => new Date(at + londonOffsetMin(at) * 60000);
+    const waiverSlotId = at => {
+      const d = londonWall(at);
+      return `wv-${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    };
+    const slotAtFromId = id => {
+      const m = /^wv-(\d{4})-(\d{2})-(\d{2})$/.exec(String(id || ''));
+      return m ? londonAt(Date.UTC(+m[1], +m[2] - 1, +m[3], 12), 0, WAIVER_HOUR) : null;
+    };
+    // first Tue/Fri 10:00 London slot strictly after ms (never before the epoch)
+    function nextSlotAt(ms) {
+      const from = Math.max(ms, WAIVER_EPOCH - 3600e3);
+      for (let off = 0; off <= 8; off++) {
+        const at = londonAt(from, off, WAIVER_HOUR);
+        if (at <= from) continue;
+        if (WAIVER_DAYS.includes(londonWall(at).getUTCDay())) return at;
+      }
+      return null; // unreachable: a Tuesday or Friday always lands within 8 days
+    }
+    // the first run that can clear a finished gameweek: the next slot after
+    // its last kick-off (kick-offs are never at 10am London, so a slot can't
+    // land mid-match)
+    const gwClearAt = g => { const k = gwKicks(g); return k ? nextSlotAt(k.last) : null; };
     // scheduled runs already due, within a bounded lookback (deterministic ids
     // let the server's run ledger make each one exactly-once)
     function waiverSchedule(horizonMs = 14 * 24 * 3600e3) {
       // 14-day lookback: a missed run must survive a long Functions outage.
       // Exactly-once is the run ledger's job (deterministic ids), not this window's.
       const t = now(), out = [];
-      for (let g = 0; g < GAMEWEEKS.length; g++) {
-        const post = postRunAt(g), pre = preRunAt(g);
-        if (post != null && post <= t && t - post < horizonMs) out.push({ id: `gw${g + 1}-post`, at: post });
-        if (pre != null && pre <= t && t - pre < horizonMs) out.push({ id: `gw${g + 1}-pre`, at: pre });
+      for (let at = nextSlotAt(t - horizonMs); at != null && at <= t; at = nextSlotAt(at)) {
+        out.push({ id: waiverSlotId(at), at });
       }
-      return out.sort((a, b) => a.at - b.at);
+      return out;
     }
     function nextWaiverRun(afterTs) {
       const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
-      let best = null;
-      for (let g = 0; g < GAMEWEEKS.length; g++) {
-        for (const x of [postRunAt(g), preRunAt(g)]) if (x != null && x > t && (best == null || x < best)) best = x;
-      }
-      return new Date(best ?? (t + 7 * 864e5)); // no fixture data yet: quiet fallback
+      return new Date(nextSlotAt(t) ?? (t + 7 * 864e5));
     }
     const waiverControl = state => state.waiverMeta?.control || 'auto';
     const lastWaiverRun = state => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
     function waiverRunDue(state) {
       if (state.phase !== 'season' || waiverControl(state) !== 'auto') return false;
       const lr = lastWaiverRun(state);
-      return waiverSchedule().some(d => d.at > lr);
+      // a Chairman-skipped slot is not due — its claims roll to the next run
+      return waiverSchedule().some(d => d.at > lr && d.id !== state.waiverMeta?.skip);
     }
     /* Trough state under auto control: closed from 90 min before a gameweek's
      * first fixture; reopens only once that gameweek's post-run has executed.
@@ -455,7 +481,7 @@
         else if (k && cur >= 0) break;
       }
       if (cur < 0) return { open: true };
-      const post = postRunAt(cur);
+      const post = gwClearAt(cur);
       if (post == null) return { open: true };
       if (t < post) return { open: false, until: post, why: 'the gameweek is underway' };
       if (lastWaiverRun(state) < post) return { open: false, until: null, why: 'awaiting the post-gameweek waiver run' };
@@ -619,6 +645,10 @@
         }
       }
       const stampedMeta = { ...state.waiverMeta, lastRun: new Date(runStart).toISOString() };
+      // a skip names ONE slot; once that slot is behind a real run it's spent
+      // (a manual run-now must not leave a stale skip suppressing next week)
+      const skipAt = slotAtFromId(stampedMeta.skip);
+      if (skipAt != null && skipAt <= runStart) stampedMeta.skip = null;
       return { records, executed, buckets, stampedMeta, strippedLineups, tgw };
     }
 
@@ -640,7 +670,7 @@
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
       nextWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
       mockScorelines, mockGwStats,
-      gwKicks, postRunAt, preRunAt, waiverSchedule, troughWindow,
+      gwKicks, gwClearAt, nextSlotAt, waiverSlotId, slotAtFromId, waiverSchedule, troughWindow,
       wdActor,
     };
   }
