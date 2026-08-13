@@ -50,16 +50,22 @@ jobs:
           # workflow_run's own sha is the commit the refresh STARTED on —
           # before the bot's data commit. Always deploy the tip of main.
           ref: main
-      - name: Stand down when the site already serves HEAD (bot no-op passes)
+      - name: Stand down when the refresh pushed nothing and nothing else moved
         id: gate
         if: github.event_name == 'workflow_run'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          DEPLOYED=$(gh api 'repos/${{ github.repository }}/deployments?environment=github-pages&per_page=1' --jq '.[0].sha' 2>/dev/null || echo none)
+          # The refresh's head_sha is the commit it STARTED on: if main still
+          # points there, it committed nothing and nobody else pushed, so the
+          # site is already current. Do NOT gate on the deployments API — the
+          # job's own `environment:` key stamps a deployment record the moment
+          # the run starts, so that gate always saw its own sha and always
+          # stood down: three "successful" deploys that shipped nothing
+          # (13 Aug, found because the site sat on the old build for hours).
           HEAD=$(git rev-parse HEAD)
-          echo "deployed=$DEPLOYED head=$HEAD"
-          if [ "$DEPLOYED" = "$HEAD" ]; then echo "skip=1" >> "$GITHUB_OUTPUT"; fi
+          echo "started_on=${{ github.event.workflow_run.head_sha }} head=$HEAD"
+          if [ "$HEAD" = "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
       - if: ${{ !steps.gate.outputs.skip }}
         uses: actions/configure-pages@v5
       - if: ${{ !steps.gate.outputs.skip }}
