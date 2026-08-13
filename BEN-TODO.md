@@ -8,12 +8,20 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
-## 00. THE SITE IS NOT PUBLISHING — a stuck Pages deployment (13 Aug, live)
+## 00. ~~THE SITE IS NOT PUBLISHING~~ — RESOLVED 13 Aug ~16:15, but read the
+## last paragraph
 
-**Symptom:** `main` is correct and CI is green, but the live site has been
-serving the build from `b78447e` — one commit before the 15:50 merge. Two
-changes that look shipped are not on the site. Nobody is told: CI passes, the
-beta mirror succeeds, and the site quietly stays on an old build.
+**Resolved:** the wedged deployment was cleared with a failed-run re-run from
+the other Claude session (`gh run rerun --failed` on the stuck `pages build
+and deployment`); every push since has deployed, and the live site was
+verified serving current code. Nothing for you to cancel. The recurrence risk
+below is still real — this is the second wedge (2 Aug was the first) and the
+concurrency-group fix at the bottom is worth a yes/no from you.
+
+**Symptom (as found):** `main` is correct and CI is green, but the live site
+has been serving the build from `b78447e` — one commit before the 15:50
+merge. Two changes that look shipped are not on the site. Nobody is told: CI
+passes, the beta mirror succeeds, and the site quietly stays on an old build.
 
 **Cause.** Two pushes landed 70 seconds apart (`db055bc`, then `039930d`).
 GitHub cancelled the first deploy and refused the second, and the first is now
