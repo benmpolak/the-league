@@ -145,13 +145,14 @@ const AD_BOARDS = [
 
 // ================= The classics shelf =================
 // Real shirt sponsors of the old football (Lee, 13 Aug: "your Brothers, your
-// JVCs, your Autoglasses"). Chest text only — the kit renderer prints whatever
-// it's given, these are just the shelf. Heavy on Everton, Chairman's licence.
+// JVCs, your Autoglasses"). Strictly 90s–00s (Ben, 13 Aug: "doesnt need to be
+// too heavy on everton, just keep it 90s-00s" — One2One carries the flag
+// alone). Chest text only — the kit renderer prints whatever it's given.
 const RETRO_SPONSORS = [
-  'BROTHER', 'JVC', 'AUTOGLASS', 'SHARP', 'CANDY', 'CROWN PAINTS',
-  'HAFNIA', 'NEC', 'DANKA', 'ONE2ONE', 'HOLSTEN', 'SEGA', 'DREAMCAST',
-  'WALKERS', "McEWAN'S LAGER", 'NEWCASTLE BROWN ALE', 'DR. MARTENS',
-  'PACKARD BELL', 'GOODYEAR', 'WANG',
+  'BROTHER', 'JVC', 'AUTOGLASS', 'SHARP', 'CANDY', 'HOLSTEN', 'SEGA',
+  'DREAMCAST', 'WALKERS', "McEWAN'S LAGER", 'NEWCASTLE BROWN ALE',
+  'DR. MARTENS', 'PACKARD BELL', 'ONE2ONE', 'CHUPA CHUPS', 'TDK',
+  'PEUGEOT', 'DAGENHAM MOTORS', 'CELLNET', 'o2',
 ];
 
 // ================= The College of Arms =================
