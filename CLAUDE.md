@@ -13,8 +13,11 @@ Firebase, deploys, or secrets; leave `functions/`, `js/sync.js` and the
 waiver engine alone; Committee voice in all user-facing copy; one idea
 per commit, plain-English commit messages.
 
-After every push to main, also sync the beta/sandbox site (it's a
-force-push mirror of this repo — never a place for separate work):
+The beta/sandbox site (the-league-beta) is a force-push mirror of this
+repo — never a place for separate work. Mirroring is AUTOMATIC as of
+13 Aug 2026 (`.github/workflows/mirror.yml`: every push to main, plus a
+15-minute sweep for the data-refresh commits). Only push to it by hand
+if the workflow is broken:
 
     git push --force https://github.com/benmpolak/the-league-beta.git main:main
 
