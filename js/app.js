@@ -5136,17 +5136,20 @@ function showScoutCompare(addHistory = true) {
   ov.onclick = e => { if (e.target === ov || e.target.closest('[data-compare-close]')) closeOv(ov); };
   ov.querySelectorAll('[data-compare-remove]').forEach(b => b.onclick = e => { e.stopPropagation(); toggleScoutCompare(+b.dataset.compareRemove); });
   ov.querySelector('[data-compare-clear]').onclick = e => { e.stopPropagation(); scoutCompare = []; paintScoutCompare(); };
-  bindCompareBody(() => showScoutCompare(false));
+  bindCompareBody(() => showScoutCompare(false), ov);
   document.body.appendChild(ov);
   if (addHistory) pushOvState();
 }
 // the window pickers and metric ticks inside compareBody, wherever it renders
-function bindCompareBody(redraw) {
-  const back = document.getElementById('cmpBack');
+function bindCompareBody(redraw, root = document) {
+  // root matters: the overlay builds its DOM detached, so document-wide
+  // getElementById found nothing (or worse, the Data Room's inline copy) —
+  // the overlay's window pickers and metric ticks were dead on arrival
+  const back = root.querySelector('#cmpBack');
   if (back) back.onchange = e => { dataView = { ...dataView, backWeeks: +e.target.value }; redraw(); };
-  const fwd = document.getElementById('cmpFwd');
+  const fwd = root.querySelector('#cmpFwd');
   if (fwd) fwd.onchange = e => { dataView = { ...dataView, fwdWeeks: +e.target.value }; redraw(); };
-  document.querySelectorAll('[data-cmpcol]').forEach(box => box.onchange = () => {
+  root.querySelectorAll('[data-cmpcol]').forEach(box => box.onchange = () => {
     const cur = new Set(dataView.compareCols || COMPARE_METRICS.map(m => m.k));
     box.checked ? cur.add(box.dataset.cmpcol) : cur.delete(box.dataset.cmpcol);
     dataView = { ...dataView, compareCols: COMPARE_METRICS.map(m => m.k).filter(k => cur.has(k)) };

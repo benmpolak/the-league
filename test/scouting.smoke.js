@@ -130,6 +130,36 @@ const chk = (name, ok, detail = '') => {
   chk('SC6: compare is read-only and capped at three (a fourth pushes the oldest out)',
     comparison.capped && comparison.sharedUntouched, JSON.stringify(comparison));
 
+  // the overlay builds its DOM detached, so its pickers must be bound against
+  // the overlay itself — bound against the document they were dead on arrival
+  // (found in the 13 Aug post-merge audit; the tick-boxes share the fate)
+  const overlayPickers = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll('.pool-table [data-compare]')];
+    buttons[0].click();
+    buttons[1].click();
+    showScoutCompare();
+    const pick = document.querySelector('#scoutCompareOverlay #cmpFwd');
+    if (!pick) return { pick: false };
+    pick.value = '3';
+    pick.dispatchEvent(new Event('change'));
+    const reopened = document.querySelector('#scoutCompareOverlay');
+    const windowTook = dataView.fwdWeeks === 3
+      && !![...reopened.querySelectorAll('tbody tr td')].find(td => /next 3/.test(td.textContent));
+    const box = reopened.querySelector('[data-cmpcol="g"]');
+    box.checked = false;
+    box.dispatchEvent(new Event('change'));
+    const tickTook = !(dataView.compareCols || []).includes('g')
+      && ![...document.querySelectorAll('#scoutCompareOverlay tbody tr td:first-child')].some(td => /^Goals/.test(td.textContent));
+    document.querySelector('#scoutCompareOverlay')?.remove();
+    scoutCompare = [];
+    dataView = { ...dataView, fwdWeeks: 6, compareCols: null };
+    paintScoutCompare();
+    return { pick: true, windowTook, tickTook };
+  });
+  chk('SC6b: the overlay\'s window picker and metric ticks are live, not dead controls',
+    overlayPickers.pick && overlayPickers.windowTook && overlayPickers.tickTook,
+    JSON.stringify(overlayPickers));
+
   const singleAdd = await page.evaluate(() => {
     const button = document.querySelector('[data-auto]');
     const pid = +button.dataset.auto;
