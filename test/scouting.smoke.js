@@ -160,6 +160,34 @@ const chk = (name, ok, detail = '') => {
     overlayPickers.pick && overlayPickers.windowTook && overlayPickers.tickTook,
     JSON.stringify(overlayPickers));
 
+  // removing a player until fewer than two remain closes the overlay THROUGH
+  // closeOv, consuming its history entry — a bare remove() left one ghost
+  // Back press that swallowed the first tap (sol launch-verify P3, 13 Aug)
+  // earlier checks may leave their own entries on the stack, so the assertion
+  // is RELATIVE: opening pushes exactly one entry, closing consumes exactly it
+  const ghostBack = await page.evaluate(() => {
+    scoutCompare = [];
+    const beforeOv = (history.state && history.state.ov) || 0;
+    const buttons = [...document.querySelectorAll('.pool-table [data-compare]')];
+    buttons[0].click();
+    buttons[1].click();
+    showScoutCompare(true); // real open: pushes the overlay history entry
+    const openedOv = (history.state && history.state.ov) || 0;
+    const opened = !!document.getElementById('scoutCompareOverlay') && openedOv > beforeOv;
+    toggleScoutCompare(+buttons[0].dataset.compare); // down to one → closes
+    return { beforeOv, openedOv, opened, closed: !document.getElementById('scoutCompareOverlay') };
+  });
+  await page.waitForFunction(
+    b => ((history.state && history.state.ov) || 0) === b, {}, ghostBack.beforeOv).catch(() => {});
+  const entryConsumed = await page.evaluate(b => {
+    const consumed = ((history.state && history.state.ov) || 0) === b;
+    scoutCompare = [];
+    paintScoutCompare();
+    return consumed;
+  }, ghostBack.beforeOv);
+  chk('SC6c: closing the overlay by removal consumes its Back entry (no ghost press)',
+    ghostBack.opened && ghostBack.closed && entryConsumed, JSON.stringify({ ...ghostBack, entryConsumed }));
+
   const singleAdd = await page.evaluate(() => {
     const button = document.querySelector('[data-auto]');
     const pid = +button.dataset.auto;

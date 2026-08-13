@@ -218,6 +218,30 @@ const chk = (name, ok, detail = '') => {
     && p4e.everyoneElseShifted && p4e.upSteppedOverHidden && p4e.rowsBackWhenCleared && p4e.twoPositions,
     JSON.stringify(p4e));
 
+  // ---- P4f: a club filter whose club leaves the list self-heals — it used to
+  // linger invisibly (selector said "All clubs", lens stayed shut) until Clear
+  // was pressed (sol launch-verify P3, 13 Aug)
+  const p4f = await page.evaluate(() => {
+    const byClub = {};
+    for (const p of PLAYERS) (byClub[p.team] = byClub[p.team] || []).push(p);
+    const [clubA, clubB] = Object.keys(byClub).filter(c => byClub[c].length >= 2);
+    setAutolist(whoami, [byClub[clubA][0].id, byClub[clubB][0].id]);
+    autoFilter = { pos: [], club: clubA };
+    render();
+    const rowsWhileFiltered = (document.querySelector('.queue-card') || document).querySelectorAll('.qrow').length;
+    // the filtered club's last man leaves the list
+    setAutolist(whoami, [byClub[clubB][0].id, byClub[clubB][1].id]);
+    render();
+    const card = document.querySelector('.queue-card') || document;
+    return {
+      rowsWhileFiltered,
+      filterHealed: autoFilter.club === '',
+      rowsBack: card.querySelectorAll('.qrow').length === 2,
+    };
+  });
+  chk('P4f club filter self-heals when its club leaves the list',
+    p4f.rowsWhileFiltered === 1 && p4f.filterHealed && p4f.rowsBack, JSON.stringify(p4f));
+
   // ---- P4b: drag a pool player into the queue card (synthetic HTML5 DnD)
   const p4b = await page.evaluate(() => {
     const before = [...toArr(state.autolists[whoami])];

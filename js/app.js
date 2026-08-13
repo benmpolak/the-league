@@ -4498,6 +4498,10 @@ function autolistRows() {
   const list = toArr(state.autolists?.[whoami]);
   if (!list.length) return '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
   const clubs = [...new Set(list.map(pid => PLAYER_BY_ID[pid]).filter(Boolean).map(p => p.team))].sort();
+  // a club filter whose club has left the list (last man removed, or a manager
+  // switch) self-heals rather than lingering invisibly — the selector showed
+  // "All clubs" while the lens stayed shut (sol launch-verify P3)
+  if (autoFilter.club && !clubs.includes(autoFilter.club)) autoFilter = { ...autoFilter, club: '' };
   const vis = visibleAutoIdx();
   // ids would collide — this markup renders in the side card AND the phone
   // drawer at the same time — so the controls are addressed by data attribute
@@ -5116,9 +5120,17 @@ function toggleScoutCompare(pid) {
   paintScoutCompare();
 }
 function showScoutCompare(addHistory = true) {
-  document.getElementById('scoutCompareOverlay')?.remove();
+  const existing = document.getElementById('scoutCompareOverlay');
   const ids = compareIds();
-  if (ids.length < 2) { toast('Pick two to compare'); return; }
+  if (ids.length < 2) {
+    // dropping below two closes the overlay via closeOv so its history entry
+    // is consumed with it — a bare remove() left one ghost Back press that
+    // swallowed the first tap and did nothing (sol launch-verify P3)
+    if (existing) closeOv(existing);
+    toast('Pick two to compare');
+    return;
+  }
+  existing?.remove();
   const ov = document.createElement('div');
   ov.id = 'scoutCompareOverlay';
   ov.className = 'overlay';
