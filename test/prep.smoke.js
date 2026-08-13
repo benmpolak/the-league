@@ -161,6 +161,63 @@ const chk = (name, ok, detail = '') => {
   chk('P4 arrows reorder both ways, end buttons disabled',
     p4.endsDisabled && p4.swapped && p4.restored, JSON.stringify(p4));
 
+  // ---- P4c: the filter is a LENS — ranks stay absolute, and typing one moves
+  // a player there (Marc, 13 Aug: "I want Joao Pedro 4th and it pushes
+  // everyone else down"), including while filtered to one position
+  const p4e = await page.evaluate(() => {
+    const byPos = pos => PLAYERS.filter(p => p.pos === pos).sort((a, b) => rating(b) - rating(a));
+    const fw = byPos('FW'), mf = byPos('MF'), df = byPos('DF');
+    // strikers deliberately scattered among other positions
+    setAutolist(whoami, [fw[0], mf[0], df[0], mf[1], fw[1], df[1], fw[2]].map(p => p.id));
+    const names = () => toArr(state.autolists[whoami]).map(id => PLAYER_BY_ID[id].name);
+    const before = names();
+
+    autoFilter = { pos: ['FW'], club: '' };
+    render();
+    // the queue renders twice — side card and phone drawer — so read one copy
+    const card = document.querySelector('.queue-card') || document;
+    const shownRanks = [...card.querySelectorAll('[data-autorank]')].map(i => +i.value);
+    const shownAreStrikers = [...card.querySelectorAll('.qrow .pos-badge')].every(b => b.textContent === 'FW');
+
+    // the last striker sits at #7; type 2 and he should become second overall
+    const lastFw = visibleAutoIdx()[2];
+    const moved = PLAYER_BY_ID[toArr(state.autolists[whoami])[lastFw]].name;
+    moveAuto(lastFw, 1);
+    const afterType = names();
+
+    // up while filtered steps over the hidden midfielder to the striker above
+    autoFilter = { pos: ['FW'], club: '' };
+    const vis = visibleAutoIdx();
+    const bottom = vis[vis.length - 1];
+    const bottomName = PLAYER_BY_ID[toArr(state.autolists[whoami])[bottom]].name;
+    const above = PLAYER_BY_ID[toArr(state.autolists[whoami])[vis[vis.length - 2]]].name;
+    moveAuto(bottom, vis[vis.length - 2]);
+    const afterUp = names();
+
+    // two positions at once — forwards AND midfielders (Marc, 13 Aug)
+    autoFilter = { pos: ['FW', 'MF'], club: '' };
+    render();
+    const bothPos = [...(document.querySelector('.queue-card') || document).querySelectorAll('.qrow .pos-badge')]
+      .map(b => b.textContent);
+    const twoPositions = bothPos.length === 5 && bothPos.every(t => t === 'FW' || t === 'MF')
+      && bothPos.includes('FW') && bothPos.includes('MF');
+
+    autoFilter = { pos: [], club: '' };
+    render();
+    return {
+      shownRanks, shownAreStrikers, twoPositions, bothPos,
+      ranksMatchTruth: JSON.stringify(shownRanks) === JSON.stringify([1, 5, 7]),
+      movedTo: afterType.indexOf(moved) + 1,
+      everyoneElseShifted: afterType.length === before.length && new Set(afterType).size === before.length,
+      upSteppedOverHidden: afterUp.indexOf(bottomName) + 1 < afterUp.indexOf(above) + 1,
+      rowsBackWhenCleared: (document.querySelector('.queue-card') || document).querySelectorAll('.qrow').length === before.length,
+    };
+  });
+  chk('P4e queue filters by one or several positions, keeps true ranks, and a typed rank moves a player',
+    p4e.shownAreStrikers && p4e.ranksMatchTruth && p4e.movedTo === 2
+    && p4e.everyoneElseShifted && p4e.upSteppedOverHidden && p4e.rowsBackWhenCleared && p4e.twoPositions,
+    JSON.stringify(p4e));
+
   // ---- P4b: drag a pool player into the queue card (synthetic HTML5 DnD)
   const p4b = await page.evaluate(() => {
     const before = [...toArr(state.autolists[whoami])];

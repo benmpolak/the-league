@@ -4454,25 +4454,70 @@ function squadDrawerHtml() {
 
 /* one ranked queue, rendered in the sidebar and the phone drawer alike —
    with a warning where autopick would have to skip a name */
+/* Narrowing the queue (Marc, 13 Aug: "may want to reorder just my strikers but
+   there will be players of other positions in between them"). The filter is a
+   LENS, never a reordering: the rank shown is always the player's true place in
+   the whole list, so typing 4 against a filtered striker means fourth overall,
+   not fourth among strikers. */
+let autoFilter = { pos: [], club: '' };
+// positions are a SET, not a choice — "forwards and midfielders" is one
+// question, not two (Marc, 13 Aug). Empty means everyone.
+const autoPosOn = () => toArr(autoFilter.pos);
+const autoFiltered = () => autoPosOn().length || autoFilter.club;
+const autoRowShown = p => p && (!autoPosOn().length || autoPosOn().includes(p.pos))
+  && (!autoFilter.club || p.team === autoFilter.club);
+// true indices of the rows the filter currently shows, in list order
+function visibleAutoIdx() {
+  return toArr(state.autolists?.[whoami])
+    .map((pid, k) => ({ k, p: PLAYER_BY_ID[pid] }))
+    .filter(x => autoRowShown(x.p))
+    .map(x => x.k);
+}
+function moveAuto(from, to) {
+  const arr = [...toArr(state.autolists?.[whoami])];
+  if (!Number.isInteger(from) || from < 0 || from >= arr.length) return;
+  const t = Math.max(0, Math.min(arr.length - 1, to));
+  if (t === from) { render(); return; } // redraw so a typed number snaps back
+  const [pid] = arr.splice(from, 1);
+  arr.splice(t, 0, pid);
+  setAutolist(whoami, arr);
+}
 function autolistRows() {
   const list = toArr(state.autolists?.[whoami]);
-  return list.map((pid, k) => {
-    const p = PLAYER_BY_ID[pid];
-    if (!p) return '';
+  if (!list.length) return '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
+  const clubs = [...new Set(list.map(pid => PLAYER_BY_ID[pid]).filter(Boolean).map(p => p.team))].sort();
+  const vis = visibleAutoIdx();
+  // ids would collide — this markup renders in the side card AND the phone
+  // drawer at the same time — so the controls are addressed by data attribute
+  const on = autoPosOn();
+  const controls = `<div class="pool-controls" style="margin:0 0 8px">
+    ${['GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${on.includes(pp) ? '' : 'ghost'}" data-autofpos="${pp}" aria-pressed="${on.includes(pp)}" title="${on.includes(pp) ? `Stop showing ${pp}` : `Also show ${pp}`}">${pp}</button>`).join('')}
+    <select data-autofclub aria-label="Filter the list by club">
+      <option value="">All clubs</option>
+      ${clubs.map(c => `<option value="${esc(c)}" ${autoFilter.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+    </select>
+    ${autoFiltered() ? `<button class="btn ghost small" data-autofclear>Clear</button>
+      <span class="muted" style="font-size:11px;align-self:center">${vis.length} of ${list.length} &middot; ranks are still out of ${list.length}</span>` : ''}
+  </div>`;
+  const rows = vis.map((k, i) => {
+    const p = PLAYER_BY_ID[list[k]];
     // pre-draft nobody is gone and every squad is empty — the flags only mean
     // something once the board is live
     const live = state.phase === 'draft';
-    const gone = live && draftedIds().has(pid);
+    const gone = live && draftedIds().has(p.id);
     const wontFit = live && !gone && !canPick(whoami, p);
     return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
-      <span class="muted">#${k + 1}</span> <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)}
+      <input class="auto-rank" type="number" min="1" max="${list.length}" value="${k + 1}" data-autorank="${k}" draggable="false"
+        title="Type a number to move him there — everyone else shifts down" aria-label="${esc(p.name)} is number ${k + 1}. Type a number to move him.">
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
       <span style="margin-left:auto;display:flex;gap:4px">
-        <button class="btn ghost small icon-btn" data-autoup="${k}" ${k === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
-        <button class="btn ghost small icon-btn" data-autodown="${k}" ${k === list.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
+        <button class="btn ghost small icon-btn" data-autoup="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
+        <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
         <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>
       </span></div>`;
-  }).join('') || '<span class="muted" style="font-size:12px">Empty. Brave.</span>';
+  }).join('') || `<span class="muted" style="font-size:12px">Nobody on your list matches that filter.</span>`;
+  return controls + rows;
 }
 
 /* Pick alerts own the important top billboard. Heckles and klaxons are room
@@ -5404,15 +5449,38 @@ function bindPoolTable() {
   document.querySelectorAll('[data-autodel]').forEach(b => b.onclick = () => {
     const arr = [...toArr(state.autolists?.[whoami])]; arr.splice(+b.dataset.autodel, 1); setAutolist(whoami, arr);
   });
+  /* Up and down step to the previous/next VISIBLE row, not blindly one place.
+     Unfiltered those are the same thing; filtered to strikers they are not —
+     nudging one place would swap him with a hidden midfielder and look like
+     the button did nothing (Marc's "reorder just my strikers"). */
   document.querySelectorAll('[data-autoup]').forEach(b => b.onclick = () => {
-    const k = +b.dataset.autoup, arr = [...toArr(state.autolists?.[whoami])];
-    if (k < 1) return;
-    [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setAutolist(whoami, arr);
+    const k = +b.dataset.autoup, vis = visibleAutoIdx(), i = vis.indexOf(k);
+    if (i > 0) moveAuto(k, vis[i - 1]);
   });
   document.querySelectorAll('[data-autodown]').forEach(b => b.onclick = () => {
-    const k = +b.dataset.autodown, arr = [...toArr(state.autolists?.[whoami])];
-    if (k >= arr.length - 1) return;
-    [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setAutolist(whoami, arr);
+    const k = +b.dataset.autodown, vis = visibleAutoIdx(), i = vis.indexOf(k);
+    if (i >= 0 && i < vis.length - 1) moveAuto(k, vis[i + 1]);
+  });
+  // type a number: "I want Joao Pedro 4th and it pushes everyone else down"
+  document.querySelectorAll('[data-autorank]').forEach(inp => {
+    const commit = () => {
+      const want = Math.round(Number(inp.value));
+      if (!Number.isFinite(want)) { render(); return; }
+      moveAuto(+inp.dataset.autorank, want - 1);
+    };
+    inp.onchange = commit;
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } };
+  });
+  document.querySelectorAll('[data-autofpos]').forEach(b => b.onclick = () => {
+    const pp = b.dataset.autofpos, on = autoPosOn();
+    autoFilter = { ...autoFilter, pos: on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp] };
+    render();
+  });
+  document.querySelectorAll('[data-autofclub]').forEach(s => s.onchange = () => {
+    autoFilter = { ...autoFilter, club: s.value }; render();
+  });
+  document.querySelectorAll('[data-autofclear]').forEach(b => b.onclick = () => {
+    autoFilter = { pos: [], club: '' }; render();
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   bindColToggle(refreshPool);
