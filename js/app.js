@@ -3243,7 +3243,10 @@ const DRAFT_NAV = new Set(['draft', 'rules', 'settings']);
 // pre-draft the app is mostly a waiting room, but the scouting floor (the
 // Draft Console's pre-season face), club office, rules and settings are
 // already worth visiting — so those four get a bar
-const SETUP_NAV = new Set(['draft', 'club', 'rules', 'settings']);
+// the directory joined pre-season (Ben, 13 Aug: "look around other people's
+// clubs before the season starts") — founding a club is half the fun, nosing
+// at everyone else's is the other half
+const SETUP_NAV = new Set(['draft', 'club', 'directory', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
@@ -3305,6 +3308,7 @@ function render() {
     // pre-draft, only the setup-bar views resolve; everything else is the room
     if (state.view === 'draft') { main.innerHTML = viewDraftPrep(); bindDraftPrep(); }
     else if (state.view === 'club') { main.innerHTML = viewClub(); bindClub(); }
+    else if (state.view === 'directory') { main.innerHTML = viewDirectory(); bindDirectory(); }
     else if (state.view === 'rules') { main.innerHTML = viewRules(); }
     else { main.innerHTML = viewSettings(); bindSettings(); }
     renderIdentity();

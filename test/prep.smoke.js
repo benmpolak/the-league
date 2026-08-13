@@ -46,7 +46,9 @@ const chk = (name, ok, detail = '') => {
     return { phase: state.phase, tabs, prepGo: !!document.getElementById('prepGo') };
   });
   chk('P1 setup nav carries the Draft Console + waiting room signposts it',
-    p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.length === 4 && p1.prepGo,
+    // five tabs since the directory joined pre-season (Ben, 13 Aug)
+    p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.includes('directory')
+    && p1.tabs.length === 5 && p1.prepGo,
     JSON.stringify(p1));
 
   // ---- P2: signpost opens the scouting floor — one clean queue control per row
