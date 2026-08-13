@@ -115,7 +115,21 @@ your nod — flagged here rather than done because you may want the wording.
 
 ---
 
-## 0. Ric's email — check before you change it
+## 0. ~~Ric's email~~ — RESOLVED 13 Aug, verified live; one instruction for Ric
+
+**Live state (read-only admin probe, 13 Aug eve):** `ric.blank@gmail.com` is
+provisioned as manager 7 in BOTH leagues; the old undotted account exists but
+holds no membership and no private data — an empty orphan, harmless. Nothing
+to migrate, nothing at risk, no provision run needed.
+
+**The one thing that matters:** Ric has NEVER signed in, and he must type
+**`ric.blank@gmail.com` — with the dot** — into the sign-in box. Gmail treats
+both forms as one inbox, but Firebase matches exactly: the undotted form hits
+the empty orphan, no membership, and the server (by design) returns the same
+generic "link sent" while sending nothing. If Ric says "no email arrived",
+the dot is the first thing to check.
+
+The original triage, kept for reference:
 
 **Asked (Marc, 13 Aug):** change `Ricblank@gmail.com` to `Ric.blank@gmail.com`.
 
