@@ -11,12 +11,15 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 ## 00. ~~THE SITE IS NOT PUBLISHING~~ — RESOLVED 13 Aug ~16:15, but read the
 ## last paragraph
 
-**Resolved:** the wedged deployment was cleared with a failed-run re-run from
-the other Claude session (`gh run rerun --failed` on the stuck `pages build
-and deployment`); every push since has deployed, and the live site was
-verified serving current code. Nothing for you to cancel. The recurrence risk
-below is still real — this is the second wedge (2 Aug was the first) and the
-concurrency-group fix at the bottom is worth a yes/no from you.
+**Resolved twice over, nothing for you to do.** The wedged deployment was
+cleared with a failed-run re-run (`gh run rerun --failed` on the stuck
+`pages build and deployment`), and after it promptly happened AGAIN the same
+evening — Marc: "it messes up if you try to commit something at the same
+time as fpl pushes info over" — the structural fix below was built rather
+than recommended: Pages now deploys via `.github/workflows/pages.yml`
+(Actions source, non-cancelling `concurrency: pages` group, chained off the
+FPL refresh because bot commits never fire push workflows). Simultaneous
+pushes now queue; the wedge mode no longer exists.
 
 **Symptom (as found):** `main` is correct and CI is green, but the live site
 has been serving the build from `b78447e` — one commit before the 15:50
