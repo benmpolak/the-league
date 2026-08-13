@@ -110,21 +110,24 @@ const chk = (name, ok, detail = '') => {
     const fabReady = document.querySelector('#scoutCompareFab')?.textContent === 'Compare 2/3';
     showScoutCompare();
     const ov = document.querySelector('#scoutCompareOverlay');
-    const twoCards = ov?.querySelectorAll('.compare-player').length === 2;
-    const runway = ov?.querySelectorAll('.compare-runway').length === 2
-      && ov.textContent.includes('Next six') && ov.textContent.includes('GW1');
+    // one shared comparison body now: a column per player, metrics down the side
+    const head = [...(ov?.querySelectorAll('.compare-card thead th') || [])];
+    const twoCards = head.length === 3 // Metric + two players
+      && ids.slice(0, 2).every(id => head.some(h => h.textContent.includes(PLAYER_BY_ID[id].name)));
+    const rowText = [...(ov?.querySelectorAll('.compare-card tbody tr') || [])].map(tr => tr.textContent);
+    const runway = rowText.some(t => /fixtures/.test(t) && /GW\d/.test(t));
     toggleScoutCompare(ids[2]);
-    toggleScoutCompare(ids[3]); // refused: the tray is already at three
-    const capped = scoutCompare.length === 3 && !scoutCompare.includes(ids[3]);
+    toggleScoutCompare(ids[3]); // a fourth replaces the oldest rather than being refused
+    const capped = scoutCompare.length === 3 && scoutCompare.includes(ids[3]) && !scoutCompare.includes(ids[0]);
     const after = JSON.stringify(sharedSnapshot());
     scoutCompare = [];
     paintScoutCompare();
     return { ids, fabReady, twoCards, runway, capped, sharedUntouched: before === after };
   });
-  chk('SC5: compare tray opens two genuine player cards with Next Six data',
+  chk('SC5: compare opens both players as columns, with the fixture runway',
     comparison.ids.length === 4 && comparison.fabReady && comparison.twoCards && comparison.runway,
     JSON.stringify(comparison));
-  chk('SC6: compare is read-only and hard-capped at three players',
+  chk('SC6: compare is read-only and capped at three (a fourth pushes the oldest out)',
     comparison.capped && comparison.sharedUntouched, JSON.stringify(comparison));
 
   const singleAdd = await page.evaluate(() => {
@@ -186,7 +189,7 @@ const chk = (name, ok, detail = '') => {
       tools: !!tools && tools.offsetParent !== null,
       desk: !!desk && desk.offsetParent !== null,
       card: !!card && card.offsetParent !== null,
-      compareCards: card?.querySelectorAll('.compare-player').length,
+      compareCards: (card?.querySelectorAll('thead th').length || 1) - 1, // minus the Metric column
       scrollW: document.documentElement.scrollWidth,
       viewport: innerWidth,
     };
