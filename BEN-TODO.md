@@ -8,6 +8,31 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 0. Ric's email — check before you change it
+
+**Asked (Marc, 13 Aug):** change `Ricblank@gmail.com` to `Ric.blank@gmail.com`.
+
+**Check this first — it may need nothing.** Gmail ignores dots, so both forms
+are the same inbox. Firebase does not: they are two different identities, and
+`normaliseEmail` (`functions/index.js:1801`) only trims and lowercases. So if
+Ric is registered as the undotted address, he can simply sign in with it and
+nothing needs doing. Only change the registration if he is actually stuck —
+the symptom is the "Who let you in?" card that survives every reload.
+
+**If you do change it:** edit `managers.local.json` and re-run
+`GOOGLE_APPLICATION_CREDENTIALS=service-account.json node scripts/provision_managers.js --live`.
+
+**The cost, which is not obvious.** The script finds users by email
+(`scripts/provision_managers.js:59`). The dotted address will not match Ric's
+existing auth user, so it creates a **new uid** — and the prune step then
+removes the old uid's private node (`:93`), which is where his **autolist and
+any lodged waiver claims** live. Pre-draft that is his draft queue. Note it
+down first and put it back after, or do the change at a moment when losing it
+costs nothing. Membership and the managerUid map rebuild correctly; the old
+auth user is left orphaned but harmless.
+
+---
+
 ## 1. Clean sheets and the red card — a RULES change, needs the group
 
 **What was asked (Toby/Marc, 12 Aug):** a player sent off should *lose* any
