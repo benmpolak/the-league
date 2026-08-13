@@ -74,15 +74,12 @@ verified what the feed actually says. Worth checking against a real round.
 
 ---
 
-## 2. Deploys waiting on you
+## 2. Deploys waiting on you — ~~both~~ DONE (Ben's dev, 12–13 Aug)
 
-Both are committed and tested; neither takes effect on the real league until
-`functions/` is deployed.
-
-| What | Where | Until it deploys |
-|---|---|---|
-| Delisting a player you have transferred away | `functions/index.js` — `blockToggle`, ownership now gates listing only | Delist still refuses with "not your player". The client half is live, so nobody else sees the phantom listing. |
-| Holding a waiver run over (Skip the next run) | `functions/index.js` — `waiverControl` accepts `override`; the hourly `waiverTick` reads league state | The Tue/Fri 10am clock is live, but Skip will not stick online. |
+| What | Status |
+|---|---|
+| Delisting a player you have transferred away | **DEPLOYED 12 Aug** with the rest of the transfers fixes. Works online. |
+| Skipping a waiver run | **SHIPPED 12 Aug, different design.** The branch's `waiverMeta.override` timestamp was not merged: its override run id embeds an ISO timestamp whose `.` is an illegal RTDB key character, so the first held-over run would have wedged the hourly tick, and the change sat in `functions/` + the waiver engine, which `MARC-ONBOARDING.md` reserves. What shipped instead: Tue/Fri 10am clock plus a one-shot **Skip the next run** (`waiverMeta.skip`, new `waiverSkip` action) — the named run is marked done in the ledger, claims roll over, Trough stays shut until a real run. Live and deployed, first run Fri 14 Aug 10:00. |
 
 ---
 
@@ -108,9 +105,13 @@ in the server-authoritative core — not a quiet test-week change.
 
 ---
 
-## 4. Merge and mirror
+## 4. Merge and mirror — DONE (13 Aug)
 
-Four fixes and the waiver clock are on the branch above, all green on
-`npm run check && npm run test:offline`. Nothing reaches a site until it is
-merged to `main` — and the beta mirror push after it, since that is where Toby
-tests.
+The four transfers fixes merged and deployed 12 Aug; the sandbox-identity and
+go-to-real-site fixes cherry-picked to `main` 13 Aug (this commit), beta
+mirrored. The branch's waiver-clock commit was superseded (see §2) — the
+branch `claude/remove-league-table-icons-yqazwx` can be deleted.
+
+**Still genuinely on the desk:** §1 (red-card scoring — needs a GROUP ruling,
+then a build) and §3 (feed decisions — 3b `code` alongside `id` is the real
+fix for `#579 (unknown)` and worth doing before the season starts).
