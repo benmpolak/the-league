@@ -11,16 +11,19 @@ gameweek for twelve managers who will never read a runbook? Verdict for the
 REAL league; verdict for the sandbox; and your list of anything the Chairman
 must do by hand before Sunday.
 
-**Priorities (Ben, 13 Aug):** THE DRAFT, THE WAIVERS and THE MATCHES are
-the league. Spend your depth on §2 and §6 — the full arc from draft night
-through a played gameweek to the run that clears it: lineups locking at
-kickoff, live scores landing, auto-subs off the ordered bench, the round
-settling FINAL with the right points for all twelve, H2H table updating,
-then Tuesday's waiver run adjudicating on those settled scores. Every
-interleaving you can construct. Everything else (§1, §3, §4, §5) is audited
-to ONE standard: can it corrupt, block or mis-score the draft, the matches,
-the waiver ledger, squads or points? Cosmetic findings in those sections are
-P3s at best; a crest that can wedge `render()` on draft night is a P0.
+**Priorities (Ben, 13 Aug):** the game IS the core loop — DRAFT PICKS,
+TEAM PICKING, TRANSFERS and MATCHES. Spend your depth there: draft night
+(picks, undo, the clock, autodraft), lineup setting and the ordered bench,
+every way a player changes hands (trough signs, waiver claims, the transfer
+list, trades, the window draft), lineups locking at kickoff, live scores
+landing, auto-subs, the round settling FINAL with the right points for all
+twelve, the H2H table, and the waiver run adjudicating on those settled
+scores. Every interleaving you can construct. Everything else — crests,
+gaffers, sponsors, lore, the Gazette — is colour and noise, and Ben's
+standard for it is exactly that: colour must NEVER corrupt, block or
+mis-score the core loop. It renders on the same page as the draft board, so
+the one way noise hurts is wedging the UI at a bad moment — a crest that can
+wedge `render()` on draft night is a P0; a crest that looks wrong is a P3.
 
 Suites: `npm run check`, `npm run test:offline` (needs `python3 -m http.server
 8125` for parity), `npm run test:browser`, and the emulator suite with
