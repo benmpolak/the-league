@@ -4,6 +4,15 @@
 // ?sandbox → practice league: own Firebase node (see sync.js) + own device storage,
 // so testing never touches the real league's cloud state or this phone's saved identity
 const SANDBOX = new URLSearchParams(location.search).has('sandbox');
+/* Leaving the sandbox means leaving THE SITE when you're on the beta host.
+   the-league-beta is sandbox-only and hostguard.js puts ?sandbox straight back
+   on any URL that lands there without it — so "Go to the real site" used to
+   drop the query, get bounced by the guard, and deposit you back in the
+   sandbox. That is the login loop (Marc, 13 Aug: "when I click on it, it just
+   sends me back to the sandbox"). The real league lives one path over. */
+const realSiteHref = () => (location.pathname.includes('the-league-beta')
+  ? location.pathname.replace('the-league-beta', 'the-league')
+  : location.pathname);
 const LS_NS = SANDBOX ? 'tl2627sb' : 'tl2627';
 const LS_KEY = `${LS_NS}-league`;
 
@@ -3577,7 +3586,7 @@ function renderSyncArea() {
     title: 'Sandbox',
     body: '<p class="rules-p">This is the practice league — sign in, draft, trade, break things. The real league is untouched.</p>',
     yes: 'Go to the real site',
-  }).then(go => { if (go) location.href = location.pathname; });
+  }).then(go => { if (go) location.href = realSiteHref(); });
 }
 
 /* ----- the ready room: pre-draft roll call, one tap per manager ----- */
