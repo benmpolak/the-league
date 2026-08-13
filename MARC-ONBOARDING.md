@@ -5,6 +5,14 @@ The Committee notes your arrival, without warmth.
 This file is for you AND for your AI. If you're using Claude, point it at this
 file first — everything it needs is here or in `CLAUDE.md` (the codebase map).
 
+**Addresses (since 13 Aug 2026):** the real league lives at
+**https://theleaguehq.co.uk** — a custom domain in front of the same repo;
+the old benmpolak.github.io/the-league URL redirects there. On the custom
+domain the app serves from the ROOT path (`/`), not `/the-league/`, so never
+hardcode either path — links in code should be relative, and the one full
+site URL lives in the WhatsApp copy builders. The beta/sandbox is unchanged
+at benmpolak.github.io/the-league-beta.
+
 ## Getting set up (once, ~10 minutes)
 
 You have a Claude account. That's enough — recommended path:

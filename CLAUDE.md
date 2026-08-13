@@ -1,6 +1,9 @@
 # The League 26/27 — working notes for Claude
 
-Ben's real 12-man EPL fantasy league. Live at benmpolak.github.io/the-league.
+Ben's real 12-man EPL fantasy league. Live at **https://theleaguehq.co.uk**
+(custom domain since 13 Aug 2026; benmpolak.github.io/the-league redirects
+there — on the custom domain the app serves from the ROOT path, not
+/the-league/). The beta/sandbox stays at benmpolak.github.io/the-league-beta.
 Vanilla JS, no build step, no framework. Firebase RTDB + Functions for the real
 league; everything also runs fully offline.
 

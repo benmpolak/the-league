@@ -41,7 +41,7 @@ const LEAGUES = ['the-league-2627', 'the-league-sandbox'];
 const CUP_START = 7;
 // reference data comes from the deployed site (updated every 15 min by the
 // FPL Action) so functions never need redeploying for data
-const DATA_BASE = process.env.DATA_BASE_URL || 'https://benmpolak.github.io/the-league';
+const DATA_BASE = process.env.DATA_BASE_URL || 'https://theleaguehq.co.uk';
 
 /* Failure injection for the emulator suites ONLY — proves crash recovery at
  * write boundaries. Inert in production: the env var is set by the emulator. */
@@ -1942,7 +1942,7 @@ exports.requestSignInLink = onCall({
     const m = (await db().ref(`${leagueBase(league)}/server/membership/${uid}`).get()).val();
     if (!m || !Number.isInteger(m.managerId)) return finish('suppressed', { eh: eh.slice(0, 8) });
     const link = await admin.auth().generateSignInWithEmailLink(email, {
-      url: `https://benmpolak.github.io/the-league${league.endsWith('sandbox') ? '-beta/?sandbox' : '/'}`,
+      url: league.endsWith('sandbox') ? 'https://benmpolak.github.io/the-league-beta/?sandbox' : 'https://theleaguehq.co.uk/',
       handleCodeInApp: true,
     });
     try {

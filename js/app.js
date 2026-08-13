@@ -8210,7 +8210,7 @@ function committeeMinutes(last) {
   const bottom = t[t.length - 1];
   L.push('…', `${t.length}. ${bottom.team || bottom.name} — ${bottom.pts} \u{1F96B}`);
   L.push('', 'Minutes recorded automatically. Disputes to the group chat, where they will be enjoyed.');
-  L.push('https://benmpolak.github.io/the-league/');
+  L.push('https://theleaguehq.co.uk/');
   return L.join('\n');
 }
 // the cheeky lineup shot on the dashboard matchup card (Ben, 1 Aug): both
@@ -8549,7 +8549,7 @@ function gwPreviewText(i) {
   for (const r of d.rows.filter(r => r !== d.motw)) L.push(line(r));
   if (d.recent.length) L.push('', `\u{1F416} Trough watch: ${d.recent.map(t => `${managerName(t.managerId)} ${t.trade ? 'traded for' : 'signed'} ${PLAYER_BY_ID[t.inId]?.name || '?'}`).join(' · ')}`);
   L.push('', 'Projections from FPL expected points. The Committee accepts no liability.');
-  L.push('https://benmpolak.github.io/the-league/');
+  L.push('https://theleaguehq.co.uk/');
   return L.join('\n');
 }
 function gwPreviewCard(i) {
