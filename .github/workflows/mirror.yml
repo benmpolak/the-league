@@ -27,6 +27,10 @@ concurrency:
 
 jobs:
   mirror:
+    # beta receives a copy of this file with the mirror push; without this
+    # guard the copy fires over there, finds no BETA_DEPLOY_KEY, and fails
+    # noisily on every sweep (sol launch audit P3). Only the source repo mirrors.
+    if: github.repository == 'benmpolak/the-league'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

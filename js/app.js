@@ -1897,9 +1897,21 @@ function nextWaiverRun(afterTs) {
   const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
   return new Date(nextSlotAt(t) ?? (t + 7 * 864e5));
 }
-// the next run that will actually PROCESS — steps over a Chairman-skipped slot
-function nextLiveWaiverRun(afterTs) {
-  let run = nextWaiverRun(afterTs).getTime();
+/* The run the scheduler will actually PROCESS next. The hourly tick fires at
+ * :07 past, so a slot stays live for up to an hour after its advertised
+ * 10:00 — a due-but-unexecuted slot keeps priority over the following one
+ * (sol launch audit, 13 Aug: a Skip pressed at 10:03 stamped TUESDAY's run
+ * while Friday's claims still executed at 10:07). Anything a Skip button or a
+ * "next run" line shows the Chairman must come from here, never from
+ * nextWaiverRun(now). Mirrors js/engine.js; same lookback as the server tick. */
+function nextProcessableWaiverRun() {
+  const t = Date.now();
+  const due = nextSlotAt(Math.max(lastWaiverRun(), t - 14 * 24 * 3600e3));
+  return due != null && due <= t ? new Date(due) : nextWaiverRun(t);
+}
+// ...and the same, stepping over a Chairman-skipped slot (display truth)
+function nextLiveWaiverRun() {
+  let run = nextProcessableWaiverRun().getTime();
   if (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
   return new Date(run);
 }
@@ -1955,7 +1967,7 @@ function waiverClockLine() {
       ? `Trough shut — ${tw.why}. Waivers run in <b>${fmtIn(tw.until - t)}</b> (${fmtWhen(tw.until)}).`
       : `Trough shut — ${tw.why}.`;
   }
-  const scheduled = nextWaiverRun(Math.max(lastWaiverRun(), t)).getTime();
+  const scheduled = nextProcessableWaiverRun().getTime();
   const skipped = state.waiverMeta?.skip === waiverSlotId(scheduled);
   const run = skipped ? nextWaiverRun(scheduled).getTime() : scheduled;
   let shut = null;
@@ -6116,7 +6128,7 @@ function viewTransfers() {
     }
     const ctl = waiverControl();
     const claims = myClaims(mid);
-    const nextRun = nextLiveWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+    const nextRun = nextLiveWaiverRun();
     const tw = troughWindow();
     // the state of play, spelled out (mock night: "it just doesn't know when
     // players go on waivers") — closed window means EVERYONE free is claim-only
@@ -6170,7 +6182,7 @@ function viewTransfers() {
         <button class="btn ghost small" id="ctlAuto" ${ctl === 'auto' ? 'disabled' : ''}>Follow schedule</button>
         ${state.waiverMeta?.skip
           ? `<button class="btn ghost small" id="wvUnskip" title="Put the skipped run back on the schedule">Reinstate the skipped run</button>`
-          : `<button class="btn ghost small" id="wvSkip" data-slot="${waiverSlotId(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())).getTime())}" title="Miss one run by exception — double gameweek, rogue Wednesday finish. Claims stay lodged and roll to the run after.">Skip the next run</button>`}
+          : `<button class="btn ghost small" id="wvSkip" data-slot="${waiverSlotId(nextProcessableWaiverRun().getTime())}" title="Miss one run by exception — double gameweek, rogue Wednesday finish. Claims stay lodged and roll to the run after.">Skip the next run</button>`}
       </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Overrides apply to everyone, immediately.</p>`
       : demoMode ? `<div style="margin-top:10px">
         <button class="btn small" id="runWaivers">&#9889; Process waivers now (demo)</button>
@@ -6314,7 +6326,7 @@ function viewTransfers() {
     <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
       <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} waiver${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} in</span></div>`).join('')}
-    <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}.</p>
+    <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextLiveWaiverRun())}.</p>
     <h3 style="margin-top:16px">Waiver history</h3>
     ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> took ${pname(PLAYER_BY_ID[t.inId])} on waivers <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">Nothing has gone through yet.</p>'}
   </div>`;
@@ -6520,7 +6532,7 @@ function bindTransfers() {
       const twNow = troughWindow();
       const clearsTxt = !twNow.open
         ? (twNow.until ? `clears ${fmtWhen(twNow.until)}` : 'clears when waivers run')
-        : `clears ${fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now())))}`;
+        : `clears ${fmtWhen(nextLiveWaiverRun())}`;
       const total = pool.length;
       const shown = pool.slice(0, transfersView.limit);
       const hint = outP ? `<div class="muted" style="font-size:11.5px;padding:2px 0 6px">Making room for ${esc(outP.name)} (${outP.pos}) to leave:</div>`
@@ -6603,7 +6615,7 @@ function bindTransfers() {
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Waiver request #${myClaims(mid).length} on your list — processes ${esc(fmtWhen(nextWaiverRun(Math.max(lastWaiverRun(), Date.now()))))}. Reorder or withdraw it above until then.` });
+            note: `Waiver request #${myClaims(mid).length} on your list — processes ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it above until then.` });
           return;
         }
         const tgw = transferGw();
@@ -9787,7 +9799,7 @@ function preflightCard() {
       state.phase === 'season' ? `${state.draft.picks.length}/${expect} picks recorded${state.draft.picks.length === expect ? '' : ' — the board is short'}` : 'waiting for draft night'));
   // 5. waiver scheduler
   const ctl = waiverControl();
-  const nextRun = nextWaiverRun(Math.max(lastWaiverRun(), Date.now()));
+  const nextRun = nextLiveWaiverRun();
   rows.push(light(ctl === 'auto' ? 'ok' : 'warn', 'Waivers',
     ctl === 'auto' ? `10am Tuesday and Friday — next run ${fmtWhen(nextRun)}${state.waiverMeta?.skip ? ' (one run skipped by the Chairman)' : ''}` : `manual override active (${esc(ctl)}) — the scheduler stands down until it's back on auto`));
   // 6. orphaned trades

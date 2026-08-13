@@ -116,6 +116,29 @@ chk('resolveWaivers clears a skip its run has overtaken',
 chk('resolveWaivers keeps a skip still in the future',
   eng.resolveWaivers({ ...bare, waiverMeta: { ...bare.waiverMeta, skip: 'wv-2026-08-25' } }, iso('2026-08-21T09:00:01Z')).stampedMeta.skip === 'wv-2026-08-25');
 
+/* ---- the run a Skip must target (sol launch audit P1, 13 Aug): the hourly
+   tick fires at :07, so between 10:00 and execution the due run is still LIVE.
+   A Skip pressed at 10:03 must stamp the due run, not the following one. ---- */
+const tueRan = state({ waiverMeta: { lastRun: '2026-08-18T09:06:00Z', control: 'auto' } });
+NOW = iso('2026-08-21T09:03:00Z'); // Friday 10:03 London: due, not yet executed
+chk('10:03 window: the processable run is FRIDAY\'s, still owed by the tick',
+  eng.nextProcessableWaiverRun(tueRan).getTime() === iso('2026-08-21T09:00:00Z'),
+  eng.nextProcessableWaiverRun(tueRan).toISOString());
+chk('...and its slot id is Friday\'s (the exact id a Skip at 10:03 must stamp)',
+  eng.waiverSlotId(eng.nextProcessableWaiverRun(tueRan).getTime()) === 'wv-2026-08-21');
+NOW = iso('2026-08-21T08:59:00Z'); // one minute before the deadline
+chk('09:59: same answer from the future side of the deadline',
+  eng.nextProcessableWaiverRun(tueRan).getTime() === iso('2026-08-21T09:00:00Z'));
+NOW = iso('2026-08-21T09:10:00Z'); // Friday's run executed at :07
+chk('once the run executes, the processable run rolls to Tuesday',
+  eng.nextProcessableWaiverRun(state({ waiverMeta: { lastRun: '2026-08-21T09:07:00Z', control: 'auto' } })).getTime() === iso('2026-08-25T09:00:00Z'));
+NOW = iso('2026-08-30T12:00:00Z'); // outage: three slots owed since the 18th
+chk('after an outage the OLDEST owed slot leads (the server processes it first)',
+  eng.nextProcessableWaiverRun(tueRan).getTime() === iso('2026-08-21T09:00:00Z'));
+NOW = iso('2026-08-18T09:05:00Z'); // never run at all
+chk('never-run league: the first post-epoch slot is the processable one',
+  eng.nextProcessableWaiverRun(state({})).getTime() === iso('2026-08-14T09:00:00Z'));
+
 /* ---- no fixture data: trough stays open; the clock ticks regardless ---- */
 NOW = iso('2026-08-18T09:05:00Z');
 const bareEng = Engine.make({ players: [], gameweeks: GWS, fixtures: [], lastSeasonByCode: {}, now: () => NOW });

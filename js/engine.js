@@ -450,6 +450,18 @@
       const t = typeof afterTs === 'number' ? afterTs : new Date(afterTs).getTime();
       return new Date(nextSlotAt(t) ?? (t + 7 * 864e5));
     }
+    /* The run the scheduler will actually PROCESS next. The hourly tick fires
+     * at :07 past, so a slot stays live for up to an hour after its advertised
+     * 10:00 — a due-but-unexecuted slot keeps priority over the following one
+     * (sol launch audit, 13 Aug: a Skip pressed at 10:03 stamped TUESDAY's run
+     * while Friday's claims still executed at 10:07). Anything a Skip button
+     * or a "next run" line shows the Chairman must come from here, never from
+     * nextWaiverRun(now). Same lookback as waiverSchedule. */
+    function nextProcessableWaiverRun(state, horizonMs = 14 * 24 * 3600e3) {
+      const t = now();
+      const due = nextSlotAt(Math.max(lastWaiverRun(state), t - horizonMs));
+      return new Date(due != null && due <= t ? due : (nextSlotAt(t) ?? t + 7 * 864e5));
+    }
     const waiverControl = state => state.waiverMeta?.control || 'auto';
     const lastWaiverRun = state => state.waiverMeta?.lastRun ? new Date(state.waiverMeta.lastRun).getTime() : 0;
     function waiverRunDue(state) {
@@ -668,7 +680,7 @@
       totalPicks, pickNo, currentManagerId, canPick, autoPickChoice,
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
-      nextWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
+      nextWaiverRun, nextProcessableWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
       mockScorelines, mockGwStats,
       gwKicks, gwClearAt, nextSlotAt, waiverSlotId, slotAtFromId, waiverSchedule, troughWindow,
       wdActor,
