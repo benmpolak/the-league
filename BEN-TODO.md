@@ -62,6 +62,59 @@ were cancelled the same way. Each time, the site silently stops updating.
 
 ---
 
+## 01. Marc cannot get a sign-in link (13 Aug, live — a manager is locked out
+## of one device)
+
+**Symptom:** Marc signed out on his laptop to test the sign-in, asked for a
+link, and none arrived. His phone is still signed in, so he is not locked out
+of the league — but he cannot get back in anywhere else. He was also expecting
+a passcode; there isn't one, it is a link.
+
+**Most likely cause, and it hides itself.** `requestSignInLink` throttles at
+**3 requests per 15 minutes** per address (and 10 per 24 hours):
+
+```js
+if (await overLimit('email', eh, [{ ms: 15 * 60e3, max: 3 },
+                                  { ms: 24 * 3600e3, max: 10 }]))
+  return finish('limited', ...);
+```
+
+Every outcome — sent, limited, unknown address, revoked membership, provider
+failure — returns the byte-identical generic response, by design
+(`EMAIL-FALLBACK-DESIGN.md`, enumeration resistance). So the app says "Link
+sent to you@example.com" while the server has thrown the request away, and
+each extra tap pushes the 15-minute window further out. Somebody who taps it
+four times in frustration guarantees themselves a quarter of an hour of
+silence with no way to tell.
+
+**Only you can tell which it actually was.** Every call logs one line:
+
+```
+{"evt":"signin_link","out":"<sent|limited|suppressed|duplicate|provider_error>","eh":"<first 8 of sha256(email)>"}
+```
+
+Pull the `requestSignInLink` logs around the time he tried and read `out`:
+
+- `limited` → the throttle. Nothing wrong; he waits 15 minutes and taps once.
+- `provider_error` → mail delivery is genuinely broken. Check
+  `GMAIL_APP_PASSWORD` and the `err` field on the log line. **This is the one
+  that matters** — if it is failing for Marc it is failing for everyone, and
+  the draft is close.
+- `suppressed` → the address does not match a registered auth user, or that
+  uid holds no membership in `the-league-2627`. Cross-check against
+  `managers.local.json`; this is the same class of problem as §0 (Ric).
+- `sent` → it left the server. Then it is spam filtering at his end; sender is
+  `benmpolak@googlemail.com`.
+
+**The copy fix, if you want it.** The generic server response should not
+change. But the client can stop implying success it cannot vouch for — the
+"Link sent to…" panel could add: *if nothing arrives in two minutes, wait a
+quarter of an hour before asking again; repeated requests are throttled and
+extra taps lengthen the wait*. Client-only, no deploy. Marc's AI can do it on
+your nod — flagged here rather than done because you may want the wording.
+
+---
+
 ## 0. Ric's email — check before you change it
 
 **Asked (Marc, 13 Aug):** change `Ricblank@gmail.com` to `Ric.blank@gmail.com`.
