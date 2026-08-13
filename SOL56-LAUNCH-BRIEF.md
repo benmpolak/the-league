@@ -11,6 +11,13 @@ gameweek for twelve managers who will never read a runbook? Verdict for the
 REAL league; verdict for the sandbox; and your list of anything the Chairman
 must do by hand before Sunday.
 
+**Priorities (Ben, 13 Aug):** THE DRAFT and THE WAIVERS are the league.
+Spend your depth on §2 and §6 — the full draft-to-first-waiver arc, every
+interleaving you can construct. Everything else (§1, §3, §4, §5) is audited
+to ONE standard: can it corrupt, block or mis-score the draft, the waiver
+ledger, squads or points? Cosmetic findings in those sections are P3s at
+best; a crest that can wedge `render()` on draft night is a P0.
+
 Suites: `npm run check`, `npm run test:offline` (needs `python3 -m http.server
 8125` for parity), `npm run test:browser`, and the emulator suite with
 `PATH="/opt/homebrew/opt/openjdk/bin:$PATH" npm run test:emu`. All green at
