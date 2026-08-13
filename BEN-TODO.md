@@ -8,6 +8,49 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 00. THE SITE IS NOT PUBLISHING — a stuck Pages deployment (13 Aug, live)
+
+**Symptom:** `main` is correct and CI is green, but the live site has been
+serving the build from `b78447e` — one commit before the 15:50 merge. Two
+changes that look shipped are not on the site. Nobody is told: CI passes, the
+beta mirror succeeds, and the site quietly stays on an old build.
+
+**Cause.** Two pushes landed 70 seconds apart (`db055bc`, then `039930d`).
+GitHub cancelled the first deploy and refused the second, and the first is now
+wedged *server-side* — it still counts as in progress, so every deploy since
+has been refused with the same error:
+
+> Deployment request failed for `<sha>` due to in progress deployment.
+> Please cancel `db055bcf930b88fab4668ddc82a7e5d0f9a8005e` first or wait for it
+> to complete.
+
+Three consecutive failures so far: `039930d`, `0bd1c2b`, and anything pushed
+after them. This is not a code problem — nothing needs reverting.
+
+**Unblock it (30 seconds, needs your access — the Claude integration is
+refused with 403 on both re-run and cancel):** repo → **Environments** →
+`github-pages` → the deployment showing *in progress* → **Cancel deployment**.
+Then push anything, or re-run the last `pages build and deployment`. GitHub
+does eventually time these out on its own, so it may also clear itself.
+
+**Stop it recurring.** The deploy is GitHub's built-in *pages build and
+deployment* — there is no workflow file for it in this repo, so it cannot be
+given a concurrency group as it stands. The documented fix is to switch Pages
+to the **GitHub Actions** source and add an explicit deploy workflow carrying:
+
+```yaml
+concurrency:
+  group: pages
+  cancel-in-progress: false   # queue behind a running deploy, never kill it
+```
+
+Worth doing rather than living with: this repo has a bot pushing every five
+minutes plus two people committing, so pushes landing inside a minute of each
+other is routine. Looking back through today alone, `c845ec2` and `e4424a1`
+were cancelled the same way. Each time, the site silently stops updating.
+
+---
+
 ## 0. Ric's email — check before you change it
 
 **Asked (Marc, 13 Aug):** change `Ricblank@gmail.com` to `Ric.blank@gmail.com`.
