@@ -759,7 +759,20 @@ const flagImg = (team, big = false) => {
  * Xhaka in Sunderland red since Aug 2025) but it doesn't cover everyone, so
  * misses fall back to the legacy library (p-prefixed, some photos years
  * old), and only then to the silhouette. */
-const PHOTO_NEW = code => `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`;
+let PHOTO_LIB = 'premierleague25';
+// The PL will mint a premierleague26 library at some point (25 appeared the
+// same way, and the old library froze where it stood — Xhaka aged three years
+// in it). Probe once per boot and prefer 26 the moment it exists; until then
+// this request 502s and nothing changes. Skipped under ?nosync so the test
+// harnesses' request-intercepted photo pins stay deterministic.
+if (!/nosync/.test(location.search)) {
+  try {
+    const probe = new Image();
+    probe.onload = () => { PHOTO_LIB = 'premierleague26'; };
+    probe.src = 'https://resources.premierleague.com/premierleague26/photos/players/110x140/223340.png';
+  } catch { /* photos are a nicety */ }
+}
+const PHOTO_NEW = code => `https://resources.premierleague.com/${PHOTO_LIB}/photos/players/110x140/${code}.png`;
 const PHOTO_OLD = code => `https://resources.premierleague.com/premierleague/photos/players/110x140/p${code}.png`;
 const PHOTO_MISSING = 'https://resources.premierleague.com/premierleague/photos/players/110x140/Photo-Missing.png';
 const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}" data-code="${p.code}" src="${PHOTO_NEW(p.code)}" alt="${esc(p.name)}" title="${esc(p.name)} — tap for stats">`;
