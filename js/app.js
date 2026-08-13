@@ -3336,7 +3336,12 @@ function renderIdentity() {
     const conn = syncConnected ? 'live' : 'DOWN';
     ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
       <h2>Who let you in?</h2>
-      <p class="muted" style="font-size:13px;margin-bottom:10px">You're signed in as <b>${esc(authUser.email || 'unknown')}</b> but this device hasn't linked you to a manager. If that email is the one the Chairman registered, it's usually a hiccup &mdash; reload and it sorts itself. If it's a different email, sign out and use the registered one.</p>
+      <p class="muted" style="font-size:13px;margin-bottom:10px">You're signed in as <b>${esc(authUser.email || 'unknown')}</b> but <b style="color:var(--text)">${SANDBOX ? 'the practice sandbox' : 'the real league'}</b> hasn't linked that email to a manager. If it's the one the Chairman registered here, it's usually a hiccup &mdash; reload and it sorts itself. If it's a different email, sign out and use the registered one.</p>
+      ${/* The two leagues keep SEPARATE membership lists but share one sign-in
+            across the whole site, so being known in one and a stranger in the
+            other looks exactly like a broken login — reload, same card, again
+            (Marc, 13 Aug). Say which door you're standing at. */''}
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Being a manager in the ${SANDBOX ? 'real league' : 'sandbox'} doesn't let you in here: the two keep separate lists. If you're only registered ${SANDBOX ? 'in the real league' : 'in the sandbox'}, this card will keep coming back however many times you reload — ask the Chairman to register you ${SANDBOX ? 'in the sandbox' : 'in the real league'}.</p>
       ${!syncConnected ? `<p style="font-size:12.5px;margin-bottom:10px;color:#ffd76e">&#9888; The live connection to the league isn't establishing &mdash; that's a network problem, not a sign-in problem. Filtered wifi (work/home DNS filters) can block it: try a phone hotspot or another network.</p>` : ''}
       <p class="muted" style="font-size:11px;margin-bottom:12px">Tech: ${esc(window.WCSync?.league || '?')} &middot; connection ${conn} &middot; ${err ? esc(`${err.label} read: ${err.code}`) : 'no read errors logged'}</p>
       <div style="display:flex;gap:8px">
@@ -3347,20 +3352,28 @@ function renderIdentity() {
     </div>`;
   } else if (netOn()) {
     ov.innerHTML = `<div class="card" style="max-width:480px;width:94%">
-      <h2>Sign in</h2>
+      <h2>Sign in ${SANDBOX ? '<span class="tag">SANDBOX</span>' : ''}</h2>
+      <p class="muted" style="font-size:12px;margin-bottom:12px">You're signing in to <b style="color:var(--text)">${SANDBOX ? 'the practice sandbox' : 'the real league'}</b>. The two keep separate memberships, so a link sent for one won't let you into the other.</p>
       ${linkSentTo
-        ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>
-           <p class="muted" style="font-size:12px;margin-bottom:6px">Link opened somewhere else (or you're in the installed app)? Copy it from the email and paste it here:</p>
-           <form id="whoPasteForm" style="display:flex;gap:8px;margin-bottom:10px">
-             <input id="whoPaste" placeholder="Paste the sign-in link" style="flex:1;min-width:0">
-             <button class="btn small" type="submit">Finish sign-in</button>
-           </form>
-           <button class="btn ghost small" id="whoResend">Different email</button>`
+        ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>`
         : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
            <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
              <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" style="flex:1;min-width:0">
              <button class="btn" type="submit">Send link</button>
            </form>`}
+      ${/* The rescue used to appear only in the same sitting as the send. One
+            reload and it vanished, so a link that opened in the wrong browser
+            (or outside the installed app) left you sending yourself fresh
+            links forever — Marc's laptop loop, 13 Aug. It is always here now. */''}
+      <details style="margin-bottom:10px" ${linkSentTo ? 'open' : ''}>
+        <summary class="muted" style="font-size:12px;cursor:pointer">Link opened in the wrong browser, or nothing happened?</summary>
+        <p class="muted" style="font-size:12px;margin:6px 0">Copy the whole link out of the email and paste it here — that finishes the sign-in on this device, wherever the link opened.</p>
+        <form id="whoPasteForm" style="display:flex;gap:8px;margin-bottom:8px">
+          <input id="whoPaste" placeholder="Paste the sign-in link" style="flex:1;min-width:0">
+          <button class="btn small" type="submit">Finish sign-in</button>
+        </form>
+        ${linkSentTo ? '<button class="btn ghost small" id="whoResend">Different email</button>' : ''}
+      </details>
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
         <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
