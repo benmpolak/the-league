@@ -143,6 +143,17 @@ const AD_BOARDS = [
   { t: 'GATLEY TANDOORI', s: 'the post-match curry of champions', c: '#ffb88a', bg: '#241004' },
 ];
 
+// ================= The classics shelf =================
+// Real shirt sponsors of the old football (Lee, 13 Aug: "your Brothers, your
+// JVCs, your Autoglasses"). Chest text only — the kit renderer prints whatever
+// it's given, these are just the shelf. Heavy on Everton, Chairman's licence.
+const RETRO_SPONSORS = [
+  'BROTHER', 'JVC', 'AUTOGLASS', 'SHARP', 'CANDY', 'CROWN PAINTS',
+  'HAFNIA', 'NEC', 'DANKA', 'ONE2ONE', 'HOLSTEN', 'SEGA', 'DREAMCAST',
+  'WALKERS', "McEWAN'S LAGER", 'NEWCASTLE BROWN ALE', 'DR. MARTENS',
+  'PACKARD BELL', 'GOODYEAR', 'WANG',
+];
+
 // ================= The College of Arms =================
 // Crest heraldry (Lee, 12 Aug: "should be able to upload your own club badge
 // IMO" — the Committee counters with a College of Arms; nobody is hosting

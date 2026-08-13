@@ -1219,6 +1219,7 @@ function clubEditor(mid) {
   const savedAssistant = typeof m?.assistant === 'number' && !ASSISTANTS[m.assistant] ? null : (m?.assistant ?? null);
   const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
   const stock = AD_BOARDS.map(b => b.t);
+  const allSp = [...stock, ...RETRO_SPONSORS]; // a saved classic must not present as "Make one up"
   const ov = document.createElement('div');
   ov.className = 'overlay';
   const paint = () => {
@@ -1247,10 +1248,11 @@ function clubEditor(mid) {
         <label class="muted" style="font-size:11px;margin-top:8px;display:block">SPONSOR — off the hoardings, or make one up</label>
         <select id="clubSpSel" style="width:100%">
           <option value="">No sponsor</option>
-          ${stock.map(t => `<option value="${esc(t)}"${draft.sponsor === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}
-          <option value="__own"${draft.sponsor && !stock.includes(draft.sponsor) ? ' selected' : ''}>Make one up…</option>
+          <optgroup label="Off the hoardings">${stock.map(t => `<option value="${esc(t)}"${draft.sponsor === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>
+          <optgroup label="The classics shelf">${RETRO_SPONSORS.map(t => `<option value="${esc(t)}"${draft.sponsor === t ? ' selected' : ''}>${esc(t)}</option>`).join('')}</optgroup>
+          <option value="__own"${draft.sponsor && !allSp.includes(draft.sponsor) ? ' selected' : ''}>Make one up…</option>
         </select>
-        <input id="clubSpOwn" maxlength="20" placeholder="Your sponsor (20 chars)" value="${draft.sponsor && !stock.includes(draft.sponsor) ? esc(draft.sponsor) : ''}" style="width:100%;margin-top:6px;display:${draft.sponsor && !stock.includes(draft.sponsor) ? 'block' : 'none'}" />
+        <input id="clubSpOwn" maxlength="20" placeholder="Your sponsor (20 chars)" value="${draft.sponsor && !allSp.includes(draft.sponsor) ? esc(draft.sponsor) : ''}" style="width:100%;margin-top:6px;display:${draft.sponsor && !allSp.includes(draft.sponsor) ? 'block' : 'none'}" />
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
