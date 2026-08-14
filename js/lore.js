@@ -272,7 +272,9 @@ const KLAXONS = [
       'andrey santos', 'mateus fern', 'tonali',
       'zubimendi', 'nørgaard', 'gruev', 'ampadu', 'stach', 'lukić', 'matusiwa', 'florentino', 'kovačić', 'harrison reed',
       'palacios', 'grimes', 'ayari', 'janelt', 'sangaré', 'yates', 'schlager', 'habib diarra', 'sadiki', 'morita',
-      'matazo', 'bajcetic', 'iroegbunam', 'mainoo', 'essugo'] },
+      'matazo', 'bajcetic', 'iroegbunam', 'mainoo', 'essugo',
+      // Marc, 13 Aug: the two clubs the register had missed entirely
+      'scott', 'cook', 'christie', 'joelinton', 'miley'] },
   /* Ian drafts a surname and then wonders which one he has got (Marc, 13 Aug:
      "isnt sure if he has drafted the player he means to... the new brentford
      midfielder sangare"). The register is not a guess: every man on it is
