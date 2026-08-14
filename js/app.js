@@ -8657,7 +8657,7 @@ function viewH2H() {
     return `
     <div class="card" style="margin-bottom:12px">
       <h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">GW${g.n} Matches ${tag}
-        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;flex:none">
           <button class="btn ghost small" id="gwPrev" ${i === 0 ? 'disabled' : ''}>&#8249; Previous</button>
           <span class="tag">${g.n}</span>
           <button class="btn ghost small" id="gwNext" ${i >= REGULAR_GWS - 1 ? 'disabled' : ''}>Next &#8250;</button>

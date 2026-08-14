@@ -919,7 +919,7 @@ tr.gone-row td.act { opacity: .8; }
    every row. Fixed inner columns for the kit/badge/percentage/seed, names
    wrap inside their own outer column without dragging anything with them. */
 .fx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; column-gap: 7px; }
-.fx-row .fx-name { min-width: 0; line-height: 1.25; }
+.fx-row .fx-name { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
 .fx-row .fx-l { text-align: right; }
 .fx-row .fx-chip { display: grid; justify-items: center; align-content: center; line-height: 1; min-width: 20px; }
 .fx-row .fx-chip small { font-size: 9px; margin-top: 1px; }
