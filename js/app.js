@@ -6373,18 +6373,51 @@ function viewTransfers() {
       <div class="hist-filters">${fbtn('', 'All')}${fbtn('trough', 'Trough')}${fbtn('waiver', 'Waivers')}${fbtn('trade', 'Trades')}${fbtn('window', 'Window')}</div>
       ${pg ? pg.secs.map(sectionHtml).join('') : '<p class="muted" style="margin-top:12px">Nothing yet. Cowards.</p>'}${pager}</div>`;
   }
-  // order
+  // order — a proper table + wire-style history, not bare text (Ben, 14 Aug)
   const order = waiverOrder();
   const claimCounts = state.managers.map(m => ({ m, n: myClaims(m.id).length }));
+  const totalClaims = claimCounts.reduce((s, c) => s + c.n, 0);
   const waiverHist = state.transfers.filter(t => t.waiver);
-  return `${head}<div class="card">
+  const actor = hubActor();
+  const orderRows = order.map((om, k) => {
+    const n = claimCounts.find(c => c.m.id === om)?.n || 0;
+    return `<tr${om === actor ? ' class="wo-me"' : ''}>
+      <td class="muted" style="width:30px">#${k + 1}</td>
+      <td>${kitSvg(om, 16)} <b>${esc(teamName(om))}</b> <span class="muted wo-mgr">${esc(managerName(om))}</span></td>
+      <td class="num">${n || '<span class="muted">&mdash;</span>'}</td>
+    </tr>`;
+  }).join('');
+  const histRows = [...waiverHist].reverse().map(t => `<div class="business-row">
+    <span class="business-mark business-waiver" aria-hidden="true">W</span>
+    <div class="business-main">
+      <div class="business-who">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b></div>
+      <div class="business-flow">
+        <span class="business-label business-label-in">&#8593; IN</span> <span class="business-players business-players-in">${pname(PLAYER_BY_ID[t.inId])}</span>
+        <span class="business-label business-label-out">&#8595; OUT</span> <span class="business-players business-players-out">${pname(PLAYER_BY_ID[t.outId])}</span>
+      </div>
+    </div>
+    <span class="business-gw"><small>GW</small><b>${GAMEWEEKS[t.gw].n}</b></span>
+  </div>`).join('');
+  return `${head}<div class="waiver-duo">
+  <div class="card">
     <h2>Waiver Order <span class="tag">bottom of the table feeds first</span></h2>
-    ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
-      <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} waiver${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} in</span></div>`).join('')}
-    <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextLiveWaiverRun())}.</p>
-    <h3 style="margin-top:16px">Waiver history</h3>
-    ${waiverHist.length ? [...waiverHist].reverse().map(t => `<div class="lrow" style="font-size:12.5px"><span class="muted">GW${GAMEWEEKS[t.gw].n}</span> <b>${esc(teamName(t.managerId))}</b> took ${pname(PLAYER_BY_ID[t.inId])} on waivers <span class="muted">(${pname(PLAYER_BY_ID[t.outId])} out)</span></div>`).join('') : '<p class="muted" style="font-size:12px">Nothing has gone through yet.</p>'}
-  </div>`;
+    <table class="pool-table wo-table">
+      <thead><tr><th></th><th>Team</th><th class="num">Claims in</th></tr></thead>
+      <tbody>${orderRows}</tbody>
+    </table>
+    <div class="business-run" style="margin-top:12px">
+      <b>NEXT RUN</b> <span>${fmtWhen(nextLiveWaiverRun())}</span>
+      <small>${totalClaims ? `${totalClaims} CLAIM${totalClaims === 1 ? '' : 'S'} LODGED LEAGUE-WIDE` : 'NO CLAIMS LODGED YET'}</small>
+    </div>
+  </div>
+  <div class="card business-card" style="margin-top:0">
+    <div class="business-head">
+      <div><span class="business-kicker">The Waiver Wire</span><h2>Priority spent</h2></div>
+      <span class="muted">EVERY CLAIM THAT LANDED</span>
+    </div>
+    ${waiverHist.length ? `<div class="business-feed">${histRows}</div>` : '<p class="muted" style="font-size:12.5px;margin-top:10px">Nothing has gone through yet. Priority hoarded like it pays interest.</p>'}
+  </div>
+</div>`;
 }
 function bindTransfers() {
   const mid = hubActor();

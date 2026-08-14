@@ -43,6 +43,12 @@ body {
 .brand-crest { width: 54px; height: 54px; border-radius: 50%; object-fit: cover; filter: drop-shadow(0 0 10px rgba(233,196,106,.35)); }
 .crest-ov { max-width: min(460px, 92vw); text-align: center; }
 .crest-ov img { width: 100%; display: block; border-radius: 14px; }
+/* Waiver Order tab, de-1990s'd (Ben, 14 Aug): order table left, wire right */
+.waiver-duo { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 980px) { .waiver-duo { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+.wo-table .wo-mgr { font-size: 11px; }
+.wo-table .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+.wo-me td { background: rgba(45, 212, 167, .07); }
 .brand h1 { font-size: 20px; letter-spacing: .5px; }
 .brand h1 span { color: var(--accent); font-weight: 600; }
 .brand-sub { font-size: 11px; color: var(--muted); letter-spacing: .4px; }
