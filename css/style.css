@@ -780,9 +780,11 @@ tr.gone-row td.act { opacity: .8; }
 .business-label-in { color: var(--accent); }
 .business-label-out { color: #e88b8b; }
 .business-players { min-width: 0; font-weight: 700; }
-.business-players-in .plink { color: var(--text); }
-.business-players-out { color: var(--muted); font-weight: 500; }
-.business-players-out .plink { color: var(--muted); text-decoration-color: rgba(155,164,184,.35); }
+/* Lee, 13 Aug: player names take the colour of their IN/OUT label */
+.business-players-in { color: var(--accent); }
+.business-players-in .plink { color: var(--accent); text-decoration-color: rgba(45,212,167,.4); }
+.business-players-out { color: #e88b8b; font-weight: 500; }
+.business-players-out .plink { color: #e88b8b; text-decoration-color: rgba(232,139,139,.4); }
 .business-plus { color: var(--muted); font-weight: 400; }
 .business-gw { display: grid; justify-items: end; flex: none; font-variant-numeric: tabular-nums; }
 .business-gw small { color: var(--muted); font-size: 7.5px; font-weight: 800; letter-spacing: .08em; }
@@ -897,6 +899,12 @@ tr.gone-row td.act { opacity: .8; }
 /* Lee's scoreboard: the score up top where you look first, not buried in the side headings */
 .mu-scoreline { border-bottom: none; margin: 0 0 4px; font-size: 15px; }
 .mu-scoreline .fx-score { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; padding: 3px 14px; background: var(--card2); border-radius: 7px; white-space: nowrap; }
+/* Lee, 13 Aug: the big matchup headers wrapped unevenly on phones — kit orphaned
+   under one name, beside the other. Broadcast style instead: kit above the name,
+   both centred, score pill in the middle. Fixture-list rows keep the inline look. */
+.fx-hero { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; border-bottom: none; }
+.fx-hero .fx-side { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; text-align: center; line-height: 1.25; }
+.fx-hero .fx-side b { overflow-wrap: anywhere; }
 .mu-card { max-width: 760px; }
 @media (max-width: 700px) { .mu-grid { grid-template-columns: 1fr; } }
 @media (max-width: 380px) { .mu-pitch .pitch-chip { min-width: 50px; } .mu-pitch { padding: 10px 3px; gap: 6px; } }

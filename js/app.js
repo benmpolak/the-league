@@ -1252,7 +1252,7 @@ function clubEditor(mid) {
   // shouldn't have to hunt for them behind a closed drawer
   const extrasOpen = draft.boards.length || draft.gaffer != null || draft.assistant != null || draft.rivals.length;
   ov.innerHTML = `<div class="card club-office" role="dialog" aria-modal="true" aria-label="The club office" style="max-width:460px;width:94%">
-    <h2>The club office${whoami && mid !== whoami ? ` <span class="tag live-tag">acting for ${esc(teamName(mid))}</span>` : ''}</h2>
+    <h2>The Club Office${whoami && mid !== whoami ? ` <span class="tag live-tag">acting for ${esc(teamName(mid))}</span>` : ''}</h2>
     <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
       <div id="kitPreview" style="flex-shrink:0"></div>
       <div style="flex:1;min-width:0">
@@ -1656,11 +1656,11 @@ function clubProfileHtml(mid, { editable = false } = {}) {
     ${editable ? '<button class="btn" id="clubEdit" style="margin-top:10px">The club office — change anything</button>' : ''}
   </div>
   <div class="card" style="margin-top:14px">
-    <h2>Club records <span class="muted" style="font-weight:400;font-size:12px">what the ultras chant</span></h2>
+    <h2>Club Records <span class="muted" style="font-weight:400;font-size:12px">what the ultras chant</span></h2>
     ${recRows.length ? recRows.join('') : '<p class="muted" style="font-size:12.5px">The record books open at GW1. Every one of these is currently yours for the taking.</p>'}
   </div>
   <div class="card" style="margin-top:14px">
-    <h2>The dugout</h2>
+    <h2>The Dugout</h2>
     ${g ? `<p style="font-size:14px"><b>${g.e} ${esc(g.t)}</b></p><p class="muted" style="font-size:12.5px;margin:4px 0 8px">${esc(g.bio)}</p>
       <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Coaching badges</span><b style="margin-left:auto">${esc(g.fm.badges)}</b></div>
       <div class="lrow" style="font-size:12px;display:flex;gap:10px"><span class="muted">Playing career</span><b style="margin-left:auto">${esc(g.fm.playing)}</b></div>
@@ -1674,7 +1674,7 @@ function clubProfileHtml(mid, { editable = false } = {}) {
     ${myRivals.length ? myRivals.map(r => `<p style="font-size:13px">Declared: <b>${teamTag(r)}</b> ${derbyTag(mid, r)}</p>`).join('') : '<p class="muted">No declared rivals. The office calls this cowardice.</p>'}
     ${enemies.map(x => `<p style="font-size:12.5px" class="muted">${teamTag(x.id)} has declared YOU.${myRivals.includes(x.id) ? '' : ' You remain officially unaware.'}</p>`).join('')}
   </div>
-  ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
+  ${boards.length ? `<div class="card" style="margin-top:14px"><h2>${esc(stadium(mid))} — Matchday</h2>${adStrip(mid * 7, 3, mid)}</div>` : ''}`;
 }
 
 /* ----- My Club: the identity on permanent display, changeable whenever ----- */
@@ -1726,7 +1726,7 @@ function viewDirectory() {
     </button>`;
   });
   return `<div class="card">
-    <h2>The club directory <span class="muted" style="font-weight:400;font-size:12px">every club, on the record</span></h2>
+    <h2>The Club Directory <span class="muted" style="font-weight:400;font-size:12px">every club, on the record</span></h2>
     <div class="dir-grid">${cards.join('')}</div>
   </div>`;
 }
@@ -3209,13 +3209,13 @@ const NAV_ITEMS = [
   ['draft', 'The Draft Console', 'Draft Console'],
   ['team', 'My Team', 'My Team'],
   ['club', 'My Club', 'Club'],
-  ['directory', 'Club directory', 'Clubs'],
+  ['directory', 'Club Directory', 'Clubs'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Matches', 'Matches'],
-  ['cup', 'Cup competitions', 'Cups'],
+  ['cup', 'Cup Competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
-  ['fixtures', 'PL fixtures', 'PL fixtures'],
+  ['fixtures', 'PL Fixtures', 'PL Fixtures'],
   ['rules', 'Rules', 'Rules'],
   ['settings', 'Settings', 'Settings'],
 ];
@@ -3627,7 +3627,7 @@ function readyRoomCard() {
   const n = state.managers.filter(mg => r[mg.id]).length;
   const iAmManager = whoami && whoami !== -1;
   return `<div class="card">
-    <h2>The ready room <span class="tag">${n}/${state.managers.length} ready</span></h2>
+    <h2>The Ready Room <span class="tag">${n}/${state.managers.length} ready</span></h2>
     <p class="muted" style="font-size:12px;margin-bottom:10px">Ready means signed in on your draft device and good to go.${isCommissioner() ? ' The Chairman can vouch for a straggler on the phone.' : ''}</p>
     ${state.managers.map(mg => {
       const rd = r[mg.id];
@@ -3649,7 +3649,7 @@ function readyRoomCard() {
 function prepCard() {
   const n = whoami && whoami !== -1 ? toArr(state.autolists?.[whoami]).length : 0;
   return `<div class="card" style="text-align:center">
-    <h2>The scouting floor is open</h2>
+    <h2>The Scouting Floor is open</h2>
     <p class="rules-p">${n ? `Your autopick list has <b>${n}</b> name${n === 1 ? '' : 's'} on it.` : 'Browse the pool, &#9733; star your targets and rank your autopick list before the night.'} If your draft clock ever hits zero, the top available name on your list goes in.</p>
     <button class="btn" id="prepGo" style="margin-top:10px">Open the Draft Console</button>
   </div>`;
@@ -3688,7 +3688,7 @@ function viewSetup() {
     ${prepCard()}
     ${readyRoomCard()}
     <div class="card">
-      <h2>Managers &amp; draft order</h2>
+      <h2>Managers &amp; Draft Order</h2>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">The list below IS the draft order — first listed picks first. Drag rows (or use the arrows) to set it, or shuffle it and let the envelopes decide.</p>
       ${m.map((mg, i) => `
         <div class="mgr-row" data-mgrdrag="${i}">
@@ -3702,7 +3702,7 @@ function viewSetup() {
       <p class="muted" style="font-size:11.5px;margin-top:8px">First manager listed is the commissioner. Team names pulled from the archive — correct as you see fit.</p>
     </div>
     <div class="card">
-      <h2>Squad rules</h2>
+      <h2>Squad Rules</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Hard rule: <b>14 players</b>, with one positional flex. Draft picks, autopicks, trades, Trough signings and waivers all use the same limits.</p>
       <div class="quota-grid">
         ${['GK', 'DF', 'MF', 'FW'].map(pos => `
@@ -4357,7 +4357,7 @@ function viewDraft() {
     </div>
     <div class="draft-side">
       ${whoami && whoami !== -1 ? `<div class="card queue-card" id="queueCard">
-        <h2>My autopick list <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
+        <h2>My Autopick List <span class="tag">${toArr(state.autolists?.[whoami]).length}</span></h2>
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Your ranked shortlist. If your clock hits zero, the top available pick goes in. Drag players across, or &#9734; them in the pool.</p>
         ${autolistRows()}
       </div>` : ''}
@@ -4365,7 +4365,7 @@ function viewDraft() {
         ${squadPanelHtml()}
       </div>
       <div class="card" id="pickHistCard">
-        <h2>Pick history</h2>
+        <h2>Pick History</h2>
         <div class="pick-log">
           ${[...state.draft.picks].reverse().slice(0, 40).map(pk => {
             const p = PLAYER_BY_ID[pk.playerId];
@@ -4406,7 +4406,7 @@ function viewDraftPrep() {
   const introOpen = window._draftIntroOpen === undefined ? _draftIntroFirstVisit : window._draftIntroOpen;
   return `
   <details class="card draft-intro" ${introOpen ? 'open' : ''}>
-    <summary><b>The Draft Console &mdash; scouting floor</b><span>How the shortlist works</span></summary>
+    <summary><b>The Draft Console &mdash; Scouting Floor</b><span>How the shortlist works</span></summary>
     <div class="draft-intro-body">
       <p class="rules-p">The draft hasn&rsquo;t started. Browse the pool, &#9733; star your targets and put them in order. On the night the top available name on your list goes in automatically if your clock hits zero.</p>
       ${!canQueue && netOn() ? '<p class="muted">Sign in (top right) to build your list &mdash; it saves to your account and will be waiting on draft night.</p>' : ''}
@@ -4419,7 +4419,7 @@ function viewDraftPrep() {
     </div>
     <div class="draft-side">
       <div class="card queue-card" id="queueCard">
-        <h2>My autopick list${canQueue ? ` <span class="tag">${toArr(state.autolists?.[whoami]).length}</span>` : ''}</h2>
+        <h2>My Autopick List${canQueue ? ` <span class="tag">${toArr(state.autolists?.[whoami]).length}</span>` : ''}</h2>
         ${canQueue ? `
         <p class="muted" style="font-size:11.5px;margin-bottom:8px">Ranked &mdash; #1 is who the clock would take first. Drag players from the pool into this list and drag to reorder (or use &#9734; and the arrows).</p>
         ${autolistRows()}` : `
@@ -4627,7 +4627,7 @@ function heckleSheet() {
   ov.id = 'heckleSheet';
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:440px;width:92%">
-    <h2>&#128227; The heckle desk</h2>
+    <h2>&#128227; The Heckle Desk</h2>
     <p class="muted" style="font-size:12px;margin-bottom:10px">Lands on every screen, biggest on ${esc(onClockName)}'s. One per 15 seconds.</p>
     <button class="btn" id="hkRandom" style="width:100%">&#127922; Random barb</button>
     <div style="display:flex;gap:6px;margin-top:8px">
@@ -5588,7 +5588,7 @@ function bindQueueDnD() {
 }
 
 function viewDraftRecap() {
-  return `<div class="card"><h2>The Draft Console &mdash; draft archive</h2>
+  return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
     <p class="muted" style="margin-bottom:12px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
     <div class="pick-log" style="max-height:none">
     ${state.draft.picks.map(pk => {
@@ -6256,7 +6256,7 @@ function viewTransfers() {
       </div>` : ''}
     </div>
     <div class="card">
-      <h2>Trade desk</h2>
+      <h2>The Trade Desk</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Propose a swap with another <b>manager</b>; it executes the instant they accept. After a free agent instead? That&rsquo;s not a trade — that&rsquo;s <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>: pick who goes out, sign who comes in.</p>
       ${toArr(state.trades).filter(t => t.status === 'pending' && (t.to === mid || t.from === mid)).map(t => `
         <div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
@@ -6355,7 +6355,7 @@ function viewTransfers() {
   const claimCounts = state.managers.map(m => ({ m, n: myClaims(m.id).length }));
   const waiverHist = state.transfers.filter(t => t.waiver);
   return `${head}<div class="card">
-    <h2>Waiver order <span class="tag">bottom of the table feeds first</span></h2>
+    <h2>Waiver Order <span class="tag">bottom of the table feeds first</span></h2>
     ${order.map((om, k) => `<div class="lrow"><span class="muted">#${k + 1}</span> <b>${esc(teamName(om))}</b> <span class="muted" style="font-size:11.5px">${esc(managerName(om))}</span>
       <span style="margin-left:auto" class="muted">${claimCounts.find(c => c.m.id === om)?.n || 0} waiver${(claimCounts.find(c => c.m.id === om)?.n || 0) === 1 ? '' : 's'} in</span></div>`).join('')}
     <p class="muted" style="font-size:11px;margin-top:8px">Next run: ${fmtWhen(nextLiveWaiverRun())}.</p>
@@ -6833,7 +6833,7 @@ function installApp() {
   });
 }
 function installCard(settingsPage = false) {
-  if (isStandalone()) return settingsPage ? `<div class="card"><h2>The app</h2>
+  if (isStandalone()) return settingsPage ? `<div class="card"><h2>The App</h2>
     <p class="muted" style="font-size:12.5px">&#9989; You're running the installed app — its own icon, full screen, same live league. Nothing to update; it always loads the latest build.</p></div>` : '';
   if (!settingsPage && localStorage.getItem(A2HS_KEY)) return '';
   const how = a2hsEvent ? ''
@@ -6890,12 +6890,12 @@ function viewDash() {
       <button class="btn" id="dashSignIn">Sign in</button>
     </div>` : `
     <div class="card">
-      <h2>GW${GAMEWEEKS[cur].n} — your matchup</h2>
+      <h2>GW${GAMEWEEKS[cur].n} — Your Matchup</h2>
       ${pair ? `
-      <div class="h2h-fx" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
-        <span style="flex:1;text-align:right"><b>${esc(teamName(pair[0]))} ${kitSvg(pair[0])}</b></span>
+      <div class="h2h-fx fx-hero" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
+        <span class="fx-side">${kitSvg(pair[0], 28)}<b>${esc(teamName(pair[0]))}</b></span>
         <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
-        <span style="flex:1"><b>${kitSvg(pair[1])} ${esc(teamName(pair[1]))}</b></span>
+        <span class="fx-side">${kitSvg(pair[1], 28)}<b>${esc(teamName(pair[1]))}</b></span>
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
@@ -6947,7 +6947,7 @@ function viewDash() {
     ${latestBusinessCard(true)}
     </div>`}
     <div class="card">
-      <h2>The table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
+      <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
       <div style="overflow-x:auto"><table class="pool-table">
         <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
         <tbody>
@@ -8115,7 +8115,7 @@ const AWARD_HONOURS = [
 function awardsHonoursCard() {
   const gws = [];
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') gws.push(i);
-  const head = `<h2>The honours board <span class="muted" style="font-weight:400;font-size:12px">who has actually collected what</span></h2>`;
+  const head = `<h2>The Honours Board <span class="muted" style="font-weight:400;font-size:12px">who has actually collected what</span></h2>`;
   if (!gws.length) {
     return `<div class="card" style="margin-top:14px">${head}
       <p class="muted" style="font-size:12.5px">Nothing settled yet. The cabinet is empty and the polish is unopened.</p></div>`;
@@ -8393,10 +8393,10 @@ function showMatchup(a, b, i) {
       <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; at ${esc(stadium(a))} &middot; Att ${attendance(a, b, i).toLocaleString()}${gwStatus(i) === 'final' ? ' &middot; full time' : ''}</p>
       <button class="btn ghost small" id="muClose">&#10005;</button>
     </div>
-    <div class="h2h-fx mu-scoreline">
-      <span style="flex:1;text-align:right"><b>${esc(teamName(a))} ${kitSvg(a)}</b></span>
+    <div class="h2h-fx mu-scoreline fx-hero">
+      <span class="fx-side">${kitSvg(a, 28)}<b>${esc(teamName(a))}</b></span>
       <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(a, i) : projectedGwScore(a, i)} &ndash; ${started ? gwManagerPoints(b, i) : projectedGwScore(b, i)}</span>
-      <span style="flex:1"><b>${kitSvg(b)} ${esc(teamName(b))}</b></span>
+      <span class="fx-side">${kitSvg(b, 28)}<b>${esc(teamName(b))}</b></span>
     </div>
     ${winProbBar(a, b, i, (whoami === a || whoami === b) ? whoami : null)}
     ${adStrip(a * 1009 + b * 31 + i, 4, a)}
@@ -8558,7 +8558,7 @@ function gwPreviewCard(i) {
   const { rows, motw, notes, recent } = d;
   const trough = recent.length ? `<p class="muted" style="font-size:12px;margin-top:10px"><b>Trough watch:</b> ${recent.map(t => `${esc(managerName(t.managerId))} ${t.trade ? 'traded for' : 'signed'} ${esc(PLAYER_BY_ID[t.inId]?.name || '?')}`).join(' · ')}</p>` : '';
   return `<div class="card" style="margin-bottom:18px">
-    <h2>GW${GAMEWEEKS[i].n} preview <span class="tag">projected scores &amp; win chance</span>
+    <h2>GW${GAMEWEEKS[i].n} Preview <span class="tag">projected scores &amp; win chance</span>
       <button class="btn ghost small" id="copyPreview" style="margin-left:auto" title="WhatsApp-ready preview">&#128203; Copy the Preview</button></h2>
     ${[motw, ...rows.filter(r => r !== motw)].map(r => {
       const pct = Math.round(r.p * 100);
@@ -8953,7 +8953,7 @@ function viewTable() {
   const nCols = form ? 4 : 10; // QF column retired — the bracket below carries it now
   return `
     <div class="card" style="margin-bottom:14px">
-      <h2>The table ${liveNow && !form ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points'}</span></h2>
+      <h2>The Table ${liveNow && !form ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points'}</span></h2>
       ${toggles}
       ${formNote}
       <div style="overflow-x:auto">
@@ -9039,7 +9039,7 @@ const FDR_BG = { 1: 'rgba(63,185,109,.28)', 2: 'rgba(63,185,109,.14)', 3: 'trans
 function fixtureMatrixCard() {
   const fx = state.fixtures || [];
   if (!fx.length) {
-    return `<div class="card" style="margin-top:14px"><h2>Fixture difficulty</h2>
+    return `<div class="card" style="margin-top:14px"><h2>Fixture Difficulty</h2>
       <p class="muted" style="font-size:12.5px">No fixtures loaded yet. Refresh to pull the season's schedule.</p></div>`;
   }
   const weeks = Math.min(Math.max(1, fdrView.weeks || 6), 10);
@@ -9057,7 +9057,7 @@ function fixtureMatrixCard() {
     : (a, b) => a.total - b.total || a.team.localeCompare(b.team));
   const short = t => TEAM_BY_NAME[t]?.short || t.slice(0, 3).toUpperCase();
   return `<div class="card" style="margin-top:14px">
-    <h2>Fixture difficulty <span class="muted" style="font-weight:400;font-size:12px">the run ahead, club by club</span></h2>
+    <h2>Fixture Difficulty <span class="muted" style="font-weight:400;font-size:12px">the run ahead, club by club</span></h2>
     <div class="pool-controls">
       <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">next
         <select id="fdrWeeks" aria-label="How many gameweeks ahead">
@@ -9200,7 +9200,7 @@ function compareCard() {
   const ids = compareIds();
   if (ids.length < 2 || !dataView.comparing) return '';
   return `<div class="card" style="margin-top:14px;border:1px solid var(--accent)">
-    <h2>Head to head <span class="muted" style="font-weight:400;font-size:12px">${ids.map(id => esc(PLAYER_BY_ID[id].name)).join(' v ')}</span>
+    <h2>Head-to-head <span class="muted" style="font-weight:400;font-size:12px">${ids.map(id => esc(PLAYER_BY_ID[id].name)).join(' v ')}</span>
       <button class="btn ghost small" id="cmpClose" style="margin-left:auto;float:right">Close</button></h2>
     ${compareBody(ids)}
   </div>`;
@@ -9231,7 +9231,7 @@ function playerExplorerCard() {
   const shown = pool.slice(0, dataView.limit);
   const clubs = [...new Set(PLAYERS.map(p => p.team))].sort();
   return `<div class="card" style="margin-top:14px">
-    <h2>The player explorer <span class="muted" style="font-weight:400;font-size:12px">every player, every stat, and who has him</span></h2>
+    <h2>The Player Explorer <span class="muted" style="font-weight:400;font-size:12px">every player, every stat, and who has him</span></h2>
     <div class="pool-controls">
       <input type="text" id="dxQ" placeholder="Search ${PLAYERS.length} players&hellip;" value="${esc(dataView.q)}">
       <select id="dxScope" aria-label="Ownership">
@@ -9365,11 +9365,11 @@ function seasonSquadCard() {
     .sort((a, b) => b.pts - a.pts);
   if (!rows.some(r => r.pts !== 0)) {
     return `<div class="card toplist" style="margin-top:14px">
-      <h2>The season ledger</h2>
+      <h2>The Season Ledger</h2>
       <p class="muted" style="font-size:12.5px">Nothing has been settled yet. The ledger opens when the football does.</p></div>`;
   }
   return `<div class="card toplist" style="margin-top:14px">
-    <h2>The season ledger <span class="muted" style="font-weight:400;font-size:12px">tap a team for who actually earned it</span></h2>
+    <h2>The Season Ledger <span class="muted" style="font-weight:400;font-size:12px">tap a team for who actually earned it</span></h2>
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr><th>Team</th><th class="num act">Points</th></tr></thead>
       <tbody>
@@ -9447,7 +9447,7 @@ function tradeRecordCard() {
       <button class="btn small ${tradeView.scope === 'trades' ? '' : 'ghost'}" data-traderec="trades">Trades only</button>
       <button class="btn small ${tradeView.scope === 'all' ? '' : 'ghost'}" data-traderec="all">All moves</button>
     </div>`;
-  const head = `<h2>The trade record <span class="muted" style="font-weight:400;font-size:12px">who has come out ahead</span></h2>`;
+  const head = `<h2>The Trade Record <span class="muted" style="font-weight:400;font-size:12px">who has come out ahead</span></h2>`;
   if (!list.length) {
     return `<div class="card toplist" style="margin-top:14px">${head}${toggle}
       <p class="muted" style="font-size:12.5px">${tradeView.scope === 'trades'
@@ -9492,7 +9492,7 @@ function troughActivityCard() {
   const hot = Object.entries(counts).map(([pid, n]) => ({ p: PLAYER_BY_ID[pid], n }))
     .filter(x => x.p && x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 8);
   return `<div class="card toplist" style="margin-top:14px">
-    <h2>Trough activity <span class="muted" style="font-weight:400;font-size:12px">who can't leave it alone</span></h2>
+    <h2>Trough Activity <span class="muted" style="font-weight:400;font-size:12px">who can't leave it alone</span></h2>
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr><th>Manager</th><th class="num">Trough signings</th><th class="num">Waiver claims won</th><th class="num">Trades</th><th class="num">Total moves</th></tr></thead>
       <tbody>${rows.map((r, i) => `<tr>
@@ -9652,7 +9652,7 @@ function viewRules() {
   return `
   <div class="settings-grid">
     <div class="card">
-      <h2>The basics</h2>
+      <h2>The Basics</h2>
       <p class="rules-p">Twelve managers. One snake draft over all ${PLAYERS.length} Premier League players — order reverses every round. Est. 2015; this is season twelve.</p>
       <p class="rules-p">Squads are fixed at <b>${SQUAD_RULES.size}</b>: ${['GK', 'DF', 'MF', 'FW'].map(p => `${SQUAD_RULES.min[p]}–${SQUAD_RULES.max[p]} ${p}`).join(', ')}. Those lower bounds leave room for only <b>one positional flex</b> — you cannot carry 6 midfielders and 4 forwards together. The same rule applies to the draft, autopicks, trades, waivers, the Trough and the Window Draft. <b>No club cap.</b></p>
       <p class="rules-p"><b>Starting XI:</b> pick 11 from your ${SQUAD_RULES.size} each gameweek — 1 GK, 3–5 DF, 2–5 MF, 1–3 FW. <b>Only starters score.</b> Lineups lock at the FPL deadline.</p>
@@ -9679,7 +9679,7 @@ function viewRules() {
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>
     </div>
     <div class="card">
-      <h2>Honours board &#127942;</h2>
+      <h2>Honours Board &#127942;</h2>
       ${HONOURS_BOARD.map(([yr, who, stars]) => `<div class="score-row"><span>${yr}</span><b>${esc(who)} ${stars}</b></div>`).join('')}
       <h3 style="margin-top:16px">Prize money</h3>
       <p class="rules-p">£50 each. Last season's split: £250 playoff winner, £130 runner-up, £75 last man standing — and <b>£145 to the site</b>. The site now costs <b>£0</b>, because we built our own. That's £145 back in the pot; redistribution to be argued about in the group chat.</p>

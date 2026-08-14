@@ -170,7 +170,7 @@ const chk = (name, ok, detail = '') => {
     state.view = 'table'; render();
     const tableText = document.querySelector('#main').innerText;
     state.view = 'dash'; render();
-    const around = [...document.querySelectorAll('#main .card')].find(c => c.querySelector('h2')?.textContent.includes('The table'));
+    const around = [...document.querySelectorAll('#main .card')].find(c => c.querySelector('h2')?.textContent.includes('The Table'));
     // the dashboard table is a real pool-table now (Ben: DF-style W/D/L)
     const dashRows = around ? [...around.querySelectorAll('tbody tr')] : [];
     return {
@@ -181,8 +181,8 @@ const chk = (name, ok, detail = '') => {
       cotwWeeks: cotwAll.length,
       noBenchTwo: two?.bench === null, noBenchFull: full?.bench === null,
       minutes,
-      dataHasAll: ['The Committee\'s Awards', 'Trough activity', 'The season ledger', 'The Treatment Room'].every(s => dataText.includes(s)),
-      tableConsolidated: !tableText.includes('Trough activity') && !tableText.includes('Top players'),
+      dataHasAll: ['The Committee\'s Awards', 'Trough Activity', 'The Season Ledger', 'The Treatment Room'].every(s => dataText.includes(s)),
+      tableConsolidated: !tableText.includes('Trough Activity') && !tableText.includes('Top players'),
       dashTable: {
         rows: dashRows.length,
         eighth: dashRows[7]?.className || '',
