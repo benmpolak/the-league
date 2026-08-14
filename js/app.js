@@ -4703,13 +4703,17 @@ function renderKlaxons() {
       klaxonFlash({ label: '\u{1F4EF} SHOCK PICK', line: `Round ${shockRound}?! The board had him nowhere near this. The room needs a minute.` }, p);
     }
     for (const k of KLAXONS) {
-      if (k.mid !== pk.managerId) continue;
+      // a klaxon without a mid belongs to the whole room, not one manager
+      if (k.mid != null && k.mid !== pk.managerId) continue;
       if (k.club && p.team !== k.club) continue;
       if (k.clubs && !k.clubs.includes(p.team)) continue;
       if (k.pos && p.pos !== k.pos) continue;
-      if (k.names) {
+      // named men can be listed by immutable code or by name; either identifies
+      if (k.codes || k.names) {
         const full = ((p.full || '') + ' ' + (p.name || '')).toLowerCase();
-        if (!k.names.some(n => full.includes(n))) continue;
+        const byCode = (k.codes || []).includes(p.code);
+        const byName = (k.names || []).some(n => full.includes(n));
+        if (!byCode && !byName) continue;
       }
       klaxonFlash(k, p);
     }

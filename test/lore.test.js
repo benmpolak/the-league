@@ -5,7 +5,7 @@ const vm = require('vm');
 
 const source = fs.readFileSync('js/lore.js', 'utf8');
 const ctx = {};
-vm.runInNewContext(`${source}\n;globalThis.__lore = { RIVALRIES, MANAGER_LORE, MANAGER_ENTRANCES, FORMER_MANAGERS, CHAT_ARCHIVE, HECKLES };`, ctx);
+vm.runInNewContext(`${source}\n;globalThis.__lore = { RIVALRIES, MANAGER_LORE, MANAGER_ENTRANCES, FORMER_MANAGERS, CHAT_ARCHIVE, HECKLES, KLAXONS };`, ctx);
 const lore = ctx.__lore;
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -35,6 +35,26 @@ chk('every archive entry is a short paraphrase with valid manager ids', lore.CHA
   Number.isInteger(x.year) && x.year >= 2015 && x.year <= 2026
   && Array.isArray(x.mids) && x.mids.length && x.mids.every(id => ids.includes(id))
   && typeof x.line === 'string' && x.line.length <= 220));
+
+/* Klaxons. The register is matched on immutable player CODES where it names
+   particular men, because ids are positional and move under the feed. A klaxon
+   with no mid belongs to the whole room. */
+chk('every klaxon has a label and a line', lore.KLAXONS.every(k =>
+  typeof k.label === 'string' && k.label.length > 4
+  && typeof k.line === 'string' && k.line.length > 10));
+chk('a klaxon targets somebody: a manager, a club, a position or named men',
+  lore.KLAXONS.every(k => k.mid != null || k.club || k.clubs || k.pos || k.names || k.codes));
+chk('manager-scoped klaxons name a real manager',
+  lore.KLAXONS.every(k => k.mid == null || ids.includes(k.mid)));
+chk('code-matched klaxons carry plausible FPL codes (never feed ids)',
+  lore.KLAXONS.filter(k => k.codes).every(k =>
+    Array.isArray(k.codes) && k.codes.length
+    && k.codes.every(c => Number.isInteger(c) && c > 1000)));
+const underage = lore.KLAXONS.find(k => /UNDERAGE/.test(k.label));
+chk('the underage klaxon fires for the whole room and names Dowman and Ngumoha by code',
+  !!underage && underage.mid == null
+  && underage.codes.includes(616077) && underage.codes.includes(611922),
+  JSON.stringify(underage));
 
 console.log(`\n[lore] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

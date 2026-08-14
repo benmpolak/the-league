@@ -245,7 +245,16 @@ const HECKLES = [
 // Player klaxons — commissioned live in the group chat, 2 Aug 2026. Fired
 // when one of these managers drafts a matching player. Names are lowercase
 // substring matches on the player's full name; club and pos are exact.
+// `mid` is optional: leave it off and the klaxon fires for whoever picks him.
+// `codes` are FPL's immutable player codes — the right key when a klaxon must
+// name particular men, because the feed's `id` is positional and shifts on
+// every rebuild (that is what produced Toby's "#579 (unknown)").
 const KLAXONS = [
+  // "if someone drafts max dowman or rio ngumoha" (Marc, 13 Aug). Fires for
+  // any manager — this one is not about whose team it is.
+  { label: '\u{1F4EF} UNDERAGE PLAYER KLAXON',
+    line: 'is a child. Get Jason Stein on the phone: this act of underage people trafficking needs a reputational comms strategy, and it needs one before the story breaks.',
+    codes: [616077, 611922] }, // Max Dowman (ARS), Rio Ngumoha (LIV)
   // "should be for EVERY dmc drafted" (Ben, UAT night) — the feed carries no
   // role field, so the register below is the league's official DMC taxonomy.
   // Committee amendments to the register are accepted in the group chat.
