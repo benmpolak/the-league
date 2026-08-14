@@ -135,5 +135,40 @@ hand before Sunday (the R7 list had: all twelve signed in on their draft
 device BEFORE the ceremony — does anything new join that list? e.g. kill the
 demo button? confirm the skip button is Chairman-only on every path?).
 
+## 7. ADDENDUM 14 Aug — the Lee polish rounds, the crest, the domain
+
+Landed after this brief was first written; all client-side except where
+noted. Commits `54c2b8e`, `3974e5b`, `425ae7b`, plus `d2050af` (sign-in
+landing URLs) and the domain move audited separately in
+SOL56-DOMAIN-BRIEF.md — FOLD THAT BRIEF INTO THIS RUN, one verdict.
+
+- **fx-hero**: the dashboard matchup header and the matchup-modal
+  scoreline are now a 3-col grid (kit above name both sides). Classes
+  `h2h-fx mu-scoreline fx-hero` kept for the old selectors.
+- **fx-row**: EVERY fixture row — GW matches, GW preview, playoff
+  tieRows, PL real fixtures — is now a 5-col grid (name | chip | score |
+  chip | name) where chip = kit+(H) / win% / seed / club badge. This
+  touched `tieRow` inside the PLAYOFF BRACKET renderer: confirm the
+  bracket still renders through QFs/semis/final with handicaps and the
+  seed ords in the right cells (the sim covers points, not markup).
+- **Capitalisation sweep**: 32 headings + 3 nav labels retitled. Pure
+  copy, but two smoke pins moved with it (demo-night 'The Table',
+  'Trough Activity', 'The Season Ledger') — audit those edits for
+  honesty, same hand as the code.
+- **Transfer Wire colours + COUNTS pin**: `.business-players-in/-out`
+  coloured; ≤390px business-row back to 3 columns. Check 320px for
+  overflow regressions on long double-signing rows (multi-player
+  trades: two names + 'and' in one cell).
+- **THE NEW CREST** (`icons/icon-{192,512}.png` regenerated from
+  `icons/crest-source.png`; sandbox variants hue-shifted cyan from the
+  same art). `sw.js` precaches both icons — confirm the network-first
+  worker actually serves the NEW icons to a returning installed client
+  and that nothing still references the old crest art anywhere (og
+  tags, manifest, README).
+
+Attack the usual way: these are cosmetic, so the ONLY interesting
+failure is a render() wedge or a selector another feature depended on.
+`grep` for anything still querying the old span-flex fixture markup.
+
 Findings as always. One-word verdicts: REAL LEAGUE / SANDBOX. Then the
 runbook.
