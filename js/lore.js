@@ -253,7 +253,7 @@ const KLAXONS = [
   // "if someone drafts max dowman or rio ngumoha" (Marc, 13 Aug). Fires for
   // any manager — this one is not about whose team it is.
   { label: '\u{1F4EF} UNDERAGE PLAYER KLAXON',
-    line: 'is a child. Get Jason Stein on the phone: this act of underage people trafficking needs a reputational comms strategy, and it needs one before the story breaks.',
+    line: 'is a child. Get Jason Stein on the phone: this needs a reputational comms strategy before somebody works out he has school in the morning.',
     codes: [616077, 611922] }, // Max Dowman (ARS), Rio Ngumoha (LIV)
   // "should be for EVERY dmc drafted" (Ben, UAT night) — the feed carries no
   // role field, so the register below is the league's official DMC taxonomy.
