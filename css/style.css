@@ -806,10 +806,10 @@ tr.gone-row td.act { opacity: .8; }
   .business-head > .muted { display: none; }
   .business-run { grid-template-columns: auto 1fr; }
   .business-run small { grid-column: 2; }
-  .business-row { grid-template-columns: 31px minmax(0, 1fr); gap: 8px; }
+  /* Ben, 14 Aug: COUNTS stays top-right at every width — the second-row
+     wrap read as part of the IN/OUT list. Names ellipsize instead. */
+  .business-row { grid-template-columns: 31px minmax(0, 1fr) auto; gap: 8px; }
   .business-mark { width: 29px; height: 29px; }
-  .business-gw { grid-column: 2; grid-row: 2; display: flex; justify-content: flex-start; gap: 4px; margin-top: -5px; }
-  .business-gw small { align-self: center; }
 }
 
 /* ---------- transfer history: the full ledger (Ben, 10 Aug) ----------
