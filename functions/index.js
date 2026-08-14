@@ -552,11 +552,12 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
     const onClock = eng.currentManagerId(state);
     if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your clock to waste');
+    // one timewaste of +30s (Ben, 14 Aug — was two of +60s)
     const used = state.draft.timewastes?.[onClock] || 0;
-    if (used >= 2) throw new HttpsError('failed-precondition', 'both timewastes burned');
+    if (used >= 1) throw new HttpsError('failed-precondition', 'timewaste already burned');
     await db().ref().update({
       [`${d}/timewastes/${onClock}`]: used + 1,
-      [`${d}/deadline`]: (state.draft.deadline || Date.now()) + 60 * 1000,
+      [`${d}/deadline`]: (state.draft.deadline || Date.now()) + 30 * 1000,
     });
     return { ok: true };
   }
@@ -1737,7 +1738,9 @@ ACTIONS.importState = async ({ league, a, data }) => {
     // club identity fields travel with the manager — a backup taken after a
     // founding must restore, and the pre-draft start once exported them too
     // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards'].includes(k)) importError(`manager key "${k}"`);
+    // 'crest' was missing from this list while the block below validated it —
+    // backups taken after a College of Arms visit refused to restore (sol P2, 14 Aug)
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards', 'crest'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     // stadium shares the office's 40-char contract; old longer backups are

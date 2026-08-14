@@ -1950,7 +1950,8 @@ const lastWaiverRun = () => state.waiverMeta?.lastRun ? new Date(state.waiverMet
 function waiverRunDue() {
   if (state.phase !== 'season' || waiverControl() !== 'auto') return false;
   const t = Date.now(), lr = lastWaiverRun();
-  for (let at = nextSlotAt(t - 48 * 3600e3); at != null && at <= t; at = nextSlotAt(at)) {
+  // 14-day lookback matches the engine's — the horizons drifted (sol P3, 14 Aug)
+  for (let at = nextSlotAt(t - 14 * 86400e3); at != null && at <= t; at = nextSlotAt(at)) {
     // a Chairman-skipped slot is not due — its claims roll to the next run
     if (at > lr && waiverSlotId(at) !== state.waiverMeta?.skip) return true;
   }
@@ -4353,7 +4354,7 @@ function viewDraft() {
       return sp ? ` &middot; Round ${round} brought to you by <b style="color:${sp.c}">${esc(sp.t)}</b> <span class="muted">— ${esc(sp.s)}</span>` : '';
     })()}</div>
     <div class="oc-btns">
-      ${roomOpen && state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+60s)">&#8987; Timewaste (${2 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
+      ${roomOpen && state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+30s)">&#8987; Timewaste (${1 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
       ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
       ${roomOpen ? '<button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>' : ''}
@@ -5297,10 +5298,11 @@ function bindDraft() {
     const mid = currentManagerId();
     const tw = $('#timewasteBtn');
     if (tw) {
+      // one timewaste of +30s (Ben, 14 Aug — was two of +60s, pre test draft)
       const used = state.draft.timewastes?.[mid] || 0;
-      tw.disabled = used >= 2 || !canActFor(mid);
+      tw.disabled = used >= 1 || !canActFor(mid);
       tw.onclick = () => {
-        if ((state.draft.timewastes?.[mid] || 0) >= 2) { toast('No timewastes left — play on'); return; }
+        if ((state.draft.timewastes?.[mid] || 0) >= 1) { toast('No timewaste left — play on'); return; }
         if (netOn()) {
           serverAct('draftAdmin', { op: 'timewaste' })
             .then(() => toast(`${managerName(mid)} is timewasting. Taking it to the corner flag.`))
@@ -5308,7 +5310,7 @@ function bindDraft() {
           return;
         }
         (state.draft.timewastes = state.draft.timewastes || {})[mid] = (state.draft.timewastes[mid] || 0) + 1;
-        state.draft.deadline = (state.draft.deadline || Date.now()) + 60 * 1000;
+        state.draft.deadline = (state.draft.deadline || Date.now()) + 30 * 1000;
         save(); render();
         toast(`${managerName(mid)} is timewasting. Taking it to the corner flag.`);
       };
@@ -8028,9 +8030,9 @@ function cotwCharges(i) {
     const hoard = Object.entries(byClub).sort((a, b) => b[1] - a[1])[0];
     if (hoard && hoard[1] >= 5) file(20, mid, `for carrying ${hoard[1]} ${hoard[0]} players, which is permitted, and remains the problem`, hoard[1]);
 
-    // XXI. draft-night clock abuse. Two each, and they used both
+    // XXI. draft-night clock abuse. One each, and they used it
     const stalling = state.draft?.timewastes?.[mid] || 0;
-    if (stalling >= 2) file(21, mid, 'for using both draft timewastes and still not being ready when the clock came back');
+    if (stalling >= 1) file(21, mid, 'for timewasting on draft night and still not being ready when the clock came back');
 
     // XXII. listed nobody, all season, while maintaining everyone else is the problem
     if (state.phase === 'season' && !blockList(mid).length)

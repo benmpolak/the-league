@@ -430,7 +430,11 @@ const SB = 'the-league-sandbox';
     && (await T.mutate(SB, 'clubSet', { boards: [BC] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
 
   /* sol P0.2: a backup taken after foundings must restore — the whole public
-     state with kit/sponsor/rival/gaffer/boards on managers round-trips */
+     state with kit/sponsor/rival/gaffer/boards on managers round-trips.
+     sol launch P2 (14 Aug): crest was cleared above before the export, so the
+     round-trip never carried one and importState's missing 'crest' allow-list
+     entry went unnoticed. Re-arm it so the backup under test has a crest. */
+  await T.mutate(SB, 'clubSet', { crest: { shape: 1, div: 2, charge: 5, c1: '#0b1a3a', c2: '#e8b64c' } }, sbTok2);
   const exported = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
   const reimp = await T.mutate(SB, 'importState', { state: exported }, sbTok1);
   chk('export after foundings re-imports clean (club fields allowed)', !reimp.error, JSON.stringify(reimp.error));
@@ -441,6 +445,10 @@ const SB = 'the-league-sandbox';
     && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/boards`).get()).val()) === JSON.stringify([BC - 1])
     && (await db.ref(`v2/leagues/${SB}/public/managers/1/rival`).get()).val() === 1
     && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/rivals`).get()).val()) === '[1,3]');
+  chk('crest survives the round-trip (sol launch P2)',
+    (await db.ref(`v2/leagues/${SB}/public/managers/1/crest/charge`).get()).val() === 5
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/crest/c2`).get()).val() === '#e8b64c');
+  chk('import still rejects a junk crest', (await T.mutate(SB, 'importState', { state: { ...exported, managers: exported.managers.map((m, i) => i === 1 ? { ...m, crest: { shape: 9, div: 0, charge: 0, c1: '#fff', c2: '#000' } } : m) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import still rejects a junk manager key', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map(m => ({ ...m, chef: 1 })) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects an out-of-catalogue gaffer', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, gaffer: GC }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects a rival outside the roster', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, rival: 55 }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');

@@ -142,7 +142,7 @@ const chk = (name, ok, detail = '') => {
       const picks = state.draft.picks.filter(pk => pk.managerId === M[7]);
       pool.forEach((pl, k) => { if (picks[k]) picks[k].playerId = pl.id; });
     });
-    t('draft timewasting', M[8], 21, 'both draft timewastes', () => { state.draft.timewastes[M[8]] = 2; });
+    t('draft timewasting', M[8], 21, 'timewasting on draft night', () => { state.draft.timewastes[M[8]] = 1; });
     t('empty trade block', M[9], 22, 'listing nobody on the trade block', () => { delete state.tradeBlock[M[9]]; });
     t('stale covenant', M[10], 23, 'never mentioned again', () => {
       state.covenants.push({ id: 'c1', from: M[10], to: M[0], text: 'the loan-back', t: 1, gw: 0 });
