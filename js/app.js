@@ -8297,10 +8297,12 @@ function playoffCard() {
   }
   const seedNo = id => po.seeds.indexOf(id) + 1;
   const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
-  const tieRow = (a, b, score, hcap) => `<div class="h2h-fx">
-      <span style="flex:1;text-align:right">${ord(seedNo(a))} ${esc(teamName(a))}${hcap ? ` <span class="gold" style="font-size:11px" title="handicap — the higher seed starts +${hcap}">+${hcap}</span>` : ''}</span>
+  const tieRow = (a, b, score, hcap) => `<div class="h2h-fx fx-row">
+      <span class="fx-name fx-l">${esc(teamName(a))}${hcap ? ` <span class="gold" style="font-size:11px" title="handicap — the higher seed starts +${hcap}">+${hcap}</span>` : ''}</span>
+      <span class="fx-chip"><small class="muted">${ord(seedNo(a))}</small></span>
       <span class="fx-score">${score}</span>
-      <span style="flex:1">${esc(teamName(b))} ${ord(seedNo(b))}</span></div>`;
+      <span class="fx-chip"><small class="muted">${ord(seedNo(b))}</small></span>
+      <span class="fx-name">${esc(teamName(b))}</span></div>`;
   const qfRows = po.qfs.map(([a, b], k) => tieRow(a, b,
     gwStatus(po.qfIdx) === 'upcoming' ? 'GW34' : `${gwManagerPoints(a, po.qfIdx) + po.handicaps[k]} – ${gwManagerPoints(b, po.qfIdx)}`,
     po.handicaps[k])).join('');
@@ -8564,10 +8566,12 @@ function gwPreviewCard(i) {
       const pct = Math.round(r.p * 100);
       return `<div class="preview-fx${r === motw ? ' motw' : ''}">
         ${r === motw ? '<div class="motw-tag">&#11088; MATCHUP OF THE WEEK</div>' : ''}
-        <div class="h2h-fx" data-mu="${r.a}:${r.b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-          <span style="flex:1;text-align:right">${esc(teamName(r.a))} <b class="pct">${pct}%</b></span>
+        <div class="h2h-fx fx-row" data-mu="${r.a}:${r.b}:${i}" style="cursor:pointer" title="Tap for the matchup">
+          <span class="fx-name fx-l">${esc(teamName(r.a))}</span>
+          <span class="fx-chip"><b class="pct">${pct}%</b></span>
           <span class="fx-score" title="projected score">${r.sa} &ndash; ${r.sb}</span>
-          <span style="flex:1"><b class="pct">${100 - pct}%</b> ${esc(teamName(r.b))}</span>
+          <span class="fx-chip"><b class="pct">${100 - pct}%</b></span>
+          <span class="fx-name">${esc(teamName(r.b))}</span>
         </div>
         <div class="venue-line">at ${esc(stadium(r.a))}</div>
         ${notes(r).map(n => `<div class="preview-note">${esc(n)}</div>`).join('')}
@@ -8607,10 +8611,12 @@ function viewH2H() {
         const pa = st === 'upcoming' ? '–' : gwManagerPoints(a, i);
         const pb = st === 'upcoming' ? '–' : gwManagerPoints(b, i);
         const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
-        return `<div class="h2h-fx" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
-          <span class="${aWin ? 'h2h-win' : ''}" style="flex:1;text-align:right">${esc(teamName(a))} ${kitSvg(a)} <span class="muted" style="font-size:10px">(H)</span></span>
+        return `<div class="h2h-fx fx-row" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
+          <span class="fx-name fx-l ${aWin ? 'h2h-win' : ''}">${esc(teamName(a))}</span>
+          <span class="fx-chip">${kitSvg(a)}<small class="muted">(H)</small></span>
           <span class="fx-score">${pa} &ndash; ${pb}</span>
-          <span class="${bWin ? 'h2h-win' : ''}" style="flex:1">${kitSvg(b)} ${esc(teamName(b))}</span>
+          <span class="fx-chip">${kitSvg(b)}</span>
+          <span class="fx-name ${bWin ? 'h2h-win' : ''}">${esc(teamName(b))}</span>
         </div>
         <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
           const w = Math.round(liveWinProb(a, b, i) * 100);
@@ -8624,10 +8630,12 @@ function viewH2H() {
         return fxs.map(f => {
           const live = f.started && !f.finished;
           const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''} – ${f.as ?? ''}`;
-          return `<div class="h2h-fx" style="font-size:12.5px">
-            <span style="flex:1;text-align:right">${esc(f.home)} ${flagImg(f.home)}</span>
+          return `<div class="h2h-fx fx-row" style="font-size:12.5px">
+            <span class="fx-name fx-l">${esc(f.home)}</span>
+            <span class="fx-chip">${flagImg(f.home)}</span>
             <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : ''}</span>
-            <span style="flex:1">${flagImg(f.away)} ${esc(f.away)}</span>
+            <span class="fx-chip">${flagImg(f.away)}</span>
+            <span class="fx-name">${esc(f.away)}</span>
           </div>`;
         }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
       })()}
