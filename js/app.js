@@ -787,6 +787,23 @@ const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}"
     brandEl.title = 'Back to the Dashboard';
     brandEl.addEventListener('click', () => { state.view = 'dash'; save(); render(); });
   }
+  // the crest opens full-size — 54px does the detail no justice (Ben, 14 Aug)
+  const crestEl = document.querySelector('.brand-crest');
+  if (crestEl) {
+    crestEl.title = 'The club crest — tap to admire';
+    crestEl.addEventListener('click', e => {
+      e.stopPropagation();
+      const ov = document.createElement('div');
+      ov.className = 'overlay';
+      ov.innerHTML = `<div class="card crest-ov">
+        <img src="icons/crest-source.png" alt="The League crest, full size">
+        <p class="venue-line" style="margin:10px 0 0">The League &middot; est. 2015 &middot; crest issued by the College of Arms (Warner &amp; Tussie)</p>
+      </div>`;
+      ov.onclick = () => closeOv(ov);
+      document.body.appendChild(ov);
+      pushOvState(); // phone back button closes the crest, not the site
+    });
+  }
 }
 document.addEventListener('error', e => {
   const img = e.target;
