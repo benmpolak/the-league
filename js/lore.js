@@ -258,10 +258,45 @@ const KLAXONS = [
   // "should be for EVERY dmc drafted" (Ben, UAT night) — the feed carries no
   // role field, so the register below is the league's official DMC taxonomy.
   // Committee amendments to the register are accepted in the group chat.
+  // Marc, 13 Aug: "andrey santos, manuel fernandes and sandro tonali for this
+  // list", plus the register brought up to the 26/27 feed. NOTE the surnames
+  // are deliberately over-specified — a bare 'fernandes' would fire on Bruno,
+  // which is why 'enzo fern' and 'mateus fern' are written the long way. Same
+  // reason 'rodri' is quoted: the feed spells him "Rodrigo 'Rodri' Hernandez",
+  // and the bare stem was quietly dragging in Coventry's Borges Rodrigues, a
+  // winger. Bentancur, who WAS riding in on that stem, now stands on his own.
   { mid: 3, label: '\u{1F4EF} DEFENSIVE MIDFIELDER KLAXON', line: 'Atlético Benfield add another sitter to the collection.',
-    pos: 'MF', names: ['tielemans', 'enzo fern', 'mac allister', 'declan rice', 'xhaka', 'rodri', 'caicedo', 'casemiro', 'ugarte',
+    pos: 'MF', names: ['tielemans', 'enzo fern', 'mac allister', 'declan rice', 'xhaka', "'rodri'", 'bentancur', 'caicedo', 'casemiro', 'ugarte',
       'gravenberch', 'palhinha', 'wharton', 'baleba', 'onana', 'anderson', 'gomes', 'bruno guimar', 'lokonga', 'ndidi',
-      'douglas luiz', 'wieffer', 'veiga', 'garner', 'berge', 'yarmoliuk', 'mubama', 'endo', 'lavia', 'mangala', 'soucek'] },
+      'douglas luiz', 'wieffer', 'veiga', 'garner', 'berge', 'yarmoliuk', 'mubama', 'endo', 'lavia', 'mangala', 'soucek',
+      'andrey santos', 'mateus fern', 'tonali',
+      'zubimendi', 'nørgaard', 'gruev', 'ampadu', 'stach', 'lukić', 'matusiwa', 'florentino', 'kovačić', 'harrison reed',
+      'palacios', 'grimes', 'ayari', 'janelt', 'sangaré', 'yates', 'schlager', 'habib diarra', 'sadiki', 'morita',
+      'matazo', 'bajcetic', 'iroegbunam', 'mainoo', 'essugo'] },
+  /* Ian drafts a surname and then wonders which one he has got (Marc, 13 Aug:
+     "isnt sure if he has drafted the player he means to... the new brentford
+     midfielder sangare"). The register is not a guess: every man on it is
+     new to the Premier League and shares his surname with somebody else in
+     it, or carries a name generic enough in his own country to be a coin
+     toss. There really are two Sangarés — Mamadou at Brentford and Ibrahim
+     at Forest — and two Kamaras, both midfielders. Codes, not names, because
+     the whole point is that the names collide. */
+  { mid: 5, label: '\u{1F4EF} AM I SURE THAT’S THE RIGHT ONE KLAXON',
+    line: 'Ian: check the first name, the club and the photograph. There is more than one of him, and you have form.',
+    codes: [
+      513545, // Mamadou Sangaré (BRE) — Ibrahim Sangaré is at Forest
+      490161, // Abu Kamara (HUL) — the other Kamara is at Villa, also a midfielder
+      494928, // Juanlu Sánchez (BOU) — Robert Sánchez keeps goal for Chelsea
+      483067, // António Silva (BOU) — one of four Silvas in the league
+      551466, // Gonzalo García (FUL) — listed as "Gonzalo", a García among Garcías
+      543968, // Emersonn (IPS) — two Ns, and a Silva underneath
+      501390, // Marcelino Núñez (IPS) — not that Núñez
+      611665, // Bazoumana Touré (NEW) — a Touré
+      606930, // Nobel Mendy (HUL) — a Mendy
+      561245, // Álvaro Rodríguez (BOU) — a Rodríguez
+      451490, // Costinha (BHA) — whose full name opens "João Pedro"
+      492498, // Raphael Borges Rodrigues (COV) — another Rodrigues entirely
+    ] },
   { mid: 5, label: '\u{1F4EF} CITY PLAYER KLAXON', line: 'Champagne Khusanova remain constitutionally committed to the project.',
     club: 'Man City' },
   // "same for promoted alex singer klaxon" — ANY player from the promoted

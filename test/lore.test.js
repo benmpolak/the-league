@@ -56,5 +56,20 @@ chk('the underage klaxon fires for the whole room and names Dowman and Ngumoha b
   && underage.codes.includes(616077) && underage.codes.includes(611922),
   JSON.stringify(underage));
 
+/* The substring register is a loaded gun: a bare surname stem drags in men who
+   are nothing like the type. Bruno Fernandes is not a sitter and Coventry's
+   Borges Rodrigues is a winger — both used to be one careless stem away. */
+const dmc = lore.KLAXONS.find(k => /DEFENSIVE MIDFIELDER/.test(k.label));
+chk('the DMC register never matches on a bare "fernandes" or "rodri" stem',
+  !dmc.names.includes('fernandes') && !dmc.names.includes('rodri'),
+  JSON.stringify(dmc.names.filter(n => /^(fernandes|rodri)$/.test(n))));
+chk('Marc\'s three are on the DMC register',
+  ['andrey santos', 'mateus fern', 'tonali'].every(n => dmc.names.includes(n)));
+const tussie = lore.KLAXONS.find(k => /RIGHT ONE/.test(k.label));
+chk('the Tussie klaxon is Ian\'s and identifies men by code, never by a colliding name',
+  !!tussie && tussie.mid === 5 && Array.isArray(tussie.codes) && tussie.codes.length >= 10
+  && !tussie.names, JSON.stringify(tussie && { mid: tussie.mid, n: tussie.codes.length }));
+chk('every Tussie code is distinct', tussie && new Set(tussie.codes).size === tussie.codes.length);
+
 console.log(`\n[lore] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
