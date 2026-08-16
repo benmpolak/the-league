@@ -259,3 +259,26 @@ draft night. The design is settled — do not re-litigate, just build:
   cron needed. Pilot episodes can run off Season Preview material.
 - **Where**: a section in the Gazette reading room; new `js/podcast.js`, add
   to index.html AND sw.js precache (bump the shell cache version).
+
+**Assigned to Marc (Ben, 16 Aug). For Marc's AI — read before writing code:**
+
+- Read `CLAUDE.md` and `MARC-ONBOARDING.md` first. This is a CLIENT-ONLY
+  build: nothing in `functions/`, `js/sync.js` or the waiver engine.
+- Determinism is a hard contract: every phone must generate the identical
+  transcript. Use gazette.js's `hash()` pattern with your own keys. NEVER
+  call the shared RNG and never use `Date.now()`/`Math.random()` in content —
+  `test/mockparity.smoke.js` pins RNG call order and will catch you.
+- Hosts join `GAZETTE_PRESS` in `js/lore.js` (beat: `'pod'`): Rax Mushden,
+  plus Keys & Grey for talkTROUGH. Bootleg names are canon — do not correct
+  the spellings. Panel guests come from the existing press corps (Donathan
+  Bilson, Yonni Liu, Sid Lowry).
+- The Gazette's FORMAT IS SETTLED (Ben's rule): the pods are a new section in
+  the reading room, they do not restructure the paper. Committee voice, house
+  clichés per register — read `FOOTBALLESE` in gazette.js for the tone bar.
+- `speechSynthesis`: start only from a tap (iOS), `cancel()` on overlay
+  close, feature-detect and hide the button if absent. Distinct pitch/rate
+  per host. The voices being naff is the joke — do not add an audio backend.
+- `esc()` every dynamic string (team names are user-controlled).
+- Before every push: `npm run check && npm run test:offline`, plus
+  `node test/gazette.test.js` and `node test/mockparity.smoke.js`. Pushing
+  main deploys the live site within minutes and the beta mirrors itself.
