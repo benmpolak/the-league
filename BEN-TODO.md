@@ -282,3 +282,23 @@ draft night. The design is settled — do not re-litigate, just build:
 - Before every push: `npm run check && npm run test:offline`, plus
   `node test/gazette.test.js` and `node test/mockparity.smoke.js`. Pushing
   main deploys the live site within minutes and the beta mirrors itself.
+
+---
+
+## 6. Post-draft housekeeping (from sol's 16 Aug launch verdict — GO/GO)
+
+- **www TLS certificate (sol P2)**: the Pages cert covers only the apex
+  (`gh api repos/benmpolak/the-league/pages` → https_certificate.domains =
+  [theleaguehq.co.uk]; expires 11 Nov). `https://www.` serves a *.github.io
+  cert and fails. Fix AFTER draft night (re-provisioning can flap the domain
+  for minutes): re-save the custom domain — Settings → Pages → remove and
+  re-add `theleaguehq.co.uk` (or `gh api -X PUT repos/benmpolak/the-league/pages
+  -f cname=theleaguehq.co.uk`) — then confirm the new cert lists BOTH domains.
+  Until then: share the apex URL only, never www.
+- **Stale skip under manual control (sol P3, twice-flagged)**: harmless while
+  waivers stay AUTO; if a code fix is ever wanted, spend the stale skip when
+  control returns to auto. Runbook covers it meanwhile.
+- **Coverage debt (sol P3)**: promote sol's targeted repros into the suite —
+  (a) emulator: concurrent timewaste = exactly one success, +30s, second
+  refused; (b) browser: Gazette.preview() retires once GW1 settles + hostile
+  team/sponsor names escape in the preview registers.
