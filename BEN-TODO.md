@@ -8,6 +8,25 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## THE DRAFT ORDER (randomiser complete, group chat 16 Aug — FINAL)
+
+1. Toby (Chairman Mao) · 2. Lee (Celta Leigh-Go) · 3. Geller (Geldog FC) ·
+4. Ben Levy (Atlético Benfield) · 5. Pol (The Dog's Polaks) ·
+6. Conners (101011101) · 7. Blanky (Asterick) · 8. Wilko (WA Wanderers) ·
+9. AJ (Interjacksonale) · 10. Singer (Singer's Spartans) ·
+11. Tus (Champagne Khusanova FC) · 12. Ducky (Mighty 🦆)
+
+**Draft-night mechanics (Chairman only):** in the Chairman console, drag the
+manager rows into the order above by the number handle, then press **Start
+draft (ordered)** — it drafts what's on screen. Do NOT press the randomise
+start; the randomiser has already spoken. Snake format, reverses each round.
+
+Runbook reminders: all 12 signed in on their draft device BEFORE the
+ceremony (Ben Levy still outstanding as of 16 Aug — chase); each device
+shows its correct NAMED identity, not Demo/SANDBOX.
+
+---
+
 ## 00. ~~THE SITE IS NOT PUBLISHING~~ — RESOLVED 13 Aug ~16:15, but read the
 ## last paragraph
 
