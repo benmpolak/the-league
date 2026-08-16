@@ -311,6 +311,12 @@ window.Podcast = (() => {
     [/\bTROUGH\b/g, 'troff'],
     [/\bTrough\b/g, 'Troff'],
     [/\btrough\b/g, 'troff'],
+    /* Marc, 18 Aug: "the team name 10110111 sounds weird, just say the
+       numbers." Any voice reads a long run of digits as one enormous number —
+       a hundred and one million, eleven thousand, one hundred and one — which
+       is nobody's team name. Spacing the digits makes it read them out one at
+       a time. Five or more, so scores and points totals are untouched. */
+    [/\b\d{5,}\b/g, m => m.split('').join(' ')],
   ];
   const sayable = t => SAY_AS.reduce((s, [re, to]) => s.replace(re, to), String(t == null ? '' : t));
 

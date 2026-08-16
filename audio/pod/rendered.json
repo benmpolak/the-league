@@ -119,6 +119,18 @@
       "voice": "MLSOvrM2Tyi3okEfyOiI",
       "provider": "elevenlabs",
       "at": "2026-08-18"
+    },
+    "1h2banc": {
+      "file": "1h2banc.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1gjnz": {
+      "file": "1gjnz.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     }
   },
   "tt-pilot": {
@@ -148,9 +160,9 @@
     },
     "k7zwo": {
       "file": "k7zwo.mp3",
-      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
       "provider": "elevenlabs",
-      "at": "2026-08-18"
+      "at": "2026-08-16"
     },
     "60ha94": {
       "file": "60ha94.mp3",
@@ -206,23 +218,47 @@
       "provider": "elevenlabs",
       "at": "2026-08-18"
     },
-    "tr8gx6": {
-      "file": "tr8gx6.mp3",
-      "voice": "kVBPcEMsUF1nsAO1oNWw",
-      "provider": "elevenlabs",
-      "at": "2026-08-18"
-    },
     "2hv9i3": {
       "file": "2hv9i3.mp3",
-      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
       "provider": "elevenlabs",
-      "at": "2026-08-18"
+      "at": "2026-08-16"
     },
     "f0pe8u": {
       "file": "f0pe8u.mp3",
       "voice": "kVBPcEMsUF1nsAO1oNWw",
       "provider": "elevenlabs",
       "at": "2026-08-18"
+    },
+    "ntpm7x": {
+      "file": "ntpm7x.mp3",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "brxkow": {
+      "file": "brxkow.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "sn97nd": {
+      "file": "sn97nd.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1222g99": {
+      "file": "1222g99.mp3",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "yh1ia4": {
+      "file": "yh1ia4.mp3",
+      "voice": "GPBdEhqsWQkHEWGnPOdO",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     }
   }
 }
