@@ -122,12 +122,6 @@
     }
   },
   "tt-pilot": {
-    "1g3vasq": {
-      "file": "1g3vasq.mp3",
-      "voice": "kVBPcEMsUF1nsAO1oNWw",
-      "provider": "elevenlabs",
-      "at": "2026-08-18"
-    },
     "1flgfd2": {
       "file": "1flgfd2.mp3",
       "voice": "csXxiUN2BUFflsCaDxPM",
@@ -197,12 +191,6 @@
     "xdf7y5": {
       "file": "xdf7y5.mp3",
       "voice": "csXxiUN2BUFflsCaDxPM",
-      "provider": "elevenlabs",
-      "at": "2026-08-18"
-    },
-    "1pvun4a": {
-      "file": "1pvun4a.mp3",
-      "voice": "kVBPcEMsUF1nsAO1oNWw",
       "provider": "elevenlabs",
       "at": "2026-08-18"
     },

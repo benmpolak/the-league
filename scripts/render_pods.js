@@ -620,6 +620,24 @@ async function doRender(eps) {
       }
     }
   }
+  /* Audio left behind by a script edit. Not deleted — a line might be coming
+     back, and this script does not get to throw away things it did not make
+     sure about — but said out loud, because the alternative is paying to store
+     recordings of words nobody says any more. */
+  const live = new Set();
+  for (const ep of eps) for (const b of ep.blocks) if (b.key) live.add(ep.id + '/' + b.key);
+  const orphans = [];
+  for (const epId of Object.keys(scanManifest())) {
+    if (!eps.some(e => e.id === epId)) continue;   // episode not in this run
+    for (const key of Object.keys(scanManifest()[epId])) {
+      if (!live.has(epId + '/' + key)) orphans.push(`${epId}/${key}`);
+    }
+  }
+  if (orphans.length) {
+    console.log(`\n${orphans.length} recording(s) no longer match any line — a script changed under them:`);
+    orphans.forEach(o => console.log(`  ${o}`));
+    console.log('Delete them once you are sure the wording is settled.');
+  }
   console.log(`\n${made} line(s) rendered${stood ? ` (${stood} by an understudy, waiting on a real take)` : ''}, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
   if (DRY) { console.log('(dry run — nothing written, nothing spent)'); return; }
   saveProvenance();

@@ -302,13 +302,38 @@ window.Podcast = (() => {
      Anything added here should be a pronunciation, not a rewrite. If a line
      needs different words, change the line. */
   const SAY_AS = [
-    [/\btalkTROUGH\b/g, 'talk TROFF'],
-    [/\btalkTrough\b/g, 'talk TROFF'],
-    [/\bTROUGH\b/g, 'TROFF'],
+    // lower case on purpose. Capitals are how this file marks SHOUTING, and
+    // both the browser and the paid voices treat an all-caps token as either a
+    // shout or an initialism — "TROFF" got spelled out. The show is said as
+    // two ordinary words, the way talkSPORT is.
+    [/\btalkTROUGH\b/g, 'talk troff'],
+    [/\btalkTrough\b/g, 'talk troff'],
+    [/\bTROUGH\b/g, 'troff'],
     [/\bTrough\b/g, 'Troff'],
     [/\btrough\b/g, 'troff'],
   ];
   const sayable = t => SAY_AS.reduce((s, [re, to]) => s.replace(re, to), String(t == null ? '' : t));
+
+  /* ---------- what the BROWSER voice needs on top ----------
+     Marc, 18 Aug: "you need to remove - from the script as they are spoken and
+     it sounds weird." Right — the browser reads a standalone em dash out loud
+     as the word "dash". A paid voice treats it as the pause it is, so this
+     cleanup is deliberately NOT part of sayable(): sayable feeds the line key,
+     and folding it in would orphan the twelve already-rendered lines that
+     contain a dash and re-bill them to fix something they never had wrong.
+
+     Punctuation for the eye, timing for the ear. Hyphens INSIDE a word stay —
+     "head-to-head" and "ex-footballer" are read correctly and always were. */
+  const browserSay = t => sayable(t)
+    // a score reads as a score, not "twelve dash nine"
+    .replace(/(\d)\s*[—–-]\s*(\d)/g, '$1 to $2')
+    // a standalone dash is a pause; a comma is how you spell a pause
+    .replace(/\s+[—–]\s+/g, ', ')
+    .replace(/\s+-\s+/g, ', ')
+    // ...and one left stranded at either end is just noise
+    .replace(/^\s*[—–-]\s*/, '').replace(/\s*[—–-]\s*$/, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/,\s*,/g, ',');
 
   /* A line's identity is WHAT IS SAID, not where it sits in the running order.
      Recordings used to be filed by block index, which meant moving the ad
@@ -788,5 +813,5 @@ window.Podcast = (() => {
   const episode = (showId, kind, gw) => build(showId, kind, gw);
   const latest = (showId, now) => { const e = latestFor(showId, now); return e ? build(e.show, e.kind, e.gw) : null; };
 
-  return { SHOWS, VOICES, logoSvg, published, latest, episode, sayable, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
+  return { SHOWS, VOICES, logoSvg, published, latest, episode, sayable, browserSay, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
 })();

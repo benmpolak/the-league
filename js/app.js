@@ -7728,8 +7728,10 @@ async function podPlay(ep, btn, nowEl) {
   const speak = (text, name, then) => {
     const v = cast[name] || pool[0] || null;
     const col = Podcast.VOICES[name] || { pitch: 1, rate: 1 };
-    // spelling is for the caption; this is for the mouth (trough → troff)
-    const parts = podRuns(Podcast.sayable(text));
+    /* Spelling is for the caption, this is for the mouth: the pronunciation
+       fixes plus the cleanup only the browser needs — it says "dash" out loud
+       where a paid voice just pauses (Marc, 18 Aug). */
+    const parts = podRuns(Podcast.browserSay(text));
     if (!parts.length) { then(); return; }
     let k = 0;
     const say = () => {

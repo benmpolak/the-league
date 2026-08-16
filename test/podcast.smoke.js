@@ -479,7 +479,14 @@ const chk = (name, ok, detail = '') => {
       howardVaries: new Set(eps.filter(e => e.show.id === 'tt')
         .map(e => (e.blocks.find(b => b.who === 'Howard').text.match(/I was (.+?) when I thought/) || [])[1])).size > 1,
       // spelling for the eye, pronunciation for the ear — and only for the ear
-      saidAsTroff: Podcast.sayable('talkTROUGH and the Trough') === 'talk TROFF and the Troff',
+      // lower case: capitals mark shouting in this codebase, and an all-caps
+      // token gets spelled out or bellowed by both engines
+      saidAsTroff: Podcast.sayable('talkTROUGH and the Trough') === 'talk troff and the Troff',
+      // the browser says a standalone dash out loud; a paid voice does not, so
+      // this cleanup must NOT reach the line key
+      dashesForBrowser: Podcast.browserSay('So — a run — 12–9 and head-to-head')
+        === 'So, a run, 12 to 9 and head-to-head',
+      dashesNotKeyed: /—/.test(Podcast.sayable('So — a run')),
       captionUntouched: Podcast.episode('tt', 'pilot', null).blocks
         .some(b => /talkTROUGH/.test(b.text || '')),
     };
