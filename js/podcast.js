@@ -124,10 +124,10 @@ window.Podcast = (() => {
   const PLATFORM_CHANGES = [
     { what: 'waivers moved to a fixed clock — ten o\'clock, Tuesdays and Fridays',
       gfw: 'which is, if we\'re honest, a quietly progressive act. A fixed time is an accessible time. Everybody plans around the same two moments in the week, and the manager who happens to be free on a Sunday evening no longer has a structural advantage over the manager who is putting children to bed.',
-      tt: 'TEN O\'CLOCK? On a TUESDAY? What is anybody doing at ten o\'clock on a Tuesday, son? WORKING. That is what. In my day you posted your team to an address in Essex and if it arrived late THAT WAS YOUR PROBLEM.' },
+      tt: 'TEN O\'CLOCK? On a TUESDAY? What is anybody doing at ten o\'clock on a Tuesday, son? WORKING. That is what. In my day the deadline was THE LAST POST. You wrote your team on the coupon, you got a STAMP on it, and if it arrived late THAT WAS YOUR PROBLEM.' },
     { what: 'the Chairman can now skip a waiver run by exception',
       gfw: 'a discretionary power, and I know that makes some of our listeners nervous. But it exists for double gameweeks and for rounds that finish on a Wednesday night, and the claims roll over untouched. Discretion exercised transparently is not the same thing as discretion abused.',
-      tt: 'SO HE CAN JUST CANCEL IT. One man. CANCELS THE WAIVERS. That is not a league, that is a MONARCHY, and I will tell you something else for nothing — nobody complained when it was a bloke in Essex with a biro.' },
+      tt: 'SO HE CAN JUST CANCEL IT. One man. CANCELS THE WAIVERS. That is not a league, that is a MONARCHY, and I will tell you something else for nothing — nobody needed a Chairman when you POSTED YOUR TRANSFERS IN and took whatever you were given.' },
     { what: 'a player explorer with every stat and a head-to-head comparison',
       gfw: 'and this is where I get slightly evangelical, because per-ninety numbers with a minutes floor is genuinely how you should be reading a squad. It stops you being seduced by a lad who had one good afternoon in October.',
       tt: 'EXPECTED GOALS. Expected. GOALS. Andy, did you ever expect a goal? You SCORED them. Nobody in the history of the game has ever been beaten by a spreadsheet.' },
@@ -304,7 +304,7 @@ window.Podcast = (() => {
     B.push(say('Jamie O’Hara-Hara', 'I played at a VERY good level, Richard, and I\'ll tell you now, this league has gone SOFT.'));
     B.push(say('Richard Keyes', 'Well let\'s get into it, because they have CHANGED THINGS AGAIN.'));
     for (const c of changes) B.push(say(c === changes[0] ? 'Andy Grey' : (c === changes[1] ? 'Jamie O’Hara-Hara' : 'Richard Keyes'), `${c.what.toUpperCase()}. ${c.tt}`));
-    B.push(say('Andy Grey', 'I\'ll tell you what it is, Richard. It\'s WOKE NONSENSE. You used to write your team on a piece of paper and POST IT to an address in Essex. If it got there, it got there. If it didn\'t, you had a WORD WITH YOURSELF and you didn\'t do it again.'));
+    B.push(say('Andy Grey', 'I\'ll tell you what it is, Richard. It\'s WOKE NONSENSE. You used to fill your team in on a coupon, put a STAMP on it, and POST IT. Transfers and all, off to an address in Essex. Then you waited for the paper on Monday to find out how you\'d done. If it never got there, you had a WORD WITH YOURSELF and you didn\'t do it again.'));
     B.push(say('Richard Keyes', `And nobody died, Andy. NOBODY DIED. ${pick(TT_ROAR, key + ':r1')}.`));
     const a1 = adBreak(showId, key, 1); if (a1) B.push(a1);
     B.push(say('Richard Keyes', `Last season. ${top[0].p.name}, ${top[0].pts} points. Best in the league by a MILE.`));
