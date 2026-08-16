@@ -18,3 +18,6 @@ pubsub-debug.log
 ui-debug.log
 database-debug.log
 data/history/raw/
+
+# podcast: audition scratch — dozens of sample mp3s, never committed
+audio/pod/_audition/
