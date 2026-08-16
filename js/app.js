@@ -7529,11 +7529,73 @@ function podcastSheet(id) {
   const btn = ov.querySelector('#podPlay');
   if (btn) btn.onclick = () => podPlay(ep, btn, ov.querySelector('#podNow'));
 }
+/* ---- the speech desk ----
+   Marc, 18 Aug: "there are some examples where a word is in all caps, and the
+   tone doesnt change and it is spelt out as if it is an acronym". Both faults
+   are fixable in the TEXT, before the engine ever sees it — no engine can tell
+   SHOUTING from an initialism, and none of them will ever say "GW3" the way a
+   broadcaster would.
+
+   1. Abbreviations are expanded to what a man with a microphone would actually
+      say. "IPS" is Ipswich out loud, not I-P-S. The ones that genuinely ARE
+      initialisms (VAR) are spaced so they stay spelled.
+   2. A shouted run is spoken in lower case — so it is read as words — and the
+      emphasis is put back where it belongs: its own utterance, louder and a
+      shade faster. The caption still prints the capitals, so the page shouts
+      even though the string handed to the engine does not. */
+const POD_SAY = [
+  [/talkTROUGH/g, 'talk Trough'],
+  [/\bGW\s*(\d+)\b/g, 'gameweek $1'], [/\bGW\b/g, 'gameweek'],
+  [/\bxGI\b/g, 'expected goal involvement'], [/\bxG\b/g, 'expected goals'], [/\bxA\b/g, 'expected assists'],
+  [/\bH2H\b/g, 'head to head'], [/\bPPG\b/gi, 'points per game'], [/\bpts\b/gi, 'points'],
+  [/\bVAR\b/g, 'V A R'], [/\bEPL\b/g, 'E P L'], [/\bFPL\b/g, 'F P L'],
+  [/\bGK\b/g, 'goalkeeper'], [/\bDF\b/g, 'defender'], [/\bMF\b/g, 'midfielder'], [/\bFW\b/g, 'forward'],
+  [/\bARS\b/g, 'Arsenal'], [/\bAVL\b/g, 'Aston Villa'], [/\bBHA\b/g, 'Brighton'], [/\bBOU\b/g, 'Bournemouth'],
+  [/\bBRE\b/g, 'Brentford'], [/\bCHE\b/g, 'Chelsea'], [/\bCOV\b/g, 'Coventry'], [/\bCRY\b/g, 'Crystal Palace'],
+  [/\bEVE\b/g, 'Everton'], [/\bFUL\b/g, 'Fulham'], [/\bHUL\b/g, 'Hull'], [/\bIPS\b/g, 'Ipswich'],
+  [/\bLEE\b/g, 'Leeds'], [/\bLIV\b/g, 'Liverpool'], [/\bMCI\b/g, 'Manchester City'], [/\bMUN\b/g, 'Manchester United'],
+  [/\bNEW\b/g, 'Newcastle'], [/\bNFO\b/g, 'Nottingham Forest'], [/\bSUN\b/g, 'Sunderland'], [/\bTOT\b/g, 'Tottenham'],
+];
+// ONE shouted word: two or more capitals standing on their own, optionally
+// carrying the single-letter words in front of it ("A CREST", "I SAID"). Group
+// 1 is the left boundary — a lookbehind would be neater but Safari only grew
+// them recently — and the lookahead stops it biting talkTROUGH in half or
+// splitting "I'll" at the apostrophe.
+const POD_SHOUT = /(^|[^A-Za-z0-9'’])((?:[A-Z](?:['’][A-Z]+)?[ \t]+)*[A-Z]{2,}(?:['’][A-Z]+)*)(?![A-Za-z])/g;
+/* Two shouted words belong to the same shout if all that stands between them
+   is space, a comma or a dash — and single-letter words, because "WRITE IT ON
+   A BIT OF PAPER" is one bellow and the lone A must not fall out of it. A full
+   stop is deliberately NOT in here: that ends the shout. */
+const POD_SHOUT_GAP = /^[\s,\-–—]*(?:[A-Z](?:['’][A-Z]+)?[\s,\-–—]+)*$/;
+function podRuns(text) {
+  const t = POD_SAY.reduce((x, [re, to]) => x.replace(re, to), String(text || ''));
+  const out = [];
+  let last = 0, m;
+  POD_SHOUT.lastIndex = 0;
+  while ((m = POD_SHOUT.exec(t)) !== null) {
+    const s = m.index + m[1].length, e = s + m[2].length;
+    const gap = t.slice(last, s);
+    const prev = out[out.length - 1];
+    // adjacent shouted words are ONE shout: "FRAUD OF THE WEEK" is a phrase,
+    // not four separate barks with a gap for breath between each
+    if (prev && prev.shout && POD_SHOUT_GAP.test(gap)) prev.say += gap.toLowerCase() + m[2].toLowerCase();
+    else {
+      if (gap) out.push({ say: gap, shout: false });
+      out.push({ say: m[2].toLowerCase(), shout: true });
+    }
+    last = e;
+  }
+  if (last < t.length) out.push({ say: t.slice(last), shout: false });
+  return out.filter(r => /\S/.test(r.say));
+}
 /* Read the episode aloud. Started only from a tap (iOS refuses otherwise),
-   cancelled on close, and each speaker gets his own pitch and rate so three
-   men are three men. The caption follows one line behind nothing — it shows
-   exactly what is being said and not a word more. Captions are written with
-   textContent, so a hostile club name cannot become an element here. */
+   cancelled on close. Each speaker gets his own INSTALLED voice where the
+   device has more than one — that is the single biggest thing that makes this
+   sound like a room of people rather than one screen reader doing accents —
+   and pitch and rate then colour a voice that is already somebody else.
+   The caption follows one line behind nothing: it shows exactly what is being
+   said and not a word more. Captions are written with textContent, so a
+   hostile club name cannot become an element here. */
 function podPlay(ep, btn, nowEl) {
   const synth = window.speechSynthesis;
   if (!synth) return;
@@ -7544,22 +7606,41 @@ function podPlay(ep, btn, nowEl) {
   const all = synth.getVoices() || [];
   // the default voice is usually the worst one installed — prefer a real
   // en-GB one, and prefer the enhanced/natural variants where they exist
-  const score = v => (/en[-_]GB/i.test(v.lang) ? 4 : /^en/i.test(v.lang) ? 1 : 0)
-    + (/enhanced|premium|natural|neural/i.test(v.name) ? 3 : 0)
+  const score = v => (/en[-_]GB/i.test(v.lang) ? 6 : /en[-_](IE|AU|NZ|ZA)/i.test(v.lang) ? 3 : /^en/i.test(v.lang) ? 2 : 0)
+    + (/enhanced|premium|natural|neural/i.test(v.name) ? 4 : 0)
     + (/google|microsoft|daniel|serena|kate/i.test(v.name) ? 1 : 0);
-  const best = all.slice().sort((a, b) => score(b) - score(a))[0] || null;
+  const pool = all.slice().sort((a, b) => score(b) - score(a));
+  // deal distinct voices round the table in speaking order, wrapping if the
+  // device has fewer voices than chairs — a repeat beats everyone identical
+  const chairs = [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))];
+  const cast = {};
+  chairs.forEach((n, k) => { if (pool.length) cast[n] = pool[k % pool.length]; });
   let i = 0, live = true;
   _podStop = () => { live = false; };
   btn.innerHTML = '&#9632; Stop';
   const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; caption('', 'That is the end of the episode.'); };
-  const speak = (text, v, then) => {
-    const u = new SpeechSynthesisUtterance(text);
-    if (best) u.voice = best;
-    u.lang = best?.lang || 'en-GB';
-    u.pitch = v?.pitch ?? 1; u.rate = v?.rate ?? 1;
-    u.onend = then; u.onerror = then;
-    synth.speak(u);
+  const speak = (text, name, then) => {
+    const v = cast[name] || pool[0] || null;
+    const col = Podcast.VOICES[name] || { pitch: 1, rate: 1 };
+    const parts = podRuns(text);
+    if (!parts.length) { then(); return; }
+    let k = 0;
+    const say = () => {
+      if (!live) return;
+      if (k >= parts.length) { then(); return; }
+      const r = parts[k++];
+      const u = new SpeechSynthesisUtterance(r.say);
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+      u.pitch = col.pitch * (r.shout ? 1.06 : 1);
+      u.rate = col.rate * (r.shout ? 1.07 : 1);
+      u.volume = r.shout ? 1 : 0.82;
+      u.onend = say; u.onerror = say;
+      synth.speak(u);
+    };
+    say();
   };
+  // a beat between turns; without it the whole thing reads like one long list
+  const after = fn => setTimeout(fn, 260);
   const next = () => {
     if (!live) return;
     if (i >= ep.blocks.length) { done(); return; }
@@ -7568,11 +7649,11 @@ function podPlay(ep, btn, nowEl) {
     if (b.t === 'ad') {
       caption('ADVERTISEMENT', b.brand);
       playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
-      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); speak(`${b.brand}. ${b.text}`, Podcast.VOICES[ep.show.host], next); }, 600);
+      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); speak(`${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
       return;
     }
     caption(b.who, b.text);
-    speak(b.text, Podcast.VOICES[b.who], next);
+    speak(b.text, b.who, () => after(next));
   };
   if (!all.length && typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', () => { }, { once: true });

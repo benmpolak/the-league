@@ -168,7 +168,43 @@ const chk = (name, ok, detail = '') => {
   chk('P9 the sheet is a player: cast and a play button, no readable script',
     p9.noTranscript && p9.hasPlay && p9.hasCast && !p9.leaksEnding, JSON.stringify(p9));
 
-  chk('P10 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P10: the speech desk. Marc, 18 Aug: a shouted word must not be
+     spelled out like an acronym, and the splitter must not bite a word in
+     half ("talkTROUGH", "I'll") on the way there ---- */
+  const p10 = await page.evaluate(() => {
+    const say = s => podRuns(s).map(r => (r.shout ? '[' + r.say + ']' : r.say)).join('');
+    const shouts = s => podRuns(s).filter(r => r.shout).map(r => r.say);
+    return {
+      // abbreviations become what a broadcaster would actually say
+      expands: say('Emersonn of IPS against Ballard of SUN in GW3, 12.4 pts')
+        === 'Emersonn of Ipswich against Ballard of Sunderland in gameweek 3, 12.4 points',
+      // a shout is handed over in lower case, so it is read as words
+      lowered: shouts('It is WOKE NONSENSE.')[0] === 'woke nonsense',
+      // ...and an apostrophe inside a word is not a boundary
+      apostrophe: !/\[/.test(say("I'll tell you what it is, Richard.")),
+      // ...nor is a capital in the middle of one
+      midWord: say('Right. talkTROUGH. Richard Keyes here.') === 'Right. talk Trough. Richard Keyes here.',
+      // adjacent shouted words are ONE shout, single-letter words included
+      phrase: shouts('And the FRAUD OF THE WEEK is that lot.')[0] === 'fraud of the week',
+      article: shouts('A CREST. Lovely.')[0] === 'a crest',
+      // a genuine initialism stays spelled
+      initialism: !/\[/.test(say('VAR again.')) && /V A R/.test(say('VAR again.')),
+      // and nothing is ever dropped on the floor
+      lossless: (() => {
+        const src = Podcast.published().flatMap(p => Podcast.episode(p.show, p.kind, p.gw).blocks)
+          .map(b => b.text || '').filter(Boolean);
+        return src.every(t => {
+          const said = podRuns(t).map(r => r.say).join('').replace(/\s+/g, '').toLowerCase();
+          const want = POD_SAY.reduce((x, [re, to]) => x.replace(re, to), t).replace(/\s+/g, '').toLowerCase();
+          return said === want;
+        });
+      })(),
+    };
+  });
+  chk('P10 shouted runs are spoken, not spelled, and no word is split or lost',
+    Object.values(p10).every(Boolean), JSON.stringify(p10));
+
+  chk('P11 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);
