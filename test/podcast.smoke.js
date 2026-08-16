@@ -204,7 +204,43 @@ const chk = (name, ok, detail = '') => {
   chk('P10 shouted runs are spoken, not spelled, and no word is split or lost',
     Object.values(p10).every(Boolean), JSON.stringify(p10));
 
-  chk('P11 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P11: recorded audio. Real voices where they exist, browser voice
+     where they don't, and never a request off this origin ---- */
+  const p11 = await page.evaluate(async () => {
+    // whatever is published in the state the earlier checks left behind — the
+    // pilot has retired by now, which is itself correct
+    const pub = Podcast.published()[0];
+    const ep = Podcast.episode(pub.show, pub.kind, pub.gw);
+    const real = window.fetch;
+    const asked = [];
+    // nothing shipped yet: the manifest is empty and the browser reads it
+    _podRec = null;
+    const none = (await podRecordings()).size;
+    // now pretend the pilot has been cut
+    _podRec = null;
+    window.fetch = (u, o) => { asked.push(String(u)); return Promise.resolve(new Response(JSON.stringify([ep.id]), { status: 200 })); };
+    const have = await podRecordings();
+    window.fetch = real;
+    // the sheet says so, and the url it would pull is same-origin
+    podcastSheet(ep.id);
+    await new Promise(r => setTimeout(r, 60));
+    const meta = document.querySelector('.pod-room #podMeta');
+    const said = !!meta && /recorded/.test(meta.textContent);
+    const url = new URL(`audio/pod/${encodeURIComponent(ep.id)}/3.mp3`, location.href);
+    document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
+    _podRec = null;
+    return {
+      emptyByDefault: none === 0,
+      readsManifest: have.has(ep.id),
+      manifestIsLocal: asked.every(u => !/^https?:\/\//i.test(u) || u.startsWith(location.origin)),
+      sameOrigin: url.origin === location.origin,
+      said,
+    };
+  });
+  chk('P11 an episode plays its recording when one is cut, from this origin only',
+    Object.values(p11).every(Boolean), JSON.stringify(p11));
+
+  chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);

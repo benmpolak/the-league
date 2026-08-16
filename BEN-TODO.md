@@ -283,6 +283,56 @@ draft night. The design is settled — do not re-litigate, just build:
   `node test/gazette.test.js` and `node test/mockparity.smoke.js`. Pushing
   main deploys the live site within minutes and the beta mirrors itself.
 
+### 5b. THE VOICES — one decision for you, and it contradicts your spec above
+
+Ben, your brief says *"the voices being naff is the joke — do not add an audio
+backend."* Marc has listened to the pilots and disagrees, twice, in terms:
+
+> "the voices need to be more realistic and individual to each personality"
+> "this joke doesnt work unless the people sound like people not robots"
+
+He is right on the facts. I have taken browser speech as far as it goes:
+abbreviations now expand to what a broadcaster would say ("IPS" → Ipswich),
+shouted runs are handed over in lower case so they stop being spelled out
+letter by letter, and each host gets a different installed voice. It is much
+better and it is still a screen reader. `speechSynthesis` cannot do character.
+
+**What is already built and needs nothing from you.** The player takes real
+audio wherever real audio exists and falls back to the browser voice line by
+line where it doesn't. Files live at `audio/pod/<episode-id>/<block>.mp3`,
+listed in `audio/pod/index.json` — which currently ships EMPTY, so today
+nothing changes and nothing is fetched. Still client-only, still same-origin,
+still works offline, no runtime backend. The stings stay synthesised.
+
+**What needs you.** `scripts/render_pods.js` reads the episodes out of the live
+generator headless and cuts them to real voices. It needs an API key, so only
+you can run it:
+
+    OPENAI_API_KEY=… node scripts/render_pods.js --dry --only gfw-pilot,tt-pilot
+
+`--dry` costs nothing and prints exactly what it would render. Drop `--dry` to
+cut it, then commit `audio/`. The cast and, more importantly, the DIRECTION for
+each character ("gruff, gravelly Scottish ex-footballer, BELLOWS the capitals")
+are at the top of that file — that steering is what makes it a person rather
+than a voice.
+
+**The numbers, so this is a real decision and not a vibe:**
+
+- ~500 words an episode, two shows, two episodes a week, 38 gameweeks ≈ 150
+  episodes and ~430k characters a season.
+- OpenAI `gpt-4o-mini-tts`: roughly **£5 a season**, and it takes direction.
+- ElevenLabs: clearly better voices, roughly **£20–80 a month**. Cast your own
+  voice ids into `CAST[].id` and pass `--provider elevenlabs`.
+- Storage ≈ 290 MB a season at 64 kbps. Pages is fine to ~1 GB, but prune to
+  the last eight gameweeks and it stays under 60 MB.
+- Rendering the weeklies automatically would want a scheduled workflow and the
+  key as a repo secret. **I have not touched that** — secrets and deploys are
+  yours. Until you do, the pilots and the draft reaction are one-offs you can
+  cut by hand, which is most of the value for almost none of the cost.
+
+If you'd rather keep the robots, say so and delete `scripts/render_pods.js` —
+the fallback path is harmless and the app behaves exactly as it does now.
+
 ---
 
 ## 6. Post-draft housekeeping (from sol's 16 Aug launch verdict — GO/GO)

@@ -7477,9 +7477,37 @@ function podById(id) {
   return e ? Podcast.episode(e.show, e.kind, e.gw) : null;
 }
 let _podStop = null; // set while an episode is being read aloud
+let _podAudio = null; // the <audio> currently playing a RECORDED line, if any
 function podStopSpeaking() {
   try { window.speechSynthesis?.cancel(); } catch { /* not available */ }
+  if (_podAudio) { try { _podAudio.pause(); } catch { /* gone */ } _podAudio = null; }
   if (_podStop) { _podStop(); _podStop = null; }
+}
+/* ---- the recordings ----
+   Marc, 18 Aug: "this joke doesnt work unless the people sound like people not
+   robots". It doesn't, and no browser speech engine is ever going to sound
+   like Andy Grey. So the player takes REAL audio wherever real audio exists
+   and only falls back to the browser's voice where it doesn't.
+
+   The recordings are ordinary files under audio/pod/<episode-id>/<n>.mp3 —
+   one per spoken block, numbered by its index in ep.blocks, exactly the units
+   the player already walks. That keeps the captions, the running order and the
+   synthesised stings working untouched, and it means a half-rendered episode
+   still plays: any line without a file just gets read by the browser.
+   scripts/render_pods.js produces them; audio/pod/index.json lists what is
+   ready. Nothing here fetches from anywhere but this origin. */
+let _podRec = null; // Set of episode ids with a recording; null until asked
+async function podRecordings() {
+  if (_podRec) return _podRec;
+  _podRec = new Set();
+  try {
+    const r = await fetch('audio/pod/index.json', { cache: 'no-cache' });
+    if (r.ok) {
+      const j = await r.json();
+      (Array.isArray(j) ? j : j.episodes || []).forEach(x => _podRec.add(String(x)));
+    }
+  } catch { /* no recordings shipped yet — the browser voice carries it */ }
+  return _podRec;
 }
 function podcastSheet(id) {
   const ep = podById(id);
@@ -7500,7 +7528,7 @@ function podcastSheet(id) {
       <span class="pod-cast-h">On this episode</span>
       ${cast.map(n => `<span class="pod-chip">${esc(n)}</span>`).join('')}
     </div>
-    <p class="pod-meta">${ep.blocks.filter(b => b.t === 'speech').length} exchanges &middot; ${ads} ad break${ads === 1 ? '' : 's'} &middot; about ${mins} minute${mins === 1 ? '' : 's'}</p>
+    <p class="pod-meta" id="podMeta">${ep.blocks.filter(b => b.t === 'speech').length} exchanges &middot; ${ads} ad break${ads === 1 ? '' : 's'} &middot; about ${mins} minute${mins === 1 ? '' : 's'}</p>
     <div class="pod-nowplaying" id="podNow" aria-live="polite">
       <span class="pod-now-who"></span>
       <span class="pod-now-line">Press play. There is no transcript &mdash; you have to listen to them like everybody else.</span>
@@ -7528,6 +7556,13 @@ function podcastSheet(id) {
   ov.querySelector('#podClose').onclick = shut;
   const btn = ov.querySelector('#podPlay');
   if (btn) btn.onclick = () => podPlay(ep, btn, ov.querySelector('#podNow'));
+  // say so when this one is the real thing, so nobody judges the hosts on a
+  // read the browser did for them
+  podRecordings().then(have => {
+    if (!have.has(ep.id) || !ov.isConnected) return;
+    const meta = ov.querySelector('#podMeta');
+    if (meta) meta.textContent += ' · recorded';
+  });
 }
 /* ---- the speech desk ----
    Marc, 18 Aug: "there are some examples where a word is in all caps, and the
@@ -7596,13 +7631,14 @@ function podRuns(text) {
    The caption follows one line behind nothing: it shows exactly what is being
    said and not a word more. Captions are written with textContent, so a
    hostile club name cannot become an element here. */
-function podPlay(ep, btn, nowEl) {
+async function podPlay(ep, btn, nowEl) {
   const synth = window.speechSynthesis;
   if (!synth) return;
   const who = nowEl?.querySelector('.pod-now-who');
   const line = nowEl?.querySelector('.pod-now-line');
   const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
   if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
+  const recorded = (await podRecordings()).has(ep.id);
   const all = synth.getVoices() || [];
   // the default voice is usually the worst one installed — prefer a real
   // en-GB one, and prefer the enhanced/natural variants where they exist
@@ -7639,21 +7675,34 @@ function podPlay(ep, btn, nowEl) {
     };
     say();
   };
+  /* Play the line the way it was RECORDED, and only fall back to the browser
+     reading it if there is no file — a part-rendered episode still plays end
+     to end, it just has a robot standing in for whoever hasn't been cut yet. */
+  const perform = (n, text, name, then) => {
+    if (!recorded) { speak(text, name, then); return; }
+    const a = new Audio(`audio/pod/${encodeURIComponent(ep.id)}/${n}.mp3`);
+    _podAudio = a;
+    let handed = false;
+    const hand = fn => { if (handed) return; handed = true; if (_podAudio === a) _podAudio = null; fn(); };
+    a.onended = () => hand(then);
+    a.onerror = () => hand(() => speak(text, name, then));
+    a.play().catch(() => hand(() => speak(text, name, then)));
+  };
   // a beat between turns; without it the whole thing reads like one long list
   const after = fn => setTimeout(fn, 260);
   const next = () => {
     if (!live) return;
     if (i >= ep.blocks.length) { done(); return; }
-    const b = ep.blocks[i++];
+    const n = i, b = ep.blocks[i++];
     if (b.t === 'theme') { caption('', b.text); playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
     if (b.t === 'ad') {
       caption('ADVERTISEMENT', b.brand);
       playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
-      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); speak(`${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
+      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(n, `${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
       return;
     }
     caption(b.who, b.text);
-    speak(b.text, b.who, () => after(next));
+    perform(n, b.text, b.who, () => after(next));
   };
   if (!all.length && typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', () => { }, { once: true });
