@@ -707,30 +707,30 @@ window.Gazette = (() => {
         <div class="prog-story-kicker">EXCLUSIVE</div>
         <div class="prog-head">STEIN LINKED WITH SENSATIONAL LEAGUE RETURN</div>
         <div class="prog-by">By David Ornberg, wire desk</div>
-        <p>${esc('The Gazette can exclusively reveal that Jason Stein — of the old guard, departed but never formally mourned — has been linked with a sensational return to The League. Sources close to Stein describe him as "aware the league still exists", a position the back bench has upgraded to ADVANCED TALKS.')}</p>
-        <p>${esc('The obstacle, as ever, is arithmetic. The League seats twelve, and all twelve chairs are occupied by men who have paid their fifty pounds and would sooner surrender a kidney. Asked for comment, the Committee said the register is closed, the constitution is silent, and the silence is deliberate.')}</p>
+        <p>${esc('Jason Stein has been heavily linked with a sensational return to The League, and make no mistake: where there is smoke, the Gazette has been asked to report fire. Sources close to the player say his head has been turned. Sources closer still say he is keeping his cards close to his chest. The man himself could not be reached for comment, which insiders describe as "typical Stein".')}</p>
+        <p>${esc('Any deal faces hurdles. The League seats twelve, every chair is taken, and the Committee\'s stance is clear: the register is closed, nobody is for sale at any price, and the integrity of the league must be protected. But football moves quickly, the window is technically never shut, and one thing is certain — this saga has legs.')}</p>
         <p>${esc('Fabrizio Marano: "Here we go soon, maybe. Not yet. But the feeling? The feeling is there."')} &#128680;</p>
       </div>`);
       // the want-away sagas (Ben, 16 Aug: Levy and Geller "leaving")
       out.push(`<div class="prog-story">
         <div class="prog-head">LEVY AND GELLER &ldquo;CONSIDERING THEIR FUTURES&rdquo;</div>
-        <p>${esc('The Gazette understands Ben Levy has refused to commit his future to Atlético Benfield beyond the weekend, with sources close to the player — he is the sources — describing his head as "turned". By what, nobody can establish. There is nowhere to go.')}</p>
-        <p>${esc('Daniel Geller, meanwhile, has been photographed not smiling, which the back pages have interpreted as a come-and-get-me plea to literally any other league. Geldog FC insist he is going nowhere, not least because the exit paperwork does not exist and the fifty pounds is non-refundable.')}</p>
-        <p class="prog-match-detail">${esc('The Committee reminds all parties there is no transfer request form, no release clause, and no mechanism of any kind. The Gazette will nevertheless be covering the saga daily.')}</p>
+        <p>${esc('Ben Levy has stopped short of committing his future to Atlético Benfield, with those in the know saying he is weighing up his options and wants a new challenge. Asked to rule out a move, Levy ruled nothing in and nothing out, which the back pages have taken as a come-and-get-me plea to literally any other league.')}</p>
+        <p>${esc('Daniel Geller is also understood to be unsettled. Geldog FC\'s stance is clear: not for sale at any price, no bids have been received, and none are expected — there being no other league, no transfer system and no fee structure. The fifty pounds remains non-refundable.')}</p>
+        <p class="prog-match-detail">${esc('The Committee will not be drawn on speculation. The Gazette understands the speculation is ours.')}</p>
         <div class="prog-by">Henry Wanton</div>
       </div>`);
       // last season, as the record book has it (the title is the playoffs)
       out.push(`<div class="prog-story">
         <div class="prog-head">CHAMPIONS UNTIL PROVEN OTHERWISE</div>
-        <p>${esc('Interjacksonale begin the defence of the title Adam Jackson won where titles are won: the playoffs. The neutrals called it a procession, the beaten called it a lottery, and the Committee calls it the record book.')}</p>
-        <p>${esc('WA Wanderers, who topped the table and have the screenshot, are reminded that §1 of the constitution remains in force: the title is the playoffs. The table is for arguing.')}</p>
+        <p>${esc('Interjacksonale go again, and the question on everyone\'s lips is the oldest in football: can they do it again on a cold Tuesday night in the playoffs? Adam Jackson has reminded his rivals that form is temporary and class is permanent, and last season he had both when it mattered most.')}</p>
+        <p>${esc('WA Wanderers topped the table, and nobody remembers who topped the table. §1 of the constitution remains in force: the title is the playoffs. The table is for arguing.')}</p>
         <div class="prog-by">Harold Summer</div>
       </div>`);
       // the new ground
       out.push(`<div class="prog-story">
         <div class="prog-head">LEAGUE MOVES INTO PURPOSE-BUILT NEW HOME</div>
-        <p>${esc('After a decade in rented accommodation, The League has completed its move to theleaguehq.co.uk — a purpose-built ground with its own Gazette, a crest issued by the College of Arms, and a waiver wire that runs on time. The old landlord took £145 a season and the fixtures were somebody else’s.')}</p>
-        <p>${esc('Club sources describe the new facilities as "state of the art", a phrase they have been asked to stop using about a website. Season tickets are free; the fifty pounds is for the pot; the group chat remains, regrettably, unmoderated.')}</p>
+        <p>${esc('You can\'t fault the ambition. After a decade in rented accommodation, The League has completed its move to a purpose-built new home at theleaguehq.co.uk — its own Gazette, a crest from the College of Arms, and a waiver wire that runs on time. The old landlord took £145 a season and the fixtures were somebody else\'s. Enough said.')}</p>
+        <p>${esc('Those inside the club say the new facilities speak for themselves, before going on to speak for them at considerable length. Season tickets are free; the fifty pounds is for the pot; the group chat remains, regrettably, unmoderated. No comment has been received from Eli, who for years took £10 a head to have the points on time and, in fairness, had the points on time.')}</p>
         <div class="prog-by">Alyson Unrudd</div>
       </div>`);
       // the draft market (Ben, 16 Aug: Haaland clear pick one, then nobody
@@ -742,8 +742,8 @@ window.Gazette = (() => {
         const one = rated[0], chase = rated.slice(1, 5).map(p => p.name);
         out.push(`<div class="prog-story">
           <div class="prog-head">${esc(one.name.toUpperCase())} ONE. THEN THE ARGUMENTS.</div>
-          <p>${esc(`${one.name} will go first. It is the only unanimous opinion this league has produced in eleven years. After that, the shortlist reads ${chase.join(', ')} — in an order nobody will commit to in writing, because writing is evidence.`)}</p>
-          <p>${esc(`The real argument is the slot. Pick one takes ${one.name} and then sits out twenty-three selections, long enough to watch a plan die in real time. Pick twelve gets nothing famous and goes back-to-back at the turn — twelve, then thirteen — which the analytics community calls premium value and everyone else calls a consolation prize. The connoisseur backs the middle of the snake: never long without a pick, never burdened with expectation.`)}</p>
+          <p>${esc(`${one.name} goes first.${/haaland/i.test(one.name) ? ' The league\'s own proverb settles it: he who holds Haaland has won every year.' : ''} It's a no-brainer — you simply do not turn down a player of that quality, and at this level quality is everything. After that it is anyone's game: the chasing pack reads ${chase.join(', ')}, in an order nobody will commit to in writing, because writing is evidence.`)}</p>
+          <p>${esc(`Then there is the slot. Pick one takes ${one.name} and sits out twenty-three selections — an eternity in football. Pick twelve gets nothing famous and goes back-to-back at the turn, and the smart money says that is where the value is. The purists back the middle of the snake. On paper, every slot can be defended; football, famously, is not played on paper.`)}</p>
           <p class="prog-match-detail">${esc('Asked to rank the twelve slots in order, the room produced fourteen answers, one walkout, and a man asking what "snake" means. Draft night will settle nothing.')}</p>
           <div class="prog-by">Martin Said, chief football writer</div>
         </div>`);
@@ -752,23 +752,23 @@ window.Gazette = (() => {
       // so no two clubs share a verdict and the deal is stable between loads
       const moods = [
         'The board has demanded a top-eight finish and a calmer group chat. Neither is coming.',
-        'Pre-season optimism at dangerous levels. The fixture list will see to it.',
+        'Taking it one game at a time, starting several weeks before there are games.',
         'Quietly confident, which historically precedes the collapse.',
-        'A summer of planning, none of which survives pick one.',
+        'A summer of meticulous planning, none of which survives pick one.',
         'The ultras have painted a banner. It is already slightly wrong.',
         'All in on the draft. The draft has not agreed to this.',
         'Has read the rules PDF twice. It shows, worryingly.',
-        'New crest, new domain, same problem in the left-back spot.',
+        'New crest, new domain, same problem at left-back.',
         'The gaffer has promised football played the right way. The board has priced in the wrong way.',
         'Bullish in public, refreshing the fixture list in private.',
-        'Sources describe the mood in the camp as "settled". Nobody believed the sources.',
+        '"It\'s a results business," said a man yet to record a result.',
         'Promised the ultras a trophy. The ultras have long memories and a banner budget.',
       ];
       const dealFrom = hash('survey:2026');
       out.push(`<div class="prog-sec">The Twelve, Surveyed</div><div class="prog-nibs">${mids.map((mid, k) =>
         `<div class="prog-nib"><b>${esc(teamName(mid))}</b><span>${esc(`${managerName(mid)} — ${moods[(dealFrom + k) % moods.length]}`)}</span></div>`).join('')}</div>`);
       if (formers.length) out.push(`<div class="prog-sec">The Rumour Mill</div><p>${esc(`Also linked with returns this window: ${formers.join(', ')}. The Gazette has verified none of these and printed all of them.`)}</p>`);
-      out.push(`<div class="prog-sec">The Gazette&rsquo;s Fearless Predictions</div><p>${esc('Champions: whoever wins the playoffs, which is the point. Top of the table: irrelevant, see previous. The Cup: last man standing, first man blamed. The wooden spoon: hotly contested by men who will claim they were rebuilding.')}</p>`);
+      out.push(`<div class="prog-sec">The Gazette&rsquo;s Fearless Predictions</div><p>${esc('Too close to call, so the Gazette will call it. Champions: whoever wins the playoffs — that is the point of them. Top of the table: irrelevant, see previous. The Cup: last man standing, first man blamed. The Chumpionship: hotly contested by men who will insist they were rebuilding, for the oldest prize in the league — first choice at the randomiser.')}</p>`);
       out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc('The season starts when the draft ends. Sleep while you can.')}</p>`);
       return out.join('');
     } catch (e) { return ''; }
