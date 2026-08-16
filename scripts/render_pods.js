@@ -314,6 +314,38 @@ const writeManifest = index => {
   const lines = Object.values(sorted).reduce((s, o) => s + Object.keys(o).length, 0);
   console.log(`\naudio/pod/index.json: ${Object.keys(sorted).length} episode(s), ${lines} recorded line(s).`);
 };
+/* ---------- provenance ----------
+   Which files THIS script wrote, and with which voice. Two jobs, both of
+   which matter once real money and real people are involved:
+
+   - It tells a rendered file apart from one a human recorded, so a stand-in
+     stays replaceable while a real take is untouchable.
+   - It records the voice, so recasting somebody re-cuts only THEIR lines.
+     Change Grey's id because he doesn't shout enough, run it again, and you
+     pay for Grey and nobody else.
+
+   Kept beside the audio and committed with it, because it describes what is
+   in those files. Losing it is not fatal: an unknown file is treated as a
+   human take, which is the cautious way round. */
+const PROV_FILE = path.join(OUT, 'rendered.json');
+let PROV = (() => {
+  try { return JSON.parse(fs.readFileSync(PROV_FILE, 'utf8')); } catch { return {}; }
+})();
+const provenance = (epId, n) => (PROV[epId] || {})[n] || (PROV[epId] || {})[String(n)] || null;
+function noteRendered(epId, n, file, voice) {
+  (PROV[epId] = PROV[epId] || {})[n] = { file, voice, provider: PROVIDER, at: new Date().toISOString().slice(0, 10) };
+}
+function saveProvenance() {
+  // drop anything whose file has since gone, so the store can't rot
+  for (const epId of Object.keys(PROV)) {
+    for (const n of Object.keys(PROV[epId])) {
+      if (!fs.existsSync(path.join(OUT, epId, PROV[epId][n].file))) delete PROV[epId][n];
+    }
+    if (!Object.keys(PROV[epId]).length) delete PROV[epId];
+  }
+  fs.writeFileSync(PROV_FILE, JSON.stringify(PROV, null, 2) + '\n');
+}
+
 // the file already on disk for this line, whoever made it
 const existing = (epId, n) => {
   const dir = path.join(OUT, epId);
@@ -454,23 +486,30 @@ async function doRender(eps) {
       const who = b.t === 'ad' ? ep.host : b.who;
       const chair = chairFor(who);
       const got = existing(ep.id, n);
+      const mine = provenance(ep.id, n);   // did WE write that file, and with what voice
+      const voice = String(chair.voice || '').trim();
       if (chair.human) {
         /* A hand-recorded line is NEVER overwritten, --force or not: the whole
            point is that a render can't destroy a take somebody drove to a
-           quiet room to make.
+           quiet room to make. A file we rendered ourselves is a different
+           thing, and has to stay replaceable — otherwise a stand-in voice put
+           in today would permanently block the real cloned one arriving next
+           week, which is exactly the Howard case.
 
            Marc, 18 Aug: "im not recording for howard, someone else is." The
            pilots are fixed scripts and can be recorded once, but the weekly
-           episodes are generated from that week's results, so Howard's
-           question is new every time. Expecting two fresh takes a week from
-           someone outside the league for eight months is how this quietly
-           dies in October. So a human part may ALSO carry a voice id: the
-           understudy. It is used only where no recording exists, and the
-           moment a real take is dropped in, --scan makes it win. */
-        if (got) { skipped++; continue; }
-        if (!String(chair.voice || '').trim()) { human++; continue; }
+           episodes are generated from that week's results, so his question is
+           new every time. So a human part may ALSO carry a voice id: the
+           stand-in. It is used only where no real take exists, and the moment
+           one is dropped in, --scan makes it win. */
+        if (got && !mine) { skipped++; continue; }        // a real take. hands off.
+        if (!voice) { human++; continue; }                 // nobody cast, nothing to do
+        if (got && mine && mine.voice === voice && !FORCE) { skipped++; continue; }
         stood++;
-      } else if (!FORCE && got) { skipped++; continue; }
+      } else if (got && !FORCE && (!mine || mine.voice === voice)) {
+        // already cut by the voice currently cast — nothing to gain by paying again
+        skipped++; continue;
+      }
       const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
       const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
       // the lines either side, so it knows where it is in the conversation
@@ -481,8 +520,9 @@ async function doRender(eps) {
       if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
       try {
         fs.writeFileSync(path.join(dir, n + '.mp3'), await render(text, chair, direction, around));
+        noteRendered(ep.id, n, n + '.mp3', chair.voice);
         made++;
-        process.stdout.write(`  ${ep.id}/${n}.mp3  ${who}\n`);
+        process.stdout.write(`  ${ep.id}/${n}.mp3  ${who}${mine && mine.voice !== voice ? '  (recast)' : ''}\n`);
       } catch (e) {
         console.error(`  FAILED ${ep.id}/${n}: ${e.message}`);
       }
@@ -490,6 +530,7 @@ async function doRender(eps) {
   }
   console.log(`\n${made} line(s) rendered${stood ? ` (${stood} by an understudy, waiting on a real take)` : ''}, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
   if (DRY) { console.log('(dry run — nothing written, nothing spent)'); return; }
+  saveProvenance();
   writeManifest(scanManifest());
 }
 

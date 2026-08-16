@@ -220,9 +220,14 @@ const chk = (name, ok, detail = '') => {
     const real = window.fetch;
     const asked = [];
     const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
-    // nothing shipped yet: the manifest is empty and the browser reads every line
+    /* No manifest at all — an offline copy, or a checkout from before the
+       audio was cut — and every line falls to the browser voice. Stubbed
+       rather than assumed: real recordings are shipped now (Ben cut both
+       pilots, 18 Aug), so this can no longer be tested by looking at disk. */
     _podRec = null;
+    window.fetch = () => Promise.resolve(new Response('', { status: 404 }));
     const bare = await podRecordings();
+    window.fetch = real;
     const none = Object.keys(bare).length;
     const noneSrc = spoken.every(([, n]) => podLineSrc(bare, ep.id, n) === null);
     // now pretend ONE line has been cut by hand — the shape Howard creates
@@ -298,7 +303,77 @@ const chk = (name, ok, detail = '') => {
   chk('P12 Howard phones talkTROUGH once an episode, never the Gazette',
     Object.values(p12).every(Boolean), JSON.stringify(p12));
 
-  chk('P13 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P13: the audio actually shipped. Ben cut both pilots on 18 Aug, so
+     from here this is a real asset with a real failure mode: a render that
+     dies halfway leaves an episode part-cut, and the only way anyone finds
+     out is by listening to the whole thing ---- */
+  const p13 = await page.evaluate(async () => {
+    _podRec = null;
+    const rec = await podRecordings();
+    const out = { shipped: Object.keys(rec).length, gaps: [], noManifestEntryMissingFile: [] };
+    for (const epId of Object.keys(rec)) {
+      const m = epId.match(/^(gfw|tt)-(pilot|draft)$/);
+      if (!m) continue; // weekly episodes depend on live state; pilots are fixed
+      const ep = Podcast.episode(m[1], m[2], null);
+      if (!ep) continue;
+      const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
+      for (const [b, n] of spoken) {
+        // a line with no file is fine ONLY where a human is meant to voice it
+        if (!podLineSrc(rec, epId, n) && b.who !== 'Howard') out.gaps.push(`${epId}/${n} ${b.who || b.t}`);
+      }
+    }
+    return out;
+  });
+  chk('P13 every shipped episode is cut end to end, bar the human parts',
+    p13.shipped > 0 && p13.gaps.length === 0,
+    p13.shipped ? 'gaps: ' + p13.gaps.join('; ') : 'no audio shipped at all');
+
+  // ...and the files the manifest names are really there and really audio
+  const p13b = await page.evaluate(async () => {
+    _podRec = null;
+    const rec = await podRecordings();
+    const bad = [];
+    for (const [epId, lines] of Object.entries(rec)) {
+      for (const n of Object.keys(lines)) {
+        const src = podLineSrc(rec, epId, n);
+        const r = await fetch(src, { method: 'HEAD' });
+        const len = +(r.headers.get('content-length') || 0);
+        // a truncated or error-page response is the tell of a failed render
+        if (!r.ok) bad.push(`${src} → ${r.status}`);
+        else if (len < 2048) bad.push(`${src} → only ${len} bytes`);
+      }
+    }
+    return bad;
+  });
+  chk('P13b every file the manifest names is present and not a stub',
+    p13b.length === 0, p13b.slice(0, 5).join('; '));
+
+  /* ---- P13c: the provenance store matches the audio it describes. It is what
+     lets a stand-in be replaced while a real human take is untouchable, so if
+     it drifts out of step with the files the protection silently stops
+     meaning anything ---- */
+  const prov = await page.evaluate(async () => {
+    const r = await fetch('audio/pod/rendered.json', { cache: 'no-cache' });
+    if (!r.ok) return { ok: false, why: 'no rendered.json (' + r.status + ')' };
+    const p = await r.json();
+    _podRec = null;
+    const rec = await podRecordings();
+    const orphan = [], mismatched = [];
+    for (const [epId, lines] of Object.entries(p)) {
+      for (const [n, meta] of Object.entries(lines)) {
+        // every claim must point at a file the manifest actually serves
+        const src = podLineSrc(rec, epId, n);
+        if (!src) { orphan.push(`${epId}/${n}`); continue; }
+        if (!src.endsWith('/' + meta.file)) mismatched.push(`${epId}/${n}`);
+        if (!meta.voice) mismatched.push(`${epId}/${n} has no voice recorded`);
+      }
+    }
+    return { ok: !orphan.length && !mismatched.length, orphan, mismatched };
+  });
+  chk('P13c provenance lines up with the audio on disk',
+    prov.ok, prov.why || `orphans: ${(prov.orphan || []).join(', ')} mismatched: ${(prov.mismatched || []).join(', ')}`);
+
+  chk('P14 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);

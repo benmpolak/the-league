@@ -1,0 +1,252 @@
+{
+  "gfw-pilot": {
+    "1": {
+      "file": "1.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "2": {
+      "file": "2.mp3",
+      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "3": {
+      "file": "3.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "4": {
+      "file": "4.mp3",
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "5": {
+      "file": "5.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "6": {
+      "file": "6.mp3",
+      "voice": "JBFqnCBsd6RMkjVDRZzb",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "7": {
+      "file": "7.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "8": {
+      "file": "8.mp3",
+      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "9": {
+      "file": "9.mp3",
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "10": {
+      "file": "10.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "11": {
+      "file": "11.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "12": {
+      "file": "12.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "13": {
+      "file": "13.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "14": {
+      "file": "14.mp3",
+      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "15": {
+      "file": "15.mp3",
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "16": {
+      "file": "16.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "17": {
+      "file": "17.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "18": {
+      "file": "18.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "19": {
+      "file": "19.mp3",
+      "voice": "JBFqnCBsd6RMkjVDRZzb",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "20": {
+      "file": "20.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    }
+  },
+  "tt-pilot": {
+    "1": {
+      "file": "1.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "2": {
+      "file": "2.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "3": {
+      "file": "3.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "4": {
+      "file": "4.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "5": {
+      "file": "5.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "6": {
+      "file": "6.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "7": {
+      "file": "7.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "8": {
+      "file": "8.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "9": {
+      "file": "9.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "10": {
+      "file": "10.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "11": {
+      "file": "11.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "12": {
+      "file": "12.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "13": {
+      "file": "13.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "14": {
+      "file": "14.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "15": {
+      "file": "15.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "16": {
+      "file": "16.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "18": {
+      "file": "18.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "19": {
+      "file": "19.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "20": {
+      "file": "20.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "21": {
+      "file": "21.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    },
+    "22": {
+      "file": "22.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-18"
+    }
+  }
+}
