@@ -707,9 +707,10 @@ window.Gazette = (() => {
         <div class="prog-story-kicker">EXCLUSIVE</div>
         <div class="prog-head">STEIN LINKED WITH SENSATIONAL LEAGUE RETURN</div>
         <div class="prog-by">By David Ornberg, wire desk</div>
-        <p>${esc('Jason Stein has been heavily linked with a sensational return to The League, and make no mistake: where there is smoke, the Gazette has been asked to report fire. Sources close to the player say his head has been turned. Sources closer still say he is keeping his cards close to his chest. The man himself could not be reached for comment, which insiders describe as "typical Stein".')}</p>
+        <p>${esc('Jason Stein — remembered, where he is remembered fondly at all, as the Snake of the League, a man mired in more controversies than the rest of the register combined — has been heavily linked with a sensational return. And make no mistake: where there is smoke, the Gazette has been asked to report fire. Sources close to the player say his head has been turned. Sources closer still say he is keeping his cards close to his chest, an instinct the controversies did nothing to soften. The man himself could not be reached for comment, which insiders describe as "typical Stein".')}</p>
         <p>${esc('Any deal faces hurdles. The League seats twelve, every chair is taken, and the Committee\'s stance is clear: the register is closed, nobody is for sale at any price, and the integrity of the league must be protected. But football moves quickly, the window is technically never shut, and one thing is certain — this saga has legs.')}</p>
         <p>${esc('Fabrizio Marano: "Here we go soon, maybe. Not yet. But the feeling? The feeling is there."')} &#128680;</p>
+        <p class="prog-match-detail">${esc('The draft, it should be noted, is a snake format. The Committee insists this is a coincidence.')}</p>
       </div>`);
       // the want-away sagas (Ben, 16 Aug: Levy and Geller "leaving")
       out.push(`<div class="prog-story">

@@ -49,6 +49,8 @@ const MANAGER_ENTRANCES = {
 
 // Former managers verified from the group archive. The opening ceremony gives
 // them one collective nod; this is deliberately not a new page or data desk.
+// Jason Stein: the Snake of the League, mired in controversies (Ben, 16 Aug) —
+// the Gazette's designated returning-villain; the snake draft is "a coincidence"
 const FORMER_MANAGERS = ['Alex Haynes', 'Harris', 'Benj Loofe', 'Dan Linton', 'Jason Stein', 'Ben Peppi'];
 
 // Safe, paraphrased fragments from the League's own archive. The Gazette opens
