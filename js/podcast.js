@@ -65,6 +65,9 @@ window.Podcast = (() => {
     'Richard Keyes': { pitch: 0.8, rate: 1.06 },
     'Andy Grey': { pitch: 0.7, rate: 1.1 },
     'Jamie O’Hara-Hara': { pitch: 0.88, rate: 1.14 },
+    // Howard is on a hands-free in a van, not in the studio: slower, flatter,
+    // and a touch lower than the professionals talking over him
+    'Howard': { pitch: 0.86, rate: 0.9 },
   };
 
   /* ---------- station idents ----------
@@ -247,6 +250,75 @@ window.Podcast = (() => {
   }
   const say = (who, text) => ({ t: 'speech', who, text });
 
+  /* ---------- the phone-in ----------
+     Marc, 18 Aug: "the human recording is for a new character i want to
+     introduce on talkTROUGH, as it is shorter we want to introduce a character
+     called howard who calls in and asks a question each episode in the style
+     of a phone in."
+
+     So Howard is ONE spoken line an episode, on talkTROUGH only, and he is the
+     part being recorded by a real human — which is exactly the right shape for
+     it: a proper phone-in caller is the one voice on a station that isn't a
+     broadcaster, and the join shows least when the amateur is the amateur.
+
+     The running joke is that he is a first-time caller every single week. He
+     never quite asks a question, he mentions something nobody asked about, and
+     he hangs up to listen. The FACTS he gets wrong come from real league state,
+     so he is wrong about something different each time. */
+  const HOWARD_OPENER = [
+    'Yeah, hello Richard, long-time listener, first-time caller.',
+    'Hello Richard, first time calling in, long-time listener.',
+    'Richard. Howard, Prestwich. Long-time listener. First time I\'ve rung.',
+    'Yeah, alright Richard. Long-time listener this end. First-time caller.',
+  ];
+  const HOWARD_SIGNOFF = [
+    'Anyway, I\'ll hang up and listen.',
+    'I\'ll take my answer off air.',
+    'That\'s all I wanted to say. I\'ll listen to what you make of it.',
+    'Anyway. I\'ll get off the line, you\'ve got a show to do.',
+    'I\'ll hang up now. Don\'t cut me off, I\'m going anyway.',
+  ];
+  // the bit where a caller says something completely unrelated first
+  const HOWARD_PREAMBLE = [
+    'I\'ve been up since four with the van, so bear with me.',
+    'I\'m on the hands-free so if I go, I\'ve gone.',
+    'Quick one, and I know you\'re busy.',
+    'I\'ll be brief because I\'m outside a Screwfix.',
+    'The wife says I go on, so I\'ll keep it short.',
+    'I\'ve had this in my head all week, right.',
+  ];
+  /* Keys taking the call. He remembers him, which is the joke. */
+  function howardIn(key, kind, question) {
+    const first = kind === 'pilot';
+    // introduced the way a phone-in caller always is: name, then where he's
+    // ringing from, then straight to him (Marc, 18 Aug)
+    const intro = first
+      ? 'Right, let\'s get to the phones, because the lines have not stopped all afternoon. We\'ve got Howard from Prestwich. Howard in Prestwich, you\'re on talkTROUGH.'
+      : pick([
+        'Let\'s go to the phones. Howard in Prestwich. Howard, you\'re on talkTROUGH.',
+        'To the phones, and it\'s Howard from Prestwich again. Howard, you\'re on talkTROUGH.',
+        'Line one, Howard in Prestwich. Howard, go ahead, you\'re on talkTROUGH.',
+        'Howard\'s back. Howard from Prestwich, you\'re on talkTROUGH.',
+        'We\'ll take one call. Howard, Prestwich. You\'re on talkTROUGH.',
+      ], key + ':hi');
+    const body = [
+      pick(HOWARD_OPENER, key + ':ho'),
+      pick(HOWARD_PREAMBLE, key + ':hp'),
+      question,
+      pick(HOWARD_SIGNOFF, key + ':hs'),
+    ].join(' ');
+    const answer = first
+      ? 'Well he\'s not wrong, Howard, and that\'s the thing — the people who actually WATCH the football know. Good caller, Prestwich.'
+      : pick([
+        'Howard, you said that last week. You are not a first-time caller. You have NEVER been a first-time caller.',
+        'Every week, Howard. EVERY WEEK he rings up from Prestwich and says first-time caller.',
+        'Good call, Howard, and he\'s right, and nobody in that league will listen to him.',
+        'That is the best point anyone has made on this show all season and it came from a man in a van in Prestwich.',
+        'Howard. Howard. He\'s gone. He always goes.',
+      ], key + ':ha');
+    return [say('Richard Keyes', intro), say('Howard', body), say('Richard Keyes', answer)];
+  }
+
   function panel(key) {
     const roster = typeof GAZETTE_PRESS !== 'undefined' ? GAZETTE_PRESS : [];
     const named = n => (roster.find(p => p.n === n) || { n }).n;
@@ -311,6 +383,8 @@ window.Podcast = (() => {
     B.push(say('Andy Grey', `And he did it WITHOUT a computer telling him where to stand. ${top[1].p.name} and ${top[2].p.name} behind him and I\'d take all three tomorrow.`));
     B.push(say('Jamie O’Hara-Hara', 'See for me, and I played at a good level, the problem with this league is there\'s not enough BRITISH players getting drafted. Managers should have to pick FIVE. Minimum.'));
     B.push(say('Andy Grey', 'And they should show a bit more RESPECT around Remembrance weekend, but nobody wants to hear it from me.'));
+    howardIn(key, 'pilot', `My question is about this draft. Everyone keeps going on about ${top[0].p.name} — ${top[0].pts} points, marvellous, well done. But he was ${top[0].pts} points LAST year, wasn't he. You can't draft last year. My lad's got him top of his list and I've told him, I said, you'll be the one paying for that in November. Nobody ever won anything drafting a man off a receipt.`)
+      .forEach(b => B.push(b));
     const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
     B.push(say('Richard Keyes', `Who wins it? I'll tell you who wins it. ${(favs[0] || {}).team || 'somebody'}. Previous champion, knows how to get over the line, WRITE IT DOWN.`));
     B.push(say('Jamie O’Hara-Hara', `I'll go ${(favs[1] || {}).team || 'the other lot'}, and if I'm wrong I'll come on here and say I was wrong, which I WON'T BE.`));
@@ -358,6 +432,8 @@ window.Podcast = (() => {
     if (reach[1]) B.push(say('Andy Grey', `${reach[1].p.name} at ${reach[1].n} as well. They've panicked, Richard. You can SMELL a panic pick.`));
     B.push(say('Richard Keyes', `And the ones in the middle? ${table.slice(4, 8).map(r => (teamName(r.mid) || '').toUpperCase()).join(', ')}. NOTHING SIDES. Not good enough to win it, not bad enough to be interesting.`));
     B.push(say('Jamie O’Hara-Hara', 'That\'s where you get relegated from. MENTALLY.'));
+    howardIn(key, 'draft', `You've spent twenty minutes telling everyone ${teamName(best.mid)} have won the draft. They haven't won anything. They've won a LIST. ${reach.length ? `And you had a go at whoever took ${reach[0].p.name} at ${reach[0].n} — well, he wanted him, didn't he. That's the whole point of having a go.` : 'Nobody has kicked a ball yet.'} I've been doing this thirty-odd years and the fella who wins the draft never wins the league. Never.`)
+      .forEach(b => B.push(b));
     const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
     B.push(say('Jamie O’Hara-Hara', 'And not enough British lads. AGAIN. I counted.'));
     B.push(say('Andy Grey', `And I'll say this for nothing — the lad who's WON this draft has done it by taking the OBVIOUS player every single time. No cleverness. No spreadsheet. Just the best one left. ${pick(TT_ROAR, key + ':r5')}.`));
@@ -437,6 +513,8 @@ window.Podcast = (() => {
     }
     B.push(say('Andy Grey', 'And I\'ll be honest with you Richard, half of them will lose it on the BENCH. Not the eleven. The BENCH. It is the same every week and they never learn.'));
     if (tbl.length) B.push(say('Jamie O’Hara-Hara', `Top of the table: ${(teamName(tbl[0].id) || '').toUpperCase()}. And I'm not having it. I'm just NOT HAVING IT.`));
+    howardIn(key, 'preview', `It's about this ${teamName(a)} and ${teamName(b)} game you keep calling the big one. ${mu.shared.length ? `They've both got ${mu.shared[0]} men in, you said so yourself, so it cancels out and we're all sat here watching a draw happen slowly.` : 'There\'s not a single player in common between them, and nobody has mentioned that all week.'} ${starA ? `And everyone's on about ${starA.name}. He's one man. ONE. You don't win a gameweek with one man, you win it with the four nobody talks about.` : 'It\'ll be decided by somebody nobody has heard of, it always is.'}`)
+      .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'HOT TAKE TIME.'));
     B.push(say('Andy Grey', `HOT TAKE: ${(teamName(b) || '').toUpperCase()} do not have the bottle for this and I have been saying it since August. ${pick(TT_ROAR, key + ':r3')}.`));
     const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
@@ -492,6 +570,8 @@ window.Podcast = (() => {
     B.push(say('Andy Grey', `And ${(teamName(widest.w) || '').toUpperCase()} by ${widest.hi - widest.lo}. That is not a defeat, Richard, that is a MESSAGE.`));
     if (manOf) B.push(say('Richard Keyes', `${(manOf.p.name || '').toUpperCase()}. ${manOf.pts} POINTS. On his own. THAT is a footballer and I don't care what the numbers men say about him.`));
     B.push(say('Jamie O’Hara-Hara', 'HOT TAKE: half these lads are not even watching the games. They are watching the APP. Watch the FOOTBALL, son.'));
+    howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`)
+      .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'RIGHT. FRAUD OF THE WEEK.'));
     B.push(say('Andy Grey', `${(teamName(bottom.mid) || '').toUpperCase()}. ${bottom.pts} points. In a full gameweek. I don't want to hear about injuries, I don't want to hear about fixtures — FRAUD OF THE WEEK, and he knows it.`));
     B.push(say('Jamie O’Hara-Hara', 'FRAUD.'));

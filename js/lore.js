@@ -340,6 +340,10 @@ const GAZETTE_PRESS = [
   { n: 'Richard Keyes', beat: 'pod' },        // talkTROUGH, has the folder
   { n: 'Andy Grey', beat: 'pod' },            // talkTROUGH, has the telestrator
   { n: 'Jamie O’Hara-Hara', beat: 'pod' }, // talkTROUGH, played at a good level
+  // Marc, 18 Aug: "a character called howard who calls in and asks a question
+  // each episode in the style of a phone in". Not staff — he is the audience,
+  // and he is on the register because he is on the show every single week.
+  { n: 'Howard', beat: 'pod' },               // talkTROUGH, first-time caller since August
 ];
 
 /* ================= The Podcunt Network — advertising =================

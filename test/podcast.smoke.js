@@ -219,34 +219,86 @@ const chk = (name, ok, detail = '') => {
     const ep = Podcast.episode(pub.show, pub.kind, pub.gw);
     const real = window.fetch;
     const asked = [];
-    // nothing shipped yet: the manifest is empty and the browser reads it
+    const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
+    // nothing shipped yet: the manifest is empty and the browser reads every line
     _podRec = null;
-    const none = (await podRecordings()).size;
-    // now pretend the pilot has been cut
+    const bare = await podRecordings();
+    const none = Object.keys(bare).length;
+    const noneSrc = spoken.every(([, n]) => podLineSrc(bare, ep.id, n) === null);
+    // now pretend ONE line has been cut by hand — the shape Howard creates
+    const oneN = spoken[1][1];
     _podRec = null;
-    window.fetch = (u, o) => { asked.push(String(u)); return Promise.resolve(new Response(JSON.stringify([ep.id]), { status: 200 })); };
-    const have = await podRecordings();
+    window.fetch = u => { asked.push(String(u)); return Promise.resolve(new Response(JSON.stringify({ [ep.id]: { [oneN]: oneN + '.m4a' } }), { status: 200 })); };
+    const rec = await podRecordings();
     window.fetch = real;
-    // the sheet says so, and the url it would pull is same-origin
+    const src = podLineSrc(rec, ep.id, oneN);
+    // a part-cut episode says so, rather than claiming to be fully recorded
     podcastSheet(ep.id);
     await new Promise(r => setTimeout(r, 60));
     const meta = document.querySelector('.pod-room #podMeta');
-    const said = !!meta && /recorded/.test(meta.textContent);
-    const url = new URL(`audio/pod/${encodeURIComponent(ep.id)}/3.mp3`, location.href);
+    const said = !!meta && /part recorded/.test(meta.textContent);
     document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
     _podRec = null;
     return {
-      emptyByDefault: none === 0,
-      readsManifest: have.has(ep.id),
+      emptyByDefault: none === 0 && noneSrc,
+      // the recorded line plays its file, keeping the extension it was given
+      readsManifest: src === `audio/pod/${encodeURIComponent(ep.id)}/${oneN}.m4a`,
+      // ...and every other line still falls through to the browser voice
+      restFallBack: spoken.filter(([, n]) => n !== oneN).every(([, n]) => podLineSrc(rec, ep.id, n) === null),
+      // a manifest cannot point the player outside the episode's own folder
+      noEscape: podLineSrc({ [ep.id]: { 0: '../../../etc/passwd' } }, ep.id, 0) === null,
       manifestIsLocal: asked.every(u => !/^https?:\/\//i.test(u) || u.startsWith(location.origin)),
-      sameOrigin: url.origin === location.origin,
+      sameOrigin: new URL(src, location.href).origin === location.origin,
       said,
     };
   });
-  chk('P11 an episode plays its recording when one is cut, from this origin only',
+  chk('P11 a hand-recorded line plays its file; the rest fall back to the browser',
     Object.values(p11).every(Boolean), JSON.stringify(p11));
 
-  chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P12: Howard. Marc, 18 Aug — one caller, one question, talkTROUGH
+     only, and he is the part a human records ---- */
+  const p12 = await page.evaluate(() => {
+    const lines = (show, kind, gw) => {
+      const ep = Podcast.episode(show, kind, gw);
+      return ep ? ep.blocks.filter(b => b.who === 'Howard') : null;
+    };
+    const kinds = [['pilot', null], ['draft', null], ['preview', 0], ['review', 0]];
+    const tt = kinds.map(([k, g]) => lines('tt', k, g));
+    const gfw = kinds.map(([k, g]) => lines('gfw', k, g));
+    const ep = Podcast.episode('tt', 'review', 0);
+    return {
+      // exactly one call per talkTROUGH episode, every kind
+      onceEachTT: tt.every(l => l && l.length === 1),
+      // and never on the Gazette — he is a talkTROUGH caller
+      neverGfw: gfw.every(l => l && l.length === 0),
+      // Keys takes the call and answers it, so it plays as a phone-in
+      framed: (() => {
+        const i = ep.blocks.findIndex(b => b.who === 'Howard');
+        return i > 0 && ep.blocks[i - 1].who === 'Richard Keyes'
+          && !!ep.blocks[i + 1] && ep.blocks[i + 1].who === 'Richard Keyes';
+      })(),
+      // ...and he is introduced the way callers are: name, then where from
+      fromPrestwich: kinds.every(([k, g]) => {
+        const e = Podcast.episode('tt', k, g);
+        const i = e.blocks.findIndex(b => b.who === 'Howard');
+        return /Howard/.test(e.blocks[i - 1].text) && /Prestwich/.test(e.blocks[i - 1].text);
+      }),
+      // he is a first-time caller, permanently
+      firstTimer: /first[ -]time|first time/i.test(ep.blocks.find(b => b.who === 'Howard').text),
+      // he says something about THIS gameweek, not a stock line
+      fromState: (() => {
+        const t = ep.blocks.find(b => b.who === 'Howard').text;
+        return state.managers.some(m => m.team && t.includes(m.team));
+      })(),
+      // and the player lists him with the cast, so his chip is on the sheet
+      onTheBill: [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))].includes('Howard'),
+      hasVoice: !!Podcast.VOICES['Howard'],
+    };
+  });
+  chk('P12 Howard phones talkTROUGH once an episode, never the Gazette',
+    Object.values(p12).every(Boolean), JSON.stringify(p12));
+
+  chk('P13 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);
