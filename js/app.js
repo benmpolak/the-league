@@ -804,6 +804,8 @@ const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}"
       pushOvState(); // phone back button closes the crest, not the site
     });
   }
+  // any [data-gazette] button opens the paper, whatever view rendered it
+  document.addEventListener('click', e => { if (e.target.closest('[data-gazette]')) gazetteSheet(); });
 }
 document.addEventListener('error', e => {
   const img = e.target;
@@ -3670,6 +3672,7 @@ function prepCard() {
     <h2>The Scouting Floor is open</h2>
     <p class="rules-p">${n ? `Your autopick list has <b>${n}</b> name${n === 1 ? '' : 's'} on it.` : 'Browse the pool, &#9733; star your targets and rank your autopick list before the night.'} If your draft clock ever hits zero, the top available name on your list goes in.</p>
     <button class="btn" id="prepGo" style="margin-top:10px">Open the Draft Console</button>
+    <button class="btn ghost" data-gazette style="margin-top:10px">&#128240; Read the Season Preview</button>
   </div>`;
 }
 
@@ -7312,7 +7315,7 @@ const progMasthead = (edition, gwN) => `<div class="prog-plate">
     <div><div class="prog-flag">THE LEAGUE</div><div class="prog-title">GAZETTE</div></div>
     <span class="prog-seal-spacer" aria-hidden="true"></span>
   </div>
-  <div class="prog-date"><span>${edition}</span><span>Gameweek ${gwN}</span><span>Est. 2015</span></div>
+  <div class="prog-date"><span>${edition}</span><span>${gwN != null ? `Gameweek ${gwN}` : 'Season 2026/27'}</span><span>Est. 2015</span></div>
 </div>`;
 // what's on today's front step: {edition, gwN, article} or null
 function progTodays() {
@@ -7324,6 +7327,11 @@ function progTodays() {
   }
   const last = lastFinalGw();
   if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
+  // nothing settled yet: the Season Preview is edition zero (Ben, 16 Aug)
+  if (typeof Gazette !== 'undefined' && Gazette.preview) {
+    const art = Gazette.preview();
+    if (art) return { edition: 'the season preview', gwN: null, article: art };
+  }
   return null;
 }
 // the dashboard shows a FRONT PAGE, not the whole paper (Ben: "make it
