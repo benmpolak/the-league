@@ -4248,6 +4248,28 @@ function playSound(kind) {
         ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
       ];
       for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
+    } else if (kind === 'themeGfw') {
+      // Gazette Football Weekly: a lone piano and a cello, faintly sad. The
+      // Podcunt Network has no audio files — the stings are synthesised like
+      // the klaxons and the drinks-break anthems (Marc, 17 Aug).
+      const N = { D4: 294, F4: 349, A4: 440, C5: 523, E5: 659 };
+      const fig = [['D4', 0, .5], ['A4', .3, .5], ['F4', .62, .5], ['C5', .95, .7], ['A4', 1.5, .5], ['E5', 1.85, 1.1]];
+      for (const [n, at, d] of fig) tone(c, N[n], at, d, { type: 'sine', gain: 0.055 });
+      tone(c, 147, 0, 2.6, { type: 'triangle', gain: 0.03 }); // the cello, sighing
+    } else if (kind === 'themeTt') {
+      // talkTROUGH: brass, an airhorn, and no apology whatsoever
+      const N = { C4: 262, E4: 330, G4: 392, C5: 523 };
+      const fan = [['C4', 0, .22], ['E4', .2, .22], ['G4', .4, .22], ['C5', .6, .75]];
+      for (const [n, at, d] of fan) tone(c, N[n], at, d, { type: 'sawtooth', gain: 0.075 });
+      tone(c, 880, .75, .45, { type: 'square', gain: 0.05, slideTo: 660 }); // airhorn
+      tone(c, 660, 1.15, .5, { type: 'square', gain: 0.045, slideTo: 880 });
+    } else if (kind === 'adGfw') {
+      tone(c, 523, 0, .18, { type: 'sine', gain: 0.05 });
+      tone(c, 784, .16, .34, { type: 'sine', gain: 0.045 });
+    } else if (kind === 'adTt') {
+      tone(c, 392, 0, .14, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 523, .13, .14, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 659, .26, .3, { type: 'sawtooth', gain: 0.08 });
     } else if (kind === 'whistle') {
       // full time: an officious triple blast, the last one held far longer
       // than anyone needed ("more sound effects but not too many… humourous")
@@ -7406,6 +7428,7 @@ function gazetteSheet(gwIdx = null) {
     <button class="btn ghost small icon-btn gz-close" id="gzClose" title="Fold the paper" aria-label="Fold the paper">&#10005;</button>
     ${progMasthead(showing.edition, showing.gwN)}
     ${showing.article}
+    ${mediaSection()}
     ${archNav}
   </div>`;
   document.body.appendChild(ov);
@@ -7415,6 +7438,124 @@ function gazetteSheet(gwIdx = null) {
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
     gazetteSheet(b.dataset.progw === 'today' ? null : +b.dataset.progw);
   });
+  ov.querySelectorAll('[data-podopen]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    podcastSheet(b.dataset.podopen);
+  });
+}
+/* ================= The Podcunt Network =================
+   Marc, 17 Aug: "the links to the podcasts should appear somewhere near the
+   gazette as part of a full media overview". So the reading room grows a
+   media desk: both shows, their current episode, and a transcript you can
+   read or be read to. The generator is js/podcast.js; everything here is
+   presentation and the browser's own voice. */
+function mediaSection() {
+  if (typeof Podcast === 'undefined') return '';
+  const rows = ['gfw', 'tt'].map(id => {
+    const ep = Podcast.latest(id);
+    if (!ep) return '';
+    const s = ep.show;
+    return `<div class="pod-row" data-podopen="${esc(ep.id)}">
+      <div class="pod-badge pod-${esc(s.id)}">${s.id === 'tt' ? '&#128266;' : '&#127911;'}</div>
+      <div class="pod-main">
+        <b>${esc(s.name)}</b>
+        <span class="muted" style="font-size:11.5px">${esc(s.dek)}</span>
+        <span style="font-size:12.5px">${esc(ep.title)} <span class="muted">&middot; ${esc(ep.dek)}</span></span>
+      </div>
+      <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
+    </div>`;
+  }).join('');
+  if (!rows.trim()) return '';
+  return `<div class="prog-sec">The Media Desk</div>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
+    ${rows}`;
+}
+// id → the episode object, without trusting the id string
+function podById(id) {
+  if (typeof Podcast === 'undefined') return null;
+  const e = Podcast.published().find(x => x.id === id);
+  return e ? Podcast.episode(e.show, e.kind, e.gw) : null;
+}
+let _podStop = null; // set while an episode is being read aloud
+function podStopSpeaking() {
+  try { window.speechSynthesis?.cancel(); } catch { /* not available */ }
+  if (_podStop) { _podStop(); _podStop = null; }
+}
+function podcastSheet(id) {
+  const ep = podById(id);
+  if (!ep) return;
+  const s = ep.show;
+  const body = ep.blocks.map(b => {
+    if (b.t === 'theme') return `<p class="pod-sting">${esc(b.text)}</p>`;
+    if (b.t === 'ad') return `<p class="pod-ad"><b>${esc(b.brand)}</b> &mdash; ${esc(b.text)}</p>`;
+    return `<p class="pod-line"><b>${esc(b.who)}:</b> ${esc(b.text)}</p>`;
+  }).join('');
+  const canSpeak = typeof window.speechSynthesis !== 'undefined';
+  document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card pod-room pod-${esc(s.id)}-room" role="dialog" aria-label="${esc(s.name)}">
+    <button class="btn ghost small icon-btn gz-close" id="podClose" aria-label="Close">&#10005;</button>
+    <div class="pod-head">
+      <span class="pod-badge pod-${esc(s.id)}">${s.id === 'tt' ? '&#128266;' : '&#127911;'}</span>
+      <div><h2 style="margin:0">${esc(s.name)}</h2>
+        <p class="muted" style="margin:2px 0 0;font-size:12px">${esc(ep.title)} &middot; ${esc(ep.dek)}</p></div>
+    </div>
+    ${canSpeak ? '<button class="btn small" id="podPlay">&#9654; Listen</button>' : ''}
+    <p class="muted" style="font-size:10.5px;margin:6px 0 10px">${canSpeak ? 'Read aloud by whatever voice this device owns. The voices are not good. That is the joke.' : 'This device has no speech engine, so it is a reading show today.'}</p>
+    <div class="pod-body">${body}</div>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const shut = () => { podStopSpeaking(); closeOv(ov); };
+  ov.onclick = e => { if (e.target === ov) shut(); };
+  ov.querySelector('#podClose').onclick = shut;
+  const btn = ov.querySelector('#podPlay');
+  if (btn) btn.onclick = () => podPlay(ep, btn);
+}
+/* Read the episode aloud. Started only from a tap (iOS refuses otherwise),
+   cancelled on close, and each speaker gets his own pitch and rate so three
+   men are three men. The stings are Web Audio, so they work regardless. */
+function podPlay(ep, btn) {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; return; }
+  const all = synth.getVoices() || [];
+  // the default voice is usually the worst one installed — prefer a real
+  // en-GB one, and prefer the enhanced/natural variants where they exist
+  const score = v => (/en[-_]GB/i.test(v.lang) ? 4 : /^en/i.test(v.lang) ? 1 : 0)
+    + (/enhanced|premium|natural|neural/i.test(v.name) ? 3 : 0)
+    + (/google|microsoft|daniel|serena|kate/i.test(v.name) ? 1 : 0);
+  const best = all.slice().sort((a, b) => score(b) - score(a))[0] || null;
+  let i = 0, live = true;
+  _podStop = () => { live = false; };
+  btn.innerHTML = '&#9632; Stop';
+  const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; };
+  const speak = (text, v, then) => {
+    const u = new SpeechSynthesisUtterance(text);
+    if (best) u.voice = best;
+    u.lang = best?.lang || 'en-GB';
+    u.pitch = v?.pitch ?? 1; u.rate = v?.rate ?? 1;
+    u.onend = then; u.onerror = then;
+    synth.speak(u);
+  };
+  const next = () => {
+    if (!live) return;
+    if (i >= ep.blocks.length) { done(); return; }
+    const b = ep.blocks[i++];
+    if (b.t === 'theme') { playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
+    if (b.t === 'ad') {
+      playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
+      setTimeout(() => speak(`${b.brand}. ${b.text}`, Podcast.VOICES[ep.show.host], next), 600);
+      return;
+    }
+    speak(b.text, Podcast.VOICES[b.who], next);
+  };
+  // voices load lazily on some browsers — wait one beat if the list is empty
+  if (!all.length && typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', () => { }, { once: true });
+  }
+  next();
 }
 function previewArticle(i, pick) {
   const d = gwPreviewData(i);
