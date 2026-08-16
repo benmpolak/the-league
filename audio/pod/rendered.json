@@ -8,9 +8,9 @@
     },
     "2": {
       "file": "2.mp3",
-      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
       "provider": "elevenlabs",
-      "at": "2026-08-18"
+      "at": "2026-08-16"
     },
     "3": {
       "file": "3.mp3",
@@ -44,9 +44,9 @@
     },
     "8": {
       "file": "8.mp3",
-      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
       "provider": "elevenlabs",
-      "at": "2026-08-18"
+      "at": "2026-08-16"
     },
     "9": {
       "file": "9.mp3",
@@ -80,9 +80,9 @@
     },
     "14": {
       "file": "14.mp3",
-      "voice": "onwK4e9ZLuTAKqWW03F9",
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
       "provider": "elevenlabs",
-      "at": "2026-08-18"
+      "at": "2026-08-16"
     },
     "15": {
       "file": "15.mp3",
@@ -217,6 +217,12 @@
       "voice": "kVBPcEMsUF1nsAO1oNWw",
       "provider": "elevenlabs",
       "at": "2026-08-18"
+    },
+    "17": {
+      "file": "17.mp3",
+      "voice": "GPBdEhqsWQkHEWGnPOdO",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     },
     "18": {
       "file": "18.mp3",
