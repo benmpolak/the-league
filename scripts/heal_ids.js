@@ -30,8 +30,17 @@ const players = Array.isArray(data) ? data : data.players;
 const byId = new Map(players.map(p => [p.id, p]));
 const byCode = new Map(players.map(p => [p.code, p]));
 
-const admin = require('firebase-admin');
-admin.initializeApp({ databaseURL: 'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app' });
+// same auth model as backup/restore: service account for the real DB, or the
+// emulator env var; firebase-admin borrowed from functions/ when not installed
+// at the root (sol final-verdict P2 — the documented command must actually run)
+function requireAdmin() {
+  try { return require('firebase-admin'); }
+  catch { return require(path.join(__dirname, '..', 'functions', 'node_modules', 'firebase-admin')); }
+}
+const admin = requireAdmin();
+admin.initializeApp({ databaseURL: process.env.FIREBASE_DATABASE_EMULATOR_HOST
+  ? `http://${process.env.FIREBASE_DATABASE_EMULATOR_HOST}?ns=calciopoli-wc26-default-rtdb`
+  : 'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app' });
 const db = admin.database();
 const base = `v2/leagues/${LEAGUE}`;
 
@@ -58,8 +67,15 @@ const log = (where, from, to, name) => { planned++; console.log(`${LIVE ? 'FIX' 
     }
     remap.set(id, real.id);
   };
+  const priv = (await db.ref(`${base}/private`).get()).val() || {};
   for (const pk of toArr(pub.draft?.picks)) learn(pk?.playerId, pk?.code, `pick#${pk?.n}`);
   for (const t of toArr(pub.transfers)) { learn(t?.inId, t?.inCode, 'transfer.in'); learn(t?.outId, t?.outCode, 'transfer.out'); }
+  // pending claims teach too (sol final-verdict P2): a free-agent claim target
+  // may appear NOWHERE else — without this a lodged claim lapses or lands on
+  // the wrong positional id after a rebuild
+  for (const [uid, node] of Object.entries(priv)) for (const arr of Object.values(node?.claims || {})) {
+    for (const c of toArr(arr)) { learn(c?.in, c?.inCode, `claim.in@${uid}`); learn(c?.out, c?.outCode, `claim.out@${uid}`); }
+  }
 
   if (!remap.size) { console.log('Nothing to heal — every code-carrying id resolves to the right player.'); process.exit(0); }
   console.log(`Learned ${remap.size} id move(s):`, [...remap.entries()].map(([a, b]) => `${a}->${b} (${byId.get(b)?.name})`).join(', '));
@@ -100,8 +116,17 @@ const log = (where, from, to, name) => { planned++; console.log(`${LIVE ? 'FIX' 
   for (const [mid, pid] of Object.entries(pub.lobus || {})) {
     if (remap.has(Number(pid))) { log(`lobus/${mid}`, pid, heal(Number(pid)), byId.get(heal(Number(pid)))?.name); upd[`${base}/public/lobus/${mid}`] = heal(Number(pid)); }
   }
-  // private trees: autolists + claims per uid
-  const priv = (await db.ref(`${base}/private`).get()).val() || {};
+  // shirt numbers are keyed BY player id — move the value to the healed key
+  // (sol final-verdict P3; cosmetic, but a healed league should be whole)
+  for (const [mid, nums] of Object.entries(pub.shirtNums || {})) for (const [pid, num] of Object.entries(nums || {})) {
+    if (remap.has(Number(pid))) {
+      const to = heal(Number(pid));
+      log(`shirtNums/${mid}/${pid}`, pid, to, `#${num}`);
+      upd[`${base}/public/shirtNums/${mid}/${pid}`] = null;
+      upd[`${base}/public/shirtNums/${mid}/${to}`] = num;
+    }
+  }
+  // private trees: autolists + claims per uid (priv fetched above for learning)
   for (const [uid, node] of Object.entries(priv)) {
     const h = healList(node?.autolist, `private/${uid}/autolist`);
     if (h) upd[`${base}/private/${uid}/autolist`] = h;
