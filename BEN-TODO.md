@@ -236,3 +236,26 @@ branch `claude/remove-league-table-icons-yqazwx` can be deleted.
 **Still genuinely on the desk:** §1 (red-card scoring — needs a GROUP ruling,
 then a build) and §3 (feed decisions — 3b `code` alongside `id` is the real
 fix for `#579 (unknown)` and worth doing before the season starts).
+
+---
+
+## 5. The Podcunt Network (group chat, 16 Aug) — POST-DRAFT BUILD (Ben's call)
+
+Two AI-generated weekly "podcunts", commissioned in chat, parked until after
+draft night. The design is settled — do not re-litigate, just build:
+
+- **Format**: transcript episodes generated deterministically from real league
+  data (same philosophy as the Gazette — own hash, no shared RNG, every phone
+  prints the same episode). NO server audio pipeline. The punchline is a
+  ▶ Listen button using browser `speechSynthesis` — two naff robot voices,
+  distinct pitch/rate per host, user-gesture gated (iOS-safe), free, offline.
+- **Show 1**: *Gazette Football Weekly* — host Rax Mushden (Marc's name),
+  liberal-lefty Guardian register, panel from GAZETTE_PRESS (Bilson on
+  tactics, Liu on culture, Sid Lowry "in Spain").
+- **Show 2**: *talkTROUGH* — drivetime with Keys & Grey (Ian's), talkSPORT
+  outrage register: bench-waste fury, anti-analytics, "in my day".
+- **Cadence**: ~5 minutes, "every Tuesday after waivers" — episodes key on the
+  latest settled GW + waiver ledger, so they appear naturally post-run; no
+  cron needed. Pilot episodes can run off Season Preview material.
+- **Where**: a section in the Gazette reading room; new `js/podcast.js`, add
+  to index.html AND sw.js precache (bump the shell cache version).
