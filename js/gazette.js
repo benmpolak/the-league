@@ -749,6 +749,21 @@ window.Gazette = (() => {
           <div class="prog-by">Martin Said, chief football writer</div>
         </div>`);
       }
+      // the pretentious tactics essay (Marc, 16 Aug; headline Ian's)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">INVERTING THE PYRAMID SCHEME</div>
+        <p>${esc('All fantasy football is a conversation with space, and space, as Bielsa understood before it was fashionable to understand it, does not exist until somebody runs into it. The draft is not a queue; it is a pressing trap. The manager who takes a full-back in round three is not filling a position — he is making an argument about territory, and the room, if it is listening, should be worried.')}</p>
+        <p>${esc('Consider the bench — which is to say, consider absence. The English bench is transactional; the continental bench is a philosophical position, a held breath. Auto-substitution, properly understood, is gegenpressing applied to regret. And the snake format itself is a rondo: the ball comes back around, but never to the same man in the same space. He who fails to grasp this has already lost, probably in round two, probably to a goalkeeper reach.')}</p>
+        <p class="prog-match-detail">${esc('Donathan Bilson\'s twelve-part series on the geometry of the Trough continues midweek.')}</p>
+        <div class="prog-by">Donathan Bilson</div>
+      </div>`);
+      // the GAIL's essay (Marc's other commission, 16 Aug)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">WHAT GAIL&rsquo;S TELLS US ABOUT THE MODERN LEAGUE</div>
+        <p>${esc('There is a GAIL\'s now where the chip shop used to be, and there is a lesson in that, if you are the sort of person who looks for lessons in laminated pastry — which, this being a season preview, you are. The League has gentrified too. Once it was a WhatsApp thread and somebody else\'s spreadsheet; now it has a crest from the College of Arms and a waiver wire that runs to a timetable, and nobody can say exactly when that happened, in the way nobody can say when the £4.20 cinnamon bun became infrastructure.')}</p>
+        <p>${esc('Progress, then, of a kind. Though one notes the pot is still fifty pounds, the arguments are still the arguments, and somewhere beneath the sourdough this remains a league that would trade the lot for one good Tuesday night. The flat white cools. The window, as ever, closes.')}</p>
+        <div class="prog-by">Yonni Liu</div>
+      </div>`);
       // twelve lines for twelve clubs — dealt round-robin from a hashed start
       // so no two clubs share a verdict and the deal is stable between loads
       const moods = [
@@ -769,6 +784,8 @@ window.Gazette = (() => {
       out.push(`<div class="prog-sec">The Twelve, Surveyed</div><div class="prog-nibs">${mids.map((mid, k) =>
         `<div class="prog-nib"><b>${esc(teamName(mid))}</b><span>${esc(`${managerName(mid)} — ${moods[(dealFrom + k) % moods.length]}`)}</span></div>`).join('')}</div>`);
       if (formers.length) out.push(`<div class="prog-sec">The Rumour Mill</div><p>${esc(`Also linked with returns this window: ${formers.join(', ')}. The Gazette has verified none of these and printed all of them.`)}</p>`);
+      // midweek listings (Ian's commission, 16 Aug)
+      out.push(`<div class="prog-sec">Midweek on the Overcunt</div><p>${esc('Tuesday: the panel names its combined XI of players they sold. Wednesday: forty minutes on whether 44–40 is a bad result (it is not — it is a great result). Thursday: emergency pod if anybody\'s waiver request is processed. All episodes recorded in a garage the production team continue to describe as "iconic".')}</p>`);
       out.push(`<div class="prog-sec">The Gazette&rsquo;s Fearless Predictions</div><p>${esc('Too close to call, so the Gazette will call it. Champions: whoever wins the playoffs — that is the point of them. Top of the table: irrelevant, see previous. The Cup: last man standing, first man blamed. The Chumpionship: hotly contested by men who will insist they were rebuilding, for the oldest prize in the league — first choice at the randomiser.')}</p>`);
       out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc('The season starts when the draft ends. Sleep while you can.')}</p>`);
       return out.join('');

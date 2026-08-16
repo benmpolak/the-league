@@ -328,7 +328,8 @@ const GAZETTE_PRESS = [
   { n: 'Barney Ronaldo', beat: 'colour' },
   { n: 'Rory Smyth', beat: 'colour' },
   { n: 'Aimee Lawrenson', beat: 'colour' },
-  { n: 'Jonathan Wilsson', beat: 'tactics' },
+  { n: 'Donathan Bilson', beat: 'tactics' },  // Marc's commission, 16 Aug
+  { n: 'Yonni Liu', beat: 'colour' },         // florid sociocultural essays
   { n: 'Gabriel Marcotto', beat: 'tactics' },
   { n: 'David Ornberg', beat: 'wire' },       // understands
   { n: 'Fabrizio Marano', beat: 'wire' },     // here we go
