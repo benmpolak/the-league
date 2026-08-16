@@ -433,6 +433,15 @@ tr.gone-row td.act { opacity: .8; }
     box-shadow: 0 -12px 30px rgba(0,0,0,.5);
   }
   .queue-drawer.open { transform: translateY(0); }
+  /* Ben, 16 Aug: the phone queue read as a wall of buttons — controls slimmed
+     so the names lead the row and twelve entries fit a screen */
+  .queue-drawer .qrow { gap: 6px; padding: 4px 0; }
+  .queue-drawer .auto-rank { width: 34px; min-width: 34px; padding: 4px 2px; font-size: 12px; }
+  .queue-drawer .btn.small.icon-btn { width: 29px; height: 29px; min-width: 29px; font-size: 10px; border-radius: 7px; }
+  .queue-drawer [data-autodel] { opacity: .55; }
+  .queue-drawer .pos-badge { font-size: 9px; padding: 2px 5px; }
+  .queue-drawer .pool-controls .btn.small { padding: 6px 10px; font-size: 11px; }
+  .queue-drawer .pool-controls select { padding: 6px 8px; font-size: 12px; }
 }
 @media (max-width: 700px) {
   .queue-fab { bottom: calc(62px + env(safe-area-inset-bottom)); }
