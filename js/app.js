@@ -3953,6 +3953,10 @@ function showCeremony() {
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
+    // Marc, draft eve: "can michael buffer start the draft?" He cannot — but
+    // the collapse of negotiations is announced, and a local man steps in
+    // (audio/buffer-out.mp3, cut by Ben; missing file = silent, ceremony unhurt)
+    { h: '&#128226; A CLUB STATEMENT', p: 'The Committee regrets to announce that, following a late breakdown in negotiations over appearance fees, Michael Buffer is OUT of the opening ceremony. A local man has stepped in. He has been told roughly what to say.', buffer: true },
     { h: 'REPORT TO THE DRAFT ROOM', p: `You are through. Pick one begins only when all ${order.length} managers have finished or skipped the ceremony.` },
   ];
   let i = 0;
@@ -3974,6 +3978,11 @@ function showCeremony() {
         <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'I’m through — join the room' : 'Continue the pomp'}</button>
         <button class="btn ghost small" id="cerSkip" title="Reserved for Ian">Skip ceremony (Ian's button)</button>
       </div></div>`;
+    if (s.buffer) {
+      // the local man does the honours — the tap that opened this step is the
+      // user gesture, so play is allowed; a missing file stays silent
+      try { new Audio('audio/buffer-out.mp3').play().catch(() => { /* he lost his voice */ }); } catch { /* no Audio */ }
+    }
     if (s.parade) {
       let f = 0;
       const nations = TEAMS;
