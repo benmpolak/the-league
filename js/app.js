@@ -7449,8 +7449,24 @@ function gazetteSheet(gwIdx = null) {
    media desk: both shows, their current episode, and a transcript you can
    read or be read to. The generator is js/podcast.js; everything here is
    presentation and the browser's own voice. */
+/* Marc, 18 Aug: "id like the two pilots to be positioned in the season preview
+   page. The post draft episode and then the normal schedule should be
+   positioned alongside the gazette."
+
+   So the desk follows the edition it is printed in. Edition zero — the Season
+   Preview, before a ball is kicked — carries the two launch episodes, framed
+   as part of that edition rather than as a permanent fixture. Every edition
+   after it carries whatever is current: the draft reaction, then the previews
+   and reviews as they land. Same component, different bill. */
 function mediaSection() {
   if (typeof Podcast === 'undefined') return '';
+  /* The hinge is the DRAFT, not the edition. Straight after draft night the
+     Gazette is still printing edition zero — no football has happened — but
+     the stations have already moved on to the draft reaction, and the pilots
+     have retired. Asking the generator which episode is current gets this
+     right on its own: it returns a pilot only while there is no draft. */
+  const lead = Podcast.latest('gfw');
+  const launch = !!lead && lead.kind === 'pilot';
   const rows = ['gfw', 'tt'].map(id => {
     const ep = Podcast.latest(id);
     if (!ep) return '';
@@ -7466,9 +7482,13 @@ function mediaSection() {
     </div>`;
   }).join('');
   if (!rows.trim()) return '';
-  return `<div class="prog-sec">The Media Desk</div>
-    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
-    ${rows}`;
+  return launch
+    ? `<div class="prog-sec">Also in edition zero: the wireless</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
+      ${rows}`
+    : `<div class="prog-sec">The Media Desk</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
+      ${rows}`;
 }
 // id → the episode object, without trusting the id string
 function podById(id) {

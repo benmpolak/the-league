@@ -487,6 +487,46 @@ const chk = (name, ok, detail = '') => {
   chk('P15 one hosted ad break mid-episode, Howard to a fixed shape, trough said as troff',
     Object.values(p15).every(Boolean), JSON.stringify(p15));
 
+  /* ---- P17: where the shows sit. Marc, 18 Aug: "id like the two pilots to be
+     positioned in the season preview page. The post draft episode and then the
+     normal schedule should be positioned alongside the gazette."
+
+     The hinge is the draft, not the edition — straight after draft night the
+     Gazette is still printing edition zero, but the stations have moved on ---- */
+  const p17 = await page.evaluate(() => {
+    const read = () => {
+      const room = document.querySelector('.gazette-room');
+      const head = [...room.querySelectorAll('.prog-sec')].map(x => x.textContent)
+        .find(t => /wireless|Media Desk/i.test(t)) || '';
+      const rows = [...room.querySelectorAll('.pod-row')].length;
+      const titles = [...room.querySelectorAll('.pod-main')].map(x => x.textContent);
+      document.querySelectorAll('.gazette-room').forEach(x => x.closest('.overlay')?.remove());
+      return { head, rows, titles };
+    };
+    // the state left by the earlier checks is post-draft
+    gazetteSheet();
+    const after = read();
+    // ...now put the draft back in the box and look again
+    const keep = state.draft.picks;
+    state.draft.picks = [];
+    gazetteSheet();
+    const before = read();
+    state.draft.picks = keep;
+    return {
+      // edition zero carries both pilots, framed as part of that edition
+      launchHeading: /wireless/i.test(before.head),
+      launchBothShows: before.rows === 2,
+      launchIsPilots: before.titles.every(t => /Season Preview|SEASON PREVIEW/.test(t)),
+      // ...and once the draft has happened the desk moves on with the Gazette
+      deskHeading: /Media Desk/i.test(after.head),
+      deskBothShows: after.rows === 2,
+      deskNotPilots: after.titles.every(t => !/edition zero/.test(t)),
+      deskIsDraft: after.titles.some(t => /Draft|DRAFT/.test(t)),
+    };
+  });
+  chk('P17 pilots sit with the season preview; everything after sits with the Gazette',
+    Object.values(p17).every(Boolean), JSON.stringify(p17));
+
   chk('P16 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
