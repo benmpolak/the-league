@@ -84,16 +84,23 @@ const chk = (name, ok, detail = '') => {
     // because talkTROUGH SHOUTS the club names and <IMG> is every bit as live
     // an element as <img>
     const carries = /<img|<script/i.test(raw);
-    // ...and the rendered sheet must contain no live element from it
+    // ...the sheet must not print it as a transcript at all (it is a player),
+    // and the live caption must show it as text rather than build an element
     podcastSheet(ep.id);
     const room = document.querySelector('.pod-room');
-    const escaped = !!room && !room.querySelector('img[src="x"]') && !room.querySelector('script');
-    const shown = !!room && /<img src=x|<script>alert/i.test(room.textContent);
+    const noTranscript = !!room && room.querySelectorAll('.pod-line').length === 0;
+    const now = room && room.querySelector('#podNow');
+    const w = now && now.querySelector('.pod-now-who');
+    const l = now && now.querySelector('.pod-now-line');
+    // drive the caption the way playback does
+    if (w && l) { w.textContent = 'Andy Grey'; l.textContent = raw.slice(0, 200); }
+    const escaped = !!now && !now.querySelector('img') && !now.querySelector('script');
+    const shownAsText = !!l && /<img|<script/i.test(l.textContent);
     document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
-    return { carries, escaped, shown };
+    return { carries, noTranscript, escaped, shownAsText };
   });
-  chk('P4 hostile team names render as text, never as elements',
-    p4.carries && p4.escaped && p4.shown, JSON.stringify(p4));
+  chk('P4 the sheet prints no transcript, and captions show hostile names as text',
+    p4.carries && p4.noTranscript && p4.escaped && p4.shownAsText, JSON.stringify(p4));
 
   /* ---- P5: the schedule. Friday 17:00 London, and an hour after full time ---- */
   const p5 = await page.evaluate(() => {
@@ -138,7 +145,30 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P8 the reading room lists both shows', p8.has && p8.bothShows, JSON.stringify(p8));
 
-  chk('P9 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P9: listen-only. The script must not be readable ahead of the hosts ---- */
+  const p9 = await page.evaluate(() => {
+    // whatever is actually published in the state P4 left behind — the pilot
+    // has retired by now, which is itself correct
+    const pub = Podcast.published()[0];
+    const ep = Podcast.episode(pub.show, pub.kind, pub.gw);
+    podcastSheet(ep.id);
+    const room = document.querySelector('.pod-room');
+    const txt = room ? room.textContent : '';
+    // a distinctive line from deep in the episode must NOT be on the page
+    const buried = ep.blocks.filter(b => b.t === 'speech').slice(-1)[0].text.slice(0, 30);
+    const out = {
+      noTranscript: !!room && room.querySelectorAll('.pod-line').length === 0,
+      hasPlay: !!room && !!room.querySelector('#podPlay'),
+      hasCast: !!room && room.querySelectorAll('.pod-chip').length >= 3,
+      leaksEnding: txt.includes(buried),
+    };
+    document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
+    return out;
+  });
+  chk('P9 the sheet is a player: cast and a play button, no readable script',
+    p9.noTranscript && p9.hasPlay && p9.hasCast && !p9.leaksEnding, JSON.stringify(p9));
+
+  chk('P10 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);

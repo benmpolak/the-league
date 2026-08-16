@@ -67,6 +67,56 @@ window.Podcast = (() => {
     'Jamie O’Hara-Hara': { pitch: 0.88, rate: 1.14 },
   };
 
+  /* ---------- station idents ----------
+     Drawn, not fetched: inline SVG like the kits in app.js, so they are crisp
+     at any size, cost no request and cannot trip the CSP. The two must be
+     legible as a pair at 34 pixels in a list — hence one round and quiet, one
+     square and shouting. */
+  function logoSvg(showId, size = 34) {
+    const s = Number(size) || 34;
+    // below ~44px a wordmark is a smear, so the small ident is symbol-only and
+    // the symbol grows into the space the text vacates
+    const wm = s >= 44;
+    if (showId === 'tt') {
+      if (!wm) return `<svg viewBox="0 0 64 64" width="${s}" height="${s}" role="img" aria-label="talkTROUGH" focusable="false">
+        <rect x="0" y="0" width="64" height="64" rx="9" fill="#2a0d04"/>
+        <rect x="0" y="0" width="64" height="64" rx="9" fill="none" stroke="#e2601f" stroke-width="4"/>
+        <path d="M9 40 L30 24 L30 56 Z" fill="#ffb37a"/>
+        <rect x="30" y="29" width="12" height="22" rx="3" fill="#ffb37a"/>
+        <path d="M47 24 q10 16 0 32" fill="none" stroke="#e2601f" stroke-width="5" stroke-linecap="round"/>
+        <rect x="9" y="8" width="46" height="9" rx="2" fill="#e2601f"/>
+      </svg>`;
+      return `<svg viewBox="0 0 64 64" width="${s}" height="${s}" role="img" aria-label="talkTROUGH" focusable="false">
+        <rect x="0" y="0" width="64" height="64" rx="9" fill="#2a0d04"/>
+        <rect x="0" y="0" width="64" height="64" rx="9" fill="none" stroke="#e2601f" stroke-width="3"/>
+        <rect x="7" y="9" width="50" height="11" rx="2" fill="#e2601f"/>
+        <text x="32" y="18" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="8" font-weight="bold" fill="#2a0d04" letter-spacing="1.6">ON AIR</text>
+        <path d="M14 40 L30 30 L30 50 Z" fill="#ffb37a"/>
+        <rect x="30" y="33" width="9" height="14" rx="2" fill="#ffb37a"/>
+        <path d="M43 31 q7 9 0 18" fill="none" stroke="#e2601f" stroke-width="3.4" stroke-linecap="round"/>
+        <path d="M50 27 q10 13 0 26" fill="none" stroke="#e2601f" stroke-width="3" stroke-linecap="round" opacity=".72"/>
+        <text x="32" y="61" text-anchor="middle" font-family="Helvetica,Arial,sans-serif" font-size="7.5" font-weight="bold" fill="#ffb37a" letter-spacing=".4">talkTROUGH</text>
+      </svg>`;
+    }
+    if (!wm) return `<svg viewBox="0 0 64 64" width="${s}" height="${s}" role="img" aria-label="Gazette Football Weekly" focusable="false">
+      <rect x="0" y="0" width="64" height="64" rx="9" fill="#0f2019"/>
+      <circle cx="32" cy="32" r="25" fill="none" stroke="#5fd0a0" stroke-width="2.4"/>
+      <rect x="26" y="15" width="12" height="22" rx="6" fill="#5fd0a0"/>
+      <path d="M19 33 q13 14 26 0" fill="none" stroke="#5fd0a0" stroke-width="3" stroke-linecap="round"/>
+      <line x1="32" y1="42" x2="32" y2="50" stroke="#5fd0a0" stroke-width="3"/>
+    </svg>`;
+    return `<svg viewBox="0 0 64 64" width="${s}" height="${s}" role="img" aria-label="Gazette Football Weekly" focusable="false">
+      <rect x="0" y="0" width="64" height="64" rx="9" fill="#0f2019"/>
+      <circle cx="32" cy="29" r="21" fill="none" stroke="#5fd0a0" stroke-width="1.3"/>
+      <circle cx="32" cy="29" r="17.5" fill="none" stroke="#2f6b52" stroke-width=".8"/>
+      <rect x="28" y="17" width="8" height="15" rx="4" fill="#5fd0a0"/>
+      <path d="M24 30 q8 9 16 0" fill="none" stroke="#5fd0a0" stroke-width="1.8" stroke-linecap="round"/>
+      <line x1="32" y1="36" x2="32" y2="41" stroke="#5fd0a0" stroke-width="1.8"/>
+      <line x1="14" y1="47" x2="50" y2="47" stroke="#2f6b52" stroke-width=".9"/>
+      <text x="32" y="60" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="11" fill="#cfe9dd" letter-spacing="2.2">GFW</text>
+    </svg>`;
+  }
+
   /* ---------- the platform desk ----------
      What actually changed, with a take from each register. Hand-authored,
      because "what did we ship" is not derivable from league state — and a
@@ -453,5 +503,5 @@ window.Podcast = (() => {
   const episode = (showId, kind, gw) => build(showId, kind, gw);
   const latest = (showId, now) => { const e = latestFor(showId, now); return e ? build(e.show, e.kind, e.gw) : null; };
 
-  return { SHOWS, VOICES, published, latest, episode, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
+  return { SHOWS, VOICES, logoSvg, published, latest, episode, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
 })();

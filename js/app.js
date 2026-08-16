@@ -7456,7 +7456,7 @@ function mediaSection() {
     if (!ep) return '';
     const s = ep.show;
     return `<div class="pod-row" data-podopen="${esc(ep.id)}">
-      <div class="pod-badge pod-${esc(s.id)}">${s.id === 'tt' ? '&#128266;' : '&#127911;'}</div>
+      <div class="pod-badge pod-${esc(s.id)}">${Podcast.logoSvg(s.id, 34)}</div>
       <div class="pod-main">
         <b>${esc(s.name)}</b>
         <span class="muted" style="font-size:11.5px">${esc(s.dek)}</span>
@@ -7485,25 +7485,41 @@ function podcastSheet(id) {
   const ep = podById(id);
   if (!ep) return;
   const s = ep.show;
-  const body = ep.blocks.map(b => {
-    if (b.t === 'theme') return `<p class="pod-sting">${esc(b.text)}</p>`;
-    if (b.t === 'ad') return `<p class="pod-ad"><b>${esc(b.brand)}</b> &mdash; ${esc(b.text)}</p>`;
-    return `<p class="pod-line"><b>${esc(b.who)}:</b> ${esc(b.text)}</p>`;
-  }).join('');
   const canSpeak = typeof window.speechSynthesis !== 'undefined';
+  /* Marc, 17 Aug: "i dont want the script to actually be readable, i want
+     people to have to click on it and listen". So this is a player, not a
+     page: the running order and the cast, and a caption that reveals only the
+     line currently being spoken. You cannot skim ahead of the hosts.
+     The one exception is a device with no speech engine at all — there the
+     transcript is the only way to consume the thing, so it prints. */
+  const cast = [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))];
+  const ads = ep.blocks.filter(b => b.t === 'ad').length;
+  const mins = Math.max(1, Math.round(ep.words / 150));
+  const locked = `
+    <div class="pod-cast">
+      <span class="pod-cast-h">On this episode</span>
+      ${cast.map(n => `<span class="pod-chip">${esc(n)}</span>`).join('')}
+    </div>
+    <p class="pod-meta">${ep.blocks.filter(b => b.t === 'speech').length} exchanges &middot; ${ads} ad break${ads === 1 ? '' : 's'} &middot; about ${mins} minute${mins === 1 ? '' : 's'}</p>
+    <div class="pod-nowplaying" id="podNow" aria-live="polite">
+      <span class="pod-now-who"></span>
+      <span class="pod-now-line">Press play. There is no transcript &mdash; you have to listen to them like everybody else.</span>
+    </div>`;
+  const fallback = `<p class="pod-meta">This device has no speech engine, so the transcript is printed below instead.</p>
+    <div class="pod-body">${ep.blocks.map(b => b.t === 'theme' ? `<p class="pod-sting">${esc(b.text)}</p>`
+      : b.t === 'ad' ? `<p class="pod-ad"><b>${esc(b.brand)}</b> &mdash; ${esc(b.text)}</p>`
+      : `<p class="pod-line"><b>${esc(b.who)}:</b> ${esc(b.text)}</p>`).join('')}</div>`;
   document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card pod-room pod-${esc(s.id)}-room" role="dialog" aria-label="${esc(s.name)}">
     <button class="btn ghost small icon-btn gz-close" id="podClose" aria-label="Close">&#10005;</button>
     <div class="pod-head">
-      <span class="pod-badge pod-${esc(s.id)}">${s.id === 'tt' ? '&#128266;' : '&#127911;'}</span>
+      <span class="pod-badge pod-lg pod-${esc(s.id)}">${Podcast.logoSvg(s.id, 46)}</span>
       <div><h2 style="margin:0">${esc(s.name)}</h2>
         <p class="muted" style="margin:2px 0 0;font-size:12px">${esc(ep.title)} &middot; ${esc(ep.dek)}</p></div>
     </div>
-    ${canSpeak ? '<button class="btn small" id="podPlay">&#9654; Listen</button>' : ''}
-    <p class="muted" style="font-size:10.5px;margin:6px 0 10px">${canSpeak ? 'Read aloud by whatever voice this device owns. The voices are not good. That is the joke.' : 'This device has no speech engine, so it is a reading show today.'}</p>
-    <div class="pod-body">${body}</div>
+    ${canSpeak ? `<button class="btn" id="podPlay">&#9654; Listen</button>${locked}` : fallback}
   </div>`;
   document.body.appendChild(ov);
   pushOvState();
@@ -7511,15 +7527,20 @@ function podcastSheet(id) {
   ov.onclick = e => { if (e.target === ov) shut(); };
   ov.querySelector('#podClose').onclick = shut;
   const btn = ov.querySelector('#podPlay');
-  if (btn) btn.onclick = () => podPlay(ep, btn);
+  if (btn) btn.onclick = () => podPlay(ep, btn, ov.querySelector('#podNow'));
 }
 /* Read the episode aloud. Started only from a tap (iOS refuses otherwise),
    cancelled on close, and each speaker gets his own pitch and rate so three
-   men are three men. The stings are Web Audio, so they work regardless. */
-function podPlay(ep, btn) {
+   men are three men. The caption follows one line behind nothing — it shows
+   exactly what is being said and not a word more. Captions are written with
+   textContent, so a hostile club name cannot become an element here. */
+function podPlay(ep, btn, nowEl) {
   const synth = window.speechSynthesis;
   if (!synth) return;
-  if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; return; }
+  const who = nowEl?.querySelector('.pod-now-who');
+  const line = nowEl?.querySelector('.pod-now-line');
+  const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
+  if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
   const all = synth.getVoices() || [];
   // the default voice is usually the worst one installed — prefer a real
   // en-GB one, and prefer the enhanced/natural variants where they exist
@@ -7530,7 +7551,7 @@ function podPlay(ep, btn) {
   let i = 0, live = true;
   _podStop = () => { live = false; };
   btn.innerHTML = '&#9632; Stop';
-  const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; };
+  const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; caption('', 'That is the end of the episode.'); };
   const speak = (text, v, then) => {
     const u = new SpeechSynthesisUtterance(text);
     if (best) u.voice = best;
@@ -7543,15 +7564,16 @@ function podPlay(ep, btn) {
     if (!live) return;
     if (i >= ep.blocks.length) { done(); return; }
     const b = ep.blocks[i++];
-    if (b.t === 'theme') { playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
+    if (b.t === 'theme') { caption('', b.text); playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
     if (b.t === 'ad') {
+      caption('ADVERTISEMENT', b.brand);
       playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
-      setTimeout(() => speak(`${b.brand}. ${b.text}`, Podcast.VOICES[ep.show.host], next), 600);
+      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); speak(`${b.brand}. ${b.text}`, Podcast.VOICES[ep.show.host], next); }, 600);
       return;
     }
+    caption(b.who, b.text);
     speak(b.text, Podcast.VOICES[b.who], next);
   };
-  // voices load lazily on some browsers — wait one beat if the list is empty
   if (!all.length && typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', () => { }, { once: true });
   }

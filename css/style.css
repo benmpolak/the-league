@@ -1416,3 +1416,19 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .pod-tt-room .pod-line b { color: #ff8a4c; }
 .pod-tt-room .pod-ad { border-left-color: #d1521f; text-transform: uppercase; letter-spacing: .01em; }
 @media (max-width: 700px) { .pod-room { max-height: 92vh; } .pod-body { font-size: 14px; } }
+/* the idents are drawn SVG, so the badge is just a frame for them */
+.pod-badge { padding: 0; overflow: hidden; background: none; border: 0; }
+.pod-badge svg { display: block; width: 100%; height: 100%; }
+.pod-badge.pod-lg { width: 46px; height: 46px; min-width: 46px; }
+/* the pod sheet is a player, not a page — no transcript to skim */
+.pod-cast { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 8px; }
+.pod-cast-h { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); width: 100%; }
+.pod-chip { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--card2); border: 1px solid var(--line); }
+.pod-meta { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
+.pod-nowplaying {
+  min-height: 92px; padding: 12px 14px; border-radius: 10px;
+  background: var(--card2); border: 1px solid var(--line); font-size: 14px; line-height: 1.5;
+}
+.pod-now-who { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin-bottom: 5px; min-height: 13px; }
+.pod-tt-room .pod-now-who { color: #ff8a4c; }
+.pod-tt-room .pod-chip { border-color: #7a3418; }
