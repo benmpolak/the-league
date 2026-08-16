@@ -20,13 +20,35 @@
  *                                      node scripts/render_pods.js --audition
  *      → writes audio/pod/_audition/<voice>.mp3. Listen. Pick.
  *   3. Put your picks in audio/pod/cast.json — "voice" is the id from step 1.
- *      Set "human": true on the ONE character you're voicing yourselves.
- *   4. See which lines you have to read:
- *                                      node scripts/render_pods.js --parts
- *      Record them, drop them in audio/pod/<episode>/<n>.<ext> (any format a
- *      browser plays — straight off a phone is fine), then --scan.
- *   5. Render everyone else:           node scripts/render_pods.js
- *   6. Commit audio/.
+ *   4. Render:                          node scripts/render_pods.js
+ *   5. Commit audio/.
+ *
+ * ── A REAL PERSON'S VOICE ─────────────────────────────────────────────────
+ *
+ * Howard, the talkTROUGH phone-in caller, is voiced by an actual human. There
+ * are two ways to do that and they mix freely.
+ *
+ * CLONE IT — almost always the right answer. Record the person once, a few
+ * minutes of them talking, then
+ *
+ *     node scripts/render_pods.js --clone "Howard" sample1.m4a sample2.m4a
+ *
+ * which writes the cloned voice id straight into cast.json. Every line from
+ * then on comes out in their voice with nobody recording again. That matters
+ * because the weekly episodes are generated from that week's results, so
+ * Howard's question is new every single time — expecting fresh takes twice a
+ * week for eight months is how this quietly dies in October.
+ * GET THEIR CONSENT FIRST. Cloning a voice without asking is not a thing this
+ * league does, and ElevenLabs requires you hold the rights either way.
+ *
+ * RECORD THE LINES BY HAND — for the pilots, or any episode somebody fancies
+ * doing properly. `--parts` prints the outstanding script and the exact
+ * filenames; drop them in audio/pod/<episode>/<n>.<ext> (any format a browser
+ * plays, straight off a phone is fine), then `--scan`.
+ *
+ * A real take ALWAYS wins over a synthesised one and is never overwritten,
+ * --force or not. So the sensible setup is both: clone as the understudy,
+ * real takes wherever anyone got round to it.
  *
  * ── WHAT IT WRITES ────────────────────────────────────────────────────────
  *
@@ -50,6 +72,7 @@
  *   --voices       list the provider's voices, with ids for cast.json
  *   --audition     render one test line in every voice so you can choose
  *   --line "..."   what the audition should say (default: a talkTROUGH line)
+ *   --clone NAME f… clone a real voice from recordings, cast it as NAME
  *   --parts        print the lines assigned to human voices, then stop
  *   --scan         rebuild index.json from the files on disk, render nothing
  *   --only a,b     work on just these episode ids (default: all published)
@@ -88,6 +111,7 @@ const ONLY = (opt('only', '') || '').split(',').map(s => s.trim()).filter(Boolea
 const SITE = opt('url', 'http://localhost:8749');
 const FORCE = flag('force'), DRY = flag('dry'), SCAN = flag('scan');
 const PARTS = flag('parts'), VOICES = flag('voices'), AUDITION = flag('audition');
+const CLONE = opt('clone', '');
 const AUDITION_LINE = opt('line',
   "Right. I'll tell you what it is, Richard. It's woke nonsense, and nobody complained when you posted your transfers in with a stamp on.");
 // anything a browser will play; the manifest carries the extension, so a phone
@@ -299,6 +323,46 @@ const existing = (epId, n) => {
 };
 
 /* ---------- the jobs ---------- */
+/* ---------- cloning a real voice ----------
+   Marc, 18 Aug: "can we not use a synthesized voice from a pre recorded
+   voice?" Yes, and it is the right answer for Howard. Record the man ONCE,
+   clone it, and every week's line comes out in his own voice with nobody
+   having to do anything again. It turns a fortnightly obligation into an
+   afternoon.
+
+   CONSENT IS NOT OPTIONAL. ElevenLabs requires you hold the rights to a voice
+   you clone, and quite apart from the terms, cloning someone's voice without
+   asking is not a thing this league does. Get a clear yes from him first. */
+async function doClone(name, files) {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
+  if (!name || !files.length) throw new Error('usage: --clone "Howard" sample1.m4a [sample2.m4a ...]');
+  const missing = files.filter(f => !fs.existsSync(f));
+  if (missing.length) throw new Error('no such file: ' + missing.join(', '));
+  const form = new FormData();
+  form.append('name', name);
+  form.append('description', (CASTING.cast[name] || {}).direction || '');
+  for (const f of files) {
+    form.append('files', new Blob([fs.readFileSync(f)]), path.basename(f));
+  }
+  console.log(`\nCloning "${name}" from ${files.length} sample(s)…`);
+  const r = await fetch('https://api.elevenlabs.io/v1/voices/add', {
+    method: 'POST', headers: { 'xi-api-key': key }, body: form,
+  });
+  if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 300));
+  const id = (await r.json()).voice_id;
+  console.log(`\n  voice id: ${id}`);
+  // write it straight into the casting sheet — the id is the whole point
+  if (CASTING.cast[name]) {
+    CASTING.cast[name].voice = id;
+    fs.writeFileSync(CAST_FILE, JSON.stringify(CASTING, null, 2) + '\n');
+    console.log(`  written into ${path.relative(ROOT, CAST_FILE)} as ${name}'s voice.`);
+    console.log(`\nRender a sample before trusting it:  node scripts/render_pods.js --audition --line "..."\n`);
+  } else {
+    console.log(`  "${name}" is not in cast.json — paste the id in by hand.\n`);
+  }
+}
+
 async function doVoices() {
   const vs = await listVoices();
   console.log(`\n${PROVIDER} has ${vs.length} voice(s). Put the id in the "voice" field in audio/pod/cast.json.\n`);
@@ -331,9 +395,10 @@ function doParts(eps) {
     console.log('\nNobody is marked "human": true in audio/pod/cast.json, so there is nothing to record.\n');
     return;
   }
-  console.log(`\nLines to record yourselves — ${humans.join(', ')}.`);
-  console.log('Save each one in the folder shown, named by its number, in any format a browser plays.\n');
-  let n = 0;
+  console.log(`\nLines to record — ${humans.join(', ')}.`);
+  console.log('Save each one in the folder shown, named by its number, in any format a browser plays.');
+  console.log('A phone voice memo is fine, and for a phone-in caller it is better than a studio.\n');
+  let n = 0, covered = 0;
   for (const ep of eps) {
     const mine = ep.blocks.map((b, i) => ({ b, i }))
       .filter(({ b }) => b.t === 'speech' && humans.includes(b.who));
@@ -341,12 +406,19 @@ function doParts(eps) {
     console.log(`── ${ep.id}  (${ep.title})   →  audio/pod/${ep.id}/`);
     for (const { b, i } of mine) {
       const got = existing(ep.id, i);
-      console.log(`   ${String(i).padStart(3)}.mp3  ${got ? '[recorded: ' + got + ']' : '[ TO DO ]'}  ${b.who}`);
+      // an understudy means this one is already covered — recording it is an
+      // upgrade, not a blocker, which is the difference between a nice ritual
+      // and a fortnightly obligation
+      const under = !got && String(chairFor(b.who).voice || '').trim();
+      const tag = got ? '[recorded: ' + got + ']' : under ? '[ optional — understudy is covering it ]' : '[ TO DO ]';
+      if (under) covered++;
+      console.log(`   ${String(i).padStart(3)}.mp3  ${tag}  ${b.who}`);
       console.log(`        “${b.text}”\n`);
       n++;
     }
   }
-  console.log(`${n} line(s) in total. When they're in: node scripts/render_pods.js --scan\n`);
+  console.log(`${n} line(s) in total${covered ? `, ${covered} already covered by an understudy` : ''}.`);
+  console.log(`When they're in: node scripts/render_pods.js --scan\n`);
 }
 
 async function doRender(eps) {
@@ -372,7 +444,7 @@ async function doRender(eps) {
       process.exit(1);
     }
   }
-  let made = 0, skipped = 0, human = 0, chars = 0;
+  let made = 0, skipped = 0, human = 0, stood = 0, chars = 0;
   for (const ep of eps) {
     const dir = path.join(OUT, ep.id);
     fs.mkdirSync(dir, { recursive: true });
@@ -381,10 +453,24 @@ async function doRender(eps) {
       if (b.t === 'theme') continue; // the stings are synthesised in the app
       const who = b.t === 'ad' ? ep.host : b.who;
       const chair = chairFor(who);
-      // a part somebody is voicing themselves is never rendered and never
-      // overwritten, --force or not
-      if (chair.human) { human++; continue; }
-      if (!FORCE && existing(ep.id, n)) { skipped++; continue; }
+      const got = existing(ep.id, n);
+      if (chair.human) {
+        /* A hand-recorded line is NEVER overwritten, --force or not: the whole
+           point is that a render can't destroy a take somebody drove to a
+           quiet room to make.
+
+           Marc, 18 Aug: "im not recording for howard, someone else is." The
+           pilots are fixed scripts and can be recorded once, but the weekly
+           episodes are generated from that week's results, so Howard's
+           question is new every time. Expecting two fresh takes a week from
+           someone outside the league for eight months is how this quietly
+           dies in October. So a human part may ALSO carry a voice id: the
+           understudy. It is used only where no recording exists, and the
+           moment a real take is dropped in, --scan makes it win. */
+        if (got) { skipped++; continue; }
+        if (!String(chair.voice || '').trim()) { human++; continue; }
+        stood++;
+      } else if (!FORCE && got) { skipped++; continue; }
       const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
       const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
       // the lines either side, so it knows where it is in the conversation
@@ -402,13 +488,14 @@ async function doRender(eps) {
       }
     }
   }
-  console.log(`\n${made} line(s) rendered, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
+  console.log(`\n${made} line(s) rendered${stood ? ` (${stood} by an understudy, waiting on a real take)` : ''}, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
   if (DRY) { console.log('(dry run — nothing written, nothing spent)'); return; }
   writeManifest(scanManifest());
 }
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
+  if (CLONE) return doClone(CLONE, argv.slice(argv.indexOf('--clone') + 2).filter(a => !a.startsWith('--')));
   if (VOICES) return doVoices();
   if (AUDITION) return doAudition();
   if (SCAN) { writeManifest(scanManifest()); return; }

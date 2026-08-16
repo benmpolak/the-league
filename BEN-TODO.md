@@ -360,9 +360,38 @@ He is also the human-recorded part, which is the right shape for it: a caller
 is the one voice on a station that isn't a broadcaster, so the join shows least
 where the amateur genuinely is the amateur. `--parts` prints his script and the
 exact filenames; drop the recordings in (any format a browser plays, straight
-off a phone is fine), run `--scan`, commit. A later render can never overwrite
-them. Side effect: it closes the length gap on talkTROUGH — the pilot goes from
-451 words to 606.
+off a phone is fine), run `--scan`, commit. A render can never overwrite them,
+`--force` or not. Side effect: it closes the length gap on talkTROUGH — the
+pilot goes from 451 words to 606.
+
+**Clone the voice — this is the bit that makes it sustainable.** Marc, 18 Aug:
+"im not recording for howard, someone else is", then "can we not use a
+synthesized voice from a pre recorded voice?" Yes, and that is the answer. The
+pilots are fixed scripts and can be recorded once, but the weekly episodes are
+built from that week's results, so Howard's question is new every time. Two
+fresh takes a week for eight months, from someone who isn't even in the league,
+is a commitment that quietly dies in October.
+
+So: record him once — a few minutes of him talking, in character, unhurried —
+and then
+
+    node scripts/render_pods.js --clone "Howard" sample1.m4a sample2.m4a
+
+which writes the cloned voice id straight into `cast.json`. Every episode after
+that generates Howard in his own voice, automatically, forever. An afternoon of
+his time instead of a season of it.
+
+**Get his consent, explicitly.** ElevenLabs requires you hold the rights to a
+cloned voice, and beyond the terms, cloning somebody's voice without asking
+isn't a thing this league does. Ask him, tell him what it's for, and keep the
+samples.
+
+Hand-recorded takes still win wherever they exist — a render can never
+overwrite one, `--force` or not — so the two mix freely: clone for the weeks
+nobody got to, real takes wherever anybody fancied doing it properly.
+
+`settings.stability` is already at 0.7 for him, because he is the one man on
+the show who never shouts.
 
 ---
 

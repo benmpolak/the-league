@@ -6,7 +6,7 @@
     "1. node scripts/render_pods.js --voices     ← the ids in YOUR library",
     "2. node scripts/render_pods.js --audition   ← all of them, same line, to compare",
     "3. paste the id you picked into \"voice\" below, per character",
-    "4. node scripts/render_pods.js              ← renders everyone but Howard",
+    "4. node scripts/render_pods.js              ← renders everyone",
     "",
     "ElevenLabs IGNORES \"direction\" — it is kept because it says what the",
     "character is meant to sound like, which is what you cast against. The",
@@ -15,9 +15,16 @@
     "voice's own manner and high can tip into parody, which for talkTROUGH",
     "is the point.",
     "",
-    "Howard is the talkTROUGH phone-in caller and is \"human\": true, so he is",
-    "never rendered, never overwritten and never billed. `--parts` prints his",
-    "script and the filenames to save the recordings as."
+    "HOWARD is the talkTROUGH phone-in caller and is voiced by a real person.",
+    "Record them once and CLONE it — with their consent —",
+    "",
+    "    node scripts/render_pods.js --clone \"Howard\" sample1.m4a sample2.m4a",
+    "",
+    "which writes the cloned voice id into \"voice\" below. Every week's line",
+    "then comes out in their voice with nobody recording again, which matters",
+    "because the weekly episodes are generated fresh and his question is new",
+    "every time. Hand-recorded takes still win wherever they exist and a",
+    "render can never overwrite one, --force or not."
   ],
   "cast": {
     "Rax Mushden": {
@@ -93,7 +100,12 @@
     "Howard": {
       "voice": "",
       "human": true,
-      "direction": "An older, slower, unhurried caller on a hands-free in a van. Flat, patient, entirely sincere, never shouts. Talks past the interruption."
+      "direction": "An older, slower, unhurried caller on a hands-free in a van. Flat, patient, entirely sincere, never shouts. Talks past the interruption.",
+      "settings": {
+        "stability": 0.7,
+        "similarity": 0.8,
+        "style": 0.15
+      }
     }
   },
   "adDirection": {
