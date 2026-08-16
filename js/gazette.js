@@ -712,14 +712,27 @@ window.Gazette = (() => {
         <p>${esc('Fabrizio Marano: "Here we go soon, maybe. Not yet. But the feeling? The feeling is there."')} &#128680;</p>
         <p class="prog-match-detail">${esc('The draft, it should be noted, is a snake format. The Committee insists this is a coincidence.')}</p>
       </div>`);
-      // the want-away sagas (Ben, 16 Aug: Levy and Geller "leaving")
+      // the want-away saga (Ben, 16 Aug; Geller pardoned same day — he logged
+      // in. Levy is the last of the twelve yet to report for pre-season)
       out.push(`<div class="prog-story">
-        <div class="prog-head">LEVY AND GELLER &ldquo;CONSIDERING THEIR FUTURES&rdquo;</div>
+        <div class="prog-head">LEVY &ldquo;CONSIDERING HIS FUTURE&rdquo;</div>
         <p>${esc('Ben Levy has stopped short of committing his future to Atlético Benfield, with those in the know saying he is weighing up his options and wants a new challenge. Asked to rule out a move, Levy ruled nothing in and nothing out, which the back pages have taken as a come-and-get-me plea to literally any other league.')}</p>
-        <p>${esc('Daniel Geller is also understood to be unsettled. Geldog FC\'s stance is clear: not for sale at any price, no bids have been received, and none are expected — there being no other league, no transfer system and no fee structure. The fifty pounds remains non-refundable.')}</p>
+        <p>${esc('The detail doing the damage: eleven of the twelve have reported for pre-season at the new ground. Levy has not. Those close to the dressing room say the silence is being read the only way silence can be read. Atlético Benfield\'s stance is clear — he is going nowhere, not least because there is nowhere to go and the fifty pounds is non-refundable.')}</p>
         <p class="prog-match-detail">${esc('The Committee will not be drawn on speculation. The Gazette understands the speculation is ours.')}</p>
         <div class="prog-by">Henry Wanton</div>
       </div>`);
+      // Geller backed by the owners (Ben, 16 Aug) — sponsor read live so the
+      // story survives a rebrand at the Revolut Arena
+      const geller = state.managers.find(x => /geller/i.test(managerName(x.id)));
+      const backers = geller && typeof sponsorFor === 'function' ? sponsorFor(geller.id) : null;
+      if (geller && backers) {
+        out.push(`<div class="prog-story">
+          <div class="prog-head">${esc(backers.toUpperCase())} BACK GELLER IN THE MARKET</div>
+          <p>${esc(`Better news at ${teamName(geller.id)}, where principal partners ${backers} have moved to back Daniel Geller in the transfer market. The owners are understood to have made significant funds available — a war chest, in the traditional denomination — and told Geller to go and get his targets.`)}</p>
+          <p>${esc('That every player in the draft is free, and that no fee has ever been paid for anything, is regarded inside the club as a technicality. "It is about the statement," said a source close to the board. The statement is that there is money, and that it will not be spent, because it cannot be.')}</p>
+          <div class="prog-by">David Ornberg, wire desk</div>
+        </div>`);
+      }
       // last season, as the record book has it (the title is the playoffs)
       out.push(`<div class="prog-story">
         <div class="prog-head">CHAMPIONS UNTIL PROVEN OTHERWISE</div>
@@ -768,6 +781,30 @@ window.Gazette = (() => {
       // one-liners read as mad-libs next to the specific stories. Pre-draft
       // there is no real per-club material; per-club colour returns when the
       // weekly editions have actual squads and results to bite on.
+      // real data seams (Ben, 16 Aug): the deals done and the wars declared
+      // before a ball is kicked — read live from the club records
+      const sponsored = state.managers
+        .map(x => ({ t: teamName(x.id), s: typeof sponsorFor === 'function' ? sponsorFor(x.id) : null }))
+        .filter(x => x.s);
+      if (sponsored.length >= 2) {
+        out.push(`<div class="prog-sec">The Commercial Register</div><p>${esc(`The commercial department reports a record window. Principal partnerships agreed to date: ${sponsored.map(x => `${x.s} at ${x.t}`).join('; ')}. Terms undisclosed, chiefly because there are none. The Committee takes its usual cut of nothing.`)}</p>`);
+      }
+      const seen = new Set();
+      const mutual = [], oneway = [];
+      for (const x of state.managers) {
+        for (const r of rivalsOf(x.id)) {
+          const key = [Math.min(x.id, r), Math.max(x.id, r)].join(':');
+          if (rivalsOf(r).includes(x.id)) {
+            if (!seen.has(key)) { seen.add(key); mutual.push(`${teamName(x.id)} v ${teamName(r)}`); }
+          } else oneway.push(`${teamName(x.id)} have papers on ${teamName(r)}, who remain officially unaware`);
+        }
+      }
+      if (mutual.length || oneway.length) {
+        const bits = [];
+        if (mutual.length) bits.push(`Fully reciprocated and constitutionally binding: ${mutual.join('; ')} — clásicos, the lot.`);
+        if (oneway.length) bits.push(`Declared unilaterally: ${oneway.join('; ')}.`);
+        out.push(`<div class="prog-sec">The Rivalry Register</div><p>${esc(`War has been declared before a ball has been kicked. ${bits.join(' ')} The Committee notes that rivalry declarations cannot be withdrawn, only regretted.`)}</p>`);
+      }
       if (formers.length) out.push(`<div class="prog-sec">The Rumour Mill</div><p>${esc(`Also linked with returns this window: ${formers.join(', ')}. The Gazette has verified none of these and printed all of them.`)}</p>`);
       // midweek listings (Ian's commission, 16 Aug)
       out.push(`<div class="prog-sec">Midweek on the Overcunt</div><p>${esc('Tuesday: the panel names its combined XI of players they sold. Wednesday: forty minutes on whether 44–40 is a bad result (it is not — it is a great result). Thursday: emergency pod if anybody\'s waiver request is processed. All episodes recorded in a garage the production team continue to describe as "iconic".')}</p>`);
