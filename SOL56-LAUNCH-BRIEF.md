@@ -170,5 +170,37 @@ Attack the usual way: these are cosmetic, so the ONLY interesting
 failure is a render() wedge or a selector another feature depended on.
 `grep` for anything still querying the old span-flex fixture markup.
 
+## 8. ADDENDUM 16 Aug — post-verdict changes; re-verify before draft night
+
+Your 14 Aug GO predates two more days of work. The deployed server delta
+is small but real; the client delta is large but cosmetic/lore. Focus:
+
+- **DEPLOYED functions changes** (`b8be15f`, all four functions updated):
+  timewaste is now ONE per manager at +30s (was 2×60 — client, server and
+  the Committee's charge XXI all moved; check the pair can't drift);
+  importState's manager allow-list gained `'crest'` (your P2 — verify the
+  round-trip test now honestly carries a crest, and that nothing else in
+  the allow-list regressed); client waiverRunDue lookback 48h→14d matches
+  the engine (your P3). Emulator functions suite is 320.
+- **Marc's Klaxon lore** (direct to main, client-only): Underage Player
+  Klaxon ×2 + "Am I Sure That's The Right One" Klaxon / DMC register in
+  lore.js + app.js. Audit as colour: can any of it wedge render()?
+- **Gazette press corps + THE SEASON PREVIEW** (`1b55e55`…`c74f59a`):
+  GAZETTE_PRESS in lore.js; bylines and Deals Desk scoop lines in
+  gazette.js via its own hash() — CONFIRM zero shared-RNG calls (mockparity
+  is the tripwire) and esc() on every dynamic string. Gazette.preview() =
+  edition zero: prints whenever nothing is settled, retires itself after
+  GW1 — verify it cannot shadow a real edition and that a hostile team
+  name cannot inject through the preview (The Twelve, Surveyed prints all
+  twelve team/manager names).
+- **UI**: Waiver Order tab rebuilt (pool-table + business-feed reuse);
+  phone header season line (.brand-season/.brand-sub::after); phone
+  autopick drawer slimmed (CSS only); 320px fixes (GW pager flex:none,
+  fx-name overflow-wrap). Sweep for selector dependencies.
+- The draft-night question is UNCHANGED and now urgent: re-run the
+  draft-to-first-waiver arc on the emulator + sandbox at THIS head and
+  re-issue the verdict and the Chairman's runbook. Note the runbook's
+  timewaste line should now read one × 30s.
+
 Findings as always. One-word verdicts: REAL LEAGUE / SANDBOX. Then the
 runbook.
