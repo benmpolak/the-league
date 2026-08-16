@@ -1739,7 +1739,7 @@ function viewDirectory() {
         ${sponsorFor(mid) ? `<span class="muted dir-line">Principal partner: ${esc(sponsorFor(mid))}</span>` : ''}
         ${gafferFor(mid) ? `<span class="dir-line">${gafferChip(mid)}</span>` : ''}
         <span class="dir-line"><span class="tag" style="font-size:10.5px">&#128227; ${esc(mood.t)}</span></span>
-        ${dirRivals.length ? `<span class="dir-line" style="font-size:11px">Rival${dirRivals.length === 1 ? '' : 's'}: ${dirRivals.map(r => `${teamTag(r)} ${derbyTag(mid, r)}`).join(' ')}</span>` : ''}
+        ${dirRivals.length ? `<span class="dir-rivals"><span class="dir-rivals-h">Rival${dirRivals.length === 1 ? '' : 's'}</span>${dirRivals.map(r => `<span class="dir-rival"><span class="dir-rival-who">${teamTag(r)}</span>${derbyTag(mid, r)}</span>`).join('')}</span>` : ''}
         ${opened ? '' : '<span class="muted dir-line" style="font-style:italic">Office unopened</span>'}
       </div>
     </button>`;
