@@ -279,10 +279,40 @@ draft night. The design is settled — do not re-litigate, just build:
   ("the cuntent is too good not to use") but browser/robot voices are
   "too bad to use". Agreed in chat: pay for proper voices, get it running
   now, improve later. The plan:
-  - **ElevenLabs, Starter tier (~£4/$5 a month) first** — Marc's "fiver".
-    Upgrade to Creator (~£17/$22, Marc's "20 quid") only if the monthly
-    credit allowance or voice quality forces it. Ben pays and holds the
-    API key.
+  - **ElevenLabs, Starter tier — DONE (16 Aug eve, £4.61/mo, Ben's
+    account).** Upgrade to Creator (~£17/$22, Marc's "20 quid") only if
+    the monthly credit allowance or voice quality forces it.
+  - **WHERE THINGS ARE (for Marc's AI — set up 16 Aug eve):**
+    - API key: created ("podcunt-render", scoped to Text-to-Speech +
+      Voices-read only). It lives on Ben's machine at
+      `~/.config/the-league/elevenlabs.env` — Ben sends it to Marc
+      PRIVATELY. The render script must read it from the
+      `ELEVENLABS_API_KEY` environment variable. Never in the repo.
+    - Voices are cast, added to the account, and smoke-tested (four
+      audition clips rendered fine on 16 Aug). Voice IDs are not secrets;
+      hardcode them in the render config:
+      | Host | Library voice | voice_id |
+      |---|---|---|
+      | Keys (talkTROUGH) | Andy — gruff, raspy | `kVBPcEMsUF1nsAO1oNWw` |
+      | Grey (talkTROUGH) | Chris — Scottish Casual | `csXxiUN2BUFflsCaDxPM` |
+      | Rax Mushden (Gazette FW) | Marcus — SE England Indie | `MLSOvrM2Tyi3okEfyOiI` |
+      | North Manc dreg (guest/wildcard) | Jay — Proper Mancunian | `c8MZcZcr0JnMAwkwnTIu` |
+      Panel guests can reuse the account's premade British voices free of
+      casting work: George `JBFqnCBsd6RMkjVDRZzb` (warm storyteller —
+      Bilson?), Daniel `onwK4e9ZLuTAKqWW03F9` (steady broadcaster —
+      continuity/listings), Lily `pFZP5JQG7iQjIQuC4Bku`, Alice
+      `Xb7hH8MSUJpSbSDYk0k2`.
+    - Render call that's proven to work: `POST
+      https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=mp3_44100_128`
+      with header `xi-api-key`, body `{text, model_id:
+      "eleven_flash_v2_5", voice_settings: {stability: 0.5,
+      similarity_boost: 0.75}}`. Flash keeps two weekly shows inside
+      Starter's 30k credits — don't switch the whole render to the
+      flagship model without checking the budget.
+    - Stitching: prefer ffmpeg (concat demuxer, re-encode once at the
+      end). Naive `cat` of same-format mp3s plays but reports broken
+      durations — don't ship that. Marcus's voice has Live Moderation
+      enabled (slightly slower renders; harmless for a batch job).
   - **Audio is PRE-RENDERED, not live**: a script (Marc's side, run
     locally) takes the deterministic transcript, calls ElevenLabs per
     line with each host's voice id, stitches one mp3 per episode
