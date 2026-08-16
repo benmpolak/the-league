@@ -973,8 +973,13 @@ tr.st-red .pname { color: #ff9c9c; }
   .on-clock .oc-btns .btn { width: 100%; padding: 11px 8px; }
   .brand { gap: 7px; min-width: 0; flex: 1; }
   .brand-crest { width: 38px; height: 38px; border-radius: 50%; }
+  /* Ben, 16 Aug: the season was clipping against the identity chip — on
+     phones it moves to its own line under the name, always whole */
   .brand h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-  .brand-sub { display: none; }
+  .brand h1 .brand-season { display: none; }
+  .brand-sub { display: block; font-size: 10px; margin: 0; }
+  .brand-sub .sub-est { display: none; }
+  .brand-sub::after { content: '2026/27'; color: var(--accent); font-weight: 600; }
   .sync-txt { display: none; }
   .pitch-hint { display: none; }
   /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
