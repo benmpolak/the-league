@@ -240,6 +240,38 @@ window.Podcast = (() => {
     return { shared, duels: duels.slice(0, 2) };
   }
 
+  /* ---------- how it's said, as opposed to how it's spelt ----------
+     Marc, 18 Aug: "the word TalkTrough isnt pronounced correctly, its trough
+     as in a pig trough and needs to be said that way."
+
+     Every engine we've tried reads "trough" as "throo" or "trow" — it's a
+     genuinely irregular English spelling and the -ough words all disagree with
+     each other. The fix is to hand the SPEAKER a respelling while the reader
+     still sees the real word: captions, titles and the page are untouched,
+     only the audio changes. Applies to the free-agent pool too, since that's
+     the same word and the same joke.
+
+     Anything added here should be a pronunciation, not a rewrite. If a line
+     needs different words, change the line. */
+  const SAY_AS = [
+    [/\btalkTROUGH\b/g, 'talk TROFF'],
+    [/\btalkTrough\b/g, 'talk TROFF'],
+    [/\bTROUGH\b/g, 'TROFF'],
+    [/\bTrough\b/g, 'Troff'],
+    [/\btrough\b/g, 'troff'],
+  ];
+  const sayable = t => SAY_AS.reduce((s, [re, to]) => s.replace(re, to), String(t == null ? '' : t));
+
+  /* A line's identity is WHAT IS SAID, not where it sits in the running order.
+     Recordings used to be filed by block index, which meant moving the ad
+     break — a one-line change (Marc, 18 Aug) — silently re-pointed every
+     rendered file at somebody else's words. Keying on the text instead means
+     re-ordering is free, and re-wording a line re-cuts that line and nothing
+     else. Worth real money: a full re-render is ~6,000 characters, a changed
+     line is about 100. */
+  const lineKey = b => (!b || b.t === 'theme') ? null
+    : hash(sayable(b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text)).toString(36);
+
   /* ---------- episode assembly ---------- */
   const theme = show => ({ t: 'theme', show, text: show === 'tt' ? '[BRASS STING. AIRHORN. A MAN SHOUTING OVER BOTH]' : '[SPARSE PIANO. A SINGLE CELLO. SOMEBODY SIGHS]' });
   function adBreak(show, key, n) {
@@ -247,6 +279,66 @@ window.Podcast = (() => {
     if (!inv.length) return null;
     const ad = inv[hash(key + ':ad' + n) % inv.length];
     return { t: 'ad', show, brand: ad.brand, text: ad.read };
+  }
+
+  /* ---- the ad break ----
+     Marc, 18 Aug: "the adverts need to be introduced with something like 'now
+     for an ad break and well be back after' or something better than that. i
+     think the adds should be back to back and in the middle."
+
+     Right on both counts. Adverts that arrive unannounced read as a glitch,
+     and one advert stranded in each half reads as two glitches. Real radio
+     goes into a break, plays the lot, and comes back — so: a host takes us
+     in, both ads run together, a host brings us back. One break, in the
+     middle, exactly where a listener expects to be sold something.
+
+     The in and out are in each show's own voice, because the way a station
+     handles its adverts says more about it than the adverts do. */
+  const AD_IN = {
+    gfw: [
+      'We\'ll pause there for a moment. This programme is supported by advertising, which we\'d rather it wasn\'t, and we\'ll be back straight after.',
+      'A short break now, and I should say we don\'t choose these. Back in a moment.',
+      'Let\'s take our break there. Two messages, and then the second half.',
+    ],
+    tt: [
+      'RIGHT. Adverts. Don\'t go anywhere, we\'ll be back in two minutes and we\'ve got a LOT more to get through.',
+      'We\'ll take a quick break. STAY WITH US, because after this we\'re going STRAIGHT back into it.',
+      'Adverts now. Two of them, back to back, and then we\'re straight back. DON\'T TOUCH THAT DIAL.',
+    ],
+  };
+  const AD_OUT = {
+    gfw: [
+      'And we\'re back. Thank you for your patience with that.',
+      'Right — back with us, and back to the football.',
+      'That\'s the advertising done. On we go.',
+    ],
+    tt: [
+      'AND WE\'RE BACK.',
+      'RIGHT. We\'re back, and I\'ve not calmed down.',
+      'Back with you. Where were we? I\'ll tell you where we were.',
+    ],
+  };
+  // one break, both ads, host in and host out
+  function adPod(showId, key) {
+    const a1 = adBreak(showId, key, 1), a2 = adBreak(showId, key, 2);
+    if (!a1 && !a2) return [];
+    const host = SHOWS[showId].host;
+    const out = [say(host, pick(AD_IN[showId] || AD_IN.gfw, key + ':adin'))];
+    if (a1) out.push(a1);
+    // two ads from a two-ad inventory can collide; one advert twice is worse
+    // than one advert once
+    if (a2 && (!a1 || a2.brand !== a1.brand)) out.push(a2);
+    out.push(say(host, pick(AD_OUT[showId] || AD_OUT.gfw, key + ':adout')));
+    return out;
+  }
+  /* Drop the break into the middle of a finished episode. Measured across the
+     spoken blocks, and kept clear of the opening exchange and the sign-off so
+     it never lands on "and that's the show". */
+  function insertAdPod(showId, key, B) {
+    const pod = adPod(showId, key);
+    if (!pod.length) return;
+    const at = Math.max(3, Math.min(B.length - 2, Math.round(B.length / 2)));
+    B.splice(at, 0, ...pod);
   }
   const say = (who, text) => ({ t: 'speech', who, text });
 
@@ -271,6 +363,17 @@ window.Podcast = (() => {
     'Richard. Howard, Prestwich. Long-time listener. First time I\'ve rung.',
     'Yeah, alright Richard. Long-time listener this end. First-time caller.',
   ];
+  // ...and the hinge into the point itself, which he never quite makes cleanly
+  const HOWARD_THOUGHT = [
+    'I\'ll ring them, because somebody has to say it.',
+    'that\'s it, I\'m ringing in.',
+    'nobody on that show has mentioned this once.',
+    'I bet not one of them has thought about that.',
+    'somebody wants to tell them.',
+    'I\'ll have to say something, because they won\'t.',
+    'why has nobody said this?',
+    'that needs saying on the radio, that does.',
+  ];
   const HOWARD_SIGNOFF = [
     'Anyway, I\'ll hang up and listen.',
     'I\'ll take my answer off air.',
@@ -278,14 +381,35 @@ window.Podcast = (() => {
     'Anyway. I\'ll get off the line, you\'ve got a show to do.',
     'I\'ll hang up now. Don\'t cut me off, I\'m going anyway.',
   ];
-  // the bit where a caller says something completely unrelated first
-  const HOWARD_PREAMBLE = [
-    'I\'ve been up since four with the van, so bear with me.',
-    'I\'m on the hands-free so if I go, I\'ve gone.',
-    'Quick one, and I know you\'re busy.',
-    'I\'ll be brief because I\'m outside a Screwfix.',
-    'The wife says I go on, so I\'ll keep it short.',
-    'I\'ve had this in my head all week, right.',
+  /* Marc, 18 Aug: "id like howard to introduce his question comment with a
+     standard phrase structure, essentially that he was doimg an inane activity
+     (with a north manchester, possibly jewish reference) when he thought the
+     thing he has called up to say."
+
+     So it is always the same shape — I was DOING SOMETHING DULL SOMEWHERE
+     SPECIFIC when I thought X — and the something and the somewhere change
+     every time. The specificity is the joke: nobody has ever had a thought
+     about fantasy football at a more ordinary moment than Howard. Prestwich
+     and the roads around it, real places, ordinary errands, said fondly.
+     Keep it that way if you add more — it works because it is affectionate
+     and precise, and it stops working the second it is a caricature. */
+  const HOWARD_DOING = [
+    'walking past the Shrubberies',
+    'queuing in Kosher King on Bury Old Road',
+    'waiting for the wife outside Titanics',
+    'putting the bins out',
+    'parked up on Sedgley Park Road doing nothing in particular',
+    'walking the dog round Heaton Park',
+    'stood in the queue at the bagel place on Kings Road',
+    'defrosting the freezer',
+    'sat in the car outside shul waiting for my son to come out',
+    'looking for a parking space on Bury New Road',
+    'up a ladder doing the gutters',
+    'having my tea',
+    'on the 135 going into town',
+    'waiting in for a delivery that never came',
+    'picking up a prescription in Prestwich village',
+    'watching the wife\'s programme with the sound off',
   ];
   /* Keys taking the call. He remembers him, which is the joke. */
   function howardIn(key, kind, question) {
@@ -301,9 +425,10 @@ window.Podcast = (() => {
         'Howard\'s back. Howard from Prestwich, you\'re on talkTROUGH.',
         'We\'ll take one call. Howard, Prestwich. You\'re on talkTROUGH.',
       ], key + ':hi');
+    // always the same shape: I was [dull thing] when I thought [the point]
     const body = [
       pick(HOWARD_OPENER, key + ':ho'),
-      pick(HOWARD_PREAMBLE, key + ':hp'),
+      `I was ${pick(HOWARD_DOING, key + ':hd')} when I thought, ${pick(HOWARD_THOUGHT, key + ':ht')}`,
       question,
       pick(HOWARD_SIGNOFF, key + ':hs'),
     ].join(' ');
@@ -334,6 +459,10 @@ window.Podcast = (() => {
     if (!meta) return null;
     const built = meta(showId, key, gw, B);
     if (!built) return null;
+    /* The break goes in HERE rather than inside each body, so all eight
+       episodes get it in the same place and no future segment can quietly
+       drift it back to a third of the way through. */
+    insertAdPod(showId, key, B);
     return { id: `${showId}-${kind}${gw != null ? '-gw' + (gw + 1) : ''}`, show, kind, gw,
       title: built.title, dek: built.dek, blocks: B, words: B.reduce((t, b) => t + String(b.text || '').split(/\s+/).length, 0) };
   }
@@ -359,12 +488,10 @@ window.Podcast = (() => {
       B.push(say('Rax Mushden', 'Let\'s start with the platform, because a great deal has changed and I think it deserves engaging with seriously.'));
       for (const c of changes) B.push(say(c === changes[0] ? P.tactics : (c === changes[1] ? P.colour : 'Rax Mushden'), `So — ${c.what} — ${c.gfw}`));
       B.push(say('Rax Mushden', `Something we should say plainly: this game evolves every single year, and that's healthy. A league that refuses to change its own rules isn't preserving tradition, it's just refusing to look at itself, ${pick(GFW_HEDGE, key + ':h1')}.`));
-      const ad1 = adBreak(showId, key, 1); if (ad1) B.push(ad1);
       B.push(say('Rax Mushden', `Last season, then. ${top[0].p.name} finished top of the pile on ${top[0].pts} — with ${top[1].p.name} and ${top[2].p.name} behind him.`));
       B.push(say(P.tactics, `And the warning attached to those numbers is that they are a record of what happened, not a promise about what will. A forward on ${top[0].pts} is being priced by this room as though last season were a season ticket. It is not. It is a receipt.`));
       B.push(say(P.colour, 'There\'s also the matter of who these men play for, and who pays for the shirts they play in. Half this league\'s squads will be sponsored by a betting company or a petrostate before the first kick-off, and we will all say nothing, because the alternative is having to think about it on a Saturday.'));
       B.push(say('Rax Mushden', 'We will come back to that, and I mean it.'));
-      const ad2 = adBreak(showId, key, 2); if (ad2) B.push(ad2);
       B.push(say('Rax Mushden', `Favourites. ${favs.map(f => f.team || f.name).join(' and ')} — both previous champions, both entirely capable of it again.`));
       B.push(say(P.spain, 'Though I would gently point out that the previous champion has won this league from the middle of the draft order more than once, which suggests the order matters less than the room believes.'));
       B.push(say('Rax Mushden', 'That\'s the show. Draft well, be kind to each other, and remember that it is August and nothing has gone wrong yet. Goodbye.'));
@@ -373,19 +500,17 @@ window.Podcast = (() => {
     B.push(say('Richard Keyes', 'RIGHT. talkTROUGH. Richard Keyes with you, and alongside me, as always, a man who scored goals for a living — Andy Grey.'));
     B.push(say('Andy Grey', 'Richard.'));
     B.push(say('Richard Keyes', 'And a young man who played at a very good level and will not let it go — Jamie.'));
-    B.push(say('Jamie O’Hara-Hara', 'I played at a VERY good level, Richard, and I\'ll tell you now, this league has gone SOFT.'));
+    B.push(say('Jamie O’Hara-Hara', 'I played at a VERY GOOD LEVEL, Richard, and I\'ll tell you now, this league has gone SOFT. SOFT!'));
     B.push(say('Richard Keyes', 'Well let\'s get into it, because they have CHANGED THINGS AGAIN.'));
     for (const c of changes) B.push(say(c === changes[0] ? 'Andy Grey' : (c === changes[1] ? 'Jamie O’Hara-Hara' : 'Richard Keyes'), `${c.what.toUpperCase()}. ${c.tt}`));
     B.push(say('Andy Grey', 'I\'ll tell you what it is, Richard. It\'s WOKE NONSENSE. You used to fill your team in on a coupon, put a STAMP on it, and POST IT. Transfers and all, off to an address in Essex. Then you waited for the paper on Monday to find out how you\'d done. If it never got there, you had a WORD WITH YOURSELF and you didn\'t do it again.'));
     B.push(say('Richard Keyes', `And nobody died, Andy. NOBODY DIED. ${pick(TT_ROAR, key + ':r1')}.`));
-    const a1 = adBreak(showId, key, 1); if (a1) B.push(a1);
     B.push(say('Richard Keyes', `Last season. ${top[0].p.name}, ${top[0].pts} points. Best in the league by a MILE.`));
     B.push(say('Andy Grey', `And he did it WITHOUT a computer telling him where to stand. ${top[1].p.name} and ${top[2].p.name} behind him and I\'d take all three tomorrow.`));
-    B.push(say('Jamie O’Hara-Hara', 'See for me, and I played at a good level, the problem with this league is there\'s not enough BRITISH players getting drafted. Managers should have to pick FIVE. Minimum.'));
+    B.push(say('Jamie O’Hara-Hara', 'See FOR ME, and I played at a good level, the problem with this league is there\'s not enough BRITISH players getting drafted. Managers should have to pick FIVE. FIVE. MINIMUM.'));
     B.push(say('Andy Grey', 'And they should show a bit more RESPECT around Remembrance weekend, but nobody wants to hear it from me.'));
     howardIn(key, 'pilot', `My question is about this draft. Everyone keeps going on about ${top[0].p.name} — ${top[0].pts} points, marvellous, well done. But he was ${top[0].pts} points LAST year, wasn't he. You can't draft last year. My lad's got him top of his list and I've told him, I said, you'll be the one paying for that in November. Nobody ever won anything drafting a man off a receipt.`)
       .forEach(b => B.push(b));
-    const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
     B.push(say('Richard Keyes', `Who wins it? I'll tell you who wins it. ${(favs[0] || {}).team || 'somebody'}. Previous champion, knows how to get over the line, WRITE IT DOWN.`));
     B.push(say('Jamie O’Hara-Hara', `I'll go ${(favs[1] || {}).team || 'the other lot'}, and if I'm wrong I'll come on here and say I was wrong, which I WON'T BE.`));
     B.push(say('Richard Keyes', 'Draft\'s coming. We\'ll be here the moment it finishes. Don\'t go anywhere. Actually do, we\'re off air.'));
@@ -405,7 +530,6 @@ window.Podcast = (() => {
       B.push(say(P.tactics, `The headline, and I'd put it carefully: ${teamName(best.mid)} have assembled the strongest paper squad — a grade A, on last season's evidence. Whether that survives contact with a Tuesday in November is a separate question.`));
       if (value.length) B.push(say(P.tactics, `The pick of the draft for me was ${value[0].p.name} at number ${value[0].n}. On last season's returns he had no business being there, and ${teamName(value[0].managerId)} simply waited.`));
       if (reach.length) B.push(say(P.colour, `Whereas ${teamName(reach[0].managerId)} took ${reach[0].p.name} at ${reach[0].n}, which is early, and which I suspect was an act of the heart rather than the head. I don't say that unkindly. Most of the good things people do are.`));
-      const ad1 = adBreak(showId, key, 1); if (ad1) B.push(ad1);
       B.push(say('Rax Mushden', 'Grades, then, and with the caveat that grading a draft in August is a form of entertainment rather than analysis.'));
       B.push(say(P.tactics, table.slice(0, 4).map(r => `${teamName(r.mid)}, ${r.grade}`).join('. ') + '. Those four have depth as well as a top end, which is the thing that survives an injury.'));
       B.push(say(P.tactics, table.slice(4, 8).map(r => `${teamName(r.mid)}, ${r.grade}`).join('. ') + '. All perfectly sound, all one bad month from a rebuild.'));
@@ -415,7 +539,6 @@ window.Podcast = (() => {
       const lowMan = squadOf(worst.mid).slice().sort((x, y) => lastSeasonPts(y) - lastSeasonPts(x))[0];
       if (topMan) B.push(say(P.tactics, `${teamName(best.mid)} are built around ${topMan.name}, and that is both the strength and the risk. A squad with one obvious best player is a squad with one obvious way to fail.`));
       if (lowMan) B.push(say(P.colour, `Whereas ${teamName(worst.mid)} lead with ${lowMan.name}, which is a perfectly respectable place to start and a difficult place to finish.`));
-      const ad2 = adBreak(showId, key, 2); if (ad2) B.push(ad2);
       B.push(say(P.spain, 'From Spain, the only observation worth making: every one of these squads will be unrecognisable by Christmas. The draft is the beginning of the argument, not the end of it.'));
       B.push(say('Rax Mushden', 'Well said. Enjoy your squads while they are still theoretical. Goodbye.'));
       return { title: 'Draft Night: the twelve squads', dek: 'grades, value, and one act of the heart' };
@@ -424,18 +547,16 @@ window.Podcast = (() => {
     B.push(say('Andy Grey', `${(teamName(best.mid) || '').toUpperCase()}. Not close, Richard. NOT CLOSE. That is the best squad in this league and everybody watching knows it.`));
     B.push(say('Richard Keyes', `And who has FLOPPED, Andy? Because somebody always does.`));
     B.push(say('Andy Grey', `${(teamName(worst.mid) || '').toUpperCase()}. What was that? WHAT WAS THAT. I've seen some drafts, Richard, and that is a shambles.`));
-    B.push(say('Jamie O’Hara-Hara', `He's a FRAUD, Andy. I'll say it. FRAUD.`));
-    const a1 = adBreak(showId, key, 1); if (a1) B.push(a1);
+    B.push(say('Jamie O’Hara-Hara', `He's a FRAUD, Andy. I'll SAY IT. FRAUD.`));
     if (value.length) B.push(say('Andy Grey', `${value[0].p.name} at pick ${value[0].n} though — THAT is a proper bit of business. ${pick(TT_ROAR, key + ':r2')}.`));
-    if (value[1]) B.push(say('Jamie O’Hara-Hara', `And ${value[1].p.name} at ${value[1].n}. I'd have gone THREE ROUNDS EARLIER and I'd have been right.`));
+    if (value[1]) B.push(say('Jamie O’Hara-Hara', `And ${value[1].p.name} at ${value[1].n}?! I'd have gone THREE ROUNDS EARLIER and I'd have been RIGHT.`));
     if (reach.length) B.push(say('Richard Keyes', `And ${reach[0].p.name} at ${reach[0].n}?! WHAT ARE YOU DOING. You could have had him THREE ROUNDS LATER and everybody in that room knew it.`));
     if (reach[1]) B.push(say('Andy Grey', `${reach[1].p.name} at ${reach[1].n} as well. They've panicked, Richard. You can SMELL a panic pick.`));
     B.push(say('Richard Keyes', `And the ones in the middle? ${table.slice(4, 8).map(r => (teamName(r.mid) || '').toUpperCase()).join(', ')}. NOTHING SIDES. Not good enough to win it, not bad enough to be interesting.`));
-    B.push(say('Jamie O’Hara-Hara', 'That\'s where you get relegated from. MENTALLY.'));
+    B.push(say('Jamie O’Hara-Hara', 'That\'s where you get RELEGATED from. MENTALLY.'));
     howardIn(key, 'draft', `You've spent twenty minutes telling everyone ${teamName(best.mid)} have won the draft. They haven't won anything. They've won a LIST. ${reach.length ? `And you had a go at whoever took ${reach[0].p.name} at ${reach[0].n} — well, he wanted him, didn't he. That's the whole point of having a go.` : 'Nobody has kicked a ball yet.'} I've been doing this thirty-odd years and the fella who wins the draft never wins the league. Never.`)
       .forEach(b => B.push(b));
-    const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
-    B.push(say('Jamie O’Hara-Hara', 'And not enough British lads. AGAIN. I counted.'));
+    B.push(say('Jamie O’Hara-Hara', 'And NOT ENOUGH BRITISH LADS. AGAIN. I COUNTED.'));
     B.push(say('Andy Grey', `And I'll say this for nothing — the lad who's WON this draft has done it by taking the OBVIOUS player every single time. No cleverness. No spreadsheet. Just the best one left. ${pick(TT_ROAR, key + ':r5')}.`));
     B.push(say('Richard Keyes', 'That is what everybody has forgotten, Andy. TAKE THE BEST PLAYER.'));
     B.push(say('Richard Keyes', 'Gameweek one Friday. We\'ll be here. GET IN.'));
@@ -473,7 +594,6 @@ window.Podcast = (() => {
       if (starA && starB) {
         B.push(say(P.colour, `And the two men carrying the weight of it: ${starA.name} for ${teamName(a)}, ${starB.name} for ${teamName(b)}. Both will be watched this weekend by somebody who has no other stake in the match and will feel it far too personally.`));
       }
-      const ad1 = adBreak(showId, key, 1); if (ad1) B.push(ad1);
       B.push(say('Rax Mushden', 'Round the rest of the round, then.'));
       for (const [x, y] of others) {
         const m2 = matchups(x, y, i);
@@ -489,7 +609,6 @@ window.Podcast = (() => {
       }
       B.push(say(P.colour, 'The rest of the round is the usual quiet violence of a Saturday: eleven other men picking a goalkeeper on a hunch and then not sleeping about it.'));
       B.push(say(P.spain, 'From here it looks like a weekend where the bench decides three of the six. It usually is, and nobody ever believes it until Sunday evening.'));
-      const ad2 = adBreak(showId, key, 2); if (ad2) B.push(ad2);
       B.push(say('Rax Mushden', 'Set your line-ups, be honest with yourselves about your bench, and we\'ll be back when it\'s all gone wrong. Goodbye.'));
       return { title: `GW${gwN} preview`, dek: 'the fixture, the overlap, and the duel that settles it' };
     }
@@ -499,9 +618,8 @@ window.Podcast = (() => {
       B.push(say('Andy Grey', `And it's a proper old-fashioned tear-up, Richard. ${d.att.name} against ${d.def.name}. Centre-forward against a defender. THAT is football. None of your overlaps. TWO MEN AND A BALL.`));
     }
     if (mu.shared.length) B.push(say('Richard Keyes', `They've BOTH got ${mu.shared[0]} players, Andy. What's the point of that? WHAT IS THE POINT.`));
-    B.push(say('Jamie O’Hara-Hara', 'For me, and I played at a good level, whoever benches the wrong man here gets absolutely BURIED and deserves it.'));
+    B.push(say('Jamie O’Hara-Hara', 'For me, and I played at a good level, whoever benches the wrong man here gets absolutely BURIED and DESERVES IT.'));
     if (starA && starB) B.push(say('Richard Keyes', `${(starA.name || '').toUpperCase()} for one, ${(starB.name || '').toUpperCase()} for the other. Two players. That is the whole game, Andy, and everything else is NOISE.`));
-    const a1 = adBreak(showId, key, 1); if (a1) B.push(a1);
     for (const [x, y] of others) {
       const m2 = matchups(x, y, i);
       const line = m2.duels.length
@@ -517,7 +635,6 @@ window.Podcast = (() => {
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'HOT TAKE TIME.'));
     B.push(say('Andy Grey', `HOT TAKE: ${(teamName(b) || '').toUpperCase()} do not have the bottle for this and I have been saying it since August. ${pick(TT_ROAR, key + ':r3')}.`));
-    const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
     B.push(say('Richard Keyes', 'Team news Saturday. Don\'t be a mug. GOODBYE.'));
     return { title: `GW${gwN}: THE BIG PREVIEW`, dek: 'one hot take, one tear-up, no overlaps' };
   }
@@ -552,30 +669,26 @@ window.Podcast = (() => {
       B.push(say(P.tactics, `Which is a good number, and I'd note it came in a week where the median was considerably lower — so this is a genuine outlier rather than everybody having a nice time at once.`));
       B.push(say('Rax Mushden', `The closest tie: ${teamName(closest.w)} beat ${teamName(closest.l)}, ${closest.hi} to ${closest.lo}.`));
       B.push(say(P.colour, `A ${closest.hi - closest.lo}-point margin is not a result, it is a rounding error with a winner attached. Somewhere a man is looking at his bench and doing arithmetic he will not enjoy.`));
-      const ad1 = adBreak(showId, key, 1); if (ad1) B.push(ad1);
       if (manOf) B.push(say(P.tactics, `The individual return of the week was ${manOf.p.name}, ${manOf.pts} points on his own. One player, in one weekend, worth more than some entire benches.`));
       B.push(say('Rax Mushden', `The round in full: ${results.map(r => `${teamName(r.w)} ${r.hi}, ${teamName(r.l)} ${r.lo}`).join('; ')}.`));
       B.push(say(P.tactics, `${widest.hi - widest.lo} points between ${teamName(widest.w)} and ${teamName(widest.l)} is the widest of the week, and margins that size are almost never about selection. They are about who happened to own a striker who scored twice.`));
       B.push(say(P.spain, `${teamName(bottom.mid)} finished bottom of the week on ${bottom.pts}. I would counsel against reading very much into one round. I would also counsel against saying that to him this evening.`));
-      const ad2 = adBreak(showId, key, 2); if (ad2) B.push(ad2);
       B.push(say('Rax Mushden', 'Waivers run Tuesday at ten. Be reasonable with yourselves until then. Goodbye.'));
       return { title: `GW${gwN} reviewed`, dek: 'an outlier, a rounding error, and a difficult evening' };
     }
     B.push(say('Richard Keyes', `GAMEWEEK ${gwN}. DONE. And ${(teamName(top.mid) || '').toUpperCase()} have put ${top.pts} on the board.`));
     B.push(say('Andy Grey', `That is a PROPER score, Richard. That is a man who picked his best eleven and didn't get clever.`));
     B.push(say('Richard Keyes', `${(teamName(closest.w) || '').toUpperCase()} nick it ${closest.hi}–${closest.lo}. By ${closest.hi - closest.lo}. ${pick(TT_ROAR, key + ':r4')}.`));
-    B.push(say('Jamie O’Hara-Hara', 'And that\'s the bench, that. That is ENTIRELY the bench.'));
-    const a1 = adBreak(showId, key, 1); if (a1) B.push(a1);
+    B.push(say('Jamie O’Hara-Hara', 'And that\'s the BENCH, that. That is ENTIRELY THE BENCH.'));
     B.push(say('Richard Keyes', `The rest of it: ${results.map(r => `${(teamName(r.w) || '').toUpperCase()} ${r.hi}, ${teamName(r.l)} ${r.lo}`).join('; ')}.`));
     B.push(say('Andy Grey', `And ${(teamName(widest.w) || '').toUpperCase()} by ${widest.hi - widest.lo}. That is not a defeat, Richard, that is a MESSAGE.`));
     if (manOf) B.push(say('Richard Keyes', `${(manOf.p.name || '').toUpperCase()}. ${manOf.pts} POINTS. On his own. THAT is a footballer and I don't care what the numbers men say about him.`));
-    B.push(say('Jamie O’Hara-Hara', 'HOT TAKE: half these lads are not even watching the games. They are watching the APP. Watch the FOOTBALL, son.'));
+    B.push(say('Jamie O’Hara-Hara', 'HOT TAKE: half these lads are not even WATCHING the games. They are watching the APP. WATCH THE FOOTBALL, SON.'));
     howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`)
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'RIGHT. FRAUD OF THE WEEK.'));
     B.push(say('Andy Grey', `${(teamName(bottom.mid) || '').toUpperCase()}. ${bottom.pts} points. In a full gameweek. I don't want to hear about injuries, I don't want to hear about fixtures — FRAUD OF THE WEEK, and he knows it.`));
     B.push(say('Jamie O’Hara-Hara', 'FRAUD.'));
-    const a2 = adBreak(showId, key, 2); if (a2) B.push(a2);
     B.push(say('Richard Keyes', 'Waivers Tuesday, ten o\'clock, which is STILL RIDICULOUS. See you Friday. GET IN.'));
     return { title: `GW${gwN}: FRAUD OF THE WEEK`, dek: 'somebody has been identified and it is not going away' };
   }
@@ -583,5 +696,5 @@ window.Podcast = (() => {
   const episode = (showId, kind, gw) => build(showId, kind, gw);
   const latest = (showId, now) => { const e = latestFor(showId, now); return e ? build(e.show, e.kind, e.gw) : null; };
 
-  return { SHOWS, VOICES, logoSvg, published, latest, episode, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
+  return { SHOWS, VOICES, logoSvg, published, latest, episode, sayable, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
 })();

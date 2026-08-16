@@ -7525,12 +7525,15 @@ async function podRecordings() {
   } catch { /* no recordings shipped yet — the browser voice carries it */ }
   return _podRec;
 }
-// the file for one line, or null if nobody has recorded it yet
-function podLineSrc(rec, epId, n) {
+/* The file for one line, or null if nobody has recorded it yet.
+   `key` is Podcast.lineKey(block) — the line's TEXT, not its position. Filing
+   by position meant moving the ad break re-pointed every rendered file at
+   somebody else's words (caught by the smoke test, 18 Aug). */
+function podLineSrc(rec, epId, key) {
   const lines = rec[epId];
-  if (!lines) return null;
-  if (lines === '*') return `audio/pod/${encodeURIComponent(epId)}/${n}.mp3`;
-  const f = lines[n] || lines[String(n)];
+  if (!lines || key == null) return null;
+  if (lines === '*') return `audio/pod/${encodeURIComponent(epId)}/${key}.mp3`;
+  const f = lines[key] || lines[String(key)];
   // the manifest names a file inside the episode's own folder and nothing else
   if (!f || typeof f !== 'string' || /[\/\\]|\.\./.test(f)) return null;
   return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}`;
@@ -7588,7 +7591,7 @@ function podcastSheet(id) {
   podRecordings().then(rec => {
     if (!ov.isConnected) return;
     const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
-    const cut = spoken.filter(([, n]) => podLineSrc(rec, ep.id, n)).length;
+    const cut = spoken.filter(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b))).length;
     if (!cut) return;
     const meta = ov.querySelector('#podMeta');
     if (meta) meta.textContent += cut === spoken.length ? ' · recorded' : ' · part recorded';
@@ -7705,7 +7708,8 @@ async function podPlay(ep, btn, nowEl) {
   const speak = (text, name, then) => {
     const v = cast[name] || pool[0] || null;
     const col = Podcast.VOICES[name] || { pitch: 1, rate: 1 };
-    const parts = podRuns(text);
+    // spelling is for the caption; this is for the mouth (trough → troff)
+    const parts = podRuns(Podcast.sayable(text));
     if (!parts.length) { then(); return; }
     let k = 0;
     const say = () => {
@@ -7725,8 +7729,8 @@ async function podPlay(ep, btn, nowEl) {
   /* Play the line the way it was RECORDED, and only fall back to the browser
      reading it if there is no file — a part-rendered episode still plays end
      to end, it just has a robot standing in for whoever hasn't been cut yet. */
-  const perform = (n, text, name, then) => {
-    const src = podLineSrc(rec, ep.id, n);
+  const perform = (b, text, name, then) => {
+    const src = podLineSrc(rec, ep.id, Podcast.lineKey(b));
     if (!src) { speak(text, name, then); return; }
     const a = new Audio(src);
     _podAudio = a;
@@ -7746,11 +7750,11 @@ async function podPlay(ep, btn, nowEl) {
     if (b.t === 'ad') {
       caption('ADVERTISEMENT', b.brand);
       playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
-      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(n, `${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
+      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(b, `${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
       return;
     }
     caption(b.who, b.text);
-    perform(n, b.text, b.who, () => after(next));
+    perform(b, b.text, b.who, () => after(next));
   };
   if (!all.length && typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', () => { }, { once: true });

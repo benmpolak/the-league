@@ -279,7 +279,12 @@ async function harvest() {
   await page.waitForFunction(() => typeof Podcast !== 'undefined');
   const eps = await page.evaluate(() => Podcast.published().map(p => {
     const e = Podcast.episode(p.show, p.kind, p.gw);
-    return { id: e.id, show: e.show.id, host: e.show.host, title: e.title, blocks: e.blocks };
+    // `say` is what the voice is given, `text` is what the reader sees — they
+    // differ where English spelling and English pronunciation part company
+    return { id: e.id, show: e.show.id, host: e.show.host, title: e.title,
+      blocks: e.blocks.map(b => ({ ...b,
+        say: Podcast.sayable(b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text),
+        key: Podcast.lineKey(b) })) };
   }));
   await browser.close();
   return eps.filter(e => !ONLY.length || ONLY.includes(e.id));
@@ -297,7 +302,7 @@ function scanManifest() {
     const lines = {};
     for (const f of fs.readdirSync(dir)) {
       const n = path.basename(f, path.extname(f));
-      if (!/^\d+$/.test(n) || !PLAYABLE.includes(path.extname(f).toLowerCase())) continue;
+      if (!/^[a-z0-9]+$/i.test(n) || !PLAYABLE.includes(path.extname(f).toLowerCase())) continue;
       lines[n] = f;
     }
     if (Object.keys(lines).length) index[ep] = lines;
@@ -308,7 +313,7 @@ const writeManifest = index => {
   const sorted = {};
   for (const ep of Object.keys(index).sort()) {
     sorted[ep] = {};
-    for (const n of Object.keys(index[ep]).sort((a, b) => a - b)) sorted[ep][n] = index[ep][n];
+    for (const n of Object.keys(index[ep]).sort()) sorted[ep][n] = index[ep][n];
   }
   fs.writeFileSync(INDEX_FILE, JSON.stringify(sorted, null, 2) + '\n');
   const lines = Object.values(sorted).reduce((s, o) => s + Object.keys(o).length, 0);
@@ -437,14 +442,14 @@ function doParts(eps) {
     if (!mine.length) continue;
     console.log(`── ${ep.id}  (${ep.title})   →  audio/pod/${ep.id}/`);
     for (const { b, i } of mine) {
-      const got = existing(ep.id, i);
+      const got = existing(ep.id, b.key);
       // an understudy means this one is already covered — recording it is an
       // upgrade, not a blocker, which is the difference between a nice ritual
       // and a fortnightly obligation
       const under = !got && String(chairFor(b.who).voice || '').trim();
       const tag = got ? '[recorded: ' + got + ']' : under ? '[ optional — understudy is covering it ]' : '[ TO DO ]';
       if (under) covered++;
-      console.log(`   ${String(i).padStart(3)}.mp3  ${tag}  ${b.who}`);
+      console.log(`   ${b.key}.mp3  ${tag}  ${b.who}`);
       console.log(`        “${b.text}”\n`);
       n++;
     }
@@ -485,8 +490,8 @@ async function doRender(eps) {
       if (b.t === 'theme') continue; // the stings are synthesised in the app
       const who = b.t === 'ad' ? ep.host : b.who;
       const chair = chairFor(who);
-      const got = existing(ep.id, n);
-      const mine = provenance(ep.id, n);   // did WE write that file, and with what voice
+      const got = existing(ep.id, b.key);
+      const mine = provenance(ep.id, b.key);   // did WE write that file, and with what voice
       const voice = String(chair.voice || '').trim();
       if (chair.human) {
         /* A hand-recorded line is NEVER overwritten, --force or not: the whole
@@ -510,19 +515,18 @@ async function doRender(eps) {
         // already cut by the voice currently cast — nothing to gain by paying again
         skipped++; continue;
       }
-      const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
+      const text = b.say;   // pronunciation-corrected; b.text is the caption
       const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
       // the lines either side, so it knows where it is in the conversation
-      const spoken = k => (ep.blocks[k] && ep.blocks[k].t !== 'theme')
-        ? (ep.blocks[k].t === 'ad' ? `${ep.blocks[k].brand}. ${ep.blocks[k].text}` : ep.blocks[k].text) : '';
+      const spoken = k => (ep.blocks[k] && ep.blocks[k].t !== 'theme') ? ep.blocks[k].say : '';
       const around = { prev: spoken(n - 1), next: spoken(n + 1) };
       chars += text.length;
-      if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
+      if (DRY) { console.log(`  would render ${ep.id}/${b.key}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
       try {
-        fs.writeFileSync(path.join(dir, n + '.mp3'), await render(text, chair, direction, around));
-        noteRendered(ep.id, n, n + '.mp3', chair.voice);
+        fs.writeFileSync(path.join(dir, b.key + '.mp3'), await render(text, chair, direction, around));
+        noteRendered(ep.id, b.key, b.key + '.mp3', chair.voice);
         made++;
-        process.stdout.write(`  ${ep.id}/${n}.mp3  ${who}${mine && mine.voice !== voice ? '  (recast)' : ''}\n`);
+        process.stdout.write(`  ${ep.id}/${b.key}.mp3  ${who}${mine && mine.voice !== voice ? '  (recast)' : ''}\n`);
       } catch (e) {
         console.error(`  FAILED ${ep.id}/${n}: ${e.message}`);
       }

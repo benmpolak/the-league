@@ -92,9 +92,9 @@
       "human": false,
       "direction": "A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting.",
       "settings": {
-        "stability": 0.25,
+        "stability": 0.16,
         "similarity": 0.8,
-        "style": 0.75
+        "style": 0.9
       }
     },
     "Howard": {

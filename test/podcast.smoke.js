@@ -53,6 +53,72 @@ const chk = (name, ok, detail = '') => {
   chk('P2 episodes are byte-identical across calls and immune to the RNG',
     p2.stable && p2.len > 500, JSON.stringify(p2));
 
+  /* The audio checks run HERE, before P4 rewrites every team name to something
+     hostile. The pilots quote real team names, so once P4 has been through the
+     state the transcripts no longer match the audio that was rendered from
+     them — and the coverage check would report a wall of false gaps. */
+  /* ---- P13: the audio on disk still belongs to the words on screen.
+
+     Recordings are filed by line key — a hash of what is said — so the hard
+     contract is that every file the manifest ships corresponds to a line that
+     still exists. An ORPHAN means a script changed and left audio behind: at
+     best money spent on a line nobody will hear, at worst the first sign that
+     the mapping has drifted. That is a failure.
+
+     A line with no audio is NOT a failure. It is the normal state between a
+     script edit and Ben's next render, and the player just reads it aloud. So
+     the outstanding lines are reported rather than failed — the number is what
+     the next render will cost. ---- */
+  const p13 = await page.evaluate(async () => {
+    _podRec = null;
+    const rec = await podRecordings();
+    const out = { shipped: Object.keys(rec).length, orphans: [], outstanding: [], chars: 0 };
+    for (const epId of Object.keys(rec)) {
+      const m = epId.match(/^(gfw|tt)-(pilot|draft)$/);
+      if (!m) continue; // weekly episodes move with league state; pilots are fixed
+      const ep = Podcast.episode(m[1], m[2], null);
+      if (!ep) continue;
+      const live = new Set(ep.blocks.map(b => Podcast.lineKey(b)).filter(Boolean));
+      for (const key of Object.keys(rec[epId])) {
+        if (!live.has(key)) out.orphans.push(`${epId}/${key}`);
+      }
+      for (const b of ep.blocks) {
+        const key = Podcast.lineKey(b);
+        if (!key || podLineSrc(rec, epId, key)) continue;
+        out.outstanding.push(`${epId} ${b.who || b.t}`);
+        out.chars += (b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text).length;
+      }
+    }
+    return out;
+  });
+  chk('P13 no shipped recording is orphaned from the script it was cut for',
+    p13.shipped > 0 && p13.orphans.length === 0,
+    p13.shipped ? 'orphans: ' + p13.orphans.join(', ') : 'no audio shipped at all');
+  if (p13.outstanding.length) {
+    console.log(`      note: ${p13.outstanding.length} line(s) awaiting a render (~${p13.chars} chars) — ${[...new Set(p13.outstanding)].join(', ')}`);
+  }
+
+  // ...and the files the manifest names are really there and really audio
+  const p13b = await page.evaluate(async () => {
+    _podRec = null;
+    const rec = await podRecordings();
+    const bad = [];
+    for (const [epId, lines] of Object.entries(rec)) {
+      for (const n of Object.keys(lines)) {
+        const src = podLineSrc(rec, epId, n);
+        const r = await fetch(src, { method: 'HEAD' });
+        const len = +(r.headers.get('content-length') || 0);
+        // a truncated or error-page response is the tell of a failed render
+        if (!r.ok) bad.push(`${src} → ${r.status}`);
+        else if (len < 2048) bad.push(`${src} → only ${len} bytes`);
+      }
+    }
+    return bad;
+  });
+  chk('P13b every file the manifest names is present and not a stub',
+    p13b.length === 0, p13b.slice(0, 5).join('; '));
+
+
   /* ---- P3: the generator emits PLAIN text (app.js escapes once) ---- */
   const p3 = await page.evaluate(() => {
     const src = Podcast.episode('gfw', 'pilot', null);
@@ -229,9 +295,9 @@ const chk = (name, ok, detail = '') => {
     const bare = await podRecordings();
     window.fetch = real;
     const none = Object.keys(bare).length;
-    const noneSrc = spoken.every(([, n]) => podLineSrc(bare, ep.id, n) === null);
+    const noneSrc = spoken.every(([b]) => podLineSrc(bare, ep.id, Podcast.lineKey(b)) === null);
     // now pretend ONE line has been cut by hand — the shape Howard creates
-    const oneN = spoken[1][1];
+    const oneN = Podcast.lineKey(spoken[1][0]);
     _podRec = null;
     window.fetch = u => { asked.push(String(u)); return Promise.resolve(new Response(JSON.stringify({ [ep.id]: { [oneN]: oneN + '.m4a' } }), { status: 200 })); };
     const rec = await podRecordings();
@@ -249,7 +315,7 @@ const chk = (name, ok, detail = '') => {
       // the recorded line plays its file, keeping the extension it was given
       readsManifest: src === `audio/pod/${encodeURIComponent(ep.id)}/${oneN}.m4a`,
       // ...and every other line still falls through to the browser voice
-      restFallBack: spoken.filter(([, n]) => n !== oneN).every(([, n]) => podLineSrc(rec, ep.id, n) === null),
+      restFallBack: spoken.filter(([b]) => Podcast.lineKey(b) !== oneN).every(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b)) === null),
       // a manifest cannot point the player outside the episode's own folder
       noEscape: podLineSrc({ [ep.id]: { 0: '../../../etc/passwd' } }, ep.id, 0) === null,
       manifestIsLocal: asked.every(u => !/^https?:\/\//i.test(u) || u.startsWith(location.origin)),
@@ -303,51 +369,6 @@ const chk = (name, ok, detail = '') => {
   chk('P12 Howard phones talkTROUGH once an episode, never the Gazette',
     Object.values(p12).every(Boolean), JSON.stringify(p12));
 
-  /* ---- P13: the audio actually shipped. Ben cut both pilots on 18 Aug, so
-     from here this is a real asset with a real failure mode: a render that
-     dies halfway leaves an episode part-cut, and the only way anyone finds
-     out is by listening to the whole thing ---- */
-  const p13 = await page.evaluate(async () => {
-    _podRec = null;
-    const rec = await podRecordings();
-    const out = { shipped: Object.keys(rec).length, gaps: [], noManifestEntryMissingFile: [] };
-    for (const epId of Object.keys(rec)) {
-      const m = epId.match(/^(gfw|tt)-(pilot|draft)$/);
-      if (!m) continue; // weekly episodes depend on live state; pilots are fixed
-      const ep = Podcast.episode(m[1], m[2], null);
-      if (!ep) continue;
-      const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
-      for (const [b, n] of spoken) {
-        // a line with no file is fine ONLY where a human is meant to voice it
-        if (!podLineSrc(rec, epId, n) && b.who !== 'Howard') out.gaps.push(`${epId}/${n} ${b.who || b.t}`);
-      }
-    }
-    return out;
-  });
-  chk('P13 every shipped episode is cut end to end, bar the human parts',
-    p13.shipped > 0 && p13.gaps.length === 0,
-    p13.shipped ? 'gaps: ' + p13.gaps.join('; ') : 'no audio shipped at all');
-
-  // ...and the files the manifest names are really there and really audio
-  const p13b = await page.evaluate(async () => {
-    _podRec = null;
-    const rec = await podRecordings();
-    const bad = [];
-    for (const [epId, lines] of Object.entries(rec)) {
-      for (const n of Object.keys(lines)) {
-        const src = podLineSrc(rec, epId, n);
-        const r = await fetch(src, { method: 'HEAD' });
-        const len = +(r.headers.get('content-length') || 0);
-        // a truncated or error-page response is the tell of a failed render
-        if (!r.ok) bad.push(`${src} → ${r.status}`);
-        else if (len < 2048) bad.push(`${src} → only ${len} bytes`);
-      }
-    }
-    return bad;
-  });
-  chk('P13b every file the manifest names is present and not a stub',
-    p13b.length === 0, p13b.slice(0, 5).join('; '));
-
   /* ---- P13c: the provenance store matches the audio it describes. It is what
      lets a stand-in be replaced while a real human take is untouchable, so if
      it drifts out of step with the files the protection silently stops
@@ -373,7 +394,47 @@ const chk = (name, ok, detail = '') => {
   chk('P13c provenance lines up with the audio on disk',
     prov.ok, prov.why || `orphans: ${(prov.orphan || []).join(', ')} mismatched: ${(prov.mismatched || []).join(', ')}`);
 
-  chk('P14 no page errors across the run', errors.length === 0, errors.join(' | '));
+  /* ---- P15: the 18 Aug tweaks. One ad break, in the middle, hosted in and
+     out; Howard's fixed phrase structure; and "trough" said as a pig trough
+     rather than however the engine fancies ---- */
+  const p15 = await page.evaluate(() => {
+    const kinds = [['pilot', null], ['draft', null], ['preview', 0], ['review', 0]];
+    const eps = [];
+    for (const [k, g] of kinds) for (const s of ['gfw', 'tt']) {
+      const e = Podcast.episode(s, k, g); if (e) eps.push(e);
+    }
+    const adsOf = e => e.blocks.map((b, n) => [b, n]).filter(([b]) => b.t === 'ad').map(([, n]) => n);
+    return {
+      // one break per episode: every ad block adjacent to the next
+      contiguous: eps.every(e => { const a = adsOf(e); return a.length < 2 || a.every((n, i) => !i || n === a[i - 1] + 1); }),
+      // ...roughly in the middle, never stranded at either end
+      central: eps.every(e => { const a = adsOf(e); return a.length && a[0] / e.blocks.length > 0.3 && a[0] / e.blocks.length < 0.7; }),
+      // ...and a host takes us in and brings us back, so they don't just appear
+      hosted: eps.every(e => {
+        const a = adsOf(e); if (!a.length) return false;
+        const before = e.blocks[a[0] - 1], after = e.blocks[a[a.length - 1] + 1];
+        return before && before.t === 'speech' && after && after.t === 'speech';
+      }),
+      // the same advert twice in one break would read as a bug
+      noRepeat: eps.every(e => { const b = adsOf(e).map(n => e.blocks[n].brand); return new Set(b).size === b.length; }),
+      // Howard always opens the same way: an idle moment, then the thought
+      howardShape: eps.filter(e => e.show.id === 'tt').every(e => {
+        const h = e.blocks.find(b => b.who === 'Howard');
+        return h && /\bI was .+ when I thought, /.test(h.text);
+      }),
+      // ...and it is a different idle moment each time, not one stock line
+      howardVaries: new Set(eps.filter(e => e.show.id === 'tt')
+        .map(e => (e.blocks.find(b => b.who === 'Howard').text.match(/I was (.+?) when I thought/) || [])[1])).size > 1,
+      // spelling for the eye, pronunciation for the ear — and only for the ear
+      saidAsTroff: Podcast.sayable('talkTROUGH and the Trough') === 'talk TROFF and the Troff',
+      captionUntouched: Podcast.episode('tt', 'pilot', null).blocks
+        .some(b => /talkTROUGH/.test(b.text || '')),
+    };
+  });
+  chk('P15 one hosted ad break mid-episode, Howard to a fixed shape, trough said as troff',
+    Object.values(p15).every(Boolean), JSON.stringify(p15));
+
+  chk('P16 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();
   console.log(`\n[podcast] ${pass} passed, ${fail} failed`);
