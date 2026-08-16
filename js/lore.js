@@ -308,3 +308,26 @@ const KLAXONS = [
   { mid: 6, label: '\u{1F4EF} PROMOTED TEAM KLAXON', line: 'The Spartans have seen something in him. Nobody else has.',
     clubs: ['Coventry City', 'Hull City', 'Ipswich Town'] },
 ];
+
+// The Gazette's press corps — Pro Evolution Soccer bootleg edition (the group
+// chat, 16 Aug: journos we all know, one letter wrong). Beats: 'match' writes
+// reports, 'colour' writes features, 'tactics' does the negligence column,
+// 'wire' breaks transfers. Names are the joke; do not correct the spellings.
+const GAZETTE_PRESS = [
+  { n: 'Martin Said', beat: 'match' },        // chief football writer
+  { n: 'Harold Summer', beat: 'match' },
+  { n: 'Henry Wanton', beat: 'match' },
+  { n: 'Henrique Invierno', beat: 'match' },  // continental affairs
+  { n: 'Oliver Quay', beat: 'match' },
+  { n: 'Miguel Delano', beat: 'match' },
+  { n: 'Sid Lowry', beat: 'match' },
+  { n: 'Guillermo Balaguer', beat: 'match' },
+  { n: 'Alyson Unrudd', beat: 'colour' },
+  { n: 'Barney Ronaldo', beat: 'colour' },
+  { n: 'Rory Smyth', beat: 'colour' },
+  { n: 'Aimee Lawrenson', beat: 'colour' },
+  { n: 'Jonathan Wilsson', beat: 'tactics' },
+  { n: 'Gabriel Marcotto', beat: 'tactics' },
+  { n: 'David Ornberg', beat: 'wire' },       // understands
+  { n: 'Fabrizio Marano', beat: 'wire' },     // here we go
+];

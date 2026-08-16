@@ -506,6 +506,7 @@ tr.gone-row td.act { opacity: .8; }
 .prog-deal { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(0, 1.5fr); gap: 3px 12px; border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 12px; }
 .prog-deal span { font-weight: 700; }
 .prog-deal small { grid-column: 2; color: var(--muted); font-size: 10.5px; }
+.prog-deal .prog-scoop { font-style: italic; color: var(--accent); }
 .prog-arch { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
 /* the reading room */
 .gazette-room { position: relative; max-width: 760px; width: 94%; max-height: 90vh; overflow-y: auto; padding: 26px 34px 32px; border-color: rgba(226,190,86,.3); }

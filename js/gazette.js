@@ -25,6 +25,14 @@ window.Gazette = (() => {
 
   /* deterministic pick: seed → index, avoiding ids used in recent editions */
   const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  // bylines from the bootleg press corps (js/lore.js). Deterministic by hash,
+  // never the shared RNG — every phone must print the same masthead.
+  const press = (beats, key) => {
+    const roster = typeof GAZETTE_PRESS !== 'undefined' ? GAZETTE_PRESS : [];
+    const pool = roster.filter(p => beats.includes(p.beat));
+    const use = pool.length ? pool : (roster.length ? roster : [{ n: 'the Gazette football desk' }]);
+    return use[hash(key) % use.length];
+  };
 
   /* ---------- fact desk (public state only) ---------- */
 
@@ -480,7 +488,7 @@ window.Gazette = (() => {
       <div class="prog-story-kicker">${esc(STORY_LABEL[f.kind] || STORY_LABEL.standard)}</div>
       <div class="prog-head">${esc(head)}</div>
       <div class="prog-scoreline">${esc(f.tw)} ${f.ws} &nbsp; ${esc(f.tl)} ${f.ls}</div>
-      <div class="prog-by">From our man at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
+      <div class="prog-by">By ${esc(press(['match'], `lead:${gwIdx}:${f.a}:${f.b}`).n)}, at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
   }
 
   function report(f, gwIdx, used) {
@@ -491,7 +499,7 @@ window.Gazette = (() => {
       const owner = star === f.starW ? f.w : f.l;
       const source = star ? provenanceLabel(provenance(owner, star.p.id, gwIdx)) : '';
       const detail = star && star.pts > 0 ? `${star.p.name} led the cast with ${star.pts}${source ? `, ${source}` : ''}.` : '';
-      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p>${detail ? `<p class="prog-match-detail">${esc(detail)}</p>` : ''}</div>`;
+      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p>${detail ? `<p class="prog-match-detail">${esc(detail)}</p>` : ''}<div class="prog-by">${esc(press(['match', 'colour'], `rep:${gwIdx}:${f.a}:${f.b}`).n)}</div></div>`;
     }
     const open = pickLine(STORY_BANK[f.kind] || 'std-report', f, seed, used);
     const details = [];
@@ -502,7 +510,7 @@ window.Gazette = (() => {
     }
     if (f.benchL > 0) details.push(`${f.tl} left ${f.benchL} attainable point${f.benchL === 1 ? '' : 's'} outside the final XI.`);
     if (f.stL.l >= 3) details.push(`${f.tl} have now lost ${f.stL.l} straight.`);
-    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}</p>${details.length ? `<p class="prog-match-detail">${esc(details.join(' '))}</p>` : ''}</div>`;
+    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}</p>${details.length ? `<p class="prog-match-detail">${esc(details.join(' '))}</p>` : ''}<div class="prog-by">${esc(press(['match', 'colour'], `rep:${gwIdx}:${f.a}:${f.b}`).n)}</div></div>`;
   }
 
   function nib(f, gwIdx) {
@@ -582,7 +590,11 @@ window.Gazette = (() => {
         const route = t.trade ? 'trade' : t.windowDraft ? 'Window Draft' : t.waiver ? 'waivers' : 'the Trough';
         const verdict = inPts > outPts ? 'Immediate returns; recruitment department seen nodding.'
           : inPts < outPts ? 'The outgoing man won round one. Awkward.' : 'No verdict yet. The jury has gone for refreshments.';
-        return `<div class="prog-deal"><b>${esc(teamName(t.managerId))}</b><span>IN ${esc(inn.name)} &middot; OUT ${esc(outP?.name || 'vacancy')}</span><small>${esc(route)} &middot; ${esc(verdict)}</small></div>`;
+        // trades get the wire treatment (Ben, 16 Aug: an Ornstein/Romano line)
+        const scoop = t.trade ? (hash(`scoop:${gwIdx}:${t.managerId}:${t.inId}`) % 2
+          ? `David Ornberg understands both clubs consider this deal a triumph. One of them is wrong.`
+          : `Fabrizio Marano: "Here we go — done deal, confirmed, sealed, all of the words." &#128680;`) : '';
+        return `<div class="prog-deal"><b>${esc(teamName(t.managerId))}</b><span>IN ${esc(inn.name)} &middot; OUT ${esc(outP?.name || 'vacancy')}</span><small>${esc(route)} &middot; ${esc(verdict)}</small>${scoop ? `<small class="prog-scoop">${scoop}</small>` : ''}</div>`;
       }).join('');
       out.push(`<div class="prog-sec">Deals Desk</div><div class="prog-deals">${lines}</div>`);
     }
@@ -599,7 +611,7 @@ window.Gazette = (() => {
     const worstBench = state.managers.map(m => ({ mid: m.id, w: benchWasteOf(m.id, gwIdx) })).sort((a, b) => b.w - a.w)[0];
     if (worstBench && worstBench.w >= 10) {
       const run = benchLeaderStreak(worstBench.mid, gwIdx);
-      out.push(`<div class="prog-sec">Tactical Negligence</div><p>${esc(`${teamName(worstBench.mid)} left ${worstBench.w} points on the bench${run >= 2 ? ` — the ${ord(run)} week running they have led this table, which is now a table` : ''}. The bench order is a queue, not a punishment.`)}</p>`);
+      out.push(`<div class="prog-sec">Tactical Negligence</div><p>${esc(`${teamName(worstBench.mid)} left ${worstBench.w} points on the bench${run >= 2 ? ` — the ${ord(run)} week running they have led this table, which is now a table` : ''}. The bench order is a queue, not a punishment.`)} <span class="prog-by" style="display:inline">&mdash; ${esc(press(['tactics'], `tac:${gwIdx}`).n)}, tactics desk</span></p>`);
     }
     // Assistant Manager's Notebook — the lead story's beaten No. 2 speaks
     if (lead && typeof assistantFor === 'function') {
