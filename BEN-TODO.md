@@ -568,3 +568,38 @@ the show who never shouts.
   (a) emulator: concurrent timewaste = exactly one success, +30s, second
   refused; (b) browser: Gazette.preview() retires once GW1 settles + hostile
   team/sponsor names escape in the preview registers.
+
+---
+
+## 7. Toby's deadline-day package (group chat, 16 Aug 23:30) — BUILD WEEK OF 25 AUG
+
+Toby, in the group: prize money needs changing, deadline day is Tue 1 Sept
+23:00 (a waiver run falls that morning), and he wants a "secondary new
+signing direct" on Wed 2 Sept ~20:00 that runs automatically, with anyone
+dropped going to WAIVERS, not into the draft. Ben: "we just hardwire it in."
+
+What the app does today, so the delta is honest:
+
+- **Prize money** is one paragraph on the Rules page (`viewRules`, app.js
+  ~10240) — it already says the £145 windfall's "redistribution to be argued
+  about in the group chat". Changing it is a copy edit. **Blocked on the
+  group actually agreeing numbers — get the split from Toby before touching.**
+- **The Window Draft** exists (snake over locked arrivals, leftovers spill to
+  the Trough) but is COMMISSIONER-TRIGGERED — Ben presses start/end. Toby's
+  ask = schedule it: arm at Wed 2 Sept 20:00 London, run without Ben.
+  The unattended-waivers pattern (.github/workflows/waivers.yml driving the
+  live site headless as the commissioner device) is the template — a
+  one-off scheduled workflow can do the same for `wd start`.
+- **Drops → waivers, not the draft**: check how dropped players currently
+  re-enter (Trough immediately vs waiver-gated). Toby wants them
+  waiver-gated. Scope this against `troughSign`/claims before promising.
+
+Order of play (after draft night, nothing here is urgent):
+1. Group agrees the prize split → copy edit lands same day.
+2. Build + emulator-test the scheduled Window Draft start (Ben approves the
+   cron time; runbook line for the manual fallback if the workflow misses).
+3. Drops-to-waivers rule change — small engine delta, needs the usual
+   sol-style check because waiver order is competitive surface.
+
+Rules changes are the group's to make (see §1 precedent) — Toby raised it in
+the group, so the mandate exists; only the prize numbers are still open.
