@@ -202,5 +202,36 @@ is small but real; the client delta is large but cosmetic/lore. Focus:
   re-issue the verdict and the Chairman's runbook. Note the runbook's
   timewaste line should now read one × 30s.
 
+## 9. ADDENDUM 16 Aug (later) — the code-fields build; verify THIS delta only
+
+One deliberate post-verdict change, DEPLOYED (`1c59a03`, all four
+functions): every ledger record now carries the player's immutable FPL
+`code` alongside the positional id — draft picks (`code`), transfers and
+claims (`inCode`/`outCode`) — written by the server ops (draftPick,
+autodraft, Chamber, troughSign, tradeRespond, windowDraft, claimSet), the
+shared engine's waiver record, and every client local-mode mirror. Plus:
+`stubMissingPlayers` resolves a lost id via code for display, and
+`scripts/heal_ids.js` (dry-run default, admin-only, never automatic) can
+rewrite state after a real feed shift. Rationale: ledgers are empty
+pre-draft, so the change ships with zero migration; after Sunday it would
+need one.
+
+Attack exactly this:
+- Additive-fields regressions: the crest-P2 class. Any validator, matcher
+  or exporter that touches pick/transfer/claim shapes — importState,
+  backup/restore, the waiver cleanup's {in,out,t} matcher, `consumed`
+  replay, trade-ledger content validation (exact multiset — does it
+  tolerate the new fields?), xiValid/squadShapeOk paths.
+- The undefined trap: RTDB rejects `undefined` — confirm every write site
+  uses `?? null` and none can throw on a code-less synthetic player.
+- Client/local parity: local-mode records must match server shapes (sim
+  drafts local; the engine waiver rec is shared — is the app.js waiver
+  MIRROR at parity too?).
+- heal_ids.js: audit read-only — conflict detection, the dry-run default,
+  that nothing imports it at runtime.
+- Emulator functions is 325 (5 new pins). Re-run everything; then the
+  one-word verdicts again. This is the FINAL pre-draft change — after
+  your GO, the freeze holds until the ceremony.
+
 Findings as always. One-word verdicts: REAL LEAGUE / SANDBOX. Then the
 runbook.
