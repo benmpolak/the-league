@@ -1,0 +1,117 @@
+{
+  "provider": "elevenlabs",
+  "_README": [
+    "Ben went with ElevenLabs (Marc, 18 Aug).",
+    "",
+    "1. node scripts/render_pods.js --voices     ← the ids in YOUR library",
+    "2. node scripts/render_pods.js --audition   ← all of them, same line, to compare",
+    "3. paste the id you picked into \"voice\" below, per character",
+    "4. node scripts/render_pods.js              ← renders everyone",
+    "",
+    "ElevenLabs IGNORES \"direction\" — it is kept because it says what the",
+    "character is meant to sound like, which is what you cast against. The",
+    "performance knob on ElevenLabs is \"settings\": low stability = more",
+    "variation and more shouting, high = level and calm; style pushes the",
+    "voice's own manner and high can tip into parody, which for talkTROUGH",
+    "is the point.",
+    "",
+    "HOWARD is the talkTROUGH phone-in caller and is voiced by a real person.",
+    "Record them once and CLONE it — with their consent —",
+    "",
+    "    node scripts/render_pods.js --clone \"Howard\" sample1.m4a sample2.m4a",
+    "",
+    "which writes the cloned voice id into \"voice\" below. Every week's line",
+    "then comes out in their voice with nobody recording again, which matters",
+    "because the weekly episodes are generated fresh and his question is new",
+    "every time. Hand-recorded takes still win wherever they exist and a",
+    "render can never overwrite one, --force or not."
+  ],
+  "cast": {
+    "Rax Mushden": {
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "human": false,
+      "direction": "A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them.",
+      "settings": {
+        "stability": 0.55,
+        "similarity": 0.8,
+        "style": 0.35
+      }
+    },
+    "Donathan Bilson": {
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
+      "human": false,
+      "direction": "A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice.",
+      "settings": {
+        "stability": 0.75,
+        "similarity": 0.8,
+        "style": 0.2
+      }
+    },
+    "Yonni Liu": {
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
+      "human": false,
+      "direction": "A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense.",
+      "settings": {
+        "stability": 0.55,
+        "similarity": 0.8,
+        "style": 0.4
+      }
+    },
+    "Sid Lowry": {
+      "voice": "JBFqnCBsd6RMkjVDRZzb",
+      "human": false,
+      "direction": "A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony.",
+      "settings": {
+        "stability": 0.65,
+        "similarity": 0.8,
+        "style": 0.3
+      }
+    },
+    "Richard Keyes": {
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "human": false,
+      "direction": "A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact.",
+      "settings": {
+        "stability": 0.35,
+        "similarity": 0.8,
+        "style": 0.65
+      }
+    },
+    "Andy Grey": {
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "human": false,
+      "direction": "A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath.",
+      "settings": {
+        "stability": 0.22,
+        "similarity": 0.8,
+        "style": 0.8
+      }
+    },
+    "Jamie O’Hara-Hara": {
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "human": false,
+      "direction": "A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting.",
+      "settings": {
+        "stability": 0.16,
+        "similarity": 0.8,
+        "style": 0.9
+      }
+    },
+    "Howard": {
+      "voice": "GPBdEhqsWQkHEWGnPOdO",
+      "human": true,
+      "direction": "An older, slower, unhurried caller on a hands-free in a van. Flat, patient, entirely sincere, never shouts. Talks past the interruption.",
+      "settings": {
+        "stability": 0.7,
+        "similarity": 0.8,
+        "style": 0.15
+      }
+    }
+  },
+  "adDirection": {
+    "gfw": "Read as a gentle, sincere public-service sponsorship message. Soft, unhurried, slightly wistful.",
+    "tt": "Read as a LOUD, hard-sell local radio advert. Fast, aggressive, delighted with itself, shouting the product name."
+  },
+  "model": "eleven_multilingual_v2",
+  "format": "mp3_44100_64"
+}

@@ -1387,3 +1387,48 @@ details[open] > .n6-summary::after { content: ' ▴'; }
   cursor: pointer;
 }
 @media (max-width: 700px) { .draft-strip { bottom: 56px; font-size: 11px; max-width: 96vw; } }
+
+/* ================= The Podcunt Network =================
+   Two shows that must not look alike: the Gazette's pod inherits the paper's
+   restraint, talkTROUGH is a radio station in a portacabin. */
+.pod-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.pod-row:hover { background: rgba(255,255,255,.02); }
+.pod-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pod-main > span { overflow: hidden; text-overflow: ellipsis; }
+.pod-badge {
+  width: 34px; height: 34px; min-width: 34px; border-radius: 8px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.pod-badge.pod-gfw { background: #14281f; border: 1px solid #2f5c46; }
+.pod-badge.pod-tt { background: #3a1206; border: 1px solid #d1521f; }
+.pod-room { max-width: 640px; width: 96%; max-height: 88vh; overflow-y: auto; }
+.pod-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.pod-body { font-size: 13.5px; line-height: 1.55; }
+.pod-line { margin: 0 0 9px; }
+.pod-line b { color: var(--accent); }
+.pod-sting { margin: 0 0 10px; font-size: 11.5px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.pod-ad {
+  margin: 12px 0; padding: 9px 11px; border-left: 3px solid var(--line);
+  background: var(--card2); font-size: 12.5px; color: var(--muted);
+}
+.pod-ad b { color: var(--text); }
+/* talkTROUGH does not do restraint */
+.pod-tt-room .pod-line b { color: #ff8a4c; }
+.pod-tt-room .pod-ad { border-left-color: #d1521f; text-transform: uppercase; letter-spacing: .01em; }
+@media (max-width: 700px) { .pod-room { max-height: 92vh; } .pod-body { font-size: 14px; } }
+/* the idents are drawn SVG, so the badge is just a frame for them */
+.pod-badge { padding: 0; overflow: hidden; background: none; border: 0; }
+.pod-badge svg { display: block; width: 100%; height: 100%; }
+.pod-badge.pod-lg { width: 46px; height: 46px; min-width: 46px; }
+/* the pod sheet is a player, not a page — no transcript to skim */
+.pod-cast { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 8px; }
+.pod-cast-h { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); width: 100%; }
+.pod-chip { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--card2); border: 1px solid var(--line); }
+.pod-meta { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
+.pod-nowplaying {
+  min-height: 92px; padding: 12px 14px; border-radius: 10px;
+  background: var(--card2); border: 1px solid var(--line); font-size: 14px; line-height: 1.5;
+}
+.pod-now-who { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin-bottom: 5px; min-height: 13px; }
+.pod-tt-room .pod-now-who { color: #ff8a4c; }
+.pod-tt-room .pod-chip { border-color: #7a3418; }

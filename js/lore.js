@@ -333,4 +333,40 @@ const GAZETTE_PRESS = [
   { n: 'Gabriel Marcotto', beat: 'tactics' },
   { n: 'David Ornberg', beat: 'wire' },       // understands
   { n: 'Fabrizio Marano', beat: 'wire' },     // here we go
+  // The Podcunt Network (Marc, 16–17 Aug). Bootleg names are canon — do not
+  // correct the spellings. Bilson, Liu and Lowry appear as panellists from
+  // their existing beats above; these are the broadcast staff.
+  { n: 'Rax Mushden', beat: 'pod' },          // host, Gazette Football Weekly
+  { n: 'Richard Keyes', beat: 'pod' },        // talkTROUGH, has the folder
+  { n: 'Andy Grey', beat: 'pod' },            // talkTROUGH, has the telestrator
+  { n: 'Jamie O’Hara-Hara', beat: 'pod' }, // talkTROUGH, played at a good level
+  // Marc, 18 Aug: "a character called howard who calls in and asks a question
+  // each episode in the style of a phone in". Not staff — he is the audience,
+  // and he is on the register because he is on the show every single week.
+  { n: 'Howard', beat: 'pod' },               // talkTROUGH, first-time caller since August
 ];
+
+/* ================= The Podcunt Network — advertising =================
+   Two shows, two audiences, two utterly different commercial departments.
+   The ads are the fastest way to tell the registers apart, so they are held
+   here as inventory rather than buried in the generator. `read` is the ad as
+   the host reads it; keep GFW ads worthy and slightly apologetic, and
+   talkTROUGH ads loud, physical and priced. */
+const POD_ADS = {
+  gfw: [
+    { brand: 'The Mind Of A Midfielder', read: 'a new eight-part series on the inner lives of holding midfielders, supported by the players’ union. No transfer gossip. No scores. Just men, sitting.' },
+    { brand: 'Headroom', read: 'the mental health charity asking football to talk before it shouts. Their helpline is open all season, including during the international break, when it is busiest.' },
+    { brand: 'The Co-operative Ground Share', read: 'community ownership for the ordinary supporter. One member, one vote, one increasingly long annual general meeting.' },
+    { brand: 'Fair Kit', read: 'organic cotton shirts made in a factory the makers will name, with a wage they will also name. Available in away, and in a third kit nobody asked for.' },
+    { brand: 'The Sunday Long Read', read: 'four thousand words on a full-back you have never seen play, filed from a train. Cancel any time, though nobody does.' },
+    { brand: 'Allotment Weekly', read: 'because the season is long and the soil does not have an opinion about your bench.' },
+  ],
+  tt: [
+    { brand: 'BRICKO POWER TOOLS', read: 'EIGHTEEN VOLTS OF PROPER BRITISH TORQUE. If it does not go through the wall, son, YOU ARE NOT PUSHING HARD ENOUGH. Bricko. GET IT DONE.' },
+    { brand: 'MEGA-SHED DIRECT', read: 'SHEDS. ENORMOUS ONES. Delivered flat, assembled never. Twelve foot by eight, NINETY-NINE POUNDS, and that is me doing you a favour.' },
+    { brand: 'THE FULL ENGLISH APP', read: 'ORDER A BREAKFAST THE SIZE OF A DINNER PLATE, to your door, before eleven. None of your smashed avocado. BEANS ARE A VEGETABLE.' },
+    { brand: 'GAFFER TAPE PLUS', read: 'ONE ROLL. FIXES EVERYTHING. Your gutter, your bumper, your hamstring — WE ARE NOT DOCTORS. Gaffer Tape Plus. TAPE IT AND FORGET IT.' },
+    { brand: 'DRIVE-THRU CAR VALET', read: 'YOUR MOTOR, IMMACULATE, IN ELEVEN MINUTES. We do the alloys. We do them PROPERLY. Twenty-two pounds, cash, no appointment, no nonsense.' },
+    { brand: 'BIG RON’S PATIO WORLD', read: 'SLABS. THOUSANDS OF THEM. Laid by men who have never once discussed their feelings and are, frankly, THRIVING.' },
+  ],
+};

@@ -4248,6 +4248,28 @@ function playSound(kind) {
         ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
       ];
       for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
+    } else if (kind === 'themeGfw') {
+      // Gazette Football Weekly: a lone piano and a cello, faintly sad. The
+      // Podcunt Network has no audio files — the stings are synthesised like
+      // the klaxons and the drinks-break anthems (Marc, 17 Aug).
+      const N = { D4: 294, F4: 349, A4: 440, C5: 523, E5: 659 };
+      const fig = [['D4', 0, .5], ['A4', .3, .5], ['F4', .62, .5], ['C5', .95, .7], ['A4', 1.5, .5], ['E5', 1.85, 1.1]];
+      for (const [n, at, d] of fig) tone(c, N[n], at, d, { type: 'sine', gain: 0.055 });
+      tone(c, 147, 0, 2.6, { type: 'triangle', gain: 0.03 }); // the cello, sighing
+    } else if (kind === 'themeTt') {
+      // talkTROUGH: brass, an airhorn, and no apology whatsoever
+      const N = { C4: 262, E4: 330, G4: 392, C5: 523 };
+      const fan = [['C4', 0, .22], ['E4', .2, .22], ['G4', .4, .22], ['C5', .6, .75]];
+      for (const [n, at, d] of fan) tone(c, N[n], at, d, { type: 'sawtooth', gain: 0.075 });
+      tone(c, 880, .75, .45, { type: 'square', gain: 0.05, slideTo: 660 }); // airhorn
+      tone(c, 660, 1.15, .5, { type: 'square', gain: 0.045, slideTo: 880 });
+    } else if (kind === 'adGfw') {
+      tone(c, 523, 0, .18, { type: 'sine', gain: 0.05 });
+      tone(c, 784, .16, .34, { type: 'sine', gain: 0.045 });
+    } else if (kind === 'adTt') {
+      tone(c, 392, 0, .14, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 523, .13, .14, { type: 'sawtooth', gain: 0.07 });
+      tone(c, 659, .26, .3, { type: 'sawtooth', gain: 0.08 });
     } else if (kind === 'whistle') {
       // full time: an officious triple blast, the last one held far longer
       // than anyone needed ("more sound effects but not too many… humourous")
@@ -7406,6 +7428,7 @@ function gazetteSheet(gwIdx = null) {
     <button class="btn ghost small icon-btn gz-close" id="gzClose" title="Fold the paper" aria-label="Fold the paper">&#10005;</button>
     ${progMasthead(showing.edition, showing.gwN)}
     ${showing.article}
+    ${mediaSection()}
     ${archNav}
   </div>`;
   document.body.appendChild(ov);
@@ -7415,6 +7438,350 @@ function gazetteSheet(gwIdx = null) {
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
     gazetteSheet(b.dataset.progw === 'today' ? null : +b.dataset.progw);
   });
+  ov.querySelectorAll('[data-podopen]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    podcastSheet(b.dataset.podopen);
+  });
+}
+/* ================= The Podcunt Network =================
+   Marc, 17 Aug: "the links to the podcasts should appear somewhere near the
+   gazette as part of a full media overview". So the reading room grows a
+   media desk: both shows, their current episode, and a transcript you can
+   read or be read to. The generator is js/podcast.js; everything here is
+   presentation and the browser's own voice. */
+/* Marc, 18 Aug: "id like the two pilots to be positioned in the season preview
+   page. The post draft episode and then the normal schedule should be
+   positioned alongside the gazette."
+
+   So the desk follows the edition it is printed in. Edition zero — the Season
+   Preview, before a ball is kicked — carries the two launch episodes, framed
+   as part of that edition rather than as a permanent fixture. Every edition
+   after it carries whatever is current: the draft reaction, then the previews
+   and reviews as they land. Same component, different bill. */
+function mediaSection() {
+  if (typeof Podcast === 'undefined') return '';
+  /* The hinge is the DRAFT, not the edition. Straight after draft night the
+     Gazette is still printing edition zero — no football has happened — but
+     the stations have already moved on to the draft reaction, and the pilots
+     have retired. Asking the generator which episode is current gets this
+     right on its own: it returns a pilot only while there is no draft. */
+  const lead = Podcast.latest('gfw');
+  const launch = !!lead && lead.kind === 'pilot';
+  const rows = ['gfw', 'tt'].map(id => {
+    const ep = Podcast.latest(id);
+    if (!ep) return '';
+    const s = ep.show;
+    return `<div class="pod-row" data-podopen="${esc(ep.id)}">
+      <div class="pod-badge pod-${esc(s.id)}">${Podcast.logoSvg(s.id, 34)}</div>
+      <div class="pod-main">
+        <b>${esc(s.name)}</b>
+        <span class="muted" style="font-size:11.5px">${esc(s.dek)}</span>
+        <span style="font-size:12.5px">${esc(ep.title)} <span class="muted">&middot; ${esc(ep.dek)}</span></span>
+      </div>
+      <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
+    </div>`;
+  }).join('');
+  if (!rows.trim()) return '';
+  return launch
+    ? `<div class="prog-sec">Also in edition zero: the wireless</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
+      ${rows}`
+    : `<div class="prog-sec">The Media Desk</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
+      ${rows}`;
+}
+// id → the episode object, without trusting the id string
+function podById(id) {
+  if (typeof Podcast === 'undefined') return null;
+  const e = Podcast.published().find(x => x.id === id);
+  return e ? Podcast.episode(e.show, e.kind, e.gw) : null;
+}
+let _podStop = null; // set while an episode is being read aloud
+let _podAudio = null; // the <audio> currently playing a RECORDED line, if any
+function podStopSpeaking() {
+  try { window.speechSynthesis?.cancel(); } catch { /* not available */ }
+  if (_podAudio) { try { _podAudio.pause(); } catch { /* gone */ } _podAudio = null; }
+  if (_podStop) { _podStop(); _podStop = null; }
+}
+/* ---- the recordings ----
+   Marc, 18 Aug: "this joke doesnt work unless the people sound like people not
+   robots". It doesn't, and no browser speech engine is ever going to sound
+   like Andy Grey. So the player takes REAL audio wherever real audio exists
+   and only falls back to the browser's voice where it doesn't.
+
+   The recordings are ordinary files under audio/pod/<episode-id>/, one per
+   spoken block, named by its index in ep.blocks — exactly the units the player
+   already walks. That keeps the captions, the running order and the
+   synthesised stings working untouched.
+
+   Marc, 18 Aug: "ben and i have a new approach which involves using one of the
+   paid options to improve the quality of the voices and record some of our
+   own". So the manifest is per LINE, not per episode:
+
+     { "gfw-pilot": { "1": "1.mp3", "4": "4.m4a" } }
+
+   A line with a file plays that file; a line without gets read by the browser.
+   That means a bought voice and a real human and the robot can all be in the
+   same episode while it is being built up, which is what recording your own
+   in a spare hour actually looks like. The extension comes from the manifest,
+   so a phone recording can be dropped in as it is — `node scripts/render_pods.js
+   --scan` rebuilds the manifest from whatever is on disk.
+   Nothing here fetches from anywhere but this origin. */
+let _podRec = null; // episode id → { blockIndex: filename }; null until asked
+async function podRecordings() {
+  if (_podRec) return _podRec;
+  _podRec = {};
+  try {
+    const r = await fetch('audio/pod/index.json', { cache: 'no-cache' });
+    if (r.ok) {
+      const j = await r.json();
+      // the old shape was a bare list of fully-cut episodes; still honoured,
+      // so a manifest written before the hand-recording work keeps playing
+      if (Array.isArray(j)) j.forEach(id => { _podRec[String(id)] = '*'; });
+      else if (j && typeof j === 'object') for (const [id, lines] of Object.entries(j)) {
+        if (lines && typeof lines === 'object') _podRec[id] = lines;
+      }
+    }
+  } catch { /* no recordings shipped yet — the browser voice carries it */ }
+  return _podRec;
+}
+/* The file for one line, or null if nobody has recorded it yet.
+   `key` is Podcast.lineKey(block) — the line's TEXT, not its position. Filing
+   by position meant moving the ad break re-pointed every rendered file at
+   somebody else's words (caught by the smoke test, 18 Aug). */
+function podLineSrc(rec, epId, key) {
+  const lines = rec[epId];
+  if (!lines || key == null) return null;
+  if (lines === '*') return `audio/pod/${encodeURIComponent(epId)}/${key}.mp3`;
+  const f = lines[key] || lines[String(key)];
+  // the manifest names a file inside the episode's own folder and nothing else
+  if (!f || typeof f !== 'string' || /[\/\\]|\.\./.test(f)) return null;
+  return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}`;
+}
+function podcastSheet(id) {
+  const ep = podById(id);
+  if (!ep) return;
+  const s = ep.show;
+  const canSpeak = typeof window.speechSynthesis !== 'undefined';
+  /* Marc, 17 Aug: "i dont want the script to actually be readable, i want
+     people to have to click on it and listen". So this is a player, not a
+     page: the running order and the cast, and a caption that reveals only the
+     line currently being spoken. You cannot skim ahead of the hosts.
+     The one exception is a device with no speech engine at all — there the
+     transcript is the only way to consume the thing, so it prints. */
+  const cast = [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))];
+  const ads = ep.blocks.filter(b => b.t === 'ad').length;
+  const mins = Math.max(1, Math.round(ep.words / 150));
+  const locked = `
+    <div class="pod-cast">
+      <span class="pod-cast-h">On this episode</span>
+      ${cast.map(n => `<span class="pod-chip">${esc(n)}</span>`).join('')}
+    </div>
+    <p class="pod-meta" id="podMeta">${ep.blocks.filter(b => b.t === 'speech').length} exchanges &middot; ${ads} ad break${ads === 1 ? '' : 's'} &middot; about ${mins} minute${mins === 1 ? '' : 's'}</p>
+    <div class="pod-nowplaying" id="podNow" aria-live="polite">
+      <span class="pod-now-who"></span>
+      <span class="pod-now-line">Press play.</span>
+    </div>`;
+  const fallback = `<p class="pod-meta">This device has no speech engine, so the transcript is printed below instead.</p>
+    <div class="pod-body">${ep.blocks.map(b => b.t === 'theme' ? `<p class="pod-sting">${esc(b.text)}</p>`
+      : b.t === 'ad' ? `<p class="pod-ad"><b>${esc(b.brand)}</b> &mdash; ${esc(b.text)}</p>`
+      : `<p class="pod-line"><b>${esc(b.who)}:</b> ${esc(b.text)}</p>`).join('')}</div>`;
+  document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card pod-room pod-${esc(s.id)}-room" role="dialog" aria-label="${esc(s.name)}">
+    <button class="btn ghost small icon-btn gz-close" id="podClose" aria-label="Close">&#10005;</button>
+    <div class="pod-head">
+      <span class="pod-badge pod-lg pod-${esc(s.id)}">${Podcast.logoSvg(s.id, 46)}</span>
+      <div><h2 style="margin:0">${esc(s.name)}</h2>
+        <p class="muted" style="margin:2px 0 0;font-size:12px">${esc(ep.title)} &middot; ${esc(ep.dek)}</p></div>
+    </div>
+    ${canSpeak ? `<button class="btn" id="podPlay">&#9654; Listen</button>${locked}` : fallback}
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const shut = () => { podStopSpeaking(); closeOv(ov); };
+  ov.onclick = e => { if (e.target === ov) shut(); };
+  ov.querySelector('#podClose').onclick = shut;
+  const btn = ov.querySelector('#podPlay');
+  if (btn) btn.onclick = () => podPlay(ep, btn, ov.querySelector('#podNow'));
+  // say so when this one is the real thing, so nobody judges the hosts on a
+  // read the browser did for them — and say when it is only part cut, so a
+  // robot turning up halfway through isn't taken for a bug
+  podRecordings().then(rec => {
+    if (!ov.isConnected) return;
+    const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
+    const cut = spoken.filter(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b))).length;
+    if (!cut) return;
+    const meta = ov.querySelector('#podMeta');
+    if (meta) meta.textContent += cut === spoken.length ? ' · recorded' : ' · part recorded';
+  });
+}
+/* ---- the speech desk ----
+   Marc, 18 Aug: "there are some examples where a word is in all caps, and the
+   tone doesnt change and it is spelt out as if it is an acronym". Both faults
+   are fixable in the TEXT, before the engine ever sees it — no engine can tell
+   SHOUTING from an initialism, and none of them will ever say "GW3" the way a
+   broadcaster would.
+
+   1. Abbreviations are expanded to what a man with a microphone would actually
+      say. "IPS" is Ipswich out loud, not I-P-S. The ones that genuinely ARE
+      initialisms (VAR) are spaced so they stay spelled.
+   2. A shouted run is spoken in lower case — so it is read as words — and the
+      emphasis is put back where it belongs: its own utterance, louder and a
+      shade faster. The caption still prints the capitals, so the page shouts
+      even though the string handed to the engine does not. */
+const POD_SAY = [
+  [/talkTROUGH/g, 'talk Trough'],
+  [/\bGW\s*(\d+)\b/g, 'gameweek $1'], [/\bGW\b/g, 'gameweek'],
+  [/\bxGI\b/g, 'expected goal involvement'], [/\bxG\b/g, 'expected goals'], [/\bxA\b/g, 'expected assists'],
+  [/\bH2H\b/g, 'head to head'], [/\bPPG\b/gi, 'points per game'], [/\bpts\b/gi, 'points'],
+  [/\bVAR\b/g, 'V A R'], [/\bEPL\b/g, 'E P L'], [/\bFPL\b/g, 'F P L'],
+  [/\bGK\b/g, 'goalkeeper'], [/\bDF\b/g, 'defender'], [/\bMF\b/g, 'midfielder'], [/\bFW\b/g, 'forward'],
+  [/\bARS\b/g, 'Arsenal'], [/\bAVL\b/g, 'Aston Villa'], [/\bBHA\b/g, 'Brighton'], [/\bBOU\b/g, 'Bournemouth'],
+  [/\bBRE\b/g, 'Brentford'], [/\bCHE\b/g, 'Chelsea'], [/\bCOV\b/g, 'Coventry'], [/\bCRY\b/g, 'Crystal Palace'],
+  [/\bEVE\b/g, 'Everton'], [/\bFUL\b/g, 'Fulham'], [/\bHUL\b/g, 'Hull'], [/\bIPS\b/g, 'Ipswich'],
+  [/\bLEE\b/g, 'Leeds'], [/\bLIV\b/g, 'Liverpool'], [/\bMCI\b/g, 'Manchester City'], [/\bMUN\b/g, 'Manchester United'],
+  [/\bNEW\b/g, 'Newcastle'], [/\bNFO\b/g, 'Nottingham Forest'], [/\bSUN\b/g, 'Sunderland'], [/\bTOT\b/g, 'Tottenham'],
+];
+// ONE shouted word: two or more capitals standing on their own, optionally
+// carrying the single-letter words in front of it ("A CREST", "I SAID"). Group
+// 1 is the left boundary — a lookbehind would be neater but Safari only grew
+// them recently — and the lookahead stops it biting talkTROUGH in half or
+// splitting "I'll" at the apostrophe.
+const POD_SHOUT = /(^|[^A-Za-z0-9'’])((?:[A-Z](?:['’][A-Z]+)?[ \t]+)*[A-Z]{2,}(?:['’][A-Z]+)*)(?![A-Za-z])/g;
+/* Two shouted words belong to the same shout if all that stands between them
+   is space, a comma or a dash — and single-letter words, because "WRITE IT ON
+   A BIT OF PAPER" is one bellow and the lone A must not fall out of it. A full
+   stop is deliberately NOT in here: that ends the shout. */
+const POD_SHOUT_GAP = /^[\s,\-–—]*(?:[A-Z](?:['’][A-Z]+)?[\s,\-–—]+)*$/;
+function podRuns(text) {
+  const t = POD_SAY.reduce((x, [re, to]) => x.replace(re, to), String(text || ''));
+  const out = [];
+  let last = 0, m;
+  POD_SHOUT.lastIndex = 0;
+  while ((m = POD_SHOUT.exec(t)) !== null) {
+    const s = m.index + m[1].length, e = s + m[2].length;
+    const gap = t.slice(last, s);
+    const prev = out[out.length - 1];
+    // adjacent shouted words are ONE shout: "FRAUD OF THE WEEK" is a phrase,
+    // not four separate barks with a gap for breath between each
+    if (prev && prev.shout && POD_SHOUT_GAP.test(gap)) prev.say += gap.toLowerCase() + m[2].toLowerCase();
+    else {
+      if (gap) out.push({ say: gap, shout: false });
+      out.push({ say: m[2].toLowerCase(), shout: true });
+    }
+    last = e;
+  }
+  if (last < t.length) out.push({ say: t.slice(last), shout: false });
+  /* Marc, 18 Aug: "why do the voices keep saying full stop". Because splitting
+     a line into runs can leave the punctuation stranded as a run of its own —
+     "It's WOKE NONSENSE." ends up as a shout followed by an utterance that is
+     nothing but a dot, and an engine handed a lone dot reads out its NAME.
+     So a fragment with no letters or digits in it is never spoken on its own:
+     it goes back onto the neighbouring run, where it is punctuation again. */
+  const runs = [];
+  let pend = '';
+  for (const r of out) {
+    if (!/\S/.test(r.say)) continue;
+    if (!/[A-Za-z0-9]/.test(r.say)) {
+      if (runs.length) runs[runs.length - 1].say += r.say; else pend += r.say;
+      continue;
+    }
+    if (pend) { r.say = pend + r.say; pend = ''; }
+    runs.push(r);
+  }
+  return runs;
+}
+/* Read the episode aloud. Started only from a tap (iOS refuses otherwise),
+   cancelled on close. Each speaker gets his own INSTALLED voice where the
+   device has more than one — that is the single biggest thing that makes this
+   sound like a room of people rather than one screen reader doing accents —
+   and pitch and rate then colour a voice that is already somebody else.
+   The caption follows one line behind nothing: it shows exactly what is being
+   said and not a word more. Captions are written with textContent, so a
+   hostile club name cannot become an element here. */
+async function podPlay(ep, btn, nowEl) {
+  const synth = window.speechSynthesis;
+  if (!synth) return;
+  const who = nowEl?.querySelector('.pod-now-who');
+  const line = nowEl?.querySelector('.pod-now-line');
+  const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
+  if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
+  const rec = await podRecordings();
+  const all = synth.getVoices() || [];
+  // the default voice is usually the worst one installed — prefer a real
+  // en-GB one, and prefer the enhanced/natural variants where they exist
+  const score = v => (/en[-_]GB/i.test(v.lang) ? 6 : /en[-_](IE|AU|NZ|ZA)/i.test(v.lang) ? 3 : /^en/i.test(v.lang) ? 2 : 0)
+    + (/enhanced|premium|natural|neural/i.test(v.name) ? 4 : 0)
+    + (/google|microsoft|daniel|serena|kate/i.test(v.name) ? 1 : 0);
+  const pool = all.slice().sort((a, b) => score(b) - score(a));
+  // deal distinct voices round the table in speaking order, wrapping if the
+  // device has fewer voices than chairs — a repeat beats everyone identical
+  const chairs = [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))];
+  const cast = {};
+  chairs.forEach((n, k) => { if (pool.length) cast[n] = pool[k % pool.length]; });
+  let i = 0, live = true;
+  _podStop = () => { live = false; };
+  btn.innerHTML = '&#9632; Stop';
+  const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; caption('', 'That is the end of the episode.'); };
+  const speak = (text, name, then) => {
+    const v = cast[name] || pool[0] || null;
+    const col = Podcast.VOICES[name] || { pitch: 1, rate: 1 };
+    /* Spelling is for the caption, this is for the mouth: the pronunciation
+       fixes plus the cleanup only the browser needs — it says "dash" out loud
+       where a paid voice just pauses (Marc, 18 Aug). */
+    const parts = podRuns(Podcast.browserSay(text));
+    if (!parts.length) { then(); return; }
+    let k = 0;
+    const say = () => {
+      if (!live) return;
+      if (k >= parts.length) { then(); return; }
+      const r = parts[k++];
+      const u = new SpeechSynthesisUtterance(r.say);
+      if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-GB';
+      u.pitch = col.pitch * (r.shout ? 1.06 : 1);
+      u.rate = col.rate * (r.shout ? 1.07 : 1);
+      u.volume = r.shout ? 1 : 0.82;
+      u.onend = say; u.onerror = say;
+      synth.speak(u);
+    };
+    say();
+  };
+  /* Play the line the way it was RECORDED, and only fall back to the browser
+     reading it if there is no file — a part-rendered episode still plays end
+     to end, it just has a robot standing in for whoever hasn't been cut yet. */
+  const perform = (b, text, name, then) => {
+    const src = podLineSrc(rec, ep.id, Podcast.lineKey(b));
+    if (!src) { speak(text, name, then); return; }
+    const a = new Audio(src);
+    _podAudio = a;
+    let handed = false;
+    const hand = fn => { if (handed) return; handed = true; if (_podAudio === a) _podAudio = null; fn(); };
+    a.onended = () => hand(then);
+    a.onerror = () => hand(() => speak(text, name, then));
+    a.play().catch(() => hand(() => speak(text, name, then)));
+  };
+  // a beat between turns; without it the whole thing reads like one long list
+  const after = fn => setTimeout(fn, 260);
+  const next = () => {
+    if (!live) return;
+    if (i >= ep.blocks.length) { done(); return; }
+    const n = i, b = ep.blocks[i++];
+    if (b.t === 'theme') { caption('', b.text); playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
+    if (b.t === 'ad') {
+      caption('ADVERTISEMENT', b.brand);
+      playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
+      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(b, `${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
+      return;
+    }
+    caption(b.who, b.text);
+    perform(b, b.text, b.who, () => after(next));
+  };
+  if (!all.length && typeof synth.addEventListener === 'function') {
+    synth.addEventListener('voiceschanged', () => { }, { once: true });
+  }
+  next();
 }
 function previewArticle(i, pick) {
   const d = gwPreviewData(i);

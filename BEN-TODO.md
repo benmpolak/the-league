@@ -356,6 +356,199 @@ draft night. The design is settled — do not re-litigate, just build:
   `node test/gazette.test.js` and `node test/mockparity.smoke.js`. Pushing
   main deploys the live site within minutes and the beta mirrors itself.
 
+### 5b. THE VOICES — one decision for you, and it contradicts your spec above
+
+Ben, your brief says *"the voices being naff is the joke — do not add an audio
+backend."* Marc has listened to the pilots and disagrees, twice, in terms:
+
+> "the voices need to be more realistic and individual to each personality"
+> "this joke doesnt work unless the people sound like people not robots"
+
+He is right on the facts. I have taken browser speech as far as it goes:
+abbreviations now expand to what a broadcaster would say ("IPS" → Ipswich),
+shouted runs are handed over in lower case so they stop being spelled out
+letter by letter, and each host gets a different installed voice. It is much
+better and it is still a screen reader. `speechSynthesis` cannot do character.
+
+**What is already built and needs nothing from you.** The player takes real
+audio wherever real audio exists and falls back to the browser voice line by
+line where it doesn't. Files live at `audio/pod/<episode-id>/<block>.mp3`,
+listed in `audio/pod/index.json` — which currently ships EMPTY, so today
+nothing changes and nothing is fetched. Still client-only, still same-origin,
+still works offline, no runtime backend. The stings stay synthesised.
+
+**What needs you — ELEVENLABS (your call, relayed by Marc 18 Aug).**
+`scripts/render_pods.js` reads the episodes out of the live generator headless
+and cuts them to real voices. It needs the API key, so only you can run it.
+`audio/pod/cast.json` is already set to `"provider": "elevenlabs"` with the
+per-character tuning done; the `"voice"` fields are deliberately BLANK because
+ElevenLabs ids are specific to your library. Order of play:
+
+    node scripts/render_pods.js --voices      # the ids in your library
+    node scripts/render_pods.js --audition    # all of them, same line, compare
+    # paste the ids into audio/pod/cast.json
+    node scripts/render_pods.js --dry         # what it would cost
+    node scripts/render_pods.js               # cut it, then commit audio/
+
+Two things specific to ElevenLabs, both handled: it IGNORES written direction,
+so the performance knob is `settings` per character (low `stability` = more
+variation and more shouting — Grey is at 0.22, Bilson at 0.75), and lines are
+sent with `previous_text`/`next_text` so it knows where it is in the
+conversation instead of reading twenty unrelated announcements. Nothing renders
+until every non-human part is cast, and the ids are checked against your
+library before a credit is spent.
+
+**The numbers:**
+
+- Both pilots together are **~6,000 characters**. A normal week (two shows,
+  preview + review) is ~12–14k. A full 38-week season ≈ **~450k characters**.
+- ElevenLabs bills per character, so that is comfortably inside Creator
+  (100k/month) for a few weeks at a time and wants Pro for a full season —
+  call it **£20–80 a month**, which is the tier decision, not a per-render one.
+- Storage ≈ 290 MB a season at 64 kbps. Pages is fine to ~1 GB, but prune to
+  the last eight gameweeks and it stays under 60 MB.
+- Rendering the weeklies automatically would want a scheduled workflow and the
+  key as a repo secret. **I have not touched that** — secrets and deploys are
+  yours. Until you do, the pilots and the draft reaction are one-offs you can
+  cut by hand, which is most of the value for almost none of the cost.
+
+### 5d. Re-rendering — one command, and optionally none
+
+Marc, 18 Aug: "how do they get re rendered. We need a better process for this
+surely." He's right, and the old loop had already gone wrong once.
+
+**Locally, it is one command, always the same one:**
+
+    npm run pods
+
+It works out what is OUTSTANDING and cuts exactly that — lines with no audio,
+lines whose words changed, lines whose cast voice changed. Run it when nothing
+has changed and it spends nothing and writes nothing. It starts its own web
+server and stops it again, so there is no second terminal to forget.
+
+    npm run pods:due       what it would cut, and what that costs
+    npm run pods:voices    your ElevenLabs library, with ids
+    npm run pods:audition  every voice reading the same line
+    npm run pods:parts     lines still waiting on a human recording
+    npm run pods:scan      rebuild the manifest from files on disk
+
+That works because recordings are filed under a hash of what is SAID, not
+where the line sits. Re-ordering is free; re-wording re-cuts that line alone.
+
+**A spend cap.** Anything over 25,000 characters stops and asks, before it
+touches the network — one shared phrase can legitimately re-cut hundreds of
+lines, and that should be a decision rather than an invoice. Raise it
+deliberately with `--max-chars` when the big job is the point.
+
+**To take yourself out of the loop entirely**, there is now
+`.github/workflows/render-pods.yml`. It needs one thing from you:
+
+    Settings → Secrets and variables → Actions → New repository secret
+    ELEVENLABS_API_KEY = a key that has never been in a chat
+
+With that, you can run a render from the Actions tab without a terminal. To let
+it run on a schedule too — Friday before the previews, late Monday once the
+reviews can be cut — also add a repository **variable** `PODS_AUTORENDER = on`.
+Until that variable exists the scheduled runs exit immediately, so merging the
+workflow changes nothing on its own. It commits to whichever branch it ran on
+and never pushes to `main` by itself.
+
+It costs the job before spending, runs the smoke test after rendering, and
+commits nothing if nothing changed.
+
+**The gap this leaves, stated plainly.** Marc asked (18 Aug) whether the
+episodes generate themselves on a schedule. The TEXT does, with no server and
+no job at all: `Podcast.published()` is a pure function of league state and the
+current time, computed in the browser, so a new episode simply exists the
+moment its slot passes. The AUDIO does not — it is committed files. So from the
+first weekly episode onwards, a new show appears **in browser-robot voice**
+until somebody renders it and pushes, which will be conspicuous once the rest
+of the cast is ElevenLabs.
+
+Three ways out, and it is your call:
+
+1. **Scheduled render** (the real fix). A workflow that runs the render and
+   commits `audio/`. It has to fire *after* the content is knowable but *before*
+   the slot opens — so roughly Fri 16:00 London for the preview, and on the
+   review side only once `gwStatus(i) === 'final'`, which is why a plain cron
+   is not quite enough on its own.
+2. **Accept the lag** — robot on Friday teatime, real voices whenever you next
+   render. Cheap, and honestly fine for a first season.
+3. **Hold the episode until its audio exists** — gate weekly publishing on the
+   manifest. Cleanest sound, but an episode never appears at all if nobody
+   renders, and a silent Media section is worse than a robot one.
+
+**The slots are Tuesday and Friday, midday London.** Marc, 18 Aug: "why not
+just have the twice weekly schedule to be Tuesday at midday and friday at
+midday and have the time fixed." Done — a show nobody can predict is a show
+nobody remembers, and it puts the review two hours after the waiver run on the
+same day, so it can talk about claims that have actually settled.
+
+Fixed TIMES, but bound to the gameweek rather than the calendar. Five rounds
+this season kick off on a **Wednesday**, and a naive weekly calendar would have
+previewed those six days early and reviewed them six days late. So: a preview
+goes out in the last slot before the first kick-off, a review in the first slot
+after the last whistle. Weekend rounds land Friday and Tuesday exactly as
+asked; midweek rounds shuffle to the slot that still makes sense. Checked
+across all 38: every preview lands before kick-off, every review after full
+time and before the next round starts.
+
+**Midweek rounds get a double bill.** Marc again: "when there is a midweek
+gameweek you can just do the review and the preview as one slightly longer
+episode." That is how every real football podcast handles it, and it avoids
+two episodes per show racing into the same minute. One opening, one sign-off,
+one ad break, one phone-in, with a bridge in the middle — about 600 words
+against 400 for a single. The two halves are the existing bodies with their own
+top and tail suppressed, so there is no second copy of the copy to drift.
+
+### 5c. Howard from Prestwich
+
+Marc, 18 Aug: a phone-in caller on talkTROUGH, one call an episode, "in the
+style that phone in callers are normally introduced". Keys takes the call and
+answers it. He is a first-time caller every single week, he mentions something
+nobody asked about before he gets to the point, and he hangs up to listen.
+
+What he is WRONG about comes from real league state — the draft grades, the
+shared clubs in Friday's tie, who is about to be named Fraud of the Week — so
+it is a different complaint every episode and still deterministic.
+
+He is also the human-recorded part, which is the right shape for it: a caller
+is the one voice on a station that isn't a broadcaster, so the join shows least
+where the amateur genuinely is the amateur. `--parts` prints his script and the
+exact filenames; drop the recordings in (any format a browser plays, straight
+off a phone is fine), run `--scan`, commit. A render can never overwrite them,
+`--force` or not. Side effect: it closes the length gap on talkTROUGH — the
+pilot goes from 451 words to 606.
+
+**Clone the voice — this is the bit that makes it sustainable.** Marc, 18 Aug:
+"im not recording for howard, someone else is", then "can we not use a
+synthesized voice from a pre recorded voice?" Yes, and that is the answer. The
+pilots are fixed scripts and can be recorded once, but the weekly episodes are
+built from that week's results, so Howard's question is new every time. Two
+fresh takes a week for eight months, from someone who isn't even in the league,
+is a commitment that quietly dies in October.
+
+So: record him once — a few minutes of him talking, in character, unhurried —
+and then
+
+    node scripts/render_pods.js --clone "Howard" sample1.m4a sample2.m4a
+
+which writes the cloned voice id straight into `cast.json`. Every episode after
+that generates Howard in his own voice, automatically, forever. An afternoon of
+his time instead of a season of it.
+
+**Get his consent, explicitly.** ElevenLabs requires you hold the rights to a
+cloned voice, and beyond the terms, cloning somebody's voice without asking
+isn't a thing this league does. Ask him, tell him what it's for, and keep the
+samples.
+
+Hand-recorded takes still win wherever they exist — a render can never
+overwrite one, `--force` or not — so the two mix freely: clone for the weeks
+nobody got to, real takes wherever anybody fancied doing it properly.
+
+`settings.stability` is already at 0.7 for him, because he is the one man on
+the show who never shouts.
+
 ---
 
 ## 6. Post-draft housekeeping (from sol's 16 Aug launch verdict — GO/GO)
