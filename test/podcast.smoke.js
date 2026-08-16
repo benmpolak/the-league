@@ -179,7 +179,7 @@ const chk = (name, ok, detail = '') => {
       expands: say('Emersonn of IPS against Ballard of SUN in GW3, 12.4 pts')
         === 'Emersonn of Ipswich against Ballard of Sunderland in gameweek 3, 12.4 points',
       // a shout is handed over in lower case, so it is read as words
-      lowered: shouts('It is WOKE NONSENSE.')[0] === 'woke nonsense',
+      lowered: shouts('It is WOKE NONSENSE and I mean it.')[0] === 'woke nonsense',
       // ...and an apostrophe inside a word is not a boundary
       apostrophe: !/\[/.test(say("I'll tell you what it is, Richard.")),
       // ...nor is a capital in the middle of one
@@ -189,6 +189,12 @@ const chk = (name, ok, detail = '') => {
       article: shouts('A CREST. Lovely.')[0] === 'a crest',
       // a genuine initialism stays spelled
       initialism: !/\[/.test(say('VAR again.')) && /V A R/.test(say('VAR again.')),
+      // no utterance is bare punctuation — an engine handed a lone "." reads
+      // out its NAME, which is why the hosts kept saying "full stop"
+      noBarePunctuation: Podcast.published().flatMap(p => Podcast.episode(p.show, p.kind, p.gw).blocks)
+        .map(b => b.text || '').filter(Boolean)
+        .every(t => podRuns(t).every(r => /[A-Za-z0-9]/.test(r.say))),
+      fullStopRides: podRuns("It's WOKE NONSENSE.").slice(-1)[0].say === 'woke nonsense.',
       // and nothing is ever dropped on the floor
       lossless: (() => {
         const src = Podcast.published().flatMap(p => Podcast.episode(p.show, p.kind, p.gw).blocks)

@@ -7621,7 +7621,24 @@ function podRuns(text) {
     last = e;
   }
   if (last < t.length) out.push({ say: t.slice(last), shout: false });
-  return out.filter(r => /\S/.test(r.say));
+  /* Marc, 18 Aug: "why do the voices keep saying full stop". Because splitting
+     a line into runs can leave the punctuation stranded as a run of its own —
+     "It's WOKE NONSENSE." ends up as a shout followed by an utterance that is
+     nothing but a dot, and an engine handed a lone dot reads out its NAME.
+     So a fragment with no letters or digits in it is never spoken on its own:
+     it goes back onto the neighbouring run, where it is punctuation again. */
+  const runs = [];
+  let pend = '';
+  for (const r of out) {
+    if (!/\S/.test(r.say)) continue;
+    if (!/[A-Za-z0-9]/.test(r.say)) {
+      if (runs.length) runs[runs.length - 1].say += r.say; else pend += r.say;
+      continue;
+    }
+    if (pend) { r.say = pend + r.say; pend = ''; }
+    runs.push(r);
+  }
+  return runs;
 }
 /* Read the episode aloud. Started only from a tap (iOS refuses otherwise),
    cancelled on close. Each speaker gets his own INSTALLED voice where the
