@@ -339,6 +339,50 @@ library before a credit is spent.
   yours. Until you do, the pilots and the draft reaction are one-offs you can
   cut by hand, which is most of the value for almost none of the cost.
 
+### 5d. Re-rendering — one command, and optionally none
+
+Marc, 18 Aug: "how do they get re rendered. We need a better process for this
+surely." He's right, and the old loop had already gone wrong once.
+
+**Locally, it is one command, always the same one:**
+
+    npm run pods
+
+It works out what is OUTSTANDING and cuts exactly that — lines with no audio,
+lines whose words changed, lines whose cast voice changed. Run it when nothing
+has changed and it spends nothing and writes nothing. It starts its own web
+server and stops it again, so there is no second terminal to forget.
+
+    npm run pods:due       what it would cut, and what that costs
+    npm run pods:voices    your ElevenLabs library, with ids
+    npm run pods:audition  every voice reading the same line
+    npm run pods:parts     lines still waiting on a human recording
+    npm run pods:scan      rebuild the manifest from files on disk
+
+That works because recordings are filed under a hash of what is SAID, not
+where the line sits. Re-ordering is free; re-wording re-cuts that line alone.
+
+**A spend cap.** Anything over 25,000 characters stops and asks, before it
+touches the network — one shared phrase can legitimately re-cut hundreds of
+lines, and that should be a decision rather than an invoice. Raise it
+deliberately with `--max-chars` when the big job is the point.
+
+**To take yourself out of the loop entirely**, there is now
+`.github/workflows/render-pods.yml`. It needs one thing from you:
+
+    Settings → Secrets and variables → Actions → New repository secret
+    ELEVENLABS_API_KEY = a key that has never been in a chat
+
+With that, you can run a render from the Actions tab without a terminal. To let
+it run on a schedule too — Friday before the previews, late Monday once the
+reviews can be cut — also add a repository **variable** `PODS_AUTORENDER = on`.
+Until that variable exists the scheduled runs exit immediately, so merging the
+workflow changes nothing on its own. It commits to whichever branch it ran on
+and never pushes to `main` by itself.
+
+It costs the job before spending, runs the smoke test after rendering, and
+commits nothing if nothing changed.
+
 **The gap this leaves, stated plainly.** Marc asked (18 Aug) whether the
 episodes generate themselves on a schedule. The TEXT does, with no server and
 no job at all: `Podcast.published()` is a pure function of league state and the

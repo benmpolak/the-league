@@ -52,18 +52,44 @@
  *
  * ── WHAT IT WRITES ────────────────────────────────────────────────────────
  *
- *     audio/pod/<episode-id>/<block-index>.mp3
- *     audio/pod/index.json    ← { "<episode-id>": { "<block>": "<file>" } }
+ *     audio/pod/<episode-id>/<line-key>.mp3
+ *     audio/pod/index.json     ← { "<episode-id>": { "<line-key>": "<file>" } }
+ *     audio/pod/rendered.json  ← which files WE cut, and with which voice
  *
- * One file per spoken line, numbered by its index in ep.blocks — the units the
- * player already walks, so captions, running order and the synthesised stings
- * are untouched. The manifest is per LINE, so a bought voice, a human and the
- * browser robot can all be in one episode while it's being built up: any line
- * without a file is read by the browser.
+ * One file per spoken line, filed under a hash of WHAT IS SAID rather than
+ * where the line sits. That matters: recordings used to be numbered by block
+ * index, so moving the ad break silently re-pointed all 41 rendered files at
+ * other people's words (caught by the smoke test, 18 Aug). Keying on the text
+ * means re-ordering is free, and re-wording a line re-cuts that line alone.
  *
- * Nothing hand-recorded is ever overwritten. Rendering skips any block that
- * already has a file unless you pass --force, and skips `human` characters
- * always.
+ * rendered.json is what separates a file we made from one a human recorded, so
+ * a stand-in stays replaceable while a real take is untouchable. It also holds
+ * the voice, which is why recasting somebody re-cuts only their lines.
+ *
+ * Any line without a file is simply read aloud by the browser, so a part-cut
+ * episode still plays end to end.
+ *
+ * ── RE-RENDERING, WHICH IS THE NORMAL CASE ────────────────────────────────
+ *
+ * There is one command and it is always the same one:
+ *
+ *     npm run pods
+ *
+ * It works out what is outstanding — lines with no audio, lines whose words
+ * changed, lines whose cast voice changed — and cuts exactly those. Run it
+ * when nothing has changed and it spends nothing and writes nothing. It starts
+ * its own web server and shuts it down again, so there is no second terminal
+ * to forget.
+ *
+ *     npm run pods:due     what it WOULD cut, and what that costs
+ *     npm run pods:parts   lines still waiting on a human recording
+ *
+ * A run over --max-chars (25,000 by default) stops and asks, before it touches
+ * the network. One shared phrase can legitimately re-cut hundreds of lines, and
+ * that should be a decision rather than an invoice.
+ *
+ * .github/workflows/render-pods.yml does the same thing on a schedule once Ben
+ * adds the key as a repo secret.
  *
  * ONLY BEN RUNS THE RENDER — it needs an API key and it spends money. Nothing
  * in the app fetches from a third party: this is a build step whose OUTPUT is
@@ -79,6 +105,7 @@
  *   --provider     elevenlabs | openai — overrides cast.json
  *   --force        re-render lines that already have a file (WILL overwrite)
  *   --dry          cost the job without casting or spending anything
+ *   --max-chars N  refuse a run bigger than this (default 25000)
  *   --url          site to read the episodes from (default http://localhost:8749)
  *
  * ── ON ELEVENLABS (Ben's choice, 18 Aug) ──────────────────────────────────
@@ -112,6 +139,8 @@ const SITE = opt('url', 'http://localhost:8749');
 const FORCE = flag('force'), DRY = flag('dry'), SCAN = flag('scan');
 const PARTS = flag('parts'), VOICES = flag('voices'), AUDITION = flag('audition');
 const CLONE = opt('clone', '');
+// a guard rail, not a budget: big jobs are fine, silent big jobs are not
+const MAX_CHARS = Math.max(0, parseInt(opt('max-chars', '25000'), 10) || 25000);
 const AUDITION_LINE = opt('line',
   "Right. I'll tell you what it is, Richard. It's woke nonsense, and nobody complained when you posted your transfers in with a stamp on.");
 // anything a browser will play; the manifest carries the extension, so a phone
@@ -269,8 +298,39 @@ const render = (text, chair, direction, around) =>
     : ttsOpenAI(text, chair.voice, direction);
 
 /* ---------- getting the scripts ----------
-   Out of the real generator, not a copy of it. */
+   Out of the real generator, not a copy of it.
+
+   The site has to be served for that, and asking a human to keep a second
+   terminal open is how a step gets skipped at eleven at night. So if the URL
+   isn't already answering, start a server, use it, and shut it down after. */
+let _server = null;
+function serveIfNeeded(url) {
+  return new Promise(resolve => {
+    const u = new URL(url);
+    if (!/^(localhost|127\.0\.0\.1)$/.test(u.hostname)) return resolve(false);
+    const http = require('http');
+    const probe = http.get(url, r => { r.destroy(); resolve(false); });
+    probe.on('error', () => {
+      const { spawn } = require('child_process');
+      _server = spawn('python3', ['-m', 'http.server', u.port || '80'], { cwd: ROOT, stdio: 'ignore' });
+      // a live child keeps node's loop open, and this one never exits on its
+      // own — so let it float free and kill it deliberately when we're done
+      _server.unref();
+      // give it a moment, then confirm rather than assume
+      const wait = (tries = 20) => setTimeout(() => {
+        http.get(url, r => { r.destroy(); console.log(`(serving ${path.basename(ROOT)} on ${u.port} for this run)`); resolve(true); })
+          .on('error', () => tries ? wait(tries - 1) : resolve(false));
+      }, 150);
+      wait();
+    });
+  });
+}
+const stopServing = () => { if (_server) { _server.kill(); _server = null; } };
+process.on('exit', stopServing);
+process.on('SIGINT', () => { stopServing(); process.exit(130); });
+
 async function harvest() {
+  await serveIfNeeded(SITE);
   const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
   const page = await browser.newPage();
@@ -470,6 +530,30 @@ async function doRender(eps) {
     console.error(`Run  node scripts/render_pods.js --voices  and paste the ids into audio/pod/cast.json.\n`);
     if (!DRY) process.exit(1);
   }
+  /* A spend cap, because the render loop is now sensitive to text: change one
+     shared phrase and you can legitimately re-cut two hundred lines. Costing
+     the job first and refusing anything unexpectedly large turns a surprise
+     invoice into a question. Raise it deliberately with --max-chars when the
+     big job IS the intention. */
+  if (!DRY) {
+    let due = 0, lines = 0;
+    for (const ep of eps) for (const b of ep.blocks) {
+      if (b.t === 'theme') continue;
+      const chair = chairFor(b.t === 'ad' ? ep.host : b.who);
+      const got = existing(ep.id, b.key), mine = provenance(ep.id, b.key);
+      const voice = String(chair.voice || '').trim();
+      if (chair.human && got && !mine) continue;
+      if (!voice) continue;
+      if (got && (chair.human || !FORCE) && mine && mine.voice === voice) continue;
+      if (got && !chair.human && !FORCE && !mine) continue;
+      due += b.say.length; lines++;
+    }
+    if (due > MAX_CHARS) {
+      console.error(`\nThis run would render ${lines} line(s), ${due} characters — over the ${MAX_CHARS} cap.`);
+      console.error(`Check it with --dry. If that is genuinely what you want: --max-chars ${Math.ceil(due / 1000) * 1000}\n`);
+      process.exit(1);
+    }
+  }
   if (PROVIDER === 'elevenlabs' && !DRY) {
     const known = new Set((await listVoices()).map(v => v.id));
     const wrong = Object.entries(CASTING.cast)
@@ -548,4 +632,4 @@ async function doRender(eps) {
   if (!eps.length) { console.error('nothing to work on — check --only against Podcast.published()'); process.exit(1); }
   if (PARTS) return doParts(eps);
   await doRender(eps);
-})().catch(e => { console.error(e.message || e); process.exit(1); });
+})().then(stopServing, e => { stopServing(); console.error(e.message || e); process.exit(1); });
