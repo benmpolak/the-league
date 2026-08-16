@@ -2,33 +2,59 @@
 /* Render The Podcunt Network to REAL voices.
  *
  * Marc, 18 Aug: "this joke doesnt work unless the people sound like people not
- * robots. We need to find a way to have proper voices that sound more real."
- * He is right. The browser's speech engine has a ceiling and we have hit it —
- * it can be stopped from spelling out the shouting (js/app.js, podRuns) but it
- * will never be Andy Grey. The only step change is recorded audio.
+ * robots." He's right — the browser's speech engine has a ceiling and we hit
+ * it. Then: "ben and i have a new approach which involves using one of the
+ * paid options to improve the quality of the voices and record some of our
+ * own", and "we only want to use one human recording and the others can all be
+ * pre selected but i want to choose them from the 3rd party".
  *
- * So: this reads the episodes out of the LIVE generator (headless browser, the
- * same js/podcast.js every phone runs — no second copy of the scripts to drift
- * out of sync), sends each line to a proper text-to-speech voice, and writes
+ * So the casting lives in audio/pod/cast.json — a plain file you edit, one
+ * entry per character — and this script gives you the three things you need to
+ * fill it in: a list of what the provider has, an audition of them all reading
+ * the same line, and the render itself.
+ *
+ * ── HOW TO CAST (the whole job, in order) ─────────────────────────────────
+ *
+ *   1. See what's on offer.            node scripts/render_pods.js --voices
+ *   2. Hear them all say the same thing, so it's a fair test:
+ *                                      node scripts/render_pods.js --audition
+ *      → writes audio/pod/_audition/<voice>.mp3. Listen. Pick.
+ *   3. Put your picks in audio/pod/cast.json — "voice" is the id from step 1.
+ *      Set "human": true on the ONE character you're voicing yourselves.
+ *   4. See which lines you have to read:
+ *                                      node scripts/render_pods.js --parts
+ *      Record them, drop them in audio/pod/<episode>/<n>.<ext> (any format a
+ *      browser plays — straight off a phone is fine), then --scan.
+ *   5. Render everyone else:           node scripts/render_pods.js
+ *   6. Commit audio/.
+ *
+ * ── WHAT IT WRITES ────────────────────────────────────────────────────────
  *
  *     audio/pod/<episode-id>/<block-index>.mp3
- *     audio/pod/index.json          ← the episodes that are ready
+ *     audio/pod/index.json    ← { "<episode-id>": { "<block>": "<file>" } }
  *
- * One file per spoken line, numbered by its index in ep.blocks. The player
- * walks blocks anyway, so the captions, the running order and the synthesised
- * stings all keep working, and a half-rendered episode still plays: any line
- * without a file falls back to the browser voice.
+ * One file per spoken line, numbered by its index in ep.blocks — the units the
+ * player already walks, so captions, running order and the synthesised stings
+ * are untouched. The manifest is per LINE, so a bought voice, a human and the
+ * browser robot can all be in one episode while it's being built up: any line
+ * without a file is read by the browser.
  *
- * ONLY BEN RUNS THIS. It needs an API key and it spends money. Nothing in the
- * app fetches from a third party — this is a build step whose OUTPUT is
- * committed, so the site itself stays same-origin and offline-capable.
+ * Nothing hand-recorded is ever overwritten. Rendering skips any block that
+ * already has a file unless you pass --force, and skips `human` characters
+ * always.
  *
- *   OPENAI_API_KEY=... node scripts/render_pods.js --only gfw-pilot,tt-pilot
- *   ELEVENLABS_API_KEY=... node scripts/render_pods.js --provider elevenlabs
+ * ONLY BEN RUNS THE RENDER — it needs an API key and it spends money. Nothing
+ * in the app fetches from a third party: this is a build step whose OUTPUT is
+ * committed, so the site stays same-origin and offline-capable.
  *
- *   --only a,b     render just these episode ids (default: everything published)
- *   --provider     openai (default) | elevenlabs
- *   --force        re-render lines that already have a file
+ *   --voices       list the provider's voices, with ids for cast.json
+ *   --audition     render one test line in every voice so you can choose
+ *   --line "..."   what the audition should say (default: a talkTROUGH line)
+ *   --parts        print the lines assigned to human voices, then stop
+ *   --scan         rebuild index.json from the files on disk, render nothing
+ *   --only a,b     work on just these episode ids (default: all published)
+ *   --provider     openai (default) | elevenlabs — overrides cast.json
+ *   --force        re-render lines that already have a file (WILL overwrite)
  *   --dry          list what it would render, spend nothing
  *   --url          site to read the episodes from (default http://localhost:8749)
  */
@@ -39,66 +65,143 @@ const puppeteer = require('puppeteer-core');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'audio', 'pod');
+const CAST_FILE = path.join(OUT, 'cast.json');
+const INDEX_FILE = path.join(OUT, 'index.json');
 
 const argv = process.argv.slice(2);
 const flag = n => argv.includes('--' + n);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
-const PROVIDER = opt('provider', 'openai');
 const ONLY = (opt('only', '') || '').split(',').map(s => s.trim()).filter(Boolean);
 const SITE = opt('url', 'http://localhost:8749');
-const FORCE = flag('force'), DRY = flag('dry');
+const FORCE = flag('force'), DRY = flag('dry'), SCAN = flag('scan');
+const PARTS = flag('parts'), VOICES = flag('voices'), AUDITION = flag('audition');
+const AUDITION_LINE = opt('line',
+  "Right. I'll tell you what it is, Richard. It's woke nonsense, and nobody complained when you posted your transfers in with a stamp on.");
+// anything a browser will play; the manifest carries the extension, so a phone
+// recording goes in exactly as it came off the phone
+const PLAYABLE = ['.mp3', '.m4a', '.aac', '.ogg', '.opus', '.wav', '.webm', '.flac'];
 
-/* ---------- the casting ----------
-   This is the whole job. A neutral voice reading Andy Grey's lines is exactly
-   the robot Marc is complaining about, so every character gets a different
-   voice AND a direction — how to say it, not just what. Ben: change these
-   freely, that is the point of them being here rather than buried.
-
-   openai  — voice is one of alloy/ash/ballad/coral/echo/fable/onyx/nova/sage/
-             shimmer/verse; `direction` is passed as `instructions`, which the
-             gpt-4o-mini-tts model actually acts on. That steering is why this
-             is the default provider.
-   11labs  — `id` is a voice id from your ElevenLabs library. It ignores the
-             direction (the voice itself carries the character), so cast it
-             with care: the shouty ones want an actual shouty voice. */
-const CAST = {
-  'Rax Mushden': {
-    openai: 'ballad', id: '',
-    direction: 'A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them.',
+/* ---------- the casting sheet ----------
+   Shipped as audio/pod/cast.json so it can be edited without touching code.
+   This is only the fallback used to write that file the first time. */
+const DEFAULT_CAST = {
+  provider: 'openai',
+  _README: [
+    'One entry per character. "voice" is an id from `--voices`.',
+    '"direction" is how to say it — openai acts on this, elevenlabs ignores it.',
+    'Set "human": true on a character you are voicing yourselves; they are',
+    'never rendered and never overwritten. Use `--parts` to get their script.',
+  ],
+  cast: {
+    'Rax Mushden': {
+      voice: 'ballad', human: false,
+      direction: 'A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them.',
+    },
+    'Donathan Bilson': {
+      voice: 'sage', human: false,
+      direction: 'A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice.',
+    },
+    'Yonni Liu': {
+      voice: 'shimmer', human: false,
+      direction: 'A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense.',
+    },
+    'Sid Lowry': {
+      voice: 'echo', human: false,
+      direction: 'A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony.',
+    },
+    'Richard Keyes': {
+      voice: 'onyx', human: false,
+      direction: 'A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact.',
+    },
+    'Andy Grey': {
+      voice: 'ash', human: false,
+      direction: 'A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath.',
+    },
+    'Jamie O’Hara-Hara': {
+      voice: 'verse', human: false,
+      direction: 'A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting.',
+    },
   },
-  'Donathan Bilson': {
-    openai: 'sage', id: '',
-    direction: 'A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice.',
-  },
-  'Yonni Liu': {
-    openai: 'shimmer', id: '',
-    direction: 'A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense.',
-  },
-  'Sid Lowry': {
-    openai: 'echo', id: '',
-    direction: 'A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony.',
-  },
-  'Richard Keyes': {
-    openai: 'onyx', id: '',
-    direction: 'A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact.',
-  },
-  'Andy Grey': {
-    openai: 'ash', id: '',
-    direction: 'A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath.',
-  },
-  'Jamie O’Hara-Hara': {
-    openai: 'verse', id: '',
-    direction: 'A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting.',
+  /* An advert read in the presenter's normal voice is the one thing no radio
+     station has ever done, so the ad breaks get their own direction. */
+  adDirection: {
+    gfw: 'Read as a gentle, sincere public-service sponsorship message. Soft, unhurried, slightly wistful.',
+    tt: 'Read as a LOUD, hard-sell local radio advert. Fast, aggressive, delighted with itself, shouting the product name.',
   },
 };
 
-/* Directions are per character; the ad reads want their own energy, because
-   an advert read in the presenter's normal voice is the one thing no radio
-   station has ever done. */
-const AD_DIRECTION = {
-  gfw: 'Read as a gentle, sincere public-service sponsorship message. Soft, unhurried, slightly wistful.',
-  tt: 'Read as a LOUD, hard-sell local radio advert. Fast, aggressive, delighted with itself, shouting the product name.',
-};
+function loadCast() {
+  if (!fs.existsSync(CAST_FILE)) {
+    fs.mkdirSync(OUT, { recursive: true });
+    fs.writeFileSync(CAST_FILE, JSON.stringify(DEFAULT_CAST, null, 2) + '\n');
+    console.log(`Wrote a starter casting sheet to ${path.relative(ROOT, CAST_FILE)} — edit it and run again.\n`);
+    return DEFAULT_CAST;
+  }
+  const c = JSON.parse(fs.readFileSync(CAST_FILE, 'utf8'));
+  c.cast = c.cast || {};
+  c.adDirection = c.adDirection || DEFAULT_CAST.adDirection;
+  return c;
+}
+const CASTING = loadCast();
+const PROVIDER = opt('provider', CASTING.provider || 'openai');
+const chairFor = who => CASTING.cast[who] || { voice: PROVIDER === 'openai' ? 'ballad' : '', direction: '', human: false };
+
+/* ---------- what the provider has ---------- */
+// OpenAI publishes no list endpoint, so this is the documented set
+const OPENAI_VOICES = [
+  ['alloy', 'neutral, even, unremarkable — a safe narrator'],
+  ['ash', 'low, gravelly, weathered — the closest thing to an angry ex-pro'],
+  ['ballad', 'warm, lilting, British-leaning — good for a host'],
+  ['coral', 'bright and friendly, a touch presentational'],
+  ['echo', 'dry, laid-back, unhurried'],
+  ['fable', 'expressive and storytelling, British-leaning'],
+  ['onyx', 'deep, plummy, authoritative — the broadcaster voice'],
+  ['nova', 'light, quick, youthful'],
+  ['sage', 'measured and thoughtful, slightly academic'],
+  ['shimmer', 'clear and earnest, a shade brighter than nova'],
+  ['verse', 'animated, nasal, chatty — good for somebody interrupting'],
+];
+async function listVoices() {
+  if (PROVIDER === 'elevenlabs') {
+    const key = process.env.ELEVENLABS_API_KEY;
+    if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
+    const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } });
+    if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 300));
+    return (await r.json()).voices.map(v => {
+      const l = v.labels || {};
+      const bits = [l.gender, l.age, l.accent, l.descriptive || l.description, l.use_case].filter(Boolean);
+      return { id: v.voice_id, name: v.name, note: bits.join(', ') };
+    });
+  }
+  return OPENAI_VOICES.map(([id, note]) => ({ id, name: id, note }));
+}
+
+/* ---------- the voices ---------- */
+async function ttsOpenAI(text, voice, direction) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error('OPENAI_API_KEY is not set');
+  const r = await fetch('https://api.openai.com/v1/audio/speech', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice, input: text, instructions: direction, response_format: 'mp3' }),
+  });
+  if (!r.ok) throw new Error('openai ' + r.status + ' ' + (await r.text()).slice(0, 300));
+  return Buffer.from(await r.arrayBuffer());
+}
+async function ttsEleven(text, voiceId) {
+  const key = process.env.ELEVENLABS_API_KEY;
+  if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
+  if (!voiceId) throw new Error('no ElevenLabs voice id cast for this character — run --voices and fill in cast.json');
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
+    method: 'POST',
+    headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.5 } }),
+  });
+  if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 300));
+  return Buffer.from(await r.arrayBuffer());
+}
+const render = (text, voice, direction) =>
+  PROVIDER === 'elevenlabs' ? ttsEleven(text, voice) : ttsOpenAI(text, voice, direction);
 
 /* ---------- getting the scripts ----------
    Out of the real generator, not a copy of it. */
@@ -114,83 +217,136 @@ async function harvest() {
     return { id: e.id, show: e.show.id, host: e.show.host, title: e.title, blocks: e.blocks };
   }));
   await browser.close();
-  return eps;
+  return eps.filter(e => !ONLY.length || ONLY.includes(e.id));
 }
 
-/* ---------- the voices ---------- */
-async function ttsOpenAI(text, voice, direction) {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error('OPENAI_API_KEY is not set');
-  const r = await fetch('https://api.openai.com/v1/audio/speech', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini-tts', voice, input: text,
-      instructions: direction, response_format: 'mp3',
-    }),
-  });
-  if (!r.ok) throw new Error('openai ' + r.status + ' ' + (await r.text()).slice(0, 300));
-  return Buffer.from(await r.arrayBuffer());
+/* ---------- the manifest ----------
+   Rebuilt from what is actually on disk, so hand-recorded files need no
+   bookkeeping: drop them in, run --scan, commit. */
+function scanManifest() {
+  const index = {};
+  if (!fs.existsSync(OUT)) return index;
+  for (const ep of fs.readdirSync(OUT)) {
+    const dir = path.join(OUT, ep);
+    if (ep.startsWith('_') || !fs.statSync(dir).isDirectory()) continue;
+    const lines = {};
+    for (const f of fs.readdirSync(dir)) {
+      const n = path.basename(f, path.extname(f));
+      if (!/^\d+$/.test(n) || !PLAYABLE.includes(path.extname(f).toLowerCase())) continue;
+      lines[n] = f;
+    }
+    if (Object.keys(lines).length) index[ep] = lines;
+  }
+  return index;
 }
-
-async function ttsEleven(text, voiceId) {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
-  if (!voiceId) throw new Error('no ElevenLabs voice id cast for this character — fill in CAST[].id');
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
-    method: 'POST',
-    headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text, model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.5 },
-    }),
-  });
-  if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 300));
-  return Buffer.from(await r.arrayBuffer());
-}
-
-const say = (text, who, showId, isAd) => {
-  const c = CAST[who] || CAST['Rax Mushden'];
-  const direction = isAd ? (AD_DIRECTION[showId] || c.direction) : c.direction;
-  return PROVIDER === 'elevenlabs' ? ttsEleven(text, c.id) : ttsOpenAI(text, c.openai, direction);
+const writeManifest = index => {
+  const sorted = {};
+  for (const ep of Object.keys(index).sort()) {
+    sorted[ep] = {};
+    for (const n of Object.keys(index[ep]).sort((a, b) => a - b)) sorted[ep][n] = index[ep][n];
+  }
+  fs.writeFileSync(INDEX_FILE, JSON.stringify(sorted, null, 2) + '\n');
+  const lines = Object.values(sorted).reduce((s, o) => s + Object.keys(o).length, 0);
+  console.log(`\naudio/pod/index.json: ${Object.keys(sorted).length} episode(s), ${lines} recorded line(s).`);
+};
+// the file already on disk for this line, whoever made it
+const existing = (epId, n) => {
+  const dir = path.join(OUT, epId);
+  if (!fs.existsSync(dir)) return null;
+  return fs.readdirSync(dir).find(f => path.basename(f, path.extname(f)) === String(n)
+    && PLAYABLE.includes(path.extname(f).toLowerCase())) || null;
 };
 
-(async () => {
-  const eps = (await harvest()).filter(e => !ONLY.length || ONLY.includes(e.id));
-  if (!eps.length) { console.error('nothing to render — check --only against Podcast.published()'); process.exit(1); }
-  fs.mkdirSync(OUT, { recursive: true });
-  const ready = new Set(JSON.parse(fs.existsSync(path.join(OUT, 'index.json'))
-    ? fs.readFileSync(path.join(OUT, 'index.json'), 'utf8') : '[]'));
+/* ---------- the jobs ---------- */
+async function doVoices() {
+  const vs = await listVoices();
+  console.log(`\n${PROVIDER} has ${vs.length} voice(s). Put the id in the "voice" field in audio/pod/cast.json.\n`);
+  const w = Math.max(...vs.map(v => v.id.length));
+  for (const v of vs) console.log(`  ${v.id.padEnd(w)}  ${v.name === v.id ? '' : v.name + ' — '}${v.note || ''}`);
+  console.log(`\nThen hear them: node scripts/render_pods.js --audition\n`);
+}
 
-  let made = 0, skipped = 0, chars = 0;
+async function doAudition() {
+  const vs = await listVoices();
+  const dir = path.join(OUT, '_audition');
+  fs.mkdirSync(dir, { recursive: true });
+  console.log(`\nAuditioning ${vs.length} voice(s) on the same line, so it's a fair test:\n  "${AUDITION_LINE}"\n`);
+  if (DRY) { console.log(`  would write ${vs.length} files to ${path.relative(ROOT, dir)}`); return; }
+  for (const v of vs) {
+    const file = path.join(dir, v.id.replace(/[^\w.-]/g, '_') + '.mp3');
+    try {
+      // no direction here on purpose — you are judging the VOICE, not the steer
+      fs.writeFileSync(file, await render(AUDITION_LINE, v.id, ''));
+      console.log(`  ${path.relative(ROOT, file)}   ${v.name}`);
+    } catch (e) { console.error(`  FAILED ${v.id}: ${e.message}`); }
+  }
+  console.log(`\nListen, pick, and put the ids in audio/pod/cast.json.`);
+  console.log(`audio/pod/_audition/ is scratch — delete it before committing.\n`);
+}
+
+function doParts(eps) {
+  const humans = Object.entries(CASTING.cast).filter(([, c]) => c.human).map(([n]) => n);
+  if (!humans.length) {
+    console.log('\nNobody is marked "human": true in audio/pod/cast.json, so there is nothing to record.\n');
+    return;
+  }
+  console.log(`\nLines to record yourselves — ${humans.join(', ')}.`);
+  console.log('Save each one in the folder shown, named by its number, in any format a browser plays.\n');
+  let n = 0;
+  for (const ep of eps) {
+    const mine = ep.blocks.map((b, i) => ({ b, i }))
+      .filter(({ b }) => b.t === 'speech' && humans.includes(b.who));
+    if (!mine.length) continue;
+    console.log(`── ${ep.id}  (${ep.title})   →  audio/pod/${ep.id}/`);
+    for (const { b, i } of mine) {
+      const got = existing(ep.id, i);
+      console.log(`   ${String(i).padStart(3)}.mp3  ${got ? '[recorded: ' + got + ']' : '[ TO DO ]'}  ${b.who}`);
+      console.log(`        “${b.text}”\n`);
+      n++;
+    }
+  }
+  console.log(`${n} line(s) in total. When they're in: node scripts/render_pods.js --scan\n`);
+}
+
+async function doRender(eps) {
+  let made = 0, skipped = 0, human = 0, chars = 0;
   for (const ep of eps) {
     const dir = path.join(OUT, ep.id);
     fs.mkdirSync(dir, { recursive: true });
-    let whole = true;
     for (let n = 0; n < ep.blocks.length; n++) {
       const b = ep.blocks[n];
       if (b.t === 'theme') continue; // the stings are synthesised in the app
-      const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
       const who = b.t === 'ad' ? ep.host : b.who;
-      const file = path.join(dir, n + '.mp3');
-      if (!FORCE && fs.existsSync(file)) { skipped++; continue; }
+      const chair = chairFor(who);
+      // a part somebody is voicing themselves is never rendered and never
+      // overwritten, --force or not
+      if (chair.human) { human++; continue; }
+      if (!FORCE && existing(ep.id, n)) { skipped++; continue; }
+      const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
+      const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
       chars += text.length;
-      if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who}  ${text.length} chars`); made++; continue; }
+      if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who} as ${chair.voice}  ${text.length} chars`); made++; continue; }
       try {
-        fs.writeFileSync(file, await say(text, who, ep.show, b.t === 'ad'));
+        fs.writeFileSync(path.join(dir, n + '.mp3'), await render(text, chair.voice, direction));
         made++;
         process.stdout.write(`  ${ep.id}/${n}.mp3  ${who}\n`);
       } catch (e) {
-        whole = false;
         console.error(`  FAILED ${ep.id}/${n}: ${e.message}`);
       }
     }
-    // an episode counts as recorded once every line is cut; a partial one is
-    // left off the manifest so the app doesn't promise a read it can't give
-    if (whole) ready.add(ep.id); else ready.delete(ep.id);
   }
-  if (!DRY) fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify([...ready].sort(), null, 2) + '\n');
-  console.log(`\n${made} line${made === 1 ? '' : 's'} rendered, ${skipped} already cut, ${chars} characters billed.`);
-  console.log(`${ready.size} episode${ready.size === 1 ? '' : 's'} listed in audio/pod/index.json.`);
-  if (DRY) console.log('(dry run — nothing was written and nothing was spent)');
-})().catch(e => { console.error(e); process.exit(1); });
+  console.log(`\n${made} line(s) rendered, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
+  if (DRY) { console.log('(dry run — nothing written, nothing spent)'); return; }
+  writeManifest(scanManifest());
+}
+
+(async () => {
+  fs.mkdirSync(OUT, { recursive: true });
+  if (VOICES) return doVoices();
+  if (AUDITION) return doAudition();
+  if (SCAN) { writeManifest(scanManifest()); return; }
+  const eps = await harvest();
+  if (!eps.length) { console.error('nothing to work on — check --only against Podcast.published()'); process.exit(1); }
+  if (PARTS) return doParts(eps);
+  await doRender(eps);
+})().catch(e => { console.error(e.message || e); process.exit(1); });

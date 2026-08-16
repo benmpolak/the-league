@@ -1,0 +1,56 @@
+{
+  "provider": "openai",
+  "_README": [
+    "One entry per character. \"voice\" is an id from `--voices`.",
+    "\"direction\" is how to say it — openai acts on this, elevenlabs ignores it.",
+    "Howard is the phone-in caller on talkTROUGH and is marked \"human\": true,",
+    "so he is never rendered and never overwritten — that part is recorded by a",
+    "real person. Run `--parts` to get his script and the filenames to save."
+  ],
+  "cast": {
+    "Rax Mushden": {
+      "voice": "ballad",
+      "human": false,
+      "direction": "A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them."
+    },
+    "Donathan Bilson": {
+      "voice": "sage",
+      "human": false,
+      "direction": "A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice."
+    },
+    "Yonni Liu": {
+      "voice": "shimmer",
+      "human": false,
+      "direction": "A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense."
+    },
+    "Sid Lowry": {
+      "voice": "echo",
+      "human": false,
+      "direction": "A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony."
+    },
+    "Richard Keyes": {
+      "voice": "onyx",
+      "human": false,
+      "direction": "A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact."
+    },
+    "Andy Grey": {
+      "voice": "ash",
+      "human": false,
+      "direction": "A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath."
+    },
+    "Jamie O’Hara-Hara": {
+      "voice": "verse",
+      "human": false,
+      "direction": "A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting."
+    },
+    "Howard": {
+      "voice": "",
+      "human": true,
+      "direction": "An older, slower, unhurried caller on a hands-free in a van. Flat, patient, entirely sincere, never shouts. Talks past the interruption."
+    }
+  },
+  "adDirection": {
+    "gfw": "Read as a gentle, sincere public-service sponsorship message. Soft, unhurried, slightly wistful.",
+    "tt": "Read as a LOUD, hard-sell local radio advert. Fast, aggressive, delighted with itself, shouting the product name."
+  }
+}

@@ -7489,25 +7489,51 @@ function podStopSpeaking() {
    like Andy Grey. So the player takes REAL audio wherever real audio exists
    and only falls back to the browser's voice where it doesn't.
 
-   The recordings are ordinary files under audio/pod/<episode-id>/<n>.mp3 —
-   one per spoken block, numbered by its index in ep.blocks, exactly the units
-   the player already walks. That keeps the captions, the running order and the
-   synthesised stings working untouched, and it means a half-rendered episode
-   still plays: any line without a file just gets read by the browser.
-   scripts/render_pods.js produces them; audio/pod/index.json lists what is
-   ready. Nothing here fetches from anywhere but this origin. */
-let _podRec = null; // Set of episode ids with a recording; null until asked
+   The recordings are ordinary files under audio/pod/<episode-id>/, one per
+   spoken block, named by its index in ep.blocks — exactly the units the player
+   already walks. That keeps the captions, the running order and the
+   synthesised stings working untouched.
+
+   Marc, 18 Aug: "ben and i have a new approach which involves using one of the
+   paid options to improve the quality of the voices and record some of our
+   own". So the manifest is per LINE, not per episode:
+
+     { "gfw-pilot": { "1": "1.mp3", "4": "4.m4a" } }
+
+   A line with a file plays that file; a line without gets read by the browser.
+   That means a bought voice and a real human and the robot can all be in the
+   same episode while it is being built up, which is what recording your own
+   in a spare hour actually looks like. The extension comes from the manifest,
+   so a phone recording can be dropped in as it is — `node scripts/render_pods.js
+   --scan` rebuilds the manifest from whatever is on disk.
+   Nothing here fetches from anywhere but this origin. */
+let _podRec = null; // episode id → { blockIndex: filename }; null until asked
 async function podRecordings() {
   if (_podRec) return _podRec;
-  _podRec = new Set();
+  _podRec = {};
   try {
     const r = await fetch('audio/pod/index.json', { cache: 'no-cache' });
     if (r.ok) {
       const j = await r.json();
-      (Array.isArray(j) ? j : j.episodes || []).forEach(x => _podRec.add(String(x)));
+      // the old shape was a bare list of fully-cut episodes; still honoured,
+      // so a manifest written before the hand-recording work keeps playing
+      if (Array.isArray(j)) j.forEach(id => { _podRec[String(id)] = '*'; });
+      else if (j && typeof j === 'object') for (const [id, lines] of Object.entries(j)) {
+        if (lines && typeof lines === 'object') _podRec[id] = lines;
+      }
     }
   } catch { /* no recordings shipped yet — the browser voice carries it */ }
   return _podRec;
+}
+// the file for one line, or null if nobody has recorded it yet
+function podLineSrc(rec, epId, n) {
+  const lines = rec[epId];
+  if (!lines) return null;
+  if (lines === '*') return `audio/pod/${encodeURIComponent(epId)}/${n}.mp3`;
+  const f = lines[n] || lines[String(n)];
+  // the manifest names a file inside the episode's own folder and nothing else
+  if (!f || typeof f !== 'string' || /[\/\\]|\.\./.test(f)) return null;
+  return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}`;
 }
 function podcastSheet(id) {
   const ep = podById(id);
@@ -7557,11 +7583,15 @@ function podcastSheet(id) {
   const btn = ov.querySelector('#podPlay');
   if (btn) btn.onclick = () => podPlay(ep, btn, ov.querySelector('#podNow'));
   // say so when this one is the real thing, so nobody judges the hosts on a
-  // read the browser did for them
-  podRecordings().then(have => {
-    if (!have.has(ep.id) || !ov.isConnected) return;
+  // read the browser did for them — and say when it is only part cut, so a
+  // robot turning up halfway through isn't taken for a bug
+  podRecordings().then(rec => {
+    if (!ov.isConnected) return;
+    const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
+    const cut = spoken.filter(([, n]) => podLineSrc(rec, ep.id, n)).length;
+    if (!cut) return;
     const meta = ov.querySelector('#podMeta');
-    if (meta) meta.textContent += ' · recorded';
+    if (meta) meta.textContent += cut === spoken.length ? ' · recorded' : ' · part recorded';
   });
 }
 /* ---- the speech desk ----
@@ -7655,7 +7685,7 @@ async function podPlay(ep, btn, nowEl) {
   const line = nowEl?.querySelector('.pod-now-line');
   const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
   if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
-  const recorded = (await podRecordings()).has(ep.id);
+  const rec = await podRecordings();
   const all = synth.getVoices() || [];
   // the default voice is usually the worst one installed — prefer a real
   // en-GB one, and prefer the enhanced/natural variants where they exist
@@ -7696,8 +7726,9 @@ async function podPlay(ep, btn, nowEl) {
      reading it if there is no file — a part-rendered episode still plays end
      to end, it just has a robot standing in for whoever hasn't been cut yet. */
   const perform = (n, text, name, then) => {
-    if (!recorded) { speak(text, name, then); return; }
-    const a = new Audio(`audio/pod/${encodeURIComponent(ep.id)}/${n}.mp3`);
+    const src = podLineSrc(rec, ep.id, n);
+    if (!src) { speak(text, name, then); return; }
+    const a = new Audio(src);
     _podAudio = a;
     let handed = false;
     const hand = fn => { if (handed) return; handed = true; if (_podAudio === a) _podAudio = null; fn(); };
