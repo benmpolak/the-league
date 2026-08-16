@@ -91,9 +91,13 @@
  * .github/workflows/render-pods.yml does the same thing on a schedule once Ben
  * adds the key as a repo secret.
  *
- * ONLY BEN RUNS THE RENDER — it needs an API key and it spends money. Nothing
- * in the app fetches from a third party: this is a build step whose OUTPUT is
- * committed, so the site stays same-origin and offline-capable.
+ * WHO CAN RUN IT: anyone with the repo, Chrome and an ElevenLabs key. It is an
+ * ordinary local build step — no Firebase, no deploy, nothing live — and the
+ * house rules don't touch it. What it DOES do is spend money on somebody's
+ * account, so agree anything large with Ben first; the cap makes that hard to
+ * do by accident. Nothing in the app fetches from a third party: this is a
+ * build step whose OUTPUT is committed, so the site stays same-origin and
+ * offline-capable.
  *
  *   --voices       list the provider's voices, with ids for cast.json
  *   --audition     render one test line in every voice so you can choose
