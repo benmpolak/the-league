@@ -119,6 +119,18 @@
       "voice": "MLSOvrM2Tyi3okEfyOiI",
       "provider": "elevenlabs",
       "at": "2026-08-18"
+    },
+    "1h2banc": {
+      "file": "1h2banc.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1gjnz": {
+      "file": "1gjnz.mp3",
+      "voice": "MLSOvrM2Tyi3okEfyOiI",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     }
   },
   "tt-pilot": {
@@ -235,6 +247,36 @@
       "voice": "kVBPcEMsUF1nsAO1oNWw",
       "provider": "elevenlabs",
       "at": "2026-08-18"
+    },
+    "ntpm7x": {
+      "file": "ntpm7x.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "brxkow": {
+      "file": "brxkow.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "sn97nd": {
+      "file": "sn97nd.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1222g99": {
+      "file": "1222g99.mp3",
+      "voice": "kOVqQImaJYcrUxZmjqgl",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "yh1ia4": {
+      "file": "yh1ia4.mp3",
+      "voice": "GPBdEhqsWQkHEWGnPOdO",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     }
   }
 }
