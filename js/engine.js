@@ -640,7 +640,10 @@
             // dropped BY the run is instantly free — the drop-lock test is
             // t > lastRun (Toby, 9 Aug: "dropped in waivers are put in trough";
             // same bug the legacy engine fixed on 6 Jul, reborn in the port)
-            const rec = { managerId: mid, outId: c.out, inId: c.in, gw: tgw, t: runStart + 1, waiver: true };
+            // code travels with every ledger record: FPL ids are positional and
+            // shift on feed rebuilds; code is immutable and makes a record
+            // recoverable (Chairman's Desk §3b, built 16 Aug pre-draft)
+            const rec = { managerId: mid, outId: c.out, outCode: PLAYER_BY_ID[c.out]?.code ?? null, inId: c.in, inCode: inP.code ?? null, gw: tgw, t: runStart + 1, waiver: true };
             work.transfers.push(rec);
             records.push(rec);
             const lu = work.lineups[mid]?.[tgw];

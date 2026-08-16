@@ -226,6 +226,17 @@ const SB = 'the-league-sandbox';
     T.mutate(LG, 'troughSign', { inId: freeMFs[2], outId: await dropMine(2, 'MF') }, tok2),
   ]);
   chk('different-player signings both land', !dA.error && !dB.error, JSON.stringify([dA.error, dB.error]));
+  // Desk §3b: every ledger record carries the immutable FPL code so a feed
+  // id shift is recoverable (scripts/heal_ids.js). Pin the trough path here;
+  // draft picks, claims, trades and the waiver run are pinned where they land.
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const trs = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {});
+    const last = trs[trs.length - 1];
+    chk('trough signing records inCode/outCode matching the feed',
+      last && last.inCode === codeOf[last.inId] && last.outCode === codeOf[last.outId],
+      JSON.stringify(last));
+  }
   // illegal shape server-rejected: a third GK
   const freeGK = freeOf('GK')[0];
   const badShape = await T.mutate(LG, 'troughSign', { inId: freeGK, outId: await dropMine(1, 'DF') }, tok1);
@@ -241,6 +252,15 @@ const SB = 'the-league-sandbox';
     const r = await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: prize, out }] }, tok);
     chk(`manager ${mid} lodges a blind claim`, !r.error, JSON.stringify(r.error));
   }
+  {
+    // Desk §3b: the stored claim carries codes, and the {in,out,t} cleanup
+    // matcher must tolerate the extra fields (it keys on the three, not the object)
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const lodgedRaw = (await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/claims/${curGw}`).get()).val();
+    const lodged = Array.isArray(lodgedRaw) ? lodgedRaw : Object.values(lodgedRaw || {});
+    chk('lodged claim carries inCode/outCode matching the feed',
+      lodged.length && lodged.every(c => c.inCode === codeOf[c.in] && c.outCode === codeOf[c.out]), JSON.stringify(lodged));
+  }
   chk('claims are invisible to other managers (rules)', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/private/${members[3].uid}/claims`, { token: tok2 })).status));
   chk('non-commissioner cannot run waivers', (await T.mutate(LG, 'waiverRunNow', {}, tok2)).error?.status === 'PERMISSION_DENIED');
   const wr = await T.mutate(LG, 'waiverRunNow', {}, tok1);
@@ -252,6 +272,14 @@ const SB = 'the-league-sandbox';
   chk('claims cleared after the run', !clA && !clB);
   const runs = (await db.ref(`v2/leagues/${LG}/server/waiverRuns`).get()).val() || {};
   chk('run recorded with status done', Object.values(runs).some(r => r.status === 'done' && r.executed));
+  {
+    // Desk §3b: the waiver-run transfer record and the lodged claim both carry codes
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const trs2 = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {});
+    const wrec = [...trs2].reverse().find(t => t.waiver);
+    chk('waiver-run transfer record carries inCode/outCode',
+      wrec && wrec.inCode === codeOf[wrec.inId] && wrec.outCode === codeOf[wrec.outId], JSON.stringify(wrec));
+  }
   const meta = (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val();
   chk('lastRun stamped', !!meta);
   const again = await T.mutate(LG, 'waiverRunNow', {}, tok1);
@@ -285,6 +313,11 @@ const SB = 'the-league-sandbox';
   const tradeRecs = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {}).filter(t => t?.trade === tradeId);
   const liveAfterTrade = [await squadAtGw(1, curGw), await squadAtGw(2, curGw)];
   chk('mid-GW trade is ledgered only for the next unplayed GW', tradeRecs.length === 2 && tradeRecs.every(t => t.gw === curGw + 1), JSON.stringify(tradeRecs));
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    chk('trade records carry inCode/outCode on both sides (Desk §3b)',
+      tradeRecs.every(t => t.inCode === codeOf[t.inId] && t.outCode === codeOf[t.outId]), JSON.stringify(tradeRecs));
+  }
   chk('mid-GW trade leaves both ongoing-GW squads byte-for-byte unchanged',
     JSON.stringify(liveAfterTrade.map(x => [...x].sort((a, b) => a - b))) === JSON.stringify(liveBeforeTrade.map(x => [...x].sort((a, b) => a - b))));
   const prop2 = await T.mutate(LG, 'tradePropose', { to: 2, give: [theirMF], get: [myMF] }, tok1);
@@ -566,6 +599,12 @@ const SB = 'the-league-sandbox';
     T.mutate(SB, 'draftPick', { playerId: players[1].id, expectedCount: 0 }, sbTok1),
   ]);
   chk('simultaneous picks: exactly one lands', [p1, p2].filter(r => !r.error).length === 1, JSON.stringify([p1.error, p2.error]));
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const sbPicks = Object.values((await db.ref(`v2/leagues/${SB}/public/draft/picks`).get()).val() || {});
+    chk('draft pick records carry the player code (Desk §3b)',
+      sbPicks.length && sbPicks.every(pk => pk.code === codeOf[pk.playerId]), JSON.stringify(sbPicks.slice(-1)));
+  }
   chk('autopick before the clock expires rejected', (await T.mutate(SB, 'draftAutopick', {}, sbTok3)).error?.status === 'FAILED_PRECONDITION');
   await db.ref(`v2/leagues/${SB}/public/draft/deadline`).set(Date.now() - 10_000);
   const [a1, a2] = await Promise.all([

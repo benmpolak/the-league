@@ -26,10 +26,22 @@ function stubMissingPlayers(s) {
   if (!s) return false;
   const need = new Set();
   const arr = x => Array.isArray(x) ? x : x ? Object.values(x) : [];
-  for (const pk of arr(s.draft?.picks)) if (pk?.playerId && !PLAYER_BY_ID[pk.playerId]) need.add(pk.playerId);
-  for (const t of arr(s.transfers)) for (const id of [t?.inId, t?.outId]) if (id && !PLAYER_BY_ID[id]) need.add(id);
+  // ledger records carry the immutable FPL `code` (Desk §3b) — when an id has
+  // shifted under us, the code names the real player, so the stub can at least
+  // say WHO instead of "#579 (unknown)". Scoring still needs the id healed
+  // (scripts/heal_ids.js); this is the read-side half.
+  const codeFor = new Map();
+  for (const pk of arr(s.draft?.picks)) if (pk?.playerId && !PLAYER_BY_ID[pk.playerId]) { need.add(pk.playerId); if (pk.code) codeFor.set(pk.playerId, pk.code); }
+  for (const t of arr(s.transfers)) {
+    if (t?.inId && !PLAYER_BY_ID[t.inId]) { need.add(t.inId); if (t.inCode) codeFor.set(t.inId, t.inCode); }
+    if (t?.outId && !PLAYER_BY_ID[t.outId]) { need.add(t.outId); if (t.outCode) codeFor.set(t.outId, t.outCode); }
+  }
+  const byCode = Object.fromEntries(PLAYERS.map(p => [p.code, p]));
   for (const id of need) {
-    PLAYER_BY_ID[id] = { id, code: 0, name: `#${id} (unknown)`, full: 'Unknown player — feed changed', team: '', club: '???', pos: 'MF', status: 'a', news: '', newsAdded: '', chance: null, price: 0, pts: 0, rating: 0, xp: 0, ppg: 0, mp: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0 };
+    const real = byCode[codeFor.get(id)];
+    PLAYER_BY_ID[id] = real
+      ? { ...real, id, name: `${real.name} (id moved)`, pts: 0, rating: 0, xp: 0 }
+      : { id, code: 0, name: `#${id} (unknown)`, full: 'Unknown player — feed changed', team: '', club: '???', pos: 'MF', status: 'a', news: '', newsAdded: '', chance: null, price: 0, pts: 0, rating: 0, xp: 0, ppg: 0, mp: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0 };
   }
   return need.size > 0;
 }
@@ -595,7 +607,7 @@ function buildDemoState() {
     const p = sorted.find(p => !taken.has(p.id) && canTake(mid, p));
     taken.add(p.id);
     counts[mid][p.pos]++;
-    s.draft.picks.push({ managerId: mid, playerId: p.id, n: n + 1 });
+    s.draft.picks.push({ managerId: mid, playerId: p.id, code: p.code ?? null, n: n + 1 });
   }
   // fabricate Gameweek 1 results for everyone drafted
   const ps = {};
@@ -2103,6 +2115,8 @@ function wdFinish() {
 function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); }
 function setClaims(mid, arr) {
   const cur = currentGwIndex();
+  // codes ride along so a lodged claim survives a feed id shift (Desk §3b)
+  arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
   if (netOn()) {
     serverAct('claimSet', { gwIndex: cur, claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
     // the private snapshot echoes the authoritative list back
@@ -2154,7 +2168,7 @@ function processWaivers(manual = false) {
         if (!inP || ownedIdsAt(tgw).has(c.in)) continue;                      // gone — try next claim
         if (!squadAt(mid, tgw).some(x => x.id === c.out)) continue;           // out-player no longer theirs
         if (!squadShapeOk([...squadAt(mid, tgw).filter(x => x.id !== c.out), inP])) continue;
-        state.transfers.push({ managerId: mid, outId: c.out, inId: c.in, gw: tgw, n: state.transfers.length + 1, t: Date.now(), waiver: true });
+        state.transfers.push({ managerId: mid, outId: c.out, outCode: PLAYER_BY_ID[c.out]?.code ?? null, inId: c.in, inCode: PLAYER_BY_ID[c.in]?.code ?? null, gw: tgw, n: state.transfers.length + 1, t: Date.now(), waiver: true });
         const lu = state.lineups[mid]?.[tgw];
         if (lu) { state.lineups[mid][tgw] = lu.filter(id => id !== c.out); touchedLineups.add(mid); }
         executed.push({ mid, in: c.in, out: c.out });
@@ -2292,8 +2306,8 @@ function respondTrade(id, accept) {
     if (!squadShapeOk(fa) || !squadShapeOk(ta)) return null;
     const out = [...arr];
     for (let k = 0; k < give.length; k++) {
-      out.push({ managerId: tr.from, outId: give[k], inId: get[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
-      out.push({ managerId: tr.to, outId: get[k], inId: give[k], gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
+      out.push({ managerId: tr.from, outId: give[k], outCode: PLAYER_BY_ID[give[k]]?.code ?? null, inId: get[k], inCode: PLAYER_BY_ID[get[k]]?.code ?? null, gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
+      out.push({ managerId: tr.to, outId: get[k], outCode: PLAYER_BY_ID[get[k]]?.code ?? null, inId: give[k], inCode: PLAYER_BY_ID[give[k]]?.code ?? null, gw: tgw, n: out.length + 1, t: Date.now(), trade: tr.id || id });
     }
     return out;
   }).then(ok => {
@@ -2347,7 +2361,7 @@ function makePick(playerId, force = false) {
   if (!force && !canActFor(mid)) { toast(`It's ${managerName(mid)}'s pick — the group chat is watching you`); return; }
   const player = PLAYER_BY_ID[playerId];
   if (!canPick(mid, player)) { toast(`${managerName(mid)} can't fit another ${player.pos} — position limits`); return; }
-  const rec = { managerId: mid, playerId, n: pickNo() + 1 };
+  const rec = { managerId: mid, playerId, code: PLAYER_BY_ID[playerId]?.code ?? null, n: pickNo() + 1 };
   const finishPick = total => {
     if (state.settings.pickTimer && total < totalPicks()) {
       state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
@@ -5425,7 +5439,7 @@ function bindDraft() {
       if (!best) best = PLAYERS.filter(p => !taken.has(p.id) && canPick(onClock, p))
         .sort((a, b) => rating(b) - rating(a))[0];
       if (!best) break;
-      state.draft.picks.push({ managerId: onClock, playerId: best.id, n: state.draft.picks.length + 1 });
+      state.draft.picks.push({ managerId: onClock, playerId: best.id, code: best.code ?? null, n: state.draft.picks.length + 1 });
     }
     state.phase = 'season';
     state.draft.deadline = null;
@@ -6498,7 +6512,7 @@ function bindTransfers() {
     txnArray('transfers', arr => {
       const owned = ownedIdsGiven(arr, tgw);
       if (owned.has(inP.id) || !owned.has(outId)) return null;
-      return [...arr, { managerId: actor, outId, inId: inP.id, gw: tgw, n: arr.length + 1, t: Date.now(), windowDraft: true }];
+      return [...arr, { managerId: actor, outId, outCode: PLAYER_BY_ID[outId]?.code ?? null, inId: inP.id, inCode: inP.code ?? null, gw: tgw, n: arr.length + 1, t: Date.now(), windowDraft: true }];
     }).then(ok => {
       if (!ok) { toast(`${inP.name} is already spoken for — pick again.`); render(); return; }
       const lu = state.lineups[actor]?.[tgw];

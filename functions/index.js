@@ -453,7 +453,7 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
     // ceremony acknowledgement and a keen first click may arrive together.
     if (!arr.length && !draftCeremonyStatus({ draft: dr }).complete) return;
     if (arr.some(p => p.playerId === player.id)) return;
-    arr.push({ managerId: onClock, playerId: player.id, n: arr.length + 1 });
+    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1 });
     dr.picks = arr;
     if (state.settings.pickTimer) dr.deadline = arr.length < eng.totalPicks(state) ? Date.now() + state.settings.pickTimer * 1000 : null;
     return dr;
@@ -600,7 +600,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     while ((onClock = eng.currentManagerId(sim)) != null) {
       const choice = eng.autoPickChoice(sim, onClock);
       if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available mid-autodraft');
-      const rec = { managerId: onClock, playerId: choice, n: toArr(sim.draft.picks).length + 1 };
+      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1 };
       sim.draft.picks = [...toArr(sim.draft.picks), rec];
       added.push(rec);
     }
@@ -789,7 +789,11 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   // t identifies each LODGING, not just the pair — waiver cleanup matches on
   // it, so re-saving an identical {in,out} after a run planned is a NEW claim
   // that survives the replay (sol r5)
-  const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out), t: Date.now() + Math.random() })); // fractional part: same-millisecond lodgings still get distinct identities
+  const claims = raw.map(c => ({
+    in: Number(c && c.in), out: Number(c && c.out),
+    inCode: ctx.PLAYER_BY_ID[Number(c && c.in)]?.code ?? null, outCode: ctx.PLAYER_BY_ID[Number(c && c.out)]?.code ?? null,
+    t: Date.now() + Math.random(), // fractional part: same-millisecond lodgings still get distinct identities
+  }));
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
   const tgw = eng.transferGw(state);
   // the commissioner may lodge claims FOR a manager (asManager) — validation
@@ -832,7 +836,7 @@ ACTIONS.troughSign = async ({ league, a, data, ctx, state, eng }) => {
   const squad = eng.squadAt(state, mid, tgw);
   if (!squad.some(p => p.id === outP.id)) throw new HttpsError('failed-precondition', 'that player is not yours to drop');
   if (!eng.squadShapeOk(state, [...squad.filter(p => p.id !== outP.id), inP])) throw new HttpsError('failed-precondition', 'squad shape would be illegal');
-  await appendTransfers(league, state, eng, [{ managerId: mid, outId: outP.id, inId: inP.id, gw: tgw, t: Date.now() }], tgw);
+  await appendTransfers(league, state, eng, [{ managerId: mid, outId: outP.id, outCode: outP.code ?? null, inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: Date.now() }], tgw);
   await stripLineup(league, state, mid, tgw, outP.id);
   return { ok: true, tgw };
 };
@@ -981,9 +985,10 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
     // symmetric records, validated inside the transfers txn: each side must own
     // what it gives and not own what it receives, and both shapes must stay legal
     const recs = [];
+    const pc = id => ctx.PLAYER_BY_ID[id]?.code ?? null;
     give.forEach((pid, i) => {
-      recs.push({ managerId: trade.from, outId: pid, inId: get[i], gw: tgw, t: Date.now(), trade: trade.id });
-      recs.push({ managerId: trade.to, outId: get[i], inId: pid, gw: tgw, t: Date.now(), trade: trade.id });
+      recs.push({ managerId: trade.from, outId: pid, outCode: pc(pid), inId: get[i], inCode: pc(get[i]), gw: tgw, t: Date.now(), trade: trade.id });
+      recs.push({ managerId: trade.to, outId: get[i], outCode: pc(get[i]), inId: pid, inCode: pc(pid), gw: tgw, t: Date.now(), trade: trade.id });
     });
     const ref = db().ref(`${base}/public/transfers`);
     const res = await ref.transaction(seeded(state.transfers, out => {
@@ -1482,7 +1487,7 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
       if (!squad.some(p => p.id === outP.id)) { deny = { code: 'failed-precondition', msg: 'not yours to drop' }; return; }
       if (!eng.squadShapeOk(s, [...squad.filter(p => p.id !== outP.id), inP])) { deny = { code: 'failed-precondition', msg: 'squad shape would be illegal' }; return; }
       const transfers = toArr(pub.transfers);
-      transfers.push({ managerId: onClock, outId: outP.id, inId: inP.id, gw: tgw, t: Date.now(), windowDraft: true, n: transfers.length + 1 });
+      transfers.push({ managerId: onClock, outId: outP.id, outCode: outP.code ?? null, inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: Date.now(), windowDraft: true, n: transfers.length + 1 });
       pub.transfers = transfers;
       const lu = pub.lineups?.[onClock]?.[tgw];
       if (lu) pub.lineups[onClock][tgw] = toArr(lu).filter(id => id !== outP.id);
