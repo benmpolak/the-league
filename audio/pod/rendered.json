@@ -259,6 +259,24 @@
       "voice": "GPBdEhqsWQkHEWGnPOdO",
       "provider": "elevenlabs",
       "at": "2026-08-16"
+    },
+    "e6yhqi": {
+      "file": "e6yhqi.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1xockx6": {
+      "file": "1xockx6.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
+    },
+    "1j07z0w": {
+      "file": "1j07z0w.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "at": "2026-08-16"
     }
   }
 }
