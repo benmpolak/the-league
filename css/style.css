@@ -1430,5 +1430,11 @@ details[open] > .n6-summary::after { content: ' ▴'; }
   background: var(--card2); border: 1px solid var(--line); font-size: 14px; line-height: 1.5;
 }
 .pod-now-who { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin-bottom: 5px; min-height: 13px; }
+/* the scrub bar (Ben, 16 Aug) — shown only when every line is recorded */
+.pod-scrub { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
+.pod-scrub[hidden] { display: none; }
+.pod-scrub input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.pod-tt-room .pod-scrub input[type="range"] { accent-color: #ff8a4c; }
+.pod-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
 .pod-tt-room .pod-now-who { color: #ff8a4c; }
 .pod-tt-room .pod-chip { border-color: #7a3418; }

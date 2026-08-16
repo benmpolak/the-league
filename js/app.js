@@ -7558,6 +7558,43 @@ function podLineSrc(rec, epId, key) {
   if (!f || typeof f !== 'string' || /[\/\\]|\.\./.test(f)) return null;
   return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}`;
 }
+/* ---- the scrub bar ----
+   Ben, 16 Aug: "can you make them scrubbable in the app?" The player walks the
+   episode line by line, so there is no one file to seek through — instead we
+   compute the episode's timeline up front: every recorded line's real duration
+   (metadata only, nothing plays), plus the fixed beats the player itself adds
+   (2.7s stings, 0.6s ad lead-in, 0.26s between turns). Dragging the bar maps a
+   moment on that timeline back to a block and an offset inside it.
+   The bar only appears when EVERY spoken line has a recording — you cannot
+   seek inside a browser voice, so a part-cut episode keeps the plain player
+   rather than a bar that lies. */
+let _podTl = {}; // episode id → Promise<timeline|null>
+const podAudioDur = src => new Promise(res => {
+  const a = new Audio();
+  a.preload = 'metadata';
+  a.onloadedmetadata = () => res(isFinite(a.duration) ? a.duration : 0);
+  a.onerror = () => res(0);
+  a.src = src;
+});
+function podEpTimeline(ep, rec) {
+  if (ep.id in _podTl) return _podTl[ep.id];
+  return _podTl[ep.id] = (async () => {
+    const items = [];
+    for (let n = 0; n < ep.blocks.length; n++) {
+      const b = ep.blocks[n];
+      if (b.t === 'theme') { items.push({ lead: 0, fixed: 2.7, tail: 0 }); continue; }
+      const src = podLineSrc(rec, ep.id, Podcast.lineKey(b));
+      if (!src) return null; // a robot line somewhere — no honest timeline
+      items.push({ src, lead: b.t === 'ad' ? 0.6 : 0, tail: 0.26 });
+    }
+    const durs = await Promise.all(items.map(it => it.src ? podAudioDur(it.src) : Promise.resolve(it.fixed)));
+    const start = []; let t = 0;
+    items.forEach((it, k) => { start.push(t); t += it.lead + durs[k] + it.tail; });
+    return { start, total: t, lead: items.map(it => it.lead) };
+  })();
+}
+const podFmtTime = s => { s = Math.max(0, Math.round(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+let _podSeek = null; // set while a scrubbable episode plays: seconds → void
 function podcastSheet(id) {
   const ep = podById(id);
   if (!ep) return;
@@ -7581,6 +7618,11 @@ function podcastSheet(id) {
     <div class="pod-nowplaying" id="podNow" aria-live="polite">
       <span class="pod-now-who"></span>
       <span class="pod-now-line">Press play.</span>
+    </div>
+    <div class="pod-scrub" id="podScrub" hidden>
+      <span class="pod-time" id="podTimeCur">0:00</span>
+      <input type="range" id="podSeek" min="0" max="1000" value="0" step="1" aria-label="Scrub through the episode">
+      <span class="pod-time" id="podTimeTot">&ndash;:&ndash;&ndash;</span>
     </div>`;
   const fallback = `<p class="pod-meta">This device has no speech engine, so the transcript is printed below instead.</p>
     <div class="pod-body">${ep.blocks.map(b => b.t === 'theme' ? `<p class="pod-sting">${esc(b.text)}</p>`
@@ -7608,13 +7650,29 @@ function podcastSheet(id) {
   // say so when this one is the real thing, so nobody judges the hosts on a
   // read the browser did for them — and say when it is only part cut, so a
   // robot turning up halfway through isn't taken for a bug
-  podRecordings().then(rec => {
+  podRecordings().then(async rec => {
     if (!ov.isConnected) return;
     const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
     const cut = spoken.filter(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b))).length;
     if (!cut) return;
     const meta = ov.querySelector('#podMeta');
     if (meta) meta.textContent += cut === spoken.length ? ' · recorded' : ' · part recorded';
+    // fully recorded → the scrub bar earns its place (Ben, 16 Aug)
+    if (cut !== spoken.length || !canSpeak) return;
+    const tl = await podEpTimeline(ep, rec);
+    if (!tl || !ov.isConnected) return;
+    const scr = ov.querySelector('#podScrub'), seek = ov.querySelector('#podSeek');
+    const cur = ov.querySelector('#podTimeCur'), tot = ov.querySelector('#podTimeTot');
+    if (!scr || !seek) return;
+    scr.hidden = false;
+    tot.textContent = podFmtTime(tl.total);
+    seek.oninput = () => { seek.dataset.drag = '1'; cur.textContent = podFmtTime(seek.value / 1000 * tl.total); };
+    seek.onchange = () => {
+      delete seek.dataset.drag;
+      const t = seek.value / 1000 * tl.total;
+      if (_podSeek) _podSeek(t);
+      else podPlay(ep, ov.querySelector('#podPlay'), ov.querySelector('#podNow'), t);
+    };
   });
 }
 /* ---- the speech desk ----
@@ -7701,7 +7759,7 @@ function podRuns(text) {
    The caption follows one line behind nothing: it shows exactly what is being
    said and not a word more. Captions are written with textContent, so a
    hostile club name cannot become an element here. */
-async function podPlay(ep, btn, nowEl) {
+async function podPlay(ep, btn, nowEl, startSec) {
   const synth = window.speechSynthesis;
   if (!synth) return;
   const who = nowEl?.querySelector('.pod-now-who');
@@ -7709,6 +7767,14 @@ async function podPlay(ep, btn, nowEl) {
   const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
   if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
   const rec = await podRecordings();
+  /* Scrub support (Ben, 16 Aug): when the timeline exists, the bar tracks
+     playback and dragging it jumps. `gen` guards the walk — every async
+     callback belongs to one generation, and a seek starts the next one, so a
+     line paused mid-jump can never advance the new position. */
+  const tl = await podEpTimeline(ep, rec).catch(() => null);
+  const room = btn.closest('.pod-room');
+  const seekEl = room?.querySelector('#podSeek'), curEl = room?.querySelector('#podTimeCur');
+  let gen = 0, curN = 0, curWall = Date.now(), curLead = 0;
   const all = synth.getVoices() || [];
   // the default voice is usually the worst one installed — prefer a real
   // en-GB one, and prefer the enhanced/natural variants where they exist
@@ -7722,10 +7788,23 @@ async function podPlay(ep, btn, nowEl) {
   const cast = {};
   chairs.forEach((n, k) => { if (pool.length) cast[n] = pool[k % pool.length]; });
   let i = 0, live = true;
-  _podStop = () => { live = false; };
+  _podStop = () => { live = false; _podSeek = null; };
   btn.innerHTML = '&#9632; Stop';
-  const done = () => { live = false; _podStop = null; btn.innerHTML = '&#9654; Listen'; caption('', 'That is the end of the episode.'); };
-  const speak = (text, name, then) => {
+  const done = () => { live = false; _podStop = null; _podSeek = null; btn.innerHTML = '&#9654; Listen'; caption('', 'That is the end of the episode.'); };
+  // the bar follows the room: recorded lines report their own clock, the
+  // fixed beats (stings, lead-ins) run on the wall clock
+  const posNow = () => !tl ? 0 : Math.min(tl.total,
+    (tl.start[curN] || 0) + curLead + (_podAudio ? _podAudio.currentTime : (Date.now() - curWall) / 1000));
+  if (tl && seekEl) {
+    const tick = setInterval(() => {
+      if (!live) { clearInterval(tick); return; }
+      if (seekEl.isConnected && !seekEl.dataset.drag) {
+        seekEl.value = Math.round(posNow() / tl.total * 1000);
+        if (curEl) curEl.textContent = podFmtTime(posNow());
+      }
+    }, 250);
+  }
+  const speak = (text, name, then, g) => {
     const v = cast[name] || pool[0] || null;
     const col = Podcast.VOICES[name] || { pitch: 1, rate: 1 };
     /* Spelling is for the caption, this is for the mouth: the pronunciation
@@ -7735,7 +7814,7 @@ async function podPlay(ep, btn, nowEl) {
     if (!parts.length) { then(); return; }
     let k = 0;
     const say = () => {
-      if (!live) return;
+      if (!live || g !== gen) return;
       if (k >= parts.length) { then(); return; }
       const r = parts[k++];
       const u = new SpeechSynthesisUtterance(r.say);
@@ -7750,37 +7829,60 @@ async function podPlay(ep, btn, nowEl) {
   };
   /* Play the line the way it was RECORDED, and only fall back to the browser
      reading it if there is no file — a part-rendered episode still plays end
-     to end, it just has a robot standing in for whoever hasn't been cut yet. */
-  const perform = (b, text, name, then) => {
+     to end, it just has a robot standing in for whoever hasn't been cut yet.
+     `off` starts a recorded line part-way through: that is a seek landing. */
+  const perform = (b, text, name, then, g, off) => {
     const src = podLineSrc(rec, ep.id, Podcast.lineKey(b));
-    if (!src) { speak(text, name, then); return; }
+    if (!src) { speak(text, name, then, g); return; }
     const a = new Audio(src);
     _podAudio = a;
     let handed = false;
-    const hand = fn => { if (handed) return; handed = true; if (_podAudio === a) _podAudio = null; fn(); };
+    const hand = fn => { if (handed || g !== gen) return; handed = true; if (_podAudio === a) _podAudio = null; fn(); };
+    if (off > 0) a.onloadedmetadata = () => { try { a.currentTime = Math.min(off, (a.duration || off) - 0.05); } catch { /* start at 0 */ } };
     a.onended = () => hand(then);
-    a.onerror = () => hand(() => speak(text, name, then));
-    a.play().catch(() => hand(() => speak(text, name, then)));
+    a.onerror = () => hand(() => speak(text, name, then, g));
+    a.play().catch(() => hand(() => speak(text, name, then, g)));
   };
   // a beat between turns; without it the whole thing reads like one long list
-  const after = fn => setTimeout(fn, 260);
-  const next = () => {
+  const after = (fn, g) => setTimeout(() => { if (g === gen) fn(); }, 260);
+  const next = off => {
+    const g = gen;
     if (!live) return;
     if (i >= ep.blocks.length) { done(); return; }
     const n = i, b = ep.blocks[i++];
-    if (b.t === 'theme') { caption('', b.text); playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(next, 2700); return; }
+    curN = n; curWall = Date.now(); curLead = 0;
+    if (b.t === 'theme') { caption('', b.text); playSound(ep.show.theme === 'tt' ? 'themeTt' : 'themeGfw'); setTimeout(() => { if (g === gen) next(); }, 2700); return; }
     if (b.t === 'ad') {
+      if (off > 0) { // seek landed inside the ad: skip the sting, join the read
+        curLead = 0.6;
+        caption('ADVERTISEMENT', `${b.brand}. ${b.text}`);
+        perform(b, `${b.brand}. ${b.text}`, ep.show.host, () => after(() => next(), g), g, Math.max(0, off - 0.6));
+        return;
+      }
       caption('ADVERTISEMENT', b.brand);
       playSound(ep.show.ads === 'tt' ? 'adTt' : 'adGfw');
-      setTimeout(() => { caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(b, `${b.brand}. ${b.text}`, ep.show.host, () => after(next)); }, 600);
+      setTimeout(() => { if (g !== gen) return; curLead = 0.6; caption('ADVERTISEMENT', `${b.brand}. ${b.text}`); perform(b, `${b.brand}. ${b.text}`, ep.show.host, () => after(() => next(), g), g); }, 600);
       return;
     }
     caption(b.who, b.text);
-    perform(b, b.text, b.who, () => after(next));
+    perform(b, b.text, b.who, () => after(() => next(), g), g, off > 0 ? off : 0);
+  };
+  // dragging the bar while playing lands here: silence the current line,
+  // retire its generation, walk on from the target block and offset
+  if (tl) _podSeek = t => {
+    if (!live) return;
+    gen++;
+    if (_podAudio) { try { _podAudio.pause(); } catch { /* gone */ } _podAudio = null; }
+    try { synth.cancel(); } catch { /* not available */ }
+    let k = tl.start.length - 1;
+    while (k > 0 && tl.start[k] > t) k--;
+    i = k;
+    next(Math.max(0, t - tl.start[k]));
   };
   if (!all.length && typeof synth.addEventListener === 'function') {
     synth.addEventListener('voiceschanged', () => { }, { once: true });
   }
+  if (tl && startSec > 0) { _podSeek(startSec); return; }
   next();
 }
 function previewArticle(i, pick) {
