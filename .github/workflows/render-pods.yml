@@ -20,9 +20,11 @@
 #      Without that variable the scheduled runs exit immediately, so merging
 #      this file changes nothing until you decide otherwise.
 #
-# The scheduled times track the shows, not the waiver clock: Friday afternoon
-# before the previews publish at 17:00 London, and late Monday for the reviews,
-# which can only be cut once a gameweek is final.
+# The schedule follows the shows: Tuesday and Friday, the same two days as the
+# waiver clock (Marc, 18 Aug). Episodes publish at midday London, so the render
+# runs at 10:00 UTC — 10:00 or 11:00 London depending on the season, and safely
+# before the slot either way. A second pass at 15:00 UTC picks up anything whose
+# results settled late; it costs nothing when there is nothing outstanding.
 #
 # It never touches main by itself — it commits to the branch it was run on.
 
@@ -45,10 +47,10 @@ on:
         required: false
         default: false
   schedule:
-    # 15:00 UTC Fri — before the 17:00 London previews go out
-    - cron: '0 15 * * 5'
-    # 23:30 UTC Mon — after the last match of a weekend has settled
-    - cron: '30 23 * * 1'
+    # before the midday London slot, year-round
+    - cron: '0 10 * * 2,5'
+    # catch-up for anything that went final after the first pass
+    - cron: '0 15 * * 2,5'
 
 # One render at a time. Two runs committing audio to the same branch would
 # conflict on the manifest, and the loser's spend would be wasted.

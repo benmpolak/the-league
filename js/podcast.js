@@ -12,11 +12,13 @@
  * must print the identical episode. Time is used ONLY to decide whether an
  * episode has been published yet, never to choose a word.
  *
- * Schedule (Marc, 17 Aug):
+ * Schedule (Marc, 17 and 18 Aug) — fixed slots, midday London, Tue and Fri:
  *   pilot    — pre-draft, introduces both casts, runs long on purpose
  *   draft    — the moment the board fills; grades, value picks, FRAUDS
- *   preview  — 17:00 London the Friday before a gameweek's first kick-off
- *   review   — one hour after the gameweek's last match settles
+ *   preview  — the last Tue/Fri midday slot before a gameweek's first kick-off
+ *   review   — the first Tue/Fri midday slot after its last match settles
+ *   both     — one slot carrying both: a midweek round reviewed and the next
+ *              one previewed, as a single longer episode
  *
  * Escaping: this file emits PLAIN TEXT and never calls esc(). app.js escapes
  * once when it renders a block, which is the Gazette's own rule — escape at
@@ -161,19 +163,51 @@ window.Podcast = (() => {
     return naive - londonOffsetMin(naive) * 60000;
   }
   const londonDay = ms => new Date(ms + londonOffsetMin(ms) * 60000).getUTCDay();
-  // 17:00 London on the Friday on or before a gameweek's first kick-off. A
-  // Friday-night opener still gets its preview that afternoon.
-  function previewAt(i) {
-    const k = gwKicks(i);
-    if (!k) return null;
-    for (let back = 0; back < 8; back++) {
-      const at = londonAt(k.first, -back, 17);
-      if (at <= k.first && londonDay(at) === 5) return at;
+
+  /* ---------- the slots ----------
+     Marc, 18 Aug: "why not just have the twice weekly schedule to be Tuesday
+     at midday and friday at midday and have the time fixed".
+
+     Right — a show people can't predict is a show people forget. Midday
+     Tuesday and Friday, London, all year. It also sits two hours after the
+     waiver run on the same two days, so the review can talk about claims that
+     have actually settled.
+
+     What it is NOT is a calendar. Five gameweeks this season start on a
+     WEDNESDAY, and a naive "Friday preview, Tuesday review" would preview
+     GW13 six days early and review it six days late — by which point GW14 has
+     been and gone. So the times are fixed and the BINDING is to the gameweek:
+     a preview goes out in the last slot before the first kick-off, a review in
+     the first slot after the last whistle. Weekend rounds land on Friday and
+     Tuesday exactly as asked; midweek rounds shuffle to the slot that still
+     makes sense. */
+  const SLOT_DAYS = [2, 5];        // Tuesday, Friday
+  const SLOT_HOUR = 12;            // midday, London, year-round
+  const isSlot = at => SLOT_DAYS.includes(londonDay(at));
+  // the last slot strictly before ms
+  function slotBefore(ms) {
+    for (let back = 0; back < 14; back++) {
+      const at = londonAt(ms, -back, SLOT_HOUR);
+      if (at < ms && isSlot(at)) return at;
     }
-    return londonAt(k.first, -1, 17);
+    return null;
   }
-  // an hour after the last match ends — kick-off plus two hours of football
-  const reviewAt = i => { const k = gwKicks(i); return k ? k.last + 3 * 3600e3 : null; };
+  // the first slot at or after ms
+  function slotAfter(ms) {
+    for (let fwd = 0; fwd < 14; fwd++) {
+      const at = londonAt(ms, fwd, SLOT_HOUR);
+      if (at >= ms && isSlot(at)) return at;
+    }
+    return null;
+  }
+  const previewAt = i => { const k = gwKicks(i); return k ? slotBefore(k.first) : null; };
+  // which day a slot actually falls on — the copy used to say "FRIDAY" out
+  // loud, which was true until midweek rounds moved previews to a Tuesday
+  const dayName = ms => ms == null ? 'today'
+    : new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'long' });
+  // the last match has to have finished, not merely started: a 20:00 kick-off
+  // is done by 22:00, and the slot is hours later in any case
+  const reviewAt = i => { const k = gwKicks(i); return k ? slotAfter(k.last + 2 * 3600e3) : null; };
 
   /* Every episode currently published, newest first. Time enters HERE and
      nowhere else. */
@@ -182,11 +216,25 @@ window.Podcast = (() => {
     const drafted = state.phase === 'season' && (state.draft?.picks || []).length > 0;
     for (const id of ['gfw', 'tt']) {
       if (!drafted) { out.push({ show: id, kind: 'pilot', gw: null, at: null }); continue; }
+      /* A slot that carries BOTH a review and a preview ships one double
+         bill rather than two episodes racing each other into the same
+         minute (Marc, 18 Aug). Only happens around midweek rounds. */
+      const paired = new Set();
+      for (let i = 0; i < REGULAR_GWS; i++) {
+        const r = reviewSharingSlotWith(i);
+        if (r != null && gwStatus(r) === 'final') paired.add(r);
+      }
       for (let i = 0; i < REGULAR_GWS; i++) {
         const p = previewAt(i);
-        if (p != null && now >= p) out.push({ show: id, kind: 'preview', gw: i, at: p });
+        if (p != null && now >= p) {
+          const r = reviewSharingSlotWith(i);
+          const double = r != null && paired.has(r);
+          out.push({ show: id, kind: double ? 'both' : 'preview', gw: i, at: p });
+        }
         const r = reviewAt(i);
-        if (r != null && now >= r && gwStatus(i) === 'final') out.push({ show: id, kind: 'review', gw: i, at: r });
+        if (r != null && now >= r && gwStatus(i) === 'final' && !paired.has(i)) {
+          out.push({ show: id, kind: 'review', gw: i, at: r });
+        }
       }
       out.push({ show: id, kind: 'draft', gw: null, at: null });
     }
@@ -337,8 +385,13 @@ window.Podcast = (() => {
   function insertAdPod(showId, key, B) {
     const pod = adPod(showId, key);
     if (!pod.length) return;
-    const at = Math.max(3, Math.min(B.length - 2, Math.round(B.length / 2)));
-    B.splice(at, 0, ...pod);
+    let at = Math.max(3, Math.min(B.length - 2, Math.round(B.length / 2)));
+    /* Don't cut a one-word reaction away from the line it answers. Jamie's
+       "FRAUD." means nothing three minutes later on the other side of a patio
+       advert, and the same goes for Grey's "Richard." */
+    const short = b => b && b.t === 'speech' && String(b.text).split(/\s+/).length <= 4;
+    for (let n = 0; n < 3 && short(B[at]); n++) at++;
+    B.splice(Math.min(at, B.length - 1), 0, ...pod);
   }
   const say = (who, text) => ({ t: 'speech', who, text });
 
@@ -455,7 +508,7 @@ window.Podcast = (() => {
     if (!show) return null;
     const key = `${showId}:${kind}:${gw == null ? 'x' : gw}`;
     const B = [theme(showId)];
-    const meta = { pilot: pilotBody, draft: draftBody, preview: previewBody, review: reviewBody }[kind];
+    const meta = { pilot: pilotBody, draft: draftBody, preview: previewBody, review: reviewBody, both: bothBody }[kind];
     if (!meta) return null;
     const built = meta(showId, key, gw, B);
     if (!built) return null;
@@ -564,7 +617,7 @@ window.Podcast = (() => {
   }
 
   /* ---- weekly preview ---- */
-  function previewBody(showId, key, i, B) {
+  function previewBody(showId, key, i, B, seg = { open: true, close: true, phone: true }) {
     const gwN = GAMEWEEKS[i]?.n;
     if (gwN == null) return null;
     const prs = typeof pairingsFor === 'function' ? pairingsFor(i) : [];
@@ -581,7 +634,7 @@ window.Podcast = (() => {
     const starA = bestOf(a), starB = bestOf(b);
     const gfw = showId === 'gfw';
     if (gfw) {
-      B.push(say('Rax Mushden', `Gazette Football Weekly, gameweek ${gwN}, and it's Friday, which means we are all briefly optimistic. ${teamName(a)} against ${teamName(b)} is the one we've been asked about.`));
+      if (seg.open) B.push(say('Rax Mushden', `Gazette Football Weekly, gameweek ${gwN}, and it's ${dayName(previewAt(i))}, which means we are all briefly optimistic. ${teamName(a)} against ${teamName(b)} is the one we've been asked about.`));
       if (mu.shared.length) {
         B.push(say(P.tactics, `The structural curiosity is ${mu.shared[0]}. Both managers own men there, which means the fixture is partly a wash — whatever happens at that club happens to both of them at once. You are not playing each other so much as playing the difference between you.`));
       } else {
@@ -609,10 +662,10 @@ window.Podcast = (() => {
       }
       B.push(say(P.colour, 'The rest of the round is the usual quiet violence of a Saturday: eleven other men picking a goalkeeper on a hunch and then not sleeping about it.'));
       B.push(say(P.spain, 'From here it looks like a weekend where the bench decides three of the six. It usually is, and nobody ever believes it until Sunday evening.'));
-      B.push(say('Rax Mushden', 'Set your line-ups, be honest with yourselves about your bench, and we\'ll be back when it\'s all gone wrong. Goodbye.'));
+      if (seg.close) B.push(say('Rax Mushden', 'Set your line-ups, be honest with yourselves about your bench, and we\'ll be back when it\'s all gone wrong. Goodbye.'));
       return { title: `GW${gwN} preview`, dek: 'the fixture, the overlap, and the duel that settles it' };
     }
-    B.push(say('Richard Keyes', `FRIDAY. Gameweek ${gwN}. And the big one: ${(teamName(a) || '').toUpperCase()} against ${(teamName(b) || '').toUpperCase()}.`));
+    if (seg.open) B.push(say('Richard Keyes', `${dayName(previewAt(i)).toUpperCase()}. Gameweek ${gwN}. And the big one: ${(teamName(a) || '').toUpperCase()} against ${(teamName(b) || '').toUpperCase()}.`));
     if (mu.duels.length) {
       const d = mu.duels[0];
       B.push(say('Andy Grey', `And it's a proper old-fashioned tear-up, Richard. ${d.att.name} against ${d.def.name}. Centre-forward against a defender. THAT is football. None of your overlaps. TWO MEN AND A BALL.`));
@@ -631,16 +684,16 @@ window.Podcast = (() => {
     }
     B.push(say('Andy Grey', 'And I\'ll be honest with you Richard, half of them will lose it on the BENCH. Not the eleven. The BENCH. It is the same every week and they never learn.'));
     if (tbl.length) B.push(say('Jamie O’Hara-Hara', `Top of the table: ${(teamName(tbl[0].id) || '').toUpperCase()}. And I'm not having it. I'm just NOT HAVING IT.`));
-    howardIn(key, 'preview', `It's about this ${teamName(a)} and ${teamName(b)} game you keep calling the big one. ${mu.shared.length ? `They've both got ${mu.shared[0]} men in, you said so yourself, so it cancels out and we're all sat here watching a draw happen slowly.` : 'There\'s not a single player in common between them, and nobody has mentioned that all week.'} ${starA ? `And everyone's on about ${starA.name}. He's one man. ONE. You don't win a gameweek with one man, you win it with the four nobody talks about.` : 'It\'ll be decided by somebody nobody has heard of, it always is.'}`)
+    if (seg.phone !== false) howardIn(key, 'preview', `It's about this ${teamName(a)} and ${teamName(b)} game you keep calling the big one. ${mu.shared.length ? `They've both got ${mu.shared[0]} men in, you said so yourself, so it cancels out and we're all sat here watching a draw happen slowly.` : 'There\'s not a single player in common between them, and nobody has mentioned that all week.'} ${starA ? `And everyone's on about ${starA.name}. He's one man. ONE. You don't win a gameweek with one man, you win it with the four nobody talks about.` : 'It\'ll be decided by somebody nobody has heard of, it always is.'}`)
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'HOT TAKE TIME.'));
     B.push(say('Andy Grey', `HOT TAKE: ${(teamName(b) || '').toUpperCase()} do not have the bottle for this and I have been saying it since August. ${pick(TT_ROAR, key + ':r3')}.`));
-    B.push(say('Richard Keyes', 'Team news Saturday. Don\'t be a mug. GOODBYE.'));
+    if (seg.close) B.push(say('Richard Keyes', 'Team news before kick-off. Don\'t be a mug. GOODBYE.'));
     return { title: `GW${gwN}: THE BIG PREVIEW`, dek: 'one hot take, one tear-up, no overlaps' };
   }
 
   /* ---- weekly review ---- */
-  function reviewBody(showId, key, i, B) {
+  function reviewBody(showId, key, i, B, seg = { open: true, close: true, phone: true }) {
     const gwN = GAMEWEEKS[i]?.n;
     if (gwN == null) return null;
     const prs = typeof pairingsFor === 'function' ? pairingsFor(i) : [];
@@ -665,7 +718,7 @@ window.Podcast = (() => {
     if (manOf && manOf.pts <= 0) manOf = null;
     const gfw = showId === 'gfw';
     if (gfw) {
-      B.push(say('Rax Mushden', `Gameweek ${gwN} is settled. ${teamName(top.mid)} top-scored with ${top.pts}.`));
+      if (seg.open) B.push(say('Rax Mushden', `Gameweek ${gwN} is settled. ${teamName(top.mid)} top-scored with ${top.pts}.`));
       B.push(say(P.tactics, `Which is a good number, and I'd note it came in a week where the median was considerably lower — so this is a genuine outlier rather than everybody having a nice time at once.`));
       B.push(say('Rax Mushden', `The closest tie: ${teamName(closest.w)} beat ${teamName(closest.l)}, ${closest.hi} to ${closest.lo}.`));
       B.push(say(P.colour, `A ${closest.hi - closest.lo}-point margin is not a result, it is a rounding error with a winner attached. Somewhere a man is looking at his bench and doing arithmetic he will not enjoy.`));
@@ -673,10 +726,10 @@ window.Podcast = (() => {
       B.push(say('Rax Mushden', `The round in full: ${results.map(r => `${teamName(r.w)} ${r.hi}, ${teamName(r.l)} ${r.lo}`).join('; ')}.`));
       B.push(say(P.tactics, `${widest.hi - widest.lo} points between ${teamName(widest.w)} and ${teamName(widest.l)} is the widest of the week, and margins that size are almost never about selection. They are about who happened to own a striker who scored twice.`));
       B.push(say(P.spain, `${teamName(bottom.mid)} finished bottom of the week on ${bottom.pts}. I would counsel against reading very much into one round. I would also counsel against saying that to him this evening.`));
-      B.push(say('Rax Mushden', 'Waivers run Tuesday at ten. Be reasonable with yourselves until then. Goodbye.'));
+      if (seg.close) B.push(say('Rax Mushden', 'Waivers run Tuesday and Friday at ten. Be reasonable with yourselves until then. Goodbye.'));
       return { title: `GW${gwN} reviewed`, dek: 'an outlier, a rounding error, and a difficult evening' };
     }
-    B.push(say('Richard Keyes', `GAMEWEEK ${gwN}. DONE. And ${(teamName(top.mid) || '').toUpperCase()} have put ${top.pts} on the board.`));
+    if (seg.open) B.push(say('Richard Keyes', `GAMEWEEK ${gwN}. DONE. And ${(teamName(top.mid) || '').toUpperCase()} have put ${top.pts} on the board.`));
     B.push(say('Andy Grey', `That is a PROPER score, Richard. That is a man who picked his best eleven and didn't get clever.`));
     B.push(say('Richard Keyes', `${(teamName(closest.w) || '').toUpperCase()} nick it ${closest.hi}–${closest.lo}. By ${closest.hi - closest.lo}. ${pick(TT_ROAR, key + ':r4')}.`));
     B.push(say('Jamie O’Hara-Hara', 'And that\'s the BENCH, that. That is ENTIRELY THE BENCH.'));
@@ -684,13 +737,52 @@ window.Podcast = (() => {
     B.push(say('Andy Grey', `And ${(teamName(widest.w) || '').toUpperCase()} by ${widest.hi - widest.lo}. That is not a defeat, Richard, that is a MESSAGE.`));
     if (manOf) B.push(say('Richard Keyes', `${(manOf.p.name || '').toUpperCase()}. ${manOf.pts} POINTS. On his own. THAT is a footballer and I don't care what the numbers men say about him.`));
     B.push(say('Jamie O’Hara-Hara', 'HOT TAKE: half these lads are not even WATCHING the games. They are watching the APP. WATCH THE FOOTBALL, SON.'));
-    howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`)
+    if (seg.phone !== false) howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`)
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'RIGHT. FRAUD OF THE WEEK.'));
     B.push(say('Andy Grey', `${(teamName(bottom.mid) || '').toUpperCase()}. ${bottom.pts} points. In a full gameweek. I don't want to hear about injuries, I don't want to hear about fixtures — FRAUD OF THE WEEK, and he knows it.`));
     B.push(say('Jamie O’Hara-Hara', 'FRAUD.'));
-    B.push(say('Richard Keyes', 'Waivers Tuesday, ten o\'clock, which is STILL RIDICULOUS. See you Friday. GET IN.'));
+    if (seg.close) B.push(say('Richard Keyes', 'Waivers ten o\'clock, which is STILL RIDICULOUS. Back in the next slot. GET IN.'));
     return { title: `GW${gwN}: FRAUD OF THE WEEK`, dek: 'somebody has been identified and it is not going away' };
+  }
+
+  /* ---- the double bill ----
+     Marc, 18 Aug: "when there is a midweek gameweek you can just do the review
+     and the preview as one slightly longer episode on the tuesday and the
+     friday to cover both."
+
+     Which is how every real football podcast handles a midweek round: look
+     back at Wednesday, look ahead to Saturday, same programme. It also fixes
+     something the fixed slots would otherwise have caused — a Friday with a
+     review AND a preview due would have shipped two episodes per show into the
+     same minute, competing with each other.
+
+     One opening, one sign-off, one ad break, a bridge in the middle. The two
+     halves are the existing bodies with their own top and tail suppressed, so
+     there is no second copy of the copy to drift. */
+  const BRIDGE = {
+    gfw: 'That\'s where we leave the round just gone. Which brings us, neatly enough, to the next one.',
+    tt: 'RIGHT. That\'s the midweek. FORGET IT. Because there\'s another one coming and it starts in a DAY AND A HALF.',
+  };
+  // the gameweek whose review shares a slot with gameweek i's preview
+  function reviewSharingSlotWith(i) {
+    const at = previewAt(i);
+    if (at == null) return null;
+    for (let r = Math.max(0, i - 3); r < i; r++) if (reviewAt(r) === at) return r;
+    return null;
+  }
+  function bothBody(showId, key, i, B) {
+    const r = reviewSharingSlotWith(i);
+    if (r == null) return null;
+    const rv = reviewBody(showId, key, r, B, { open: true, close: false, phone: true });
+    if (!rv) return null;
+    B.push(say(SHOWS[showId].host, BRIDGE[showId] || BRIDGE.gfw));
+    const pv = previewBody(showId, key, i, B, { open: false, close: true, phone: false });
+    if (!pv) return null;
+    const rn = GAMEWEEKS[r]?.n, pn = GAMEWEEKS[i]?.n;
+    return showId === 'tt'
+      ? { title: `GW${rn} JUDGED, GW${pn} CALLED`, dek: 'a fraud identified and another one lined up' }
+      : { title: `GW${rn} reviewed, GW${pn} previewed`, dek: 'a midweek round settled, a weekend already arriving' };
   }
 
   const episode = (showId, kind, gw) => build(showId, kind, gw);

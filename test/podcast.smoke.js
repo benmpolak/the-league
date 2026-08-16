@@ -168,21 +168,74 @@ const chk = (name, ok, detail = '') => {
   chk('P4 the sheet prints no transcript, and captions show hostile names as text',
     p4.carries && p4.noTranscript && p4.escaped && p4.shownAsText, JSON.stringify(p4));
 
-  /* ---- P5: the schedule. Friday 17:00 London, and an hour after full time ---- */
+  /* ---- P5: the schedule. Marc, 18 Aug: fixed Tuesday and Friday middays.
+     Fixed TIMES, but bound to the gameweek rather than the calendar — five
+     rounds this season start on a Wednesday, and a naive weekly calendar
+     would preview those six days early and review them six days late ---- */
   const p5 = await page.evaluate(() => {
-    const at = Podcast._previewAt(0), rv = Podcast._reviewAt(0);
-    const k = gwKicks(0);
-    const london = ms => new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const londonDay = ms => new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short' });
+    const londonHM = ms => new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
+    const bad = [];
+    let midweek = 0;
+    for (let i = 0; i < GAMEWEEKS.length; i++) {
+      const k = gwKicks(i); if (!k) continue;
+      const pv = Podcast._previewAt(i), rv = Podcast._reviewAt(i);
+      if (pv == null || rv == null) { bad.push(`GW${i + 1} has no slot`); continue; }
+      // every slot is a Tuesday or a Friday, at midday London, all year
+      for (const [name, at] of [['preview', pv], ['review', rv]]) {
+        if (!['Tue', 'Fri'].includes(londonDay(at))) bad.push(`GW${i + 1} ${name} on a ${londonDay(at)}`);
+        if (londonHM(at) !== '12:00') bad.push(`GW${i + 1} ${name} at ${londonHM(at)}`);
+      }
+      // ...and it still has to make sense as broadcasting
+      if (!(pv < k.first)) bad.push(`GW${i + 1} preview lands after kick-off`);
+      if (!(rv > k.last)) bad.push(`GW${i + 1} review lands before full time`);
+      const nk = gwKicks(i + 1);
+      if (nk && rv > nk.first) bad.push(`GW${i + 1} review lands after the next round starts`);
+      if (!['Fri', 'Sat', 'Sun'].includes(londonDay(k.first))) midweek++;
+    }
+    return { bad, midweek };
+  });
+  chk('P5 every show lands on a Tuesday or Friday midday, and still bounds its own gameweek',
+    p5.bad.length === 0 && p5.midweek > 0, JSON.stringify(p5).slice(0, 300));
+
+  /* ---- P5b: the double bill. Marc, 18 Aug: "when there is a midweek gameweek
+     you can just do the review and the preview as one slightly longer episode".
+     One programme per slot, one opening, one sign-off, one ad break, and one
+     phone-in — not two of each stitched together ---- */
+  const p5b = await page.evaluate(() => {
+    // find a slot that genuinely carries both (the midweek rounds)
+    let pv = null;
+    for (let i = 1; i < GAMEWEEKS.length; i++) {
+      const at = Podcast._previewAt(i);
+      for (let r = Math.max(0, i - 3); r < i; r++) {
+        if (Podcast._reviewAt(r) === at) { pv = { i, r }; break; }
+      }
+      if (pv) break;
+    }
+    if (!pv) return { none: true };
+    const ep = Podcast.episode('tt', 'both', pv.i);
+    if (!ep) return { built: false };
+    const single = Podcast.episode('tt', 'preview', pv.i);
+    const text = ep.blocks.map(b => b.text || '').join(' ');
     return {
-      previewIsFriday5: /Fri/.test(london(at)) && /17:00/.test(london(at)),
-      previewBeforeKickoff: at < k.first,
-      reviewAfterLastKick: rv > k.last,
-      reviewGapHours: Math.round((rv - k.last) / 3600e3),
+      built: true,
+      // both rounds are actually covered
+      namesBoth: ep.title.includes('GW' + GAMEWEEKS[pv.r].n) && ep.title.includes('GW' + GAMEWEEKS[pv.i].n),
+      // ...as one programme, not two welded together
+      oneOpen: (text.match(/GAMEWEEK \d+\. DONE/g) || []).length === 1,
+      // the sign-off comes from the PREVIEW half; the review's own must be gone
+      oneClose: !/Back in the next slot/.test(text)
+        && /GOODBYE\.$/.test((ep.blocks.filter(b => b.t === 'speech').pop() || {}).text || ''),
+      oneAdBreak: (() => { const a = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t === 'ad').map(([, n]) => n);
+        return a.length === 2 && a[1] === a[0] + 1; })(),
+      oneCaller: ep.blocks.filter(b => b.who === 'Howard').length === 1,
+      hasBridge: /That's the midweek/.test(text),
+      // and it is longer than a single episode, which is the whole point
+      longer: ep.words > single.words,
     };
   });
-  chk('P5 preview lands Friday 17:00 London before kick-off; review lands after the last match',
-    p5.previewIsFriday5 && p5.previewBeforeKickoff && p5.reviewAfterLastKick && p5.reviewGapHours === 3,
-    JSON.stringify(p5));
+  chk('P5b a midweek slot ships one longer double bill, not two episodes',
+    p5b.none || (p5b.built && Object.values(p5b).every(v => v !== false)), JSON.stringify(p5b));
 
   /* ---- P6: nothing is published before its time ---- */
   const p6 = await page.evaluate(() => {

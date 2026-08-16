@@ -405,21 +405,28 @@ Three ways out, and it is your call:
    manifest. Cleanest sound, but an episode never appears at all if nobody
    renders, and a silent Media section is worse than a robot one.
 
-**And the slots are not Tuesday/Friday.** That is the waiver clock. The
-podcast runs on football time: preview at 17:00 London on the Friday on or
-before the gameweek's first kick-off, review three hours after its last match
-and only once the gameweek is `final`. In practice that is Fri 17:00 and either
-Sunday evening or Monday 23:00 depending on fixtures — which puts the review in
-front of managers on Tuesday morning, ahead of the 10am waiver run. If you
-would rather they sat on the waiver slots instead, it is a small change to
-`previewAt`/`reviewAt` in `js/podcast.js`, but I would leave it: a preview after
-kick-off is worthless, and a review two days stale reads as a newsletter.
+**The slots are Tuesday and Friday, midday London.** Marc, 18 Aug: "why not
+just have the twice weekly schedule to be Tuesday at midday and friday at
+midday and have the time fixed." Done — a show nobody can predict is a show
+nobody remembers, and it puts the review two hours after the waiver run on the
+same day, so it can talk about claims that have actually settled.
 
-**Howard is not rendered and never billed.** Marc's new talkTROUGH caller
-(§5c) is marked `"human": true` and is recorded by an actual person.
+Fixed TIMES, but bound to the gameweek rather than the calendar. Five rounds
+this season kick off on a **Wednesday**, and a naive weekly calendar would have
+previewed those six days early and reviewed them six days late. So: a preview
+goes out in the last slot before the first kick-off, a review in the first slot
+after the last whistle. Weekend rounds land Friday and Tuesday exactly as
+asked; midweek rounds shuffle to the slot that still makes sense. Checked
+across all 38: every preview lands before kick-off, every review after full
+time and before the next round starts.
 
-If you'd rather keep the robots, say so and delete `scripts/render_pods.js` —
-the fallback path is harmless and the app behaves exactly as it does now.
+**Midweek rounds get a double bill.** Marc again: "when there is a midweek
+gameweek you can just do the review and the preview as one slightly longer
+episode." That is how every real football podcast handles it, and it avoids
+two episodes per show racing into the same minute. One opening, one sign-off,
+one ad break, one phone-in, with a bridge in the middle — about 600 words
+against 400 for a single. The two halves are the existing bodies with their own
+top and tail suppressed, so there is no second copy of the copy to drift.
 
 ### 5c. Howard from Prestwich
 
