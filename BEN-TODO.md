@@ -246,9 +246,8 @@ draft night. The design is settled — do not re-litigate, just build:
 
 - **Format**: transcript episodes generated deterministically from real league
   data (same philosophy as the Gazette — own hash, no shared RNG, every phone
-  prints the same episode). NO server audio pipeline. The punchline is a
-  ▶ Listen button using browser `speechSynthesis` — two naff robot voices,
-  distinct pitch/rate per host, user-gesture gated (iOS-safe), free, offline.
+  prints the same episode). Audio: see the VOICES DECISION below (16 Aug
+  evening — the original speechSynthesis plan is dead).
 - **Show 1**: *Gazette Football Weekly* — host Rax Mushden (Marc's name),
   liberal-lefty Guardian register, panel from GAZETTE_PRESS (Bilson on
   tactics, Liu on culture, Sid Lowry "in Spain").
@@ -275,9 +274,34 @@ draft night. The design is settled — do not re-litigate, just build:
 - The Gazette's FORMAT IS SETTLED (Ben's rule): the pods are a new section in
   the reading room, they do not restructure the paper. Committee voice, house
   clichés per register — read `FOOTBALLESE` in gazette.js for the tone bar.
-- `speechSynthesis`: start only from a tap (iOS), `cancel()` on overlay
-  close, feature-detect and hide the button if absent. Distinct pitch/rate
-  per host. The voices being naff is the joke — do not add an audio backend.
+- **VOICES DECISION (group chat, 16 Aug evening — supersedes the
+  speechSynthesis plan above):** Marc's pilots proved the transcripts
+  ("the cuntent is too good not to use") but browser/robot voices are
+  "too bad to use". Agreed in chat: pay for proper voices, get it running
+  now, improve later. The plan:
+  - **ElevenLabs, Starter tier (~£4/$5 a month) first** — Marc's "fiver".
+    Upgrade to Creator (~£17/$22, Marc's "20 quid") only if the monthly
+    credit allowance or voice quality forces it. Ben pays and holds the
+    API key.
+  - **Audio is PRE-RENDERED, not live**: a script (Marc's side, run
+    locally) takes the deterministic transcript, calls ElevenLabs per
+    line with each host's voice id, stitches one mp3 per episode
+    (ffmpeg), commits it to `data/pods/`. The ▶ Listen button just plays
+    the mp3 (hide it when no file exists). This keeps the client-only
+    rule intact and keeps the API key OUT of the repo and the site —
+    never commit or paste the key anywhere public, including the group
+    chat.
+  - **Voices**: pick British voices from the ElevenLabs voice library —
+    Rax Mushden earnest Guardian southerner; Keys gruff, Grey the
+    sidekick; Ben wants "a north manc drek" in the mix. Bootleg
+    SOUNDALIKES only — do not voice-clone the actual Richard Keys or any
+    real person without consent (ElevenLabs ToS + the league is run by a
+    lawyer). Wave 2: Iain records a couple of minutes of accents →
+    instant voice clone (included on Starter) → he's a host.
+  - Budget sanity: a ~5-min episode is roughly 5k characters; two shows
+    a week ≈ 40k chars/month. Starter's allowance covers that on the
+    cheaper Flash model; if every line uses the flagship model it will
+    run out mid-month — that's the trigger to go to Creator.
 - `esc()` every dynamic string (team names are user-controlled).
 - Before every push: `npm run check && npm run test:offline`, plus
   `node test/gazette.test.js` and `node test/mockparity.smoke.js`. Pushing
