@@ -7580,7 +7580,7 @@ function podcastSheet(id) {
     <p class="pod-meta" id="podMeta">${ep.blocks.filter(b => b.t === 'speech').length} exchanges &middot; ${ads} ad break${ads === 1 ? '' : 's'} &middot; about ${mins} minute${mins === 1 ? '' : 's'}</p>
     <div class="pod-nowplaying" id="podNow" aria-live="polite">
       <span class="pod-now-who"></span>
-      <span class="pod-now-line">Press play. There is no transcript &mdash; you have to listen to them like everybody else.</span>
+      <span class="pod-now-line">Press play.</span>
     </div>`;
   const fallback = `<p class="pod-meta">This device has no speech engine, so the transcript is printed below instead.</p>
     <div class="pod-body">${ep.blocks.map(b => b.t === 'theme' ? `<p class="pod-sting">${esc(b.text)}</p>`
