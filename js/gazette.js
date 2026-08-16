@@ -764,25 +764,10 @@ window.Gazette = (() => {
         <p>${esc('Progress, then, of a kind. Though one notes the pot is still fifty pounds, the arguments are still the arguments, and somewhere beneath the sourdough this remains a league that would trade the lot for one good Tuesday night. The flat white cools. The window, as ever, closes.')}</p>
         <div class="prog-by">Yonni Liu</div>
       </div>`);
-      // twelve lines for twelve clubs — dealt round-robin from a hashed start
-      // so no two clubs share a verdict and the deal is stable between loads
-      const moods = [
-        'The board has demanded a top-eight finish and a calmer group chat. Neither is coming.',
-        'Taking it one game at a time, starting several weeks before there are games.',
-        'Quietly confident, which historically precedes the collapse.',
-        'A summer of meticulous planning, none of which survives pick one.',
-        'The ultras have painted a banner. It is already slightly wrong.',
-        'All in on the draft. The draft has not agreed to this.',
-        'Has read the rules PDF twice. It shows, worryingly.',
-        'New crest, new domain, same problem at left-back.',
-        'The gaffer has promised football played the right way. The board has priced in the wrong way.',
-        'Bullish in public, refreshing the fixture list in private.',
-        '"It\'s a results business," said a man yet to record a result.',
-        'Promised the ultras a trophy. The ultras have long memories and a banner budget.',
-      ];
-      const dealFrom = hash('survey:2026');
-      out.push(`<div class="prog-sec">The Twelve, Surveyed</div><div class="prog-nibs">${mids.map((mid, k) =>
-        `<div class="prog-nib"><b>${esc(teamName(mid))}</b><span>${esc(`${managerName(mid)} — ${moods[(dealFrom + k) % moods.length]}`)}</span></div>`).join('')}</div>`);
+      // "The Twelve, Surveyed" was CUT (Ben, 16 Aug: "not into this") — dealt
+      // one-liners read as mad-libs next to the specific stories. Pre-draft
+      // there is no real per-club material; per-club colour returns when the
+      // weekly editions have actual squads and results to bite on.
       if (formers.length) out.push(`<div class="prog-sec">The Rumour Mill</div><p>${esc(`Also linked with returns this window: ${formers.join(', ')}. The Gazette has verified none of these and printed all of them.`)}</p>`);
       // midweek listings (Ian's commission, 16 Aug)
       out.push(`<div class="prog-sec">Midweek on the Overcunt</div><p>${esc('Tuesday: the panel names its combined XI of players they sold. Wednesday: forty minutes on whether 44–40 is a bad result (it is not — it is a great result). Thursday: emergency pod if anybody\'s waiver request is processed. All episodes recorded in a garage the production team continue to describe as "iconic".')}</p>`);
