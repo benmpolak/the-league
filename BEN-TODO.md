@@ -339,6 +339,38 @@ library before a credit is spent.
   yours. Until you do, the pilots and the draft reaction are one-offs you can
   cut by hand, which is most of the value for almost none of the cost.
 
+**The gap this leaves, stated plainly.** Marc asked (18 Aug) whether the
+episodes generate themselves on a schedule. The TEXT does, with no server and
+no job at all: `Podcast.published()` is a pure function of league state and the
+current time, computed in the browser, so a new episode simply exists the
+moment its slot passes. The AUDIO does not — it is committed files. So from the
+first weekly episode onwards, a new show appears **in browser-robot voice**
+until somebody renders it and pushes, which will be conspicuous once the rest
+of the cast is ElevenLabs.
+
+Three ways out, and it is your call:
+
+1. **Scheduled render** (the real fix). A workflow that runs the render and
+   commits `audio/`. It has to fire *after* the content is knowable but *before*
+   the slot opens — so roughly Fri 16:00 London for the preview, and on the
+   review side only once `gwStatus(i) === 'final'`, which is why a plain cron
+   is not quite enough on its own.
+2. **Accept the lag** — robot on Friday teatime, real voices whenever you next
+   render. Cheap, and honestly fine for a first season.
+3. **Hold the episode until its audio exists** — gate weekly publishing on the
+   manifest. Cleanest sound, but an episode never appears at all if nobody
+   renders, and a silent Media section is worse than a robot one.
+
+**And the slots are not Tuesday/Friday.** That is the waiver clock. The
+podcast runs on football time: preview at 17:00 London on the Friday on or
+before the gameweek's first kick-off, review three hours after its last match
+and only once the gameweek is `final`. In practice that is Fri 17:00 and either
+Sunday evening or Monday 23:00 depending on fixtures — which puts the review in
+front of managers on Tuesday morning, ahead of the 10am waiver run. If you
+would rather they sat on the waiver slots instead, it is a small change to
+`previewAt`/`reviewAt` in `js/podcast.js`, but I would leave it: a preview after
+kick-off is worthless, and a review two days stale reads as a newsletter.
+
 **Howard is not rendered and never billed.** Marc's new talkTROUGH caller
 (§5c) is marked `"human": true` and is recorded by an actual person.
 
