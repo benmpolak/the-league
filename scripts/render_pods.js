@@ -53,10 +53,23 @@
  *   --parts        print the lines assigned to human voices, then stop
  *   --scan         rebuild index.json from the files on disk, render nothing
  *   --only a,b     work on just these episode ids (default: all published)
- *   --provider     openai (default) | elevenlabs — overrides cast.json
+ *   --provider     elevenlabs | openai — overrides cast.json
  *   --force        re-render lines that already have a file (WILL overwrite)
- *   --dry          list what it would render, spend nothing
+ *   --dry          cost the job without casting or spending anything
  *   --url          site to read the episodes from (default http://localhost:8749)
+ *
+ * ── ON ELEVENLABS (Ben's choice, 18 Aug) ──────────────────────────────────
+ *
+ * It takes no written direction: the VOICE carries the character and the
+ * SETTINGS carry the performance. Both are per character in cast.json, and
+ * `direction` is kept only as the brief you cast against. Low stability means
+ * more variation and more shouting (Grey ~0.22); high means level and calm
+ * (Bilson ~0.75). `style` pushes the voice's own manner and high can tip into
+ * parody, which on talkTROUGH is the point.
+ *
+ * A voice id must be one in YOUR library — ids from the shared pool have to be
+ * added to it first. Nothing renders until every non-human part is cast, and
+ * the ids are checked against the library before a single credit is spent.
  */
 'use strict';
 const fs = require('fs');
@@ -188,20 +201,48 @@ async function ttsOpenAI(text, voice, direction) {
   if (!r.ok) throw new Error('openai ' + r.status + ' ' + (await r.text()).slice(0, 300));
   return Buffer.from(await r.arrayBuffer());
 }
-async function ttsEleven(text, voiceId) {
+/* ElevenLabs takes no written direction — the voice carries the character and
+   the SETTINGS carry the performance, so they are the equivalent knob and they
+   live per character in cast.json:
+
+     stability   low = more variation and more shouting; high = level and calm.
+                 Grey wants ~0.25, Bilson wants ~0.75.
+     style       how hard it pushes the voice's own manner. High is theatrical
+                 and can tip into parody, which for talkTROUGH is the point.
+     similarity  how tightly it hugs the original sample. Leave near 0.8.
+
+   `previous_text`/`next_text` give it the lines either side so it knows where
+   it is in the conversation. Rendering line by line without them is why
+   line-by-line TTS usually sounds like a set of unrelated announcements. */
+async function ttsEleven(text, voiceId, chair, around) {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
-  if (!voiceId) throw new Error('no ElevenLabs voice id cast for this character — run --voices and fill in cast.json');
-  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_64`, {
+  if (!voiceId) throw new Error('no ElevenLabs voice id cast for this character — run --voices and paste the id into audio/pod/cast.json');
+  const s = chair.settings || {};
+  const body = {
+    text,
+    model_id: CASTING.model || 'eleven_multilingual_v2',
+    voice_settings: {
+      stability: s.stability ?? 0.4,
+      similarity_boost: s.similarity ?? 0.8,
+      style: s.style ?? 0.5,
+      use_speaker_boost: s.speakerBoost ?? true,
+    },
+  };
+  if (around && around.prev) body.previous_text = around.prev;
+  if (around && around.next) body.next_text = around.next;
+  const fmt = CASTING.format || 'mp3_44100_64';
+  const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(fmt)}`, {
     method: 'POST',
     headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.5 } }),
+    body: JSON.stringify(body),
   });
   if (!r.ok) throw new Error('elevenlabs ' + r.status + ' ' + (await r.text()).slice(0, 300));
   return Buffer.from(await r.arrayBuffer());
 }
-const render = (text, voice, direction) =>
-  PROVIDER === 'elevenlabs' ? ttsEleven(text, voice) : ttsOpenAI(text, voice, direction);
+const render = (text, chair, direction, around) =>
+  PROVIDER === 'elevenlabs' ? ttsEleven(text, chair.voice, chair, around)
+    : ttsOpenAI(text, chair.voice, direction);
 
 /* ---------- getting the scripts ----------
    Out of the real generator, not a copy of it. */
@@ -275,8 +316,8 @@ async function doAudition() {
   for (const v of vs) {
     const file = path.join(dir, v.id.replace(/[^\w.-]/g, '_') + '.mp3');
     try {
-      // no direction here on purpose — you are judging the VOICE, not the steer
-      fs.writeFileSync(file, await render(AUDITION_LINE, v.id, ''));
+      // no direction and no tuning here on purpose — you are judging the VOICE
+      fs.writeFileSync(file, await render(AUDITION_LINE, { voice: v.id }, ''));
       console.log(`  ${path.relative(ROOT, file)}   ${v.name}`);
     } catch (e) { console.error(`  FAILED ${v.id}: ${e.message}`); }
   }
@@ -309,6 +350,28 @@ function doParts(eps) {
 }
 
 async function doRender(eps) {
+  /* Fail before spending anything. On ElevenLabs a voice id is a long opaque
+     string, so an empty or copied-across-from-OpenAI one is easy to miss and
+     would otherwise show up as a wall of 400s halfway through a render. */
+  const uncast = Object.entries(CASTING.cast)
+    .filter(([, c]) => !c.human && !String(c.voice || '').trim()).map(([n]) => n);
+  if (uncast.length) {
+    // --dry is how you cost the job BEFORE casting, so it only warns
+    console.error(`\n${DRY ? 'Note: no' : 'No'} voice cast for: ${uncast.join(', ')}.`);
+    console.error(`Run  node scripts/render_pods.js --voices  and paste the ids into audio/pod/cast.json.\n`);
+    if (!DRY) process.exit(1);
+  }
+  if (PROVIDER === 'elevenlabs' && !DRY) {
+    const known = new Set((await listVoices()).map(v => v.id));
+    const wrong = Object.entries(CASTING.cast)
+      .filter(([, c]) => !c.human && !known.has(String(c.voice).trim()));
+    if (wrong.length) {
+      console.error(`\nThese voice ids are not in your ElevenLabs library:`);
+      for (const [n, c] of wrong) console.error(`  ${n} → "${c.voice}"`);
+      console.error(`Run --voices for the real ids. (Add a voice to your library first if it is from the shared pool.)\n`);
+      process.exit(1);
+    }
+  }
   let made = 0, skipped = 0, human = 0, chars = 0;
   for (const ep of eps) {
     const dir = path.join(OUT, ep.id);
@@ -324,10 +387,14 @@ async function doRender(eps) {
       if (!FORCE && existing(ep.id, n)) { skipped++; continue; }
       const text = b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text;
       const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
+      // the lines either side, so it knows where it is in the conversation
+      const spoken = k => (ep.blocks[k] && ep.blocks[k].t !== 'theme')
+        ? (ep.blocks[k].t === 'ad' ? `${ep.blocks[k].brand}. ${ep.blocks[k].text}` : ep.blocks[k].text) : '';
+      const around = { prev: spoken(n - 1), next: spoken(n + 1) };
       chars += text.length;
-      if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who} as ${chair.voice}  ${text.length} chars`); made++; continue; }
+      if (DRY) { console.log(`  would render ${ep.id}/${n}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
       try {
-        fs.writeFileSync(path.join(dir, n + '.mp3'), await render(text, chair.voice, direction));
+        fs.writeFileSync(path.join(dir, n + '.mp3'), await render(text, chair, direction, around));
         made++;
         process.stdout.write(`  ${ep.id}/${n}.mp3  ${who}\n`);
       } catch (e) {

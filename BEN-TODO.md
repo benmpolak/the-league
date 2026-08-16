@@ -304,25 +304,34 @@ listed in `audio/pod/index.json` — which currently ships EMPTY, so today
 nothing changes and nothing is fetched. Still client-only, still same-origin,
 still works offline, no runtime backend. The stings stay synthesised.
 
-**What needs you.** `scripts/render_pods.js` reads the episodes out of the live
-generator headless and cuts them to real voices. It needs an API key, so only
-you can run it:
+**What needs you — ELEVENLABS (your call, relayed by Marc 18 Aug).**
+`scripts/render_pods.js` reads the episodes out of the live generator headless
+and cuts them to real voices. It needs the API key, so only you can run it.
+`audio/pod/cast.json` is already set to `"provider": "elevenlabs"` with the
+per-character tuning done; the `"voice"` fields are deliberately BLANK because
+ElevenLabs ids are specific to your library. Order of play:
 
-    OPENAI_API_KEY=… node scripts/render_pods.js --dry --only gfw-pilot,tt-pilot
+    node scripts/render_pods.js --voices      # the ids in your library
+    node scripts/render_pods.js --audition    # all of them, same line, compare
+    # paste the ids into audio/pod/cast.json
+    node scripts/render_pods.js --dry         # what it would cost
+    node scripts/render_pods.js               # cut it, then commit audio/
 
-`--dry` costs nothing and prints exactly what it would render. Drop `--dry` to
-cut it, then commit `audio/`. The cast and, more importantly, the DIRECTION for
-each character ("gruff, gravelly Scottish ex-footballer, BELLOWS the capitals")
-are at the top of that file — that steering is what makes it a person rather
-than a voice.
+Two things specific to ElevenLabs, both handled: it IGNORES written direction,
+so the performance knob is `settings` per character (low `stability` = more
+variation and more shouting — Grey is at 0.22, Bilson at 0.75), and lines are
+sent with `previous_text`/`next_text` so it knows where it is in the
+conversation instead of reading twenty unrelated announcements. Nothing renders
+until every non-human part is cast, and the ids are checked against your
+library before a credit is spent.
 
-**The numbers, so this is a real decision and not a vibe:**
+**The numbers:**
 
-- ~500 words an episode, two shows, two episodes a week, 38 gameweeks ≈ 150
-  episodes and ~430k characters a season.
-- OpenAI `gpt-4o-mini-tts`: roughly **£5 a season**, and it takes direction.
-- ElevenLabs: clearly better voices, roughly **£20–80 a month**. Cast your own
-  voice ids into `CAST[].id` and pass `--provider elevenlabs`.
+- Both pilots together are **~6,000 characters**. A normal week (two shows,
+  preview + review) is ~12–14k. A full 38-week season ≈ **~450k characters**.
+- ElevenLabs bills per character, so that is comfortably inside Creator
+  (100k/month) for a few weeks at a time and wants Pro for a full season —
+  call it **£20–80 a month**, which is the tier decision, not a per-render one.
 - Storage ≈ 290 MB a season at 64 kbps. Pages is fine to ~1 GB, but prune to
   the last eight gameweeks and it stays under 60 MB.
 - Rendering the weeklies automatically would want a scheduled workflow and the
@@ -330,8 +339,30 @@ than a voice.
   yours. Until you do, the pilots and the draft reaction are one-offs you can
   cut by hand, which is most of the value for almost none of the cost.
 
+**Howard is not rendered and never billed.** Marc's new talkTROUGH caller
+(§5c) is marked `"human": true` and is recorded by an actual person.
+
 If you'd rather keep the robots, say so and delete `scripts/render_pods.js` —
 the fallback path is harmless and the app behaves exactly as it does now.
+
+### 5c. Howard from Prestwich
+
+Marc, 18 Aug: a phone-in caller on talkTROUGH, one call an episode, "in the
+style that phone in callers are normally introduced". Keys takes the call and
+answers it. He is a first-time caller every single week, he mentions something
+nobody asked about before he gets to the point, and he hangs up to listen.
+
+What he is WRONG about comes from real league state — the draft grades, the
+shared clubs in Friday's tie, who is about to be named Fraud of the Week — so
+it is a different complaint every episode and still deterministic.
+
+He is also the human-recorded part, which is the right shape for it: a caller
+is the one voice on a station that isn't a broadcaster, so the join shows least
+where the amateur genuinely is the amateur. `--parts` prints his script and the
+exact filenames; drop the recordings in (any format a browser plays, straight
+off a phone is fine), run `--scan`, commit. A later render can never overwrite
+them. Side effect: it closes the length gap on talkTROUGH — the pilot goes from
+451 words to 606.
 
 ---
 

@@ -1,47 +1,94 @@
 {
-  "provider": "openai",
+  "provider": "elevenlabs",
   "_README": [
-    "One entry per character. \"voice\" is an id from `--voices`.",
-    "\"direction\" is how to say it — openai acts on this, elevenlabs ignores it.",
-    "Howard is the phone-in caller on talkTROUGH and is marked \"human\": true,",
-    "so he is never rendered and never overwritten — that part is recorded by a",
-    "real person. Run `--parts` to get his script and the filenames to save."
+    "Ben went with ElevenLabs (Marc, 18 Aug).",
+    "",
+    "1. node scripts/render_pods.js --voices     ← the ids in YOUR library",
+    "2. node scripts/render_pods.js --audition   ← all of them, same line, to compare",
+    "3. paste the id you picked into \"voice\" below, per character",
+    "4. node scripts/render_pods.js              ← renders everyone but Howard",
+    "",
+    "ElevenLabs IGNORES \"direction\" — it is kept because it says what the",
+    "character is meant to sound like, which is what you cast against. The",
+    "performance knob on ElevenLabs is \"settings\": low stability = more",
+    "variation and more shouting, high = level and calm; style pushes the",
+    "voice's own manner and high can tip into parody, which for talkTROUGH",
+    "is the point.",
+    "",
+    "Howard is the talkTROUGH phone-in caller and is \"human\": true, so he is",
+    "never rendered, never overwritten and never billed. `--parts` prints his",
+    "script and the filenames to save the recordings as."
   ],
   "cast": {
     "Rax Mushden": {
-      "voice": "ballad",
+      "voice": "",
       "human": false,
-      "direction": "A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them."
+      "direction": "A warm, quick, slightly amused British radio host chairing a panel show. Conversational, never announcer-ish. Keeps things moving, lands the dry jokes flat rather than pushing them.",
+      "settings": {
+        "stability": 0.55,
+        "similarity": 0.8,
+        "style": 0.35
+      }
     },
     "Donathan Bilson": {
-      "voice": "sage",
+      "voice": "",
       "human": false,
-      "direction": "A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice."
+      "direction": "A thoughtful, unhurried British football writer explaining tactics. Long pauses, careful clause-by-clause delivery, faintly professorial and entirely sincere. Never raises his voice.",
+      "settings": {
+        "stability": 0.75,
+        "similarity": 0.8,
+        "style": 0.2
+      }
     },
     "Yonni Liu": {
-      "voice": "shimmer",
+      "voice": "",
       "human": false,
-      "direction": "A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense."
+      "direction": "A bright, earnest, youngish British journalist making an emotional point about football and meaning it. Slightly faster than the room, warm, a bit wry at her own expense.",
+      "settings": {
+        "stability": 0.55,
+        "similarity": 0.8,
+        "style": 0.4
+      }
     },
     "Sid Lowry": {
-      "voice": "echo",
+      "voice": "",
       "human": false,
-      "direction": "A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony."
+      "direction": "A relaxed British correspondent phoning in from Spain on a hot afternoon. Easy, gently ironic, unbothered, like a man on a balcony.",
+      "settings": {
+        "stability": 0.65,
+        "similarity": 0.8,
+        "style": 0.3
+      }
     },
     "Richard Keyes": {
-      "voice": "onyx",
+      "voice": "",
       "human": false,
-      "direction": "A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact."
+      "direction": "A booming, self-important British sports broadcaster on drivetime radio. Low, plummy, absolutely certain. Hammers key words hard, treats every opinion as settled fact.",
+      "settings": {
+        "stability": 0.35,
+        "similarity": 0.8,
+        "style": 0.65
+      }
     },
     "Andy Grey": {
-      "voice": "ash",
+      "voice": "",
       "human": false,
-      "direction": "A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath."
+      "direction": "A gruff, gravelly Scottish ex-footballer turned pundit, exasperated and loud. Growls through the ordinary words and BELLOWS the ones in capitals. Contemptuous, blunt, no pauses for breath.",
+      "settings": {
+        "stability": 0.22,
+        "similarity": 0.8,
+        "style": 0.8
+      }
     },
     "Jamie O’Hara-Hara": {
-      "voice": "verse",
+      "voice": "",
       "human": false,
-      "direction": "A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting."
+      "direction": "A hyped-up young Essex ex-footballer on talk radio, talking over everyone. Fast, nasal, indignant, rising at the end of every sentence, permanently on the edge of shouting.",
+      "settings": {
+        "stability": 0.25,
+        "similarity": 0.8,
+        "style": 0.75
+      }
     },
     "Howard": {
       "voice": "",
@@ -52,5 +99,7 @@
   "adDirection": {
     "gfw": "Read as a gentle, sincere public-service sponsorship message. Soft, unhurried, slightly wistful.",
     "tt": "Read as a LOUD, hard-sell local radio advert. Fast, aggressive, delighted with itself, shouting the product name."
-  }
+  },
+  "model": "eleven_multilingual_v2",
+  "format": "mp3_44100_64"
 }
