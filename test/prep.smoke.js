@@ -655,6 +655,54 @@ const chk = (name, ok, detail = '') => {
     p11c.table && JSON.stringify(p11c.visibleStats) === JSON.stringify(['rate']) && p11c.fits && p11c.ordered &&
     p11c.docW <= p11c.viewport && !p11c.duplicateQueue, JSON.stringify(p11c));
 
+  /* ---- P13: men who have left the league. Marc, 18 Aug: "can we do something
+     about the players out on loan/transferred out."
+
+     FPL status 'u' is not an injury — "Has joined Como permanently" means he
+     will never score again for anybody. Ranked on last season's points he sits
+     high on the board (Chalobah #42 on 136), so this is a pick-costing trap,
+     not just clutter. ---- */
+  const p13 = await page.evaluate(() => {
+    whoami = state.managers[0].id; syncNow = async () => {};
+    const departed = PLAYERS.filter(hasLeft);
+    if (!departed.length) return { none: true };
+    state.view = 'draft'; poolFilter.scope = 'avail'; poolFilter.limit = 700; save(); render();
+    // by id, not name — "Uche" and "Burns" are substrings of other men once
+    // the whole pool renders, which quietly turns this check green
+    const ids = () => new Set([...document.querySelectorAll('[data-pcard]')].map(x => +x.dataset.pcard));
+    const shownNow = ids();
+    poolFilter.scope = 'all'; render();
+    const shownAll = ids();
+    const tags = document.querySelectorAll('.left-tag').length;
+    poolFilter.scope = 'avail'; render();
+
+    // autopick must refuse them even when they sit at the top of a list
+    state.draft.order = state.managers.map(m => m.id);
+    state.phase = 'draft'; state.draft.picks = [];
+    const alive = PLAYERS.find(x => !hasLeft(x));
+    state.autolists[whoami] = [departed[0].id, alive.id];
+    const eng = Engine.make({
+      players: PLAYERS, gameweeks: GAMEWEEKS, fixtures: state.fixtures || [],
+      lastSeasonByCode: (typeof LAST_SEASON !== 'undefined' && LAST_SEASON.byCode) || {},
+    });
+    const choice = eng.autoPickChoice(state, whoami);
+
+    // ...and Big Al calls it a transfer, not an injury
+    const line = pundComment({ n: 1, managerId: whoami, playerId: departed[0].id }).line;
+    return {
+      count: departed.length,
+      hiddenByDefault: departed.every(d => !shownNow.has(d.id)),
+      shownWhenAsked: departed.every(d => shownAll.has(d.id)),
+      tagged: tags === departed.length,
+      autopickSkips: choice === alive.id,
+      alSaysGone: /GONE OUT ON LOAN|BEEN SOLD/.test(line) && !/INJURED/.test(line),
+      // a squad must never quietly lose a man it already owns
+      stillResolvable: !!PLAYER_BY_ID[departed[0].id],
+    };
+  });
+  chk('P13 departed players stay out of the pool, out of autopick, and are called what they are',
+    p13.none || Object.values(p13).every(v => v !== false), JSON.stringify(p13));
+
   chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 
   await browser.close();

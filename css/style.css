@@ -399,6 +399,10 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 tr.gone-row td { opacity: .45; }
 tr.gone-row td.act { opacity: .8; }
 .gone-tag { background: rgba(224,85,85,.16); color: #ff9c9c; border: none; white-space: nowrap; }
+/* LEFT — out on loan or sold out of the league. Deliberately NOT the red of
+   the injured: a crocked man comes back, this one never does (Marc, 18 Aug) */
+.left-tag { background: rgba(120,132,160,.22); color: #c3cbdd; border: none; white-space: nowrap; flex: none; }
+.left-row td, .left-row th { opacity: .5; }
 .qrow { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; padding: 5px 0; min-width: 0; }
 .ready-row { border-bottom: 1px solid rgba(38,50,80,.5); padding: 8px 0; }
 .ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
@@ -406,13 +410,22 @@ tr.gone-row td.act { opacity: .8; }
 .qrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the rank doubles as the way to move a player: type a number, he goes there.
    Sized for a thumb and for three digits, since a long list runs past 99. */
-.auto-rank {
-  width: 44px; min-width: 44px; flex: none; padding: 3px 4px; text-align: center;
-  font-size: 12px; font-variant-numeric: tabular-nums; cursor: text;
+/* The rank box has to hold THREE digits (Marc, 18 Aug) — an autopick list can
+   run past a hundred names, and the pool is bigger than that.
+
+   Written as `input.auto-rank` on purpose: `input[type=number]` up at the top
+   of this file scores (0,1,1) and was beating a bare `.auto-rank` at (0,1,0),
+   so the compact padding below had never actually applied. The field was
+   rendering at 14px with 12px of side padding — 18px of usable space, when
+   "140" needs 23px. Matching specificity and coming later, this now wins. */
+input.auto-rank {
+  width: 50px; min-width: 50px; flex: none; padding: 4px 5px; text-align: center;
+  font-size: 12.5px; font-variant-numeric: tabular-nums; cursor: text;
 }
-.auto-rank::-webkit-outer-spin-button, .auto-rank::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.auto-rank { -moz-appearance: textfield; appearance: textfield; }
-@media (max-width: 700px) { .auto-rank { width: 46px; min-width: 46px; padding: 6px 4px; font-size: 13px; } }
+input.auto-rank::-webkit-outer-spin-button, input.auto-rank::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
+/* phones keep the taller touch target, and gain the width to match */
+@media (max-width: 700px) { input.auto-rank { width: 54px; min-width: 54px; padding: 7px 4px; font-size: 13px; } }
 .warn-tag { flex: none; }
 .squad-fab { display: none; }
 @media (max-width: 980px) {
@@ -436,7 +449,11 @@ tr.gone-row td.act { opacity: .8; }
   /* Ben, 16 Aug: the phone queue read as a wall of buttons — controls slimmed
      so the names lead the row and twelve entries fit a screen */
   .queue-drawer .qrow { gap: 6px; padding: 4px 0; }
-  .queue-drawer .auto-rank { width: 34px; min-width: 34px; padding: 4px 2px; font-size: 12px; }
+  /* ...but wide enough for three digits (Marc, 18 Aug). At 34px a rank past
+     ninety-nine had 8px of slack, which is a clipped-looking box on a phone.
+     The extra width is horizontal, so Ben's "twelve entries fit a screen"
+     above is untouched. */
+  .queue-drawer input.auto-rank { width: 42px; min-width: 42px; padding: 4px 3px; font-size: 12px; }
   .queue-drawer .btn.small.icon-btn { width: 29px; height: 29px; min-width: 29px; font-size: 10px; border-radius: 7px; }
   .queue-drawer [data-autodel] { opacity: .55; }
   .queue-drawer .pos-badge { font-size: 9px; padding: 2px 5px; }

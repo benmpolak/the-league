@@ -1107,10 +1107,30 @@ function winProbBar(a, b, i, pov = null) {
   </div>`;
 }
 
+/* Marc, 18 Aug: "can we do something about the players out on loan /
+   transferred out. It seems a bit pointless having them included on the list?"
+
+   FPL status 'u' is not a fitness flag. An injury means back in a month; this
+   means "Has joined Como permanently" or "on loan for the rest of the season" —
+   he will not play another Premier League minute and cannot score for anybody
+   again. Treating it as an injury put Chalobah at #42 on the board on last
+   season's 136 points while he plays in Italy.
+
+   So: departed men are their own category. Kept OUT of the pools by default,
+   skipped by autopick (that rule lives in engine.js — the live draft picks on
+   the server), and left visible in a squad that already owns one, because a
+   squad must never quietly lose a man. */
+const hasLeft = p => !!p && p.status === 'u';
+// on loan and sold read the same to us — he is not playing here either way —
+// but the copy can say which, because the feed tells us
+const leftHow = p => /\bloan\b/i.test(p?.news || '') ? 'on loan' : 'transferred';
+const leftTag = p => hasLeft(p)
+  ? `<span class="tag left-tag" title="${esc(p.news || 'No longer in the Premier League')}">LEFT</span>` : '';
+
 // injury/availability chip from the FPL status flag
-const STATUS_ICON = { d: '⚠️', i: '🏥', s: '🟥', u: '🚫', n: '🚫' };
+const STATUS_ICON = { d: '⚠️', i: '🏥', s: '🟥', u: '✈️', n: '🚫' };
 const statusChip = p => STATUS_ICON[p.status]
-  ? `<span class="status-chip" title="${esc(p.news || 'Unavailable')}">${STATUS_ICON[p.status]}</span>` : '';
+  ? `<span class="status-chip" title="${esc(p.news || (hasLeft(p) ? 'No longer in the Premier League' : 'Unavailable'))}">${STATUS_ICON[p.status]}</span>` : '';
 // red ring/tint for the crocked and banned, amber for doubts — used on chips and table rows
 const statusClass = p => p.status === 'a' ? '' : p.status === 'd' ? 'st-amber' : 'st-red';
 function toast(msg) {
@@ -4148,7 +4168,13 @@ function pundComment(pk) {
   if (p.team === 'Arsenal' && mgrN.includes('conway')) {
     return { who: 'prutton', line: `Marc takes an Arsenal man. Somewhere in the distance, North London Forever starts up. Nobody requested it. Nobody ever has to.` };
   }
-  if ((p.status === 'i' || p.status === 's' || p.status === 'u') && pk.n <= state.managers.length * 8) {
+  // a departed man is his own disaster and gets his own line — Big Al calling
+  // a permanent transfer to Como an INJURY was the tell that 'u' had been
+  // filed under fitness (Marc, 18 Aug)
+  if (hasLeft(p)) {
+    return { who: 'al', line: `${mgr}. ${mgr}. He has gone, son. ${p.name} has ${leftHow(p) === 'on loan' ? 'GONE OUT ON LOAN' : 'BEEN SOLD'} — he is not playing in this league again. ${p.news ? `"${p.news}."` : ''} That is a pick you do not get back. I need a Guinness.`, sound: 'trombone' };
+  }
+  if ((p.status === 'i' || p.status === 's') && pk.n <= state.managers.length * 8) {
     return { who: 'al', line: `${mgr}, small thing — ${p.name} is ${p.status === 's' ? 'SUSPENDED' : 'INJURED'}. Says so right there on the board. ${p.news ? `"${p.news}."` : ''} I need a Guinness.`, sound: 'trombone' };
   }
   if (p.pos === 'GK' && pk.n <= state.managers.length * 2) {
@@ -4519,7 +4545,7 @@ function poolControlsHtml(availableCount) {
     </select>
     ${state.phase === 'draft' ? `<select id="poolScope" title="Show drafted players too — dimmed, with who took them">
       <option value="avail" ${poolFilter.scope !== 'all' ? 'selected' : ''}>Available</option>
-      <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>Everyone (incl. drafted)</option>
+      <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>Everyone (incl. drafted &amp; departed)</option>
     </select>` : ''}
   </div>`;
 }
@@ -4609,7 +4635,7 @@ function autolistRows() {
       <input class="auto-rank" type="number" min="1" max="${list.length}" value="${k + 1}" data-autorank="${k}" draggable="false"
         title="Type a number to move him there — everyone else shifts down" aria-label="${esc(p.name)} is number ${k + 1}. Type a number to move him.">
       <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
-      ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}
+      ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}${leftTag(p)}
       <span style="margin-left:auto;display:flex;gap:4px">
         <button class="btn ghost small icon-btn" data-autoup="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
         <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
@@ -5262,7 +5288,11 @@ function poolTable() {
   const taken = live ? draftedIds() : new Set();
   const mid = live ? currentManagerId() : null;
   const showGone = live && poolFilter.scope === 'all';
-  let rows = showGone ? [...PLAYERS] : PLAYERS.filter(p => !taken.has(p.id));
+  // "Everyone" now means everyone — drafted AND departed. Anything narrower
+  // hides the men who have left the league, because they are not signable
+  const showAll = poolFilter.scope === 'all';
+  let rows = showGone ? [...PLAYERS]
+    : PLAYERS.filter(p => !taken.has(p.id) && (showAll || !hasLeft(p)));
   if (poolFilter.q) {
     const q = normName(poolFilter.q);
     rows = rows.filter(p => normName(p.name).includes(q) || normName(p.full).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -5290,11 +5320,11 @@ function poolTable() {
     </tr></thead>
     <tbody>
       ${rows.map(p => `
-      <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
+      <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}${hasLeft(p) ? ' left-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
         <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button><span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos}</span></div></div></td>
         <td class="muted col-club" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td class="col-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
-        <td class="col-status">${statusChip(p)}</td>
+        <td class="col-status">${hasLeft(p) ? leftTag(p) : statusChip(p)}</td>
         ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(metricsFor(p), p)}</td>`).join('')}
         <td class="act" style="white-space:nowrap">${taken.has(p.id) ? (() => {
           const pk = state.draft.picks.find(x => x.playerId === p.id);
@@ -6656,8 +6686,8 @@ function bindTransfers() {
       // "surely it should only be the everyone filter that has both"). Waivers
       // has its own chip; Everyone still shows the lot, owned included.
       let pool = transfersView.scope === 'all' ? [...PLAYERS]
-        : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p))
-        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p));
+        : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
+        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -6711,7 +6741,7 @@ function bindTransfers() {
         <span style="width:8px"></span>
         <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
-        <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Show owned players too, Draft Fantasy style">Everyone</button>
+        <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Owned players too, and men who have left the league">Everyone</button>
       </div>` + (shown.length ? table
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
         // now that Free agents means signable, it empties honestly in the hours
