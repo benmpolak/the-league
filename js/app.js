@@ -879,6 +879,9 @@ const NATIONS = {
 const NAT_OVERRIDE = {
   606798: 200,   // Andrés García (Aston Villa) — Spain. Marc, 18 Aug.
   550090: 106,   // Diego Coppola (Brighton) — Italy. Marc, 18 Aug.
+  660392: 157,   // Christantus Uche (Crystal Palace) — Nigeria. Marc, 18 Aug.
+                 // Back at Getafe, so he is LEFT and out of the pools — but a
+                 // squad or an archive that still names him should name him right.
 };
 const natOf = p => NATIONS[NAT_OVERRIDE[p.code] ?? p.nat] || null;
 /* Marc, 18 Aug: "the northern ireland flag is wrong, it is showing the union
