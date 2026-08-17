@@ -189,10 +189,27 @@
     }
     // deterministic autopick: manager's own list first, then best available by
     // rating with id as tie-break (the server must never flip a coin)
+    /* Marc, 18 Aug: "can we do something about the players out on loan /
+       transferred out. It seems a bit pointless having them included."
+
+       It is worse than pointless. FPL marks them status 'u' — "Has joined Como
+       permanently", "on loan for the rest of the season" — and they are ranked
+       on LAST season's points, so Chalobah sits at #42 on 136 points while
+       playing in Italy. He cannot score again for anybody, ever. An injury
+       flag means "back soon"; this means "gone".
+
+       This lives in the shared engine on purpose: the live draft autopicks on
+       the SERVER (functions/index.js → eng.autoPickChoice), so a client-only
+       fix would leave the real draft night still handing out men at Getafe. */
+    const hasLeft = p => !!p && p.status === 'u';
+
     function autoPickChoice(state, mid) {
       const taken = new Set(state.draft.picks.map(p => p.playerId));
-      let best = toArr(state.autolists?.[mid]).map(id => PLAYER_BY_ID[id])
-        .find(p => p && !taken.has(p.id) && canPick(state, mid, p));
+      const ok = p => p && !taken.has(p.id) && !hasLeft(p) && canPick(state, mid, p);
+      let best = toArr(state.autolists?.[mid]).map(id => PLAYER_BY_ID[id]).find(ok);
+      if (!best) best = PLAYERS.filter(ok).sort((a, b) => rating(b) - rating(a) || a.id - b.id)[0];
+      // a board with nothing but departed men left is still a board: fall back
+      // rather than stalling the clock on draft night
       if (!best) best = PLAYERS.filter(p => !taken.has(p.id) && canPick(state, mid, p))
         .sort((a, b) => rating(b) - rating(a) || a.id - b.id)[0];
       return best ? best.id : null;
@@ -680,7 +697,7 @@
       currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, gwFrom, pairingsFor,
       squadAt, ownedIdsAt, squadShapeOk, ownedIdsGiven, squadIdsGiven,
       isArrival, arrivalLocked,
-      totalPicks, pickNo, currentManagerId, canPick, autoPickChoice,
+      totalPicks, pickNo, currentManagerId, canPick, autoPickChoice, hasLeft,
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
       nextWaiverRun, nextProcessableWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
