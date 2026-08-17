@@ -877,7 +877,8 @@ const NATIONS = {
    Left empty on purpose. A wrong nationality on a real person is worse than a
    missing one, so add a name here only when you actually know. */
 const NAT_OVERRIDE = {
-  // 12345: 106,   // Example Player — Italy
+  606798: 200,   // Andrés García (Aston Villa) — Spain. Marc, 18 Aug.
+  550090: 106,   // Diego Coppola (Brighton) — Italy. Marc, 18 Aug.
 };
 const natOf = p => NATIONS[NAT_OVERRIDE[p.code] ?? p.nat] || null;
 /* Marc, 18 Aug: "the northern ireland flag is wrong, it is showing the union
