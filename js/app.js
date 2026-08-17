@@ -4589,10 +4589,23 @@ function poolControlsHtml(availableCount) {
       <option value="">All positions</option>
       ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${poolFilter.pos === p ? 'selected' : ''}>${p}</option>`).join('')}
     </select>
-    ${state.phase === 'draft' ? `<select id="poolScope" title="Show drafted players too — dimmed, with who took them">
+    ${(() => {
+      /* This used to render only during the draft, which was fine when its
+         only job was showing drafted men. It now also reveals the players who
+         have LEFT the league — and the place you most want that is the
+         Scouting Floor, before a ball is kicked, which is exactly where the
+         control was missing (Marc, 18 Aug: "I cant see that as a filter
+         option"). So it is always here, and says what it does in each phase. */
+      const live = state.phase === 'draft';
+      const wide = live ? 'Everyone (incl. drafted &amp; departed)' : 'Everyone (incl. departed)';
+      const tip = live
+        ? 'Everyone: drafted men, dimmed with who took them, plus men who have left the league'
+        : 'Everyone: also shows men who have left the Premier League — sold or out on loan, so unsignable';
+      return `<select id="poolScope" title="${tip}">
       <option value="avail" ${poolFilter.scope !== 'all' ? 'selected' : ''}>Available</option>
-      <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>Everyone (incl. drafted &amp; departed)</option>
-    </select>` : ''}
+      <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>${wide}</option>
+    </select>`;
+    })()}
   </div>`;
 }
 function queueDrawerHtml() {

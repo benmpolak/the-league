@@ -689,7 +689,14 @@ const chk = (name, ok, detail = '') => {
 
     // ...and Big Al calls it a transfer, not an injury
     const line = pundComment({ n: 1, managerId: whoami, playerId: departed[0].id }).line;
+    // the way to SEE them has to exist where you are standing. This control
+    // used to render only during the draft, so on the Scouting Floor the men
+    // were hidden with no way to reveal them (Marc, 18 Aug)
+    state.phase = 'setup'; state.draft.picks = []; render();
+    const sel = document.querySelector('#poolScope');
+    const revealable = !!sel && [...sel.options].some(o => o.value === 'all' && /departed/i.test(o.textContent));
     return {
+      revealable,
       count: departed.length,
       hiddenByDefault: departed.every(d => !shownNow.has(d.id)),
       shownWhenAsked: departed.every(d => shownAll.has(d.id)),
