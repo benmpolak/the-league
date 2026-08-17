@@ -603,3 +603,23 @@ Order of play (after draft night, nothing here is urgent):
 
 Rules changes are the group's to make (see §1 precedent) — Toby raised it in
 the group, so the mandate exists; only the prize numbers are still open.
+
+### 5d. Draft-episode data inventory (group chat, 17 Aug — for Marc's AI)
+
+What the draft episode can actually mine, checked against the code:
+
+- **Picks vs ratings vs last season** — already built: the episode's draft
+  table ranks every pick against last-season points and carries the delta
+  (steal-of-the-draft / reach-of-the-draft both fall out of it).
+- **KLAXONS — no remembering needed.** Ben wondered if klaxon moments need
+  recording. They don't: KLAXONS (js/lore.js) are RULES keyed to immutable
+  FPL codes/clubs/manager ids, and every pick in the ledger carries its code
+  (the code-fields build). The episode can recompute exactly which klaxons
+  fired, for whom, in pick order — deterministically, forever. A "Klaxon
+  Review" segment is free content.
+- **Clubs** — available: shared-club concentrations, the City-hoarding
+  count, promoted-club picks (the taxonomy is already in lore.js).
+- **Nationalities — NOT available.** The FPL feed carries no nationality
+  field. Would need a new data source; don't promise it on air.
+- Marc's editorial line stands: "the content isnt the point really. Its the
+  adverts."
