@@ -3702,7 +3702,7 @@ function viewSetup() {
         <p>You're in. The draft hasn't started yet.</p>
       </div>
       <div class="card" style="text-align:center">
-        <p class="rules-p">${whoami && whoami !== -1 ? `Signed in as <b>${esc(teamName(whoami))}</b>. ` : ''}When ${esc(managerName(state.managers[0]?.id))} starts the draft, this screen becomes your draft board automatically — keep it open.</p>
+        <p class="rules-p">${whoami && whoami !== -1 ? `Signed in as <b>${esc(teamName(whoami))}</b>. ` : ''}When the Chairman starts the draft, this screen becomes your draft board automatically — keep it open.</p>
         <p class="muted" style="font-size:12.5px;margin:10px 0">Never seen the app? Have a play with a full fake season — nothing you do here touches the real league.</p>
         <button class="btn" id="waitDemo">&#127918; Try the demo</button>
       </div>
@@ -3734,7 +3734,7 @@ function viewSetup() {
           <button class="btn ghost small" data-mgrdn="${i}" ${i === m.length - 1 ? 'disabled' : ''} title="Move down the draft order">&#9660;</button>
         </div>`).join('')}
       <button class="btn ghost small" id="shuffleOrder" style="margin-top:8px">&#127922; Shuffle the order</button>
-      <p class="muted" style="font-size:11.5px;margin-top:8px">First manager listed is the commissioner. Team names pulled from the archive — correct as you see fit.</p>
+      <p class="muted" style="font-size:11.5px;margin-top:8px">In local leagues the first manager listed is the commissioner; the real league answers to its Chairman regardless of the running order. Team names pulled from the archive — correct as you see fit.</p>
     </div>
     <div class="card">
       <h2>Squad Rules</h2>
@@ -10248,7 +10248,7 @@ function viewRules() {
       <h3 style="margin-top:16px">Prize money</h3>
       <p class="rules-p">£50 each. Last season's split: £250 playoff winner, £130 runner-up, £75 last man standing — and <b>£145 to the site</b>. The site now costs <b>£0</b>, because we built our own. That's £145 back in the pot; redistribution to be argued about in the group chat.</p>
       <h3 style="margin-top:16px">The small print</h3>
-      <p class="rules-p">Stats sync automatically from the official FPL feed (goals land within ~15 minutes on matchdays). The commissioner (${esc(managerName(state.managers[0]?.id))}) settles disputes, can act for absent managers, and adjusts points if the feed errs.</p>
+      <p class="rules-p">Stats sync automatically from the official FPL feed (goals land within ~15 minutes on matchdays). The Chairman settles disputes, can act for absent managers, and adjusts points if the feed errs.</p>
       <p class="rules-p muted" style="font-style:italic">All decisions are final. Complaints may be lodged in the group chat, where they will be enjoyed. — The Committee</p>
     </div>
   </div>`;
@@ -10421,7 +10421,7 @@ function viewSettings() {
       ${Object.keys(DEFAULT_SCORING).map(k => `
         <div class="score-row"><span>${SCORING_LABELS[k]}</span>
         <input type="number" step="1" data-score="${k}" value="${sc[k]}" ${ro}></div>`).join('')}
-      <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only ${esc(managerName(state.managers[0]?.id))} can change scoring.`}</p>
+      <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only the Chairman can change scoring.`}</p>
     </div>
     ${installCard(true)}
     ${admin ? `
@@ -10452,7 +10452,7 @@ function viewSettings() {
       </div>
       ${Object.entries(state.adjustments).flatMap(([g, m]) => Object.entries(m || {}).filter(([, v]) => v).map(([pid, v]) =>
         `<div class="score-row"><span><span class="tag">GW${GAMEWEEKS[+g]?.n ?? '?'}</span> ${esc(PLAYER_BY_ID[pid]?.name || `#${pid}`)}</span><span class="gold">${v > 0 ? '+' : ''}${v}</span></div>`)).join('')}
-    </div>` : `<div class="card"><h2>League admin <span class="tag">Chairman only</span></h2><p class="muted" style="font-size:12.5px">Scoring, resets and point adjustments are the Chairman's (${esc(managerName(state.managers[0]?.id))}'s). Backups and demo mode live there too.</p><button class="btn ghost" id="demoBtn2" style="margin-top:10px">Demo mode — preview with fake results</button></div>`}
+    </div>` : `<div class="card"><h2>League admin <span class="tag">Chairman only</span></h2><p class="muted" style="font-size:12.5px">Scoring, resets and point adjustments are the Chairman's. Backups and demo mode live there too.</p><button class="btn ghost" id="demoBtn2" style="margin-top:10px">Demo mode — preview with fake results</button></div>`}
     <div class="card">
       <h2>The Suggestion Box <span class="tag">${toArr(state.suggestions).length}</span></h2>
       <p class="muted" style="font-size:12.5px">Feature requests from the floor. The Committee reads everything and rules on nothing quickly.</p>
