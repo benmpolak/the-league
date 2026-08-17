@@ -27,6 +27,51 @@ shows its correct NAMED identity, not Demo/SANDBOX.
 
 ---
 
+## 000. BEFORE DRAFT NIGHT — one deploy, one merge (18 Aug)
+
+### A functions deploy, and this one actually matters
+
+Marc, 18 Aug: "can we do something about the players out on loan/transferred
+out." Nineteen players are marked `status: 'u'` by FPL — "Has joined Como
+permanently", "on loan for the rest of the season". They will never play
+another Premier League minute, but the board ranks on last season's points, so
+**Chalobah sits at #42 on 136 points while playing in Italy** and Digne at #126
+on 97 while at PSG. Both inside draftable range.
+
+They are now hidden from the pool and the Trough, tagged LEFT, and **autopick
+refuses them**. That last rule lives in `js/engine.js` — which is where it has
+to be, because the live draft autopicks on the SERVER via
+`eng.autoPickChoice`, not in the browser.
+
+**So the client change is live on `main` and does nothing for draft night on
+its own.** Until functions are deployed, a clock running out can still hand
+somebody a man at Getafe — the exact thing the change exists to prevent, at the
+exact moment it costs a pick that cannot be got back.
+
+    npm run deploy:functions
+
+Everything else about it is client-side and already live.
+
+### Three commits still on the branch
+
+`claude/podcunt-network` carries three that landed after your merge:
+
+- Draw the Northern Ireland flag — Unicode has no NI flag, so it was falling
+  back to the **Union Jack**, currently showing on Hume, Ballard, Bradley and
+  Devenny on the live site. Drawn now as the Ulster Banner, the flag the IFA
+  plays under.
+- Andrés García → Spain, Diego Coppola → Italy (both arrive from FPL with no
+  region at all).
+- Christantus Uche → Nigeria.
+
+Purely cosmetic, nothing depends on them, tests green. Merge when convenient.
+
+Fourteen players still have no country. That is FPL's own null, not a gap in
+our mapping — every code the feed sends is mapped. `NAT_OVERRIDE` in
+`js/app.js` fixes any of them in one line, keyed on the stable player code.
+
+---
+
 ## 00. ~~THE SITE IS NOT PUBLISHING~~ — RESOLVED 13 Aug ~16:15, but read the
 ## last paragraph
 
@@ -500,6 +545,28 @@ two episodes per show racing into the same minute. One opening, one sign-off,
 one ad break, one phone-in, with a bridge in the middle — about 600 words
 against 400 for a single. The two halves are the existing bodies with their own
 top and tail suppressed, so there is no second copy of the copy to drift.
+
+### 5e. Pods — what is actually left (18 Aug)
+
+Both pilots are finished: 46 of 46 lines carry a real voice, nothing
+outstanding, all of it merged and live. Three things remain, none urgent:
+
+1. **Press Run workflow once, as a rehearsal.** `render-pods.yml` has never
+   run — zero runs. With everything already rendered it will cost nothing and
+   commit nothing, but it proves the secret is set and the path works. Do it
+   while it does not matter, rather than discovering it on draft night, which
+   is the one episode a timer cannot catch (see 5d).
+2. **`PODS_AUTORENDER = on`** if you want the Tuesday/Friday renders to happen
+   without you. Until that repository variable exists the scheduled runs fire
+   and immediately skip.
+3. **`audio/buffer-out.mp3`** — a loose 97KB file on `main`, outside
+   `audio/pod/`, from the ring-announcer experiment. Nothing plays it, but it
+   ships to everyone who loads the site. Delete it unless it is headed
+   somewhere.
+
+Marc has also floated a boxing-style ring announcer to open the draft
+("MICHAEL BUFFERIN", an in-world name, our own catchphrase — not a clone of a
+real person's voice, and not the trademarked line). Parked, not built.
 
 ### 5c. Howard from Prestwich
 
