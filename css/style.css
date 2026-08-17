@@ -253,6 +253,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pcell .pname { font-weight: 600; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .player-name-btn { appearance: none; border: 0; background: none; color: inherit; font: inherit; padding: 0; text-align: left; }
 .pcell .pname .pn-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a drawn flag (Northern Ireland — Unicode has none) sits on the same line as
+   the emoji ones, so it matches their optical size rather than the box size */
+.nat-flag-drawn { display: inline-flex; align-items: center; vertical-align: -.12em; }
+.nat-svg { height: .92em; width: 1.38em; border-radius: 1px; display: block; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
 .pcell .pname .nat-flag { flex: none; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
 .player-copy { min-width: 0; }

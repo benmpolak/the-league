@@ -840,8 +840,9 @@ const kitImg = (team, gk = false, p = null) => {
 /* ----- nationalities (Lee's ask): FPL 'region' code → country + emoji flag.
    Codes are the PL's own country ids, anchored empirically against the 26/27
    player pool (241 England, 200 Spain, 106 Italy…). Academy kids ship null —
-   no flag, no fuss. Northern Ireland has no Unicode flag; the Union flag
-   stands in with the right name on the tooltip. */
+   no flag, no fuss; the feed itself has no region for them. Northern Ireland
+   has no Unicode flag at all, so it carries no emoji here and is DRAWN
+   instead — see NAT_SVG below. */
 const NATIONS = {
   2: ['Albania', '🇦🇱'], 3: ['Algeria', '🇩🇿'], 10: ['Argentina', '🇦🇷'], 13: ['Australia', '🇦🇺'],
   14: ['Austria', '🇦🇹'], 21: ['Belgium', '🇧🇪'], 27: ['Bosnia & Herzegovina', '🇧🇦'], 30: ['Brazil', '🇧🇷'],
@@ -859,12 +860,53 @@ const NATIONS = {
   200: ['Spain', '🇪🇸'], 203: ['Suriname', '🇸🇷'], 206: ['Sweden', '🇸🇪'], 207: ['Switzerland', '🇨🇭'],
   217: ['Trinidad & Tobago', '🇹🇹'], 219: ['Türkiye', '🇹🇷'], 225: ['Ukraine', '🇺🇦'], 229: ['USA', '🇺🇸'],
   230: ['Uruguay', '🇺🇾'], 231: ['Uzbekistan', '🇺🇿'],
-  241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', '🇬🇧'], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
+  241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', ''], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
 };
-const natOf = p => NATIONS[p.nat] || null;
+/* Marc, 18 Aug: "some players dont have the nationality at all still."
+
+   That one is upstream, not ours: every country code the feed sends IS mapped
+   here, but seventeen players arrive with `region: null` from FPL itself —
+   scripts/fetch_fpl.py reads that field and there is nothing behind it. Most
+   are academy names on nought minutes, and FPL usually fills a region in once
+   somebody features, so they mend themselves.
+
+   For the ones that matter before then, this is the manual override. Key it on
+   `code` — FPL's stable player code, which survives id churn between seasons —
+   and it wins over the feed, so it also fixes a country the feed gets WRONG.
+
+   Left empty on purpose. A wrong nationality on a real person is worse than a
+   missing one, so add a name here only when you actually know. */
+const NAT_OVERRIDE = {
+  // 12345: 106,   // Example Player — Italy
+};
+const natOf = p => NATIONS[NAT_OVERRIDE[p.code] ?? p.nat] || null;
+/* Marc, 18 Aug: "the northern ireland flag is wrong, it is showing the union
+   jack." It was — as a documented stand-in, because Unicode has no Northern
+   Ireland flag to fall back to. England, Scotland and Wales have tag sequences;
+   Northern Ireland has none, so 🇬🇧 was standing in and reading as plain wrong
+   on six players, two of whom (Hume, Ballard) are firmly draftable.
+
+   So it is drawn instead, like the club crests and the station idents — the
+   Ulster Banner, which is the flag the IFA plays under and what UEFA and FIFA
+   put beside the Northern Ireland team. Same approach works for any future
+   nation Unicode has no flag for. */
+const NAT_SVG = {
+  242: `<svg viewBox="0 0 60 40" class="nat-svg" role="img" aria-label="Northern Ireland" focusable="false">
+    <rect width="60" height="40" fill="#fff"/>
+    <rect x="24" width="12" height="40" fill="#CF142B"/>
+    <rect y="14" width="60" height="12" fill="#CF142B"/>
+    <polygon points="30,6 33.5,15 42.5,13.2 37,20 42.5,26.8 33.5,25 30,34 26.5,25 17.5,26.8 23,20 17.5,13.2 26.5,15" fill="#fff" stroke="#CF142B" stroke-width=".7"/>
+    <path d="M27.3 23.2v-4.6q0-1 1-1t1 1v2.8v-4.4q0-1 1-1t1 1v4.4v-3.2q0-1 1-1t1 1v5.4q0 2.6-2.4 2.6h-1.6q-2 0-2-2z" fill="#CF142B"/>
+    <path d="M26.6 11.6h6.8V9.2l-1.6 1.1L30 8.1l-1.8 2.2-1.6-1.1z" fill="#E8B923" stroke="#7d6210" stroke-width=".35"/>
+  </svg>`,
+};
 const natFlag = p => {
   const n = natOf(p);
-  return n ? `<span class="nat-flag" title="${esc(n[0])}">${n[1]}</span>` : '';
+  if (!n) return '';
+  const code = NAT_OVERRIDE[p.code] ?? p.nat;
+  return NAT_SVG[code]
+    ? `<span class="nat-flag nat-flag-drawn" title="${esc(n[0])}">${NAT_SVG[code]}</span>`
+    : `<span class="nat-flag" title="${esc(n[0])}">${n[1]}</span>`;
 };
 // next fixture for a club in a gameweek — "MCI (H)" style
 function nextOpp(club, gwN) {
