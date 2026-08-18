@@ -5585,6 +5585,14 @@ function bindPoolControls() {
   document.querySelectorAll('[data-poolfpos]').forEach(b => b.onclick = () => {
     const pp = b.dataset.poolfpos, on = poolPosOn();
     poolFilter = { ...poolFilter, pos: on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp], limit: 60 };
+    // refreshPool() redraws the table but NOT the controls — restyle the
+    // buttons in place or a press gives no visual answer at all (Marc,
+    // test draft: "they dont press properly")
+    document.querySelectorAll('[data-poolfpos]').forEach(x => {
+      const onNow = poolPosOn().includes(x.dataset.poolfpos);
+      x.classList.toggle('ghost', !onNow);
+      x.setAttribute('aria-pressed', onNow);
+    });
     refreshPool();
   });
   const psc = $('#poolScope');
