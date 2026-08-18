@@ -384,6 +384,7 @@ function applySharedSnapshot(data) {
   if (state.phase === 'draft' && wasPhase !== 'draft') state.view = 'draft';
   save(); render();
   reportCeremonyReady(); // a previously-finished device retries until its shared tick lands
+  ceremonyTick();        // ...and a device still in the pomp learns the room moved on
   const cerKey = state.phase === 'draft' ? ceremonyKey() : '';
   if (fresh && cerKey && localStorage.getItem(`${LS_NS}-ceremony-seen`) !== cerKey) {
     showCeremony(); // stamps "seen" itself, at the END — never at open
@@ -3679,6 +3680,7 @@ function draftCeremonyStatus() {
 }
 const draftRoomOpen = () => !netOn() || state.draft.picks.length > 0 || draftCeremonyStatus().complete;
 let ceremonyReportPending = false, ceremonyReportFailures = 0, ceremonyReportTimer = null, ceremonyReportKey = '';
+let ceremonyWatch = null; // the live pomp overlay, so a shared tick can close it
 function reportCeremonyReady() {
   if (!netOn() || ceremonyReportPending || state.phase !== 'draft' || state.draft.picks.length) return;
   if (!whoami || whoami === -1 || !state.draft.order.includes(whoami)) return;
@@ -3725,9 +3727,17 @@ function showCeremony() {
     ...[...order].reverse().map((mid, i) => ({
       h: `Drafting ${ordinals[i + (ordinals.length - order.length)]}…`, p: managerName(mid), big: true,
     })),
-    { h: 'REPORT TO THE DRAFT ROOM', p: `You are through. Pick one begins only when all ${order.length} managers have finished or skipped the ceremony.` },
+    { h: 'REPORT TO THE DRAFT ROOM', p: '', wait: true },
   ];
+  // the barrier card reports the room's real state, not a fixed sentence — a
+  // manager waiting on 11/12 can see who the room is still waiting for
+  const waitLine = () => {
+    if (!netOn()) return 'You are through. Pick one begins when the room is ready.';
+    const st = draftCeremonyStatus();
+    return `You are through. Pick one begins only when all ${st.total} managers have finished or skipped the ceremony — ${st.count}/${st.total} are in.`;
+  };
   let i = 0;
+  const lastStep = steps.length - 1;
   const ov = document.createElement('div');
   ov.id = 'ceremony';
   ov.className = 'overlay';
@@ -3738,9 +3748,16 @@ function showCeremony() {
     clearInterval(paradeTimer);
     if (i >= steps.length) { cerFinish(); ov.remove(); state.view = 'draft'; render(); return; }
     const s = steps[i];
+    // "You are through" must be TRUE the moment it is on screen. This used to
+    // report only when the button was pressed, so anyone who stopped to read
+    // the card was silently holding up a room that was telling them they
+    // weren't (Marc, 9 Aug: "the draft is still starting before everyone has
+    // finished the opening ceremony" — he was sat on this card, uncounted).
+    if (i === lastStep) cerFinish();
     $('#cerCard').innerHTML = `<div class="card" style="text-align:center">
       <h2 style="margin-bottom:12px">${s.h}</h2>
       ${s.parade || s.mparade ? '<div id="paradeSlot" class="parade-slot"></div>'
+        : s.wait ? `<p class="rules-p" style="text-align:center" id="cerWait">${esc(waitLine())}</p>`
         : s.big ? `<div class="ceremony-name">${esc(s.p)}</div>` : `<p class="rules-p" style="text-align:center">${esc(s.p)}</p>`}
       <div style="margin-top:18px;display:flex;gap:8px;justify-content:center">
         <button class="btn small" id="cerNext">${i === steps.length - 1 ? 'I’m through — join the room' : 'Continue the pomp'}</button>
@@ -3803,9 +3820,31 @@ function showCeremony() {
       paradeTimer = setInterval(walkOut, 6500);
     }
     $('#cerNext').onclick = () => { i++; show(); };
-    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); state.view = 'draft'; render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
+    $('#cerSkip').onclick = () => { cerFinish(); ov.remove(); ceremonyWatch = null; state.view = 'draft'; render(); toast('Ceremony skipped. Waiting for the rest of the room.'); };
+  };
+  ceremonyWatch = {
+    ov,
+    finish: cerFinish,
+    refresh: () => { const el = $('#cerWait'); if (el) el.textContent = waitLine(); },
   };
   show();
+}
+/* The room can open underneath a manager who is still in the pomp — the
+   Chairman's force-start marks everyone through, and pick one voids the
+   barrier for good. The overlay used to sit there frozen while the board moved
+   on (Marc, 9 Aug: "once I clicked on the left button it was already 2 picks
+   in"), and the pick clock politely refuses to tick while it is up, so there
+   was nothing on screen to give the game away. Every shared tick checks. */
+function ceremonyTick() {
+  if (!ceremonyWatch) return;
+  if (!document.body.contains(ceremonyWatch.ov)) { ceremonyWatch = null; return; }
+  if (state.phase === 'draft' && !state.draft.picks.length) { ceremonyWatch.refresh(); return; }
+  ceremonyWatch.finish(); // count us anyway; the room is past caring
+  ceremonyWatch.ov.remove();
+  ceremonyWatch = null;
+  state.view = 'draft';
+  render();
+  toast('The draft has started — the Committee has cut the pomp short.');
 }
 
 /* ----- drinks breaks (mandatory, per Marc; non-negotiable, per Ian's objections) ----- */
