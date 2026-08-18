@@ -4642,9 +4642,9 @@ function autolistRows() {
     return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <input class="auto-rank" type="number" min="1" max="${list.length}" value="${k + 1}" data-autorank="${k}" draggable="false"
         title="Type a number to move him there — everyone else shifts down" aria-label="${esc(p.name)} is number ${k + 1}. Type a number to move him.">
-      <span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname">${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}${leftTag(p)}
-      <span style="margin-left:auto;display:flex;gap:4px">
+      <span style="margin-left:auto;display:flex;gap:4px;flex:none">
         <button class="btn ghost small icon-btn" data-autoup="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
         <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
         <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>

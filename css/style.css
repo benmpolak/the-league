@@ -408,6 +408,12 @@ tr.gone-row td.act { opacity: .8; }
 .ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
 .ready-row.is-ready .ready-dot { background: var(--accent); color: #07120e; border-color: var(--accent); }
 .qrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the name is the only thing allowed to give ground: an unbreakable name
+   ("B.Fernandes") must truncate, never shove the arrows out of their shared
+   column (Ben, draft eve — "see B.Fernandes being off") */
+.qrow .qname { min-width: 0; flex: 1 1 auto; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+.qrow .qname .plink { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrow .qname .muted { flex: none; }
 /* the rank doubles as the way to move a player: type a number, he goes there.
    Sized for a thumb and for three digits, since a long list runs past 99. */
 /* The rank box has to hold THREE digits (Marc, 18 Aug) — an autopick list can
