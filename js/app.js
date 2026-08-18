@@ -4128,6 +4128,14 @@ function maybeDrinksBreak() {
     if (!left) { bd.disabled = false; bd.textContent = 'Back to the Console'; clearInterval(tick); return; }
     bd.textContent = `Halfway there… ${Math.floor(left / 60000)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}`;
   }, 500);
+  // the anthem plays THROUGH the break, tannoy-style — the riff is ~6s and
+  // used to play exactly once ('just the first few beeps, then nothing' —
+  // Marc, test draft; Ben: 'what about playing the song?'). Repeats until
+  // the countdown runs out or the Chairman calls everyone back in.
+  const anthem = setInterval(() => {
+    if (!document.body.contains(bd)) { clearInterval(anthem); return; }
+    if (DRINKS_BREAK_MS - (now() - opened) > 8000) playSound(track.sound); else clearInterval(anthem);
+  }, 12000);
   bd.onclick = () => {
     if (bd.disabled) return;
     if (netOn() && !isCommissioner()) { toast('The Chairman calls everyone back in. Enjoy the break.'); return; }
