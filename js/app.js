@@ -558,7 +558,7 @@ function save() {
 // Fixed DEFAULT_SCORING currency (not the live editable scoring) so the
 // board ranks identically on client and server — engine.js mirrors this.
 const _ratingCache = new Map();
-const RATING_HISTORY_WEIGHT = 0.75;
+const RATING_HISTORY_WEIGHT = 0.45;
 const rating = p => {
   let r = _ratingCache.get(p.id);
   if (r == null) {
@@ -568,9 +568,9 @@ const rating = p => {
     // thin or no sample → weight on FPL VALUE (Ben's ruling, UAT night:
     // Jackson and Hackney sat at 6 — "any new players just have 6"). Price
     // tracks expected output well enough to seed a board rank. History earns
-    // trust by ~8 appearances, but FPL valuation keeps a permanent 25% say so
-    // Rate reflects this season's market as well as last season's production
-    // (Ben, 5 Aug: weight the board towards FPL valuations too).
+    // trust by ~8 appearances, but FPL valuation keeps a permanent 55% say —
+    // the market slightly outranks last season's production on the board
+    // (Ben, 18 Aug: value weighted slightly higher than points; was 25%).
     const prior = (p.price || 4.5) * 12;
     const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 8);
     r = Math.round(played * w + prior * (1 - w));
