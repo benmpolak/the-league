@@ -412,7 +412,10 @@ tr.gone-row td.act { opacity: .8; }
    ("B.Fernandes") must truncate, never shove the arrows out of their shared
    column (Ben, draft eve — "see B.Fernandes being off") */
 .qrow .qname { min-width: 0; flex: 1 1 auto; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
-.qrow .qname .plink { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the 8ch floor is the fix for Marc's test-draft photo: on a GONE row the
+   extra tag left the name as the only shrinkable thing and it collapsed to
+   NOTHING ("correct but you need to see the name still") */
+.qrow .qname .plink { min-width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qrow .qname .muted { flex: none; }
 /* the rank doubles as the way to move a player: type a number, he goes there.
    Sized for a thumb and for three digits, since a long list runs past 99. */
