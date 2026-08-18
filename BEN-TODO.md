@@ -8,6 +8,52 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 02. CEREMONY vs FIRST PICK — the race Toby's test draft exposed (18 Aug, PRE-THURSDAY)
+
+**What happened (sandbox test draft, 18 Aug ~23:20):** Toby started the
+draft and force-opened the room; picks began while Marc's device never
+showed the draft had started. Server state was correct throughout (phase
+`draft`, clock armed, picks landing) — this is a client presentation race,
+not a data bug.
+
+**The mechanism, confirmed in code:**
+1. A client only auto-rolls the opening ceremony when its snapshot arrives
+   with `picks.length === 0` (`app.js:378` — `fresh`). Once pick 1 lands,
+   a syncing client skips the ceremony AND the view-flip logic it rides on.
+2. The commissioner's force-open (`draftAdmin roomOpen`) marks EVERY
+   manager through the ceremony and arms the clock — including managers
+   who are mid-ceremony or not yet synced. Designed for no-shows; on the
+   night it also tramples the people who ARE there.
+
+**The Chairman's ruling (18 Aug, group chat):** nobody should be picking
+until everyone has finished the ceremony — or everyone watches the
+ceremony concurrently. Either is acceptable; the current half-and-half
+(starter watches pomp, force-open lets picks race ahead of everyone
+else's overlay) is not.
+
+**Options when we build it (post-Thursday or Wed if time):**
+- (a) Concurrent ceremony: phase flip triggers the ceremony on every
+  connected client at once (drop the `picks.length === 0` gate; key the
+  overlay on ceremony-seen only), clock stays unarmed until 12/12 acks —
+  which is already the server's default. Force-open stays as the no-show
+  escape hatch but shows a "the Chairman opened the room" banner on
+  devices still mid-ceremony instead of leaving them stranded.
+- (b) Minimal: keep everything, but when a snapshot arrives with
+  `phase === 'draft'` and picks > 0 and this device hasn't seen the
+  ceremony, skip the pomp and land HARD on the Draft Console with a
+  toast ("the draft is live — pick N on the board").
+
+**DO NOT DEPLOY before Thursday without Ben's word** — the game build is
+meant to be frozen; Ben explicitly said "don't deploy yet" when this was
+found. Sandbox repro: reset, start as one manager, force-open, watch a
+second signed-in device.
+
+Also from the same session: **Toby wants the pick timer at 60s, not 30**
+— that's a Settings change on the real league's setup screen before
+Thursday (`settings.pickTimer`), no code needed.
+
+---
+
 ## THE DRAFT ORDER (randomiser complete, group chat 16 Aug — FINAL)
 
 1. Toby (Chairman Mao) · 2. Lee (Celta Leigh-Go) · 3. Geller (Geldog FC) ·
