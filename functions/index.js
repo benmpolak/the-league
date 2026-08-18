@@ -484,6 +484,13 @@ ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   // anyone signed in may trigger it once the clock has expired (so a sleeping
   // commissioner phone can never stall draft night); the choice is deterministic
   const overdue = state.draft.deadline && Date.now() > state.draft.deadline + 2000;
+  // a clock-expiry fire declares itself ({expired:true}) and is judged by THE
+  // SERVER'S clock alone — a device with a wrong watch or stale state can ask,
+  // but it can never make a pick happen early (test draft, 18 Aug: the room
+  // watched managers get "skipped" the moment they came on the clock). The
+  // undeclared path stays: the on-clock manager's own Autopick button, or a
+  // commissioner deliberately pushing a stalled draft.
+  if (data.expired && !overdue) throw new HttpsError('failed-precondition', 'clock has not expired (server time)');
   if (!overdue && a.managerId !== onClock && !isCommish(a)) throw new HttpsError('failed-precondition', 'clock has not expired');
   const stateWithLists = await loadState(league, ctx, { withPrivate: true });
   const choice = eng.autoPickChoice(stateWithLists, onClock);

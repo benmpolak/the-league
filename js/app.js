@@ -2412,7 +2412,10 @@ function makePick(playerId, force = false) {
 function autoPick(force = false) {
   const mid = currentManagerId();
   if (mid == null) return;
-  if (netOn()) { serverAct('draftAutopick', {}).catch(() => {}); return; }
+  // a clock fire (force) declares itself so the server can judge it by its
+  // own watch; a refusal re-arms this device's one-shot so the expiry isn't
+  // lost to a rejected early ask
+  if (netOn()) { serverAct('draftAutopick', force ? { expired: true } : {}).catch(() => { if (force) firedDeadline = 0; }); return; }
   const taken = draftedIds();
   // the manager's own autopick list first, then best available by rating
   let best = toArr(state.autolists?.[mid]).map(id => PLAYER_BY_ID[id])
@@ -4344,7 +4347,11 @@ function broadcastOnPick() {}
 /* ----- the console (draft) ----- */
 // The League's own board rating is the draft currency, so the pool opens in
 // that order (Ben + Marc, 5 Aug). Managers can still sort it afterwards.
-let poolFilter = { q: '', team: '', pos: '', sort: 'rate', limit: 60 };
+let poolFilter = { q: '', team: '', pos: [], sort: 'rate', limit: 60 };
+// pool positions are a SET like the queue's — "I'm out of mids, show me
+// everyone EXCEPT mids" is three taps, not impossible (Marc, test draft).
+// Accepts a legacy string too: saved scout views stored a single pos.
+const poolPosOn = () => Array.isArray(poolFilter.pos) ? poolFilter.pos : (poolFilter.pos ? [poolFilter.pos] : []);
 // which squad the side panel shows: yours, or the man on the clock's (Ben +
 // Marc, mock night: both, clearly labelled, yours first)
 let draftSquadTab = 'mine';
@@ -4547,10 +4554,7 @@ function poolControlsHtml(availableCount) {
   return `<div class="pool-controls">
     <input type="text" id="poolQ" placeholder="Search ${availableCount} available players…" value="${esc(poolFilter.q)}">
     <select id="poolTeam"><option value="">All clubs</option>${teamsOpts}</select>
-    <select id="poolPos">
-      <option value="">All positions</option>
-      ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${poolFilter.pos === p ? 'selected' : ''}>${p}</option>`).join('')}
-    </select>
+    ${['GK', 'DF', 'MF', 'FW'].map(p => `<button class="btn small ${poolPosOn().includes(p) ? '' : 'ghost'}" data-poolfpos="${p}" aria-pressed="${poolPosOn().includes(p)}" title="${poolPosOn().includes(p) ? `Stop showing ${p}` : `Also show ${p}`}">${p}</button>`).join('')}
     ${state.phase === 'draft' ? `<select id="poolScope" title="Show drafted players too — dimmed, with who took them">
       <option value="avail" ${poolFilter.scope !== 'all' ? 'selected' : ''}>Available</option>
       <option value="all" ${poolFilter.scope === 'all' ? 'selected' : ''}>Everyone (incl. drafted &amp; departed)</option>
@@ -5313,7 +5317,7 @@ function poolTable() {
     rows = rows.filter(p => normName(p.name).includes(q) || normName(p.full).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
   }
   if (poolFilter.team) rows = rows.filter(p => p.team === poolFilter.team);
-  if (poolFilter.pos) rows = rows.filter(p => p.pos === poolFilter.pos);
+  if (poolPosOn().length) rows = rows.filter(p => poolPosOn().includes(p.pos));
   const s = poolFilter.sort;
   const cols = STAT_COLS(seasonHasStats());
   rows.sort(metricSort(s));
@@ -5570,7 +5574,11 @@ function bindPoolControls() {
   const q = $('#poolQ');
   q.oninput = () => { poolFilter.q = q.value; poolFilter.limit = 60; refreshPool(); };
   $('#poolTeam').onchange = e => { poolFilter.team = e.target.value; poolFilter.limit = 60; refreshPool(); };
-  $('#poolPos').onchange = e => { poolFilter.pos = e.target.value; poolFilter.limit = 60; refreshPool(); };
+  document.querySelectorAll('[data-poolfpos]').forEach(b => b.onclick = () => {
+    const pp = b.dataset.poolfpos, on = poolPosOn();
+    poolFilter = { ...poolFilter, pos: on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp], limit: 60 };
+    refreshPool();
+  });
   const psc = $('#poolScope');
   if (psc) psc.onchange = e => { poolFilter.scope = e.target.value; poolFilter.limit = 60; refreshPool(); };
   bindPoolTable();
