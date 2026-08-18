@@ -4106,15 +4106,22 @@ function maybeDrinksBreak() {
   // not pick-number parity — in a 168-pick draft both break numbers are even.
   // (Toby, UAT night). Both synthesized; both licensing-free; both shite/brilliant.
   playSound(track.sound);
-  // the countdown survives refreshes/re-renders — stored per break, so a
-  // reload at 1:59 doesn't hold the room another two minutes (sol mock-night)
+  // ONE countdown for the whole room (Ben, test draft: "everyone should
+  // start from same spot"): the break began the moment pick n landed, and
+  // that instant is already shared state — the stale next-pick deadline was
+  // armed right then, so its start is the anchor on every device. Falls back
+  // to per-device localStorage offline / with the timer off (that fallback
+  // still survives refreshes — sol mock-night).
+  const shared = netOn() && state.settings.pickTimer && state.draft.deadline
+    ? state.draft.deadline - state.settings.pickTimer * 1000 : 0;
   const breakKey = `${LS_NS}-break-${n}-${state.draftPool?.at || 0}`;
-  let opened = +localStorage.getItem(breakKey) || 0;
+  let opened = shared || +localStorage.getItem(breakKey) || 0;
   if (!opened) { opened = Date.now(); try { localStorage.setItem(breakKey, opened); } catch { /* private mode */ } }
   const bd = $('#breakDone');
+  const now = () => shared ? Date.now() + (window.__serverTimeOffset || 0) : Date.now();
   const tick = setInterval(() => {
     if (!document.body.contains(bd)) { clearInterval(tick); return; }
-    const left = Math.max(0, DRINKS_BREAK_MS - (Date.now() - opened));
+    const left = Math.max(0, DRINKS_BREAK_MS - (now() - opened));
     if (!left) { bd.disabled = false; bd.textContent = 'Back to the Console'; clearInterval(tick); return; }
     bd.textContent = `Halfway there… ${Math.floor(left / 60000)}:${String(Math.ceil(left / 1000) % 60).padStart(2, '0')}`;
   }, 500);
