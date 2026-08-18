@@ -4580,13 +4580,18 @@ function squadDrawerHtml() {
    LENS, never a reordering: the rank shown is always the player's true place in
    the whole list, so typing 4 against a filtered striker means fourth overall,
    not fourth among strikers. */
-let autoFilter = { pos: [], club: '' };
+let autoFilter = { pos: [], club: '', hideGone: true };
 // positions are a SET, not a choice — "forwards and midfielders" is one
 // question, not two (Marc, 13 Aug). Empty means everyone.
 const autoPosOn = () => toArr(autoFilter.pos);
 const autoFiltered = () => autoPosOn().length || autoFilter.club;
+// drafted men are HIDDEN by default, not struck through — "you don't want to
+// have to scroll down" (Marc, 18 Aug). Display-only: the list itself keeps
+// them, so an undone pick quietly rejoins the queue.
+const autoGone = p => p && state.phase === 'draft' && draftedIds().has(p.id);
 const autoRowShown = p => p && (!autoPosOn().length || autoPosOn().includes(p.pos))
-  && (!autoFilter.club || p.team === autoFilter.club);
+  && (!autoFilter.club || p.team === autoFilter.club)
+  && (!autoFilter.hideGone || !autoGone(p));
 // true indices of the rows the filter currently shows, in list order
 function visibleAutoIdx() {
   return toArr(state.autolists?.[whoami])
@@ -4611,6 +4616,7 @@ function autolistRows() {
   // switch) self-heals rather than lingering invisibly — the selector showed
   // "All clubs" while the lens stayed shut (sol launch-verify P3)
   if (autoFilter.club && !clubs.includes(autoFilter.club)) autoFilter = { ...autoFilter, club: '' };
+  const goneCount = list.filter(pid => autoGone(PLAYER_BY_ID[pid])).length;
   const vis = visibleAutoIdx();
   // ids would collide — this markup renders in the side card AND the phone
   // drawer at the same time — so the controls are addressed by data attribute
@@ -4621,6 +4627,7 @@ function autolistRows() {
       <option value="">All clubs</option>
       ${clubs.map(c => `<option value="${esc(c)}" ${autoFilter.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
     </select>
+    ${goneCount ? `<button class="btn ghost small" data-autofgone aria-pressed="${!autoFilter.hideGone}" title="${autoFilter.hideGone ? 'Show the drafted men, crossed out' : 'Tuck the drafted men away again'}">${autoFilter.hideGone ? `${goneCount} drafted hidden` : 'Hide drafted'}</button>` : ''}
     ${autoFiltered() ? `<button class="btn ghost small" data-autofclear>Clear</button>
       <span class="muted" style="font-size:11px;align-self:center">${vis.length} of ${list.length} &middot; ranks are still out of ${list.length}</span>` : ''}
   </div>`;
@@ -4641,7 +4648,7 @@ function autolistRows() {
         <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
         <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>
       </span></div>`;
-  }).join('') || `<span class="muted" style="font-size:12px">Nobody on your list matches that filter.</span>`;
+  }).join('') || `<span class="muted" style="font-size:12px">${!autoFiltered() && goneCount ? 'Everyone on your list has been drafted.' : 'Nobody on your list matches that filter.'}</span>`;
   return controls + rows;
 }
 
@@ -5628,8 +5635,13 @@ function bindPoolTable() {
   document.querySelectorAll('[data-autofclub]').forEach(s => s.onchange = () => {
     autoFilter = { ...autoFilter, club: s.value }; render();
   });
+  document.querySelectorAll('[data-autofgone]').forEach(b => b.onclick = () => {
+    autoFilter = { ...autoFilter, hideGone: !autoFilter.hideGone }; render();
+  });
+  // Clear resets pos/club only — hiding drafted men is a default, not a filter
+  // someone chose, so Clear must not resurrect forty crossed-out rows
   document.querySelectorAll('[data-autofclear]').forEach(b => b.onclick = () => {
-    autoFilter = { pos: [], club: '' }; render();
+    autoFilter = { ...autoFilter, pos: [], club: '' }; render();
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
   bindColToggle(refreshPool);
