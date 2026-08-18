@@ -5366,7 +5366,10 @@ function armClock() {
     save(); render();
   }
 }
-function draftDeadlineTiming(deadline, now = Date.now()) {
+// deadline maths runs on SERVER time (Date.now + Firebase's measured offset),
+// never the device's watch — a fast phone was firing everyone's expiry the
+// instant they came on the clock (test draft, 18 Aug)
+function draftDeadlineTiming(deadline, now = Date.now() + (window.__serverTimeOffset || 0)) {
   const rawLeft = Math.round(((deadline || 0) - now) / 1000);
   return { rawLeft, left: Math.max(0, rawLeft), overBy: Math.max(0, -rawLeft) };
 }
