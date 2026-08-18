@@ -568,11 +568,12 @@ const rating = p => {
     // thin or no sample → weight on FPL VALUE (Ben's ruling, UAT night:
     // Jackson and Hackney sat at 6 — "any new players just have 6"). Price
     // tracks expected output well enough to seed a board rank. History earns
-    // trust by ~8 appearances, but FPL valuation keeps a permanent 55% say —
+    // full trust only at ~20 appearances — half a season — so a strike year
+    // (Isak, 694 min) can't read as real form; valuation keeps a permanent 55% say —
     // the market slightly outranks last season's production on the board
     // (Ben, 18 Aug: value weighted slightly higher than points; was 25%).
     const prior = (p.price || 4.5) * 12;
-    const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 8);
+    const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 20);
     r = Math.round(played * w + prior * (1 - w));
     _ratingCache.set(p.id, r);
   }

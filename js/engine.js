@@ -72,11 +72,13 @@
             + (p.pos === 'GK' ? apps * 0.5 : 0)
             - (p.pos === 'GK' || p.pos === 'DF' ? apps * 0.55 : 0));
         }
-        // Thin/no sample → FPL-value prior. History earns trust by ~8 apps,
+        // Thin/no sample → FPL-value prior. History earns full trust only at ~20
+        // apps (half a season): Isak's 694-minute strike year must not read as
+        // a real season (Ben, 18 Aug),
         // but valuation keeps a permanent 55% say — slightly ahead of points
         // (Ben, 18 Aug; was 25%); app.js mirrors.
         const prior = (p.price || 4.5) * 12;
-        const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 8);
+        const w = RATING_HISTORY_WEIGHT * Math.min(1, apps / 20);
         r = Math.round(played * w + prior * (1 - w));
         _ratingCache.set(p.id, r);
       }
