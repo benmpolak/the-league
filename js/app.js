@@ -5342,7 +5342,7 @@ function poolTable() {
     </tbody>
   </table>
   </div>
-  ${total > poolFilter.limit ? `<div class="show-more"><button class="btn ghost small" id="showMore">Show more (${total - poolFilter.limit} hidden)</button></div>` : ''}
+  ${total > poolFilter.limit ? `<div class="show-more"><button class="btn ghost small" id="showMore">Show more (${total - poolFilter.limit} hidden)</button> <button class="btn ghost small" id="showAll">Show all ${total}</button></div>` : ''}
   </div>`;
 }
 
@@ -5650,6 +5650,10 @@ function bindPoolTable() {
   bindQueueDnD();
   const sm = $('#showMore');
   if (sm) sm.onclick = () => { poolFilter.limit += 100; refreshPool(); };
+  // "might be good to have a show all at the bottom too" (Ben, draft eve) —
+  // same pair the transfer history already offers
+  const sa = $('#showAll');
+  if (sa) sa.onclick = () => { poolFilter.limit = Infinity; refreshPool(); };
 }
 
 /* drag & drop: drag a pool row into the queue card to add (drop on a row to
