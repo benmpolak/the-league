@@ -5443,7 +5443,12 @@ function bindDraft() {
         // "overBy >= 0" is true even mid-countdown and must never gate firing.
         const iAmCommish = !netOn() || isCommissioner();
         const iAmOnClock = netOn() && currentManagerId() === whoami;
-        const mayFire = (rawLeft <= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock);
+        // a due drinks break freezes the room: nobody fires an expiry while
+        // the overlay is up — the man on the clock was being timed out UNDER
+        // the break, and breakDone re-arms a fresh clock anyway (test draft,
+        // 18 Aug: "I think it skipped before the drinks break")
+        const breakOn = drinksBreakAt(pickNo()) && !toArr(state.draft.breaksDone).includes(pickNo());
+        const mayFire = !breakOn && ((rawLeft <= 0 && iAmCommish) || (overBy >= 8 && iAmOnClock));
         if (mayFire) {
           firedDeadline = state.draft.deadline;
           toast('Time! Autopick makes the call.');
