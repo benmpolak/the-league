@@ -4356,7 +4356,7 @@ function squadPanelHtml() {
         <option value="">Anyone&hellip;</option>
         ${state.managers.map(mm => `<option value="${mm.id}" ${draftSquadTab === mm.id ? 'selected' : ''}>${esc(mm.name)}</option>`).join('')}
       </select>
-      <button class="btn ghost small" data-allboards>All boards</button>
+      <button class="btn ghost small" data-allboards>All squads</button>
     </div>`;
   return `${tabs}<h2>${esc(managerName(showMid))}'s squad${meValid && showMid === whoami ? ' <span class="tag">you</span>' : ''}</h2>
     <div class="quota-bar">${quotaPills(showMid)}</div>
@@ -4378,7 +4378,7 @@ function allBoardsSheet() {
     </div>`;
   };
   ov.innerHTML = `<div class="card" style="max-width:720px;width:96%;max-height:88vh;overflow-y:auto">
-    <h2>Every board so far</h2>
+    <h2>Every squad so far</h2>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px">
       ${state.managers.map(board).join('')}
     </div>
