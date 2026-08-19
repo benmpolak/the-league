@@ -21,3 +21,4 @@ data/history/raw/
 
 # podcast: audition scratch — dozens of sample mp3s, never committed
 audio/pod/_audition/
+__pycache__/
