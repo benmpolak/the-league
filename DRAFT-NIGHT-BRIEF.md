@@ -42,33 +42,78 @@ the pomp short and drops you on the console.
 call, below. The barrier itself is sound: `draftPick`, `draftAutopick` and the
 pick transaction all require every id in `draft.order` before pick one.
 
+### The complete audit — every route to pick one
+
+Marc asked, reasonably, how confident we actually are. This is exhaustive:
+every server write to `draft.picks` and every route that can arm the first
+clock.
+
+**Can create pick one:**
+
+| Route | Barrier | Notes |
+|---|---|---|
+| `draftPick` | yes, twice | before the txn (`:423`) and **inside** it (`:445`) |
+| `draftAutopick` | yes (`:467`) | then delegates to `draftPick` |
+| `autoComplete` | **none** | hard-refused unless `league === 'the-league-sandbox'` (`:583`) |
+
+**Can arm the first clock:**
+
+| Route | Barrier | Notes |
+|---|---|---|
+| `ceremonyReady` | yes | arms on the twelfth acknowledgement, same txn |
+| `clockStart` | yes (`:522`) | the legacy-client path still requires all twelve |
+| `roomOpen` | **none, by design** | marks all twelve through and arms. Chairman only (`:555`) |
+
+`pause`, `resume`, `breakDone` and `timewaste` are barrier-checked as well
+(`:543`, `:681`, `:685`, `:689`). The `start` op resets `ceremonyReady` to null
+(`:669`).
+
+**Conclusion: on the real league there is exactly one way to start without
+somebody — you pressing "⚖ Declare the room open".** That button renders
+inside the locked-room card (`js/app.js:4175`), directly beneath the line
+reading "7/12 managers have finished the opening ceremony". On 9 Aug it was the
+sandbox, where `autoComplete` is also available — but that fills all 168 picks
+at once, which does not match "two picks in". The Chairman's button is the
+likely answer.
+
 ### Decisions for you
 
-**1. `roomOpen` — the Chairman's force-start** (`functions/index.js:555`).
-Marks *every* manager ceremony-ready and arms the clock in one transaction.
-Built so a no-show can't wedge the room forever, and that reason is still good.
-Marc's suggestion is to make the ceremony mandatory. Straight removal is the
-one option I'd argue against — it leaves no escape hatch on a night when
-someone's phone dies.
+The honest tension: **"no way to start without someone" and "a no-show can't
+wedge the draft forever" cannot both hold absolutely.** A dead phone at 8pm
+means the league either waits indefinitely or starts without them. So the
+question is what the escape hatch looks like, not whether there is one.
 
-*Recommended:* keep it, but make it loud and narrow.
-- Only mark through the managers who have **not** acknowledged, and name them
-  in the confirm sheet ("Start without Marc and Ian?").
-- Record who was force-started, and say so on everyone's screen — right now
-  the other eleven get no explanation for why the pomp vanished.
-- Absentees still autopick when their clock dies, which already works.
+Marc has seen the options below and endorsed **1 + 2 together** — the draft can
+never start without you *unnoticed*, and never without you *unwarned*, but the
+league still can't be held hostage by a flat battery.
 
-**2. `autoComplete` — sandbox "Skip the draft"** (`functions/index.js:577`).
-Has **no ceremony check at all**; it fills the board regardless. This is what
-Toby hit. Sandbox-only so the stakes are low, but it should either refuse
-before the ceremony completes or mark everyone through the way `roomOpen`
-does, so the state stays coherent.
+**1. Name and shame.** Force-start marks through only the managers who have
+**not** acknowledged, names them in the confirm sheet ("Start without Marc and
+Ian?"), and records it so every screen can say who was left behind. Today the
+other eleven get no explanation for why the pomp vanished. Cheapest change,
+and it removes the silence.
 
-**3. A question only you and Marc can settle.** "Everyone has *reported*" and
-"everyone has *seen* it" are different rules. **Skip ceremony (Ian's button)**
-still counts you as through — you just didn't watch. If mandatory means
+**2. Enforced wait.** The button stays disabled until the room has been waiting
+a set period, with a countdown everyone can see — "Marc has 4:30 to report".
+Nobody is dropped without warning. Needs a "waiting since" timestamp; the
+`ceremonyReady` txn is the natural place to stamp it when the first manager
+reports.
+
+**3. Co-sign** (offered, not chosen): a second manager must agree before the
+force-start fires.
+
+**4. Still open, and only you and Marc can settle it.** "Everyone has
+*reported*" and "everyone has *seen it*" are different rules. **Skip ceremony
+(Ian's button)** counts you as through without watching. If mandatory means
 mandatory, Ian's button goes. If it means "nobody starts without you", it can
-stay. The code currently implements the second.
+stay. The code implements the second today.
+
+**5. `autoComplete`** (`functions/index.js:577`) should either refuse before the
+ceremony completes, or mark everyone through the way `roomOpen` does, so the
+state stays coherent. Sandbox-only, so low stakes — but it is what Toby hit.
+
+None of this is built. It is all `functions/` plus a confirm sheet, so it wants
+your call first; the client half is a small change once the policy is set.
 
 ---
 
@@ -204,3 +249,42 @@ Pushed to `claude/committee-awards-count-week-4uo6bz`:
 Not started, pending your call: everything under "Decisions for you", the
 `serverNow()` plumbing (needs `sync.js`, which Marc's onboarding tells him to
 leave alone), and the `draftAutopick` guard (needs your deploy).
+
+---
+
+## Where the clock stands
+
+**Diagnosed and evidenced; nothing built.** Deliberately — it is the most
+timing-critical code in the app, and half of it is yours to deploy.
+
+Established so far:
+
+- The deadline is **already correct and shared**: server-stamped, and no client
+  can write it (`pushShared` is a hard no-op online).
+- The fault is confined to the **read** side — `draftDeadlineTiming`
+  (`js/app.js:4938`) uses raw local `Date.now()`, and there is no server-time
+  offset anywhere in the codebase.
+- **Threshold rule:** because every pick arms a fresh deadline, an enforcing
+  device must be fast by **more than the whole pick timer** to skip picks
+  back-to-back. Seconds are harmless; this is why 9 Aug was not skew.
+- **Your device alone enforces the clock**, at zero, with no grace, for whoever
+  is on the clock — and the server exempts you from its own overdue check.
+
+The fix, in the order it should land:
+
+1. `js/sync.js` — subscribe to `/.info/serverTimeOffset` and publish it. Two
+   lines, yours.
+2. `js/app.js` — `serverNow()` and swap it in at the deadline **read** sites.
+   Inert until step 1 exists (offset defaults to 0), so it can land first and
+   safely. Marc can do this on request.
+3. `functions/index.js` — `draftAutopick` requires the server's own `overdue`
+   for **timer-fired** calls from everyone, commissioner included; voluntary
+   "autopick me now" stays unrestricted via a `reason` on the payload. Yours.
+
+Step 3 is the one that actually makes it impossible for a bad client clock to
+drive the room, whatever else drifts. Steps 1–2 make the countdown everyone
+*sees* agree.
+
+**Zero-deploy mitigation available today:** both travelling managers check
+"Set time automatically" is on. Timezone alone is harmless — `Date.now()` is
+UTC — so this only bites when that setting is off.
