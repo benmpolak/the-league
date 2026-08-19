@@ -60,6 +60,7 @@ python3 -m http.server 8749   # from repo root; it's a static site
 - **The Chairman** — Ben (commissioner, managers[0]). **The Committee** — the league's voice in copy
 - **Lobus** — declared big man; klaxon when he scores. **Palwin Ham Cup** — ledger #6
 - **Points vs points** — capital-P Points = H2H table points (3 a win); lowercase = fantasy points scored. The table ranks on Points; overall points is the tiebreak
+- **Provisional players** — signings announced but not yet in the FPL feed, listed by hand in `data/provisional.json` (ids 900001+) so they can be drafted. Merged into the feed by `scripts/fetch_fpl.py`, so a refresh never drops them; `scripts/apply_provisional.py` applies the merge without re-fetching. Delete the entry once the real player lands and the Chairman has handed him over
 
 ## House style
 

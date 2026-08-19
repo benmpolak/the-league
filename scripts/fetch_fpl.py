@@ -13,6 +13,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import provisional  # Committee-issued players the FPL feed has not ingested yet
+
 BASE = 'https://fantasy.premierleague.com/api'
 ROOT = Path(__file__).resolve().parent.parent
 POS = {1: 'GK', 2: 'DF', 3: 'MF', 4: 'FW'}
@@ -79,6 +81,12 @@ def main():
             # PL country id — the app maps it to a flag (academy kids ship null)
             'nat': e.get('region'),
         })
+
+    # a signing can be announced days before the FPL API admits he exists.
+    # data/provisional.json carries him until it does — merged HERE so the
+    # client (js/data.js) and the server (data/data.json) get him from one
+    # source, and so a scheduled refresh can never quietly drop him.
+    players = provisional.merge(players)
 
     events = boot['events']
     gameweeks = []
