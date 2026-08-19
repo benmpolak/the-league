@@ -123,13 +123,34 @@ It only rejects callers who are *neither* on the clock *nor* commissioner —
 precisely the two that fire on a timer. A skewed Chairman's phone sails
 through.
 
-### This also explains Marc's "first pick manual, then it started skipping"
+### Marc's "first pick manual, then it started skipping" is probably NOT skew
 
-While *your* device still had the ceremony overlay up, its clock interval
-returned early (`js/app.js:4979`) and **nothing enforced the clock** — so
-Marc's first pick was unhurried and worked. The moment you clicked through your
-pomp, your device started policing every deadline, and skew turned "at zero"
-into "immediately". Same root as Issue 1(b), seen from the other side.
+Worth stating plainly, because my first read of this was wrong. Marc checked:
+his laptop was **seconds** off, not an hour. Seconds cannot do it.
+
+Every pick arms a *fresh* deadline, so an enforcing device only fires instantly
+if it is fast **by more than the whole pick timer** — 30+ seconds on a 30s
+clock. The table above shows the threshold: 9 seconds fast still reads 0:21 and
+fires nothing.
+
+Two likelier causes, neither needing a wrong clock:
+
+1. **The timer simply expired.** `pickTimer` is configurable — 10/20/30/45/60,
+   default 30 (`js/app.js:3523`). At 10 or 20 seconds, "ready for my first
+   pick, too slow for the rest" is the whole story. **Check what test night was
+   set to before pursuing anything else.**
+2. **Enforcement switched on mid-draft.** Only the commissioner's device fires
+   at zero, and its clock interval is dead while it has the ceremony overlay up
+   (`js/app.js:4979`). The room may have drafted unpoliced until that device
+   left the pomp, at which point a guillotine appeared on a room used to no
+   clock. Same root as Issue 1(b), seen from the other side — and now fixed.
+
+Distinguishing evidence: autopick takes the manager's queue first, then
+best-available-by-rating. Skipped picks that are the highest-rated player left
+mean the timer fired.
+
+**This does not weaken the case for Issue 2.** The skew exposure is real and
+unguarded; it is simply not what happened on 9 Aug.
 
 ### Proposed fix
 
