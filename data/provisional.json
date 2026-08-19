@@ -19,7 +19,8 @@
     "pos": "DF",
     "price": 4.5,
     "signed": "2026-08-19",
-    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional."
+    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional.",
+    "nat": 106
   },
   {
     "id": 900003,
@@ -30,6 +31,7 @@
     "pos": "FW",
     "price": 5.5,
     "signed": "2026-08-19",
-    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional."
+    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional.",
+    "nat": 9001
   }
 ]

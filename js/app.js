@@ -776,6 +776,13 @@ const NATIONS = {
   217: ['Trinidad & Tobago', '🇹🇹'], 219: ['Türkiye', '🇹🇷'], 225: ['Ukraine', '🇺🇦'], 229: ['USA', '🇺🇸'],
   230: ['Uruguay', '🇺🇾'], 231: ['Uzbekistan', '🇺🇿'],
   241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', '🇬🇧'], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
+  // 9000+ is reserved for provisional players. The table above is keyed by the
+  // PL's own region ids (all under 250) and lists only countries a current PL
+  // player comes from — Guinea isn't among them, and guessing its real id would
+  // risk flying the wrong flag for whoever actually holds that number. A
+  // reserved key cannot shadow a real region; when the real player lands in the
+  // feed he brings his own id and this entry goes with the provisional.
+  9001: ['Guinea', '🇬🇳'],
 };
 const natOf = p => NATIONS[p.nat] || null;
 const natFlag = p => {
