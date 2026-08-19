@@ -5206,7 +5206,11 @@ function cleanScoutView(v) {
   const allowedCols = new Set(ALL_STAT_COLS(seasonHasStats()).map(c => c.k));
   const cols = toArr(v.cols).filter((k, i, a) => allowedCols.has(k) && a.indexOf(k) === i);
   const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'rate';
-  const pos = SCOUT_POS.has(v.pos) ? v.pos : '';
+  // pos is canonically an ARRAY now the pool filter is a set (sol test-draft
+  // P2: GK+DF saved as "" and restored as nothing). A legacy string view
+  // migrates to a one-element array; junk entries are dropped, dupes deduped.
+  const pos = (Array.isArray(v.pos) ? v.pos : [v.pos])
+    .filter((p, i, a) => p && SCOUT_POS.has(p) && a.indexOf(p) === i);
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
   // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
   // still collapses to 'free', as it always did
@@ -5265,12 +5269,16 @@ function applyScoutView(v, surface) {
   if (!clean) return false;
   _colPrefs = clean.cols.length ? clean.cols : DEFAULT_COL_KEYS(seasonHasStats());
   localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
+  // the pool speaks position SETS; the Data Room and transfers still speak a
+  // single string — a multi-position view honestly degrades to All there
+  // rather than silently picking one of the saved positions
+  const posOne = clean.pos.length === 1 ? clean.pos[0] : '';
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
   } else {
-    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
+    transfersView = { ...transfersView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
   return true;
 }
