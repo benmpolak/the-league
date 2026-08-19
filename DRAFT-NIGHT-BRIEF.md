@@ -11,6 +11,28 @@ and one part needs a `functions/` deploy, which is yours alone.
 
 ---
 
+## Two asks, before the detail
+
+**Ask 1 — tonight, no deploy, no code.** Tell the two managers who'll be
+drafting abroad to check **"Set time automatically" is ON** on whatever device
+they'll draft from. Timezone alone is harmless — `Date.now()` is UTC epoch and
+identical everywhere — so the only thing that hurts us is a device whose clock
+has been set by hand and never resynced. It costs nothing and it covers the gap
+until the real fix ships. Worth doing even after it ships.
+
+**Ask 2 — may step 2 of the clock fix land now?** That is the `serverNow()`
+helper in `js/app.js` plus swapping it in at the deadline **read** sites. It is
+genuinely **inert until your `sync.js` change exists** — with no offset
+published it resolves to `Date.now() + 0`, i.e. today's behaviour exactly. The
+argument for landing it first is that it turns your review into one small
+`sync.js` diff instead of a cross-cutting change to the most timing-critical
+code in the app, and there is nothing to go wrong in the meantime. Marc is
+happy for it to go; it wants your nod because it is the pick clock.
+
+Everything else below is yours to decide, not to approve.
+
+---
+
 ## Issue 1 — the draft started before everyone had seen the ceremony
 
 ### What Marc saw
