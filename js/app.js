@@ -4232,14 +4232,16 @@ function maybeDrinksBreak() {
   // the countdown runs out or the Chairman calls everyone back in.
   // the anthem loops SEAMLESSLY: each spin schedules the next off the track's
   // own reported length ("didn't work well" — test night, the fixed 12s timer
-  // left dead air between spins). Dies with the overlay or the countdown.
-  const spinAgain = () => {
+  // left dead air between spins). A spin only starts if the WHOLE track fits
+  // in the remaining countdown (sol P3: a flat 6s cutoff let the final Jovi
+  // run 5.44s past the two minutes). Dies with the overlay.
+  const spinAgain = dur => {
     if (!document.body.contains(bd)) return;
-    if (DRINKS_BREAK_MS - (now() - opened) < 6000) return;
-    const dur = playSound(track.sound) || 12000;
-    setTimeout(spinAgain, dur);
+    if (DRINKS_BREAK_MS - (now() - opened) < dur) return;
+    const d = playSound(track.sound) || dur;
+    setTimeout(() => spinAgain(d), d);
   };
-  setTimeout(spinAgain, firstSpin);
+  setTimeout(() => spinAgain(firstSpin), firstSpin);
   bd.onclick = () => {
     if (bd.disabled) return;
     if (netOn() && !isCommissioner()) { toast('The Chairman calls everyone back in. Enjoy the break.'); return; }
