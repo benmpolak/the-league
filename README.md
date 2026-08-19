@@ -147,7 +147,8 @@ access on the `calciopoli-wc26` project (console.firebase.google.com):
 2. **Enable Email link sign-in**: Authentication → Sign-in method → Email/Password
    → enable, and tick "Email link (passwordless sign-in)".
 3. **Authorise the site domain**: Authentication → Settings → Authorized domains
-   → add `benmpolak.github.io`.
+   → add `benmpolak.github.io` AND `theleaguehq.co.uk` (the custom domain,
+   added 13 Aug 2026 — sign-in links complete on it; both stay listed).
 4. **Service account key** (backups, provisioning, migration): Project settings
    → Service accounts → Generate new private key. Store it outside the repo;
    paste its JSON into the `FIREBASE_SERVICE_ACCOUNT` GitHub Actions secret.

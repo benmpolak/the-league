@@ -38,7 +38,17 @@ body {
 }
 .brand { display: flex; align-items: center; gap: 12px; }
 /* the black-and-gold crest, masked round — gold glow instead of pitch green */
-.brand-crest { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; filter: drop-shadow(0 0 10px rgba(233,196,106,.35)); }
+/* Ben, 14 Aug: bigger crest, circular crop — the art is a circle on a black
+   square, so the round mask buys size without a black slab in the bar */
+.brand-crest { width: 54px; height: 54px; border-radius: 50%; object-fit: cover; filter: drop-shadow(0 0 10px rgba(233,196,106,.35)); }
+.crest-ov { max-width: min(460px, 92vw); text-align: center; }
+.crest-ov img { width: 100%; display: block; border-radius: 14px; }
+/* Waiver Order tab, de-1990s'd (Ben, 14 Aug): order table left, wire right */
+.waiver-duo { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 980px) { .waiver-duo { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+.wo-table .wo-mgr { font-size: 11px; }
+.wo-table .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+.wo-me td { background: rgba(45, 212, 167, .07); }
 .brand h1 { font-size: 20px; letter-spacing: .5px; }
 .brand h1 span { color: var(--accent); font-weight: 600; }
 .brand-sub { font-size: 11px; color: var(--muted); letter-spacing: .4px; }
@@ -223,6 +233,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   cursor: pointer; user-select: none; white-space: nowrap;
 }
 .pool-table th:hover { color: var(--text); }
+/* .pool-table th's text-align:left outranks .num on specificity, so numeric
+   headers sat left over right-aligned figures. Invisible on one-letter headers
+   like P/W/D, obvious the moment a column is wide (Marc, 10 Aug) */
+.pool-table th.num { text-align: right; }
 .pool-table td { padding: 6px 8px; border-bottom: 1px solid rgba(38,50,80,.5); font-size: 13.5px; }
 .pool-table tr:hover td { background: rgba(45,212,167,.05); }
 /* action column pinned to the right edge so Sign/Claim/Draft never scrolls out of view on phones */
@@ -239,6 +253,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pcell .pname { font-weight: 600; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .player-name-btn { appearance: none; border: 0; background: none; color: inherit; font: inherit; padding: 0; text-align: left; }
 .pcell .pname .pn-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a drawn flag (Northern Ireland — Unicode has none) sits on the same line as
+   the emoji ones, so it matches their optical size rather than the box size */
+.nat-flag-drawn { display: inline-flex; align-items: center; vertical-align: -.12em; }
+.nat-svg { height: .92em; width: 1.38em; border-radius: 1px; display: block; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
 .pcell .pname .nat-flag { flex: none; }
 .pcell .pclub { font-size: 11.5px; color: var(--muted); }
 .player-copy { min-width: 0; }
@@ -267,6 +285,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 /* drag & drop into the autopick list (laptop path; buttons cover phones) */
 tr[data-drag], .qrow[draggable] { cursor: grab; }
 .queue-card.drop-hot { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 12px; }
+/* a 145-man list must not bury the squad panel and pick history below it —
+   the card scrolls inside itself (Marc, test draft: "hard to scroll down
+   everything else on the right side") */
+.queue-card { max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
 .act .star-on { color: var(--accent) !important; border-color: var(--accent) !important; }
 .side-squad { font-size: 13px; }
 .side-squad .srow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
@@ -385,11 +407,42 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 tr.gone-row td { opacity: .45; }
 tr.gone-row td.act { opacity: .8; }
 .gone-tag { background: rgba(224,85,85,.16); color: #ff9c9c; border: none; white-space: nowrap; }
+/* LEFT — out on loan or sold out of the league. Deliberately NOT the red of
+   the injured: a crocked man comes back, this one never does (Marc, 18 Aug) */
+.left-tag { background: rgba(120,132,160,.22); color: #c3cbdd; border: none; white-space: nowrap; flex: none; }
+.left-row td, .left-row th { opacity: .5; }
 .qrow { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; padding: 5px 0; min-width: 0; }
 .ready-row { border-bottom: 1px solid rgba(38,50,80,.5); padding: 8px 0; }
 .ready-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
 .ready-row.is-ready .ready-dot { background: var(--accent); color: #07120e; border-color: var(--accent); }
 .qrow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the name is the only thing allowed to give ground: an unbreakable name
+   ("B.Fernandes") must truncate, never shove the arrows out of their shared
+   column (Ben, draft eve — "see B.Fernandes being off") */
+.qrow .qname { min-width: 0; flex: 1 1 auto; display: flex; align-items: baseline; gap: 6px; overflow: hidden; }
+/* the 8ch floor is the fix for Marc's test-draft photo: on a GONE row the
+   extra tag left the name as the only shrinkable thing and it collapsed to
+   NOTHING ("correct but you need to see the name still") */
+.qrow .qname .plink { min-width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrow .qname .muted { flex: none; }
+/* the rank doubles as the way to move a player: type a number, he goes there.
+   Sized for a thumb and for three digits, since a long list runs past 99. */
+/* The rank box has to hold THREE digits (Marc, 18 Aug) — an autopick list can
+   run past a hundred names, and the pool is bigger than that.
+
+   Written as `input.auto-rank` on purpose: `input[type=number]` up at the top
+   of this file scores (0,1,1) and was beating a bare `.auto-rank` at (0,1,0),
+   so the compact padding below had never actually applied. The field was
+   rendering at 14px with 12px of side padding — 18px of usable space, when
+   "140" needs 23px. Matching specificity and coming later, this now wins. */
+input.auto-rank {
+  width: 50px; min-width: 50px; flex: none; padding: 4px 5px; text-align: center;
+  font-size: 12.5px; font-variant-numeric: tabular-nums; cursor: text;
+}
+input.auto-rank::-webkit-outer-spin-button, input.auto-rank::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
+/* phones keep the taller touch target, and gain the width to match */
+@media (max-width: 700px) { input.auto-rank { width: 54px; min-width: 54px; padding: 7px 4px; font-size: 13px; } }
 .warn-tag { flex: none; }
 .squad-fab { display: none; }
 @media (max-width: 980px) {
@@ -410,6 +463,19 @@ tr.gone-row td.act { opacity: .8; }
     box-shadow: 0 -12px 30px rgba(0,0,0,.5);
   }
   .queue-drawer.open { transform: translateY(0); }
+  /* Ben, 16 Aug: the phone queue read as a wall of buttons — controls slimmed
+     so the names lead the row and twelve entries fit a screen */
+  .queue-drawer .qrow { gap: 6px; padding: 4px 0; }
+  /* ...but wide enough for three digits (Marc, 18 Aug). At 34px a rank past
+     ninety-nine had 8px of slack, which is a clipped-looking box on a phone.
+     The extra width is horizontal, so Ben's "twelve entries fit a screen"
+     above is untouched. */
+  .queue-drawer input.auto-rank { width: 42px; min-width: 42px; padding: 4px 3px; font-size: 12px; }
+  .queue-drawer .btn.small.icon-btn { width: 29px; height: 29px; min-width: 29px; font-size: 10px; border-radius: 7px; }
+  .queue-drawer [data-autodel] { opacity: .55; }
+  .queue-drawer .pos-badge { font-size: 9px; padding: 2px 5px; }
+  .queue-drawer .pool-controls .btn.small { padding: 6px 10px; font-size: 11px; }
+  .queue-drawer .pool-controls select { padding: 6px 8px; font-size: 12px; }
 }
 @media (max-width: 700px) {
   .queue-fab { bottom: calc(62px + env(safe-area-inset-bottom)); }
@@ -483,6 +549,7 @@ tr.gone-row td.act { opacity: .8; }
 .prog-deal { display: grid; grid-template-columns: minmax(110px, .8fr) minmax(0, 1.5fr); gap: 3px 12px; border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 12px; }
 .prog-deal span { font-weight: 700; }
 .prog-deal small { grid-column: 2; color: var(--muted); font-size: 10.5px; }
+.prog-deal .prog-scoop { font-style: italic; color: var(--accent); }
 .prog-arch { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
 /* the reading room */
 .gazette-room { position: relative; max-width: 760px; width: 94%; max-height: 90vh; overflow-y: auto; padding: 26px 34px 32px; border-color: rgba(226,190,86,.3); }
@@ -761,6 +828,7 @@ tr.gone-row td.act { opacity: .8; }
 }
 .business-trade { color: #ffd75e; background: rgba(255,215,94,.08); border-color: rgba(255,215,94,.24); }
 .business-waiver { color: #9cbcff; background: rgba(107,147,255,.09); border-color: rgba(107,147,255,.25); font-size: 12px; }
+.business-window { color: #cdb4f6; background: rgba(160,120,240,.09); border-color: rgba(160,120,240,.25); font-size: 13px; }
 .business-main { min-width: 0; }
 .business-who { display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 12.5px; }
 .business-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -774,9 +842,11 @@ tr.gone-row td.act { opacity: .8; }
 .business-label-in { color: var(--accent); }
 .business-label-out { color: #e88b8b; }
 .business-players { min-width: 0; font-weight: 700; }
-.business-players-in .plink { color: var(--text); }
-.business-players-out { color: var(--muted); font-weight: 500; }
-.business-players-out .plink { color: var(--muted); text-decoration-color: rgba(155,164,184,.35); }
+/* Lee, 13 Aug: player names take the colour of their IN/OUT label */
+.business-players-in { color: var(--accent); }
+.business-players-in .plink { color: var(--accent); text-decoration-color: rgba(45,212,167,.4); }
+.business-players-out { color: #e88b8b; font-weight: 500; }
+.business-players-out .plink { color: #e88b8b; text-decoration-color: rgba(232,139,139,.4); }
 .business-plus { color: var(--muted); font-weight: 400; }
 .business-gw { display: grid; justify-items: end; flex: none; font-variant-numeric: tabular-nums; }
 .business-gw small { color: var(--muted); font-size: 7.5px; font-weight: 800; letter-spacing: .08em; }
@@ -798,10 +868,63 @@ tr.gone-row td.act { opacity: .8; }
   .business-head > .muted { display: none; }
   .business-run { grid-template-columns: auto 1fr; }
   .business-run small { grid-column: 2; }
-  .business-row { grid-template-columns: 31px minmax(0, 1fr); gap: 8px; }
+  /* Ben, 14 Aug: COUNTS stays top-right at every width — the second-row
+     wrap read as part of the IN/OUT list. Names ellipsize instead. */
+  .business-row { grid-template-columns: 31px minmax(0, 1fr) auto; gap: 8px; }
   .business-mark { width: 29px; height: 29px; }
-  .business-gw { grid-column: 2; grid-row: 2; display: flex; justify-content: flex-start; gap: 4px; margin-top: -5px; }
-  .business-gw small { align-self: center; }
+}
+
+/* ---------- transfer history: the full ledger (Ben, 10 Aug) ----------
+   same visual language as the Dashboard's Transfer Wire card */
+.hist-card { max-width: 860px; }
+.hist-filters { display: flex; gap: 6px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.hist-count { opacity: .55; font-weight: 600; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.hist-gw {
+  display: flex; align-items: baseline; gap: 8px; margin-top: 16px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--muted);
+}
+.hist-gw b { color: var(--gold); font-size: 10.5px; letter-spacing: .12em; }
+.hist-gw::after { content: ''; flex: 1; height: 1px; background: var(--line); align-self: center; }
+.hist-row {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px; align-items: center; padding: 10px 0;
+  border-bottom: 1px solid rgba(38,50,80,.62);
+}
+.hist-row:last-of-type { border-bottom: none; }
+.hist-main { min-width: 0; }
+.hist-flow {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 5px; font-size: 12.5px; line-height: 1.4;
+}
+.hist-p { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.hist-team {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); font: inherit; font-size: 12.5px;
+}
+.hist-team:hover b { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.hist-flow .business-label { flex: none; }
+.hist-flow .business-label-out { margin-left: 10px; }
+.hist-out, .hist-out .plink { color: var(--muted); font-weight: 500; }
+.hist-out .plink { text-decoration-color: rgba(155,164,184,.35); }
+.hist-in { font-weight: 700; }
+.hist-club { color: var(--muted); font-size: 10.5px; font-weight: 500; }
+.hist-rcbtn { flex: none; font-size: 10.5px; padding: 4px 10px; white-space: nowrap; }
+.hist-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+}
+.hist-pager-label {
+  color: var(--muted); font-size: 10px; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.hist-rc { border-left: 2px solid var(--accent-dim); margin: 4px 0 10px 44px; padding: 2px 0 2px 10px; }
+@media (max-width: 640px) {
+  .hist-row { grid-template-columns: 31px minmax(0, 1fr); gap: 8px; }
+  .hist-rcbtn { grid-column: 2; justify-self: start; margin-top: 2px; }
+  .hist-rc { margin-left: 12px; }
 }
 
 /* The No. 2 actually enters the conversation: his club-selected character
@@ -838,6 +961,20 @@ tr.gone-row td.act { opacity: .8; }
 /* Lee's scoreboard: the score up top where you look first, not buried in the side headings */
 .mu-scoreline { border-bottom: none; margin: 0 0 4px; font-size: 15px; }
 .mu-scoreline .fx-score { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; padding: 3px 14px; background: var(--card2); border-radius: 7px; white-space: nowrap; }
+/* Lee, 13 Aug: the big matchup headers wrapped unevenly on phones — kit orphaned
+   under one name, beside the other. Broadcast style instead: kit above the name,
+   both centred, score pill in the middle. Fixture-list rows keep the inline look. */
+.fx-hero { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; border-bottom: none; }
+.fx-hero .fx-side { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; text-align: center; line-height: 1.25; }
+.fx-hero .fx-side b { overflow-wrap: anywhere; }
+/* Lee, 14 Aug: fixture rows — kits, badges and names at the same height on
+   every row. Fixed inner columns for the kit/badge/percentage/seed, names
+   wrap inside their own outer column without dragging anything with them. */
+.fx-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; column-gap: 7px; }
+.fx-row .fx-name { min-width: 0; line-height: 1.25; overflow-wrap: anywhere; }
+.fx-row .fx-l { text-align: right; }
+.fx-row .fx-chip { display: grid; justify-items: center; align-content: center; line-height: 1; min-width: 20px; }
+.fx-row .fx-chip small { font-size: 9px; margin-top: 1px; }
 .mu-card { max-width: 760px; }
 @media (max-width: 700px) { .mu-grid { grid-template-columns: 1fr; } }
 @media (max-width: 380px) { .mu-pitch .pitch-chip { min-width: 50px; } .mu-pitch { padding: 10px 3px; gap: 6px; } }
@@ -886,9 +1023,14 @@ tr.st-red .pname { color: #ff9c9c; }
   .on-clock .oc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .on-clock .oc-btns .btn { width: 100%; padding: 11px 8px; }
   .brand { gap: 7px; min-width: 0; flex: 1; }
-  .brand-crest { width: 28px; height: 28px; border-radius: 7px; }
+  .brand-crest { width: 38px; height: 38px; border-radius: 50%; }
+  /* Ben, 16 Aug: the season was clipping against the identity chip — on
+     phones it moves to its own line under the name, always whole */
   .brand h1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-  .brand-sub { display: none; }
+  .brand h1 .brand-season { display: none; }
+  .brand-sub { display: block; font-size: 10px; margin: 0; }
+  .brand-sub .sub-est { display: none; }
+  .brand-sub::after { content: '2026/27'; color: var(--accent); font-weight: 600; }
   .sync-txt { display: none; }
   .pitch-hint { display: none; }
   /* no backdrop-filter here or on .nav: a filtered ancestor becomes the
@@ -936,7 +1078,7 @@ tr.st-red .pname { color: #ff9c9c; }
   .nav-more-menu button.active { color: var(--accent); background: var(--card2, rgba(255,255,255,.04)); }
   .nav-more-menu .nav-dot { position: static; margin-top: -2px; }
   .nav.draft-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .nav.setup-nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nav.setup-nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .sync-area { order: 2; margin-left: auto; gap: 6px; flex: none; flex-wrap: nowrap; justify-content: flex-end; }
   .sync-area #whoBtn { max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .home-btn {
@@ -1135,6 +1277,14 @@ tr.st-red .pname { color: #ff9c9c; }
 .dir-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .dir-team { font-size: 13.5px; }
 .dir-line { font-size: 11px; overflow-wrap: anywhere; }
+/* Ben, 16 Aug: rivalries were inline wrap-soup — now a labelled row per
+   rivalry, name left, derby tag pinned right and unbreakable */
+.dir-rivals { display: grid; gap: 3px; margin-top: 3px; min-width: 0; }
+.dir-rivals-h { font-size: 9px; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.dir-rival { display: grid; gap: 2px; justify-items: start; font-size: 11.5px; min-width: 0; }
+.dir-rival + .dir-rival { margin-top: 3px; }
+.dir-rival-who { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dir-rival .derby-tag { white-space: nowrap; font-size: 9.5px; }
 .club-profile-ov { max-width: 560px; width: 94%; max-height: 92vh; overflow-y: auto; }
 @media (max-width: 480px) { .dir-grid { grid-template-columns: 1fr; } }
 
@@ -1189,6 +1339,20 @@ tr.st-red .pname { color: #ff9c9c; }
   display: grid; grid-template-columns: 18px 38px minmax(0, 1fr); gap: 6px;
   align-items: start; min-width: 0; cursor: pointer; font-size: 11px; line-height: 1.3;
 }
+/* Column reordering (Marc, 10 Aug): drag the table's own headers, the way a
+   spreadsheet does. The menu strip survives as the PHONE path only — HTML5
+   drag is a laptop luxury and a header is far too small a target on a phone. */
+.pool-table th[draggable="true"] { cursor: grab; }
+.pool-table th[draggable="true"]:active { cursor: grabbing; }
+.pool-table th.col-drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.scout-order-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.scout-col-order {
+  display: flex; align-items: center; gap: 5px; font-size: 11.5px;
+  padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px;
+  background: var(--card2); user-select: none;
+}
+.scout-col-order b { color: var(--text); }
+@media (min-width: 701px) { .scout-columns.order-only { display: none; } }
 .scout-col-option input { margin-top: 1px; }
 .scout-col-option b { color: var(--text); }
 .scout-col-option span { min-width: 0; }
@@ -1265,3 +1429,54 @@ details[open] > .n6-summary::after { content: ' ▴'; }
   cursor: pointer;
 }
 @media (max-width: 700px) { .draft-strip { bottom: 56px; font-size: 11px; max-width: 96vw; } }
+
+/* ================= The Podcunt Network =================
+   Two shows that must not look alike: the Gazette's pod inherits the paper's
+   restraint, talkTROUGH is a radio station in a portacabin. */
+.pod-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.pod-row:hover { background: rgba(255,255,255,.02); }
+.pod-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.pod-main > span { overflow: hidden; text-overflow: ellipsis; }
+.pod-badge {
+  width: 34px; height: 34px; min-width: 34px; border-radius: 8px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.pod-badge.pod-gfw { background: #14281f; border: 1px solid #2f5c46; }
+.pod-badge.pod-tt { background: #3a1206; border: 1px solid #d1521f; }
+.pod-room { max-width: 640px; width: 96%; max-height: 88vh; overflow-y: auto; }
+.pod-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.pod-body { font-size: 13.5px; line-height: 1.55; }
+.pod-line { margin: 0 0 9px; }
+.pod-line b { color: var(--accent); }
+.pod-sting { margin: 0 0 10px; font-size: 11.5px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.pod-ad {
+  margin: 12px 0; padding: 9px 11px; border-left: 3px solid var(--line);
+  background: var(--card2); font-size: 12.5px; color: var(--muted);
+}
+.pod-ad b { color: var(--text); }
+/* talkTROUGH does not do restraint */
+.pod-tt-room .pod-line b { color: #ff8a4c; }
+.pod-tt-room .pod-ad { border-left-color: #d1521f; text-transform: uppercase; letter-spacing: .01em; }
+@media (max-width: 700px) { .pod-room { max-height: 92vh; } .pod-body { font-size: 14px; } }
+/* the idents are drawn SVG, so the badge is just a frame for them */
+.pod-badge { padding: 0; overflow: hidden; background: none; border: 0; }
+.pod-badge svg { display: block; width: 100%; height: 100%; }
+.pod-badge.pod-lg { width: 46px; height: 46px; min-width: 46px; }
+/* the pod sheet is a player, not a page — no transcript to skim */
+.pod-cast { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 8px; }
+.pod-cast-h { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); width: 100%; }
+.pod-chip { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; background: var(--card2); border: 1px solid var(--line); }
+.pod-meta { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
+.pod-nowplaying {
+  min-height: 92px; padding: 12px 14px; border-radius: 10px;
+  background: var(--card2); border: 1px solid var(--line); font-size: 14px; line-height: 1.5;
+}
+.pod-now-who { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin-bottom: 5px; min-height: 13px; }
+/* the scrub bar (Ben, 16 Aug) — shown only when every line is recorded */
+.pod-scrub { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
+.pod-scrub[hidden] { display: none; }
+.pod-scrub input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.pod-tt-room .pod-scrub input[type="range"] { accent-color: #ff8a4c; }
+.pod-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
+.pod-tt-room .pod-now-who { color: #ff8a4c; }
+.pod-tt-room .pod-chip { border-color: #7a3418; }

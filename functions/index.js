@@ -41,7 +41,7 @@ const LEAGUES = ['the-league-2627', 'the-league-sandbox'];
 const CUP_START = 7;
 // reference data comes from the deployed site (updated every 15 min by the
 // FPL Action) so functions never need redeploying for data
-const DATA_BASE = process.env.DATA_BASE_URL || 'https://benmpolak.github.io/the-league';
+const DATA_BASE = process.env.DATA_BASE_URL || 'https://theleaguehq.co.uk';
 
 /* Failure injection for the emulator suites ONLY — proves crash recovery at
  * write boundaries. Inert in production: the env var is set by the emulator. */
@@ -303,6 +303,15 @@ async function runWaivers(league, runId, trigger, failAt) {
     if (!plan) {
       if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
       if (trigger === 'schedule' && eng.waiverControl(state) !== 'auto') { await runRef.update({ status: 'done', result: 'skipped: control!=auto', finishedAt: Date.now() }); return { skipped: 'control' }; }
+      // the Chairman skipped this named run (Committee, 12 Aug): mark it done
+      // in the ledger so it can never fire late, spend the one-shot flag, and
+      // leave lastRun alone — the Trough stays shut until a REAL run clears it,
+      // so nobody free-signs past the queue of rolled-over claims
+      if (trigger === 'schedule' && state.waiverMeta?.skip && runId === `sched-${state.waiverMeta.skip}`) {
+        await db().ref(`${base}/public/waiverMeta`).set({ ...state.waiverMeta, skip: null });
+        await runRef.update({ status: 'done', result: 'skipped: chairman', finishedAt: Date.now() });
+        return { skipped: 'chairman' };
+      }
       if (trigger === 'schedule' && !eng.waiverRunDue(state)) { await runRef.update({ status: 'done', result: 'skipped: not due', finishedAt: Date.now() }); return { skipped: 'not due' }; }
       const runStart = Date.now() - 1;
       const res = eng.resolveWaivers(state, runStart);
@@ -444,7 +453,7 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
     // ceremony acknowledgement and a keen first click may arrive together.
     if (!arr.length && !draftCeremonyStatus({ draft: dr }).complete) return;
     if (arr.some(p => p.playerId === player.id)) return;
-    arr.push({ managerId: onClock, playerId: player.id, n: arr.length + 1 });
+    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1 });
     dr.picks = arr;
     if (state.settings.pickTimer) dr.deadline = arr.length < eng.totalPicks(state) ? Date.now() + state.settings.pickTimer * 1000 : null;
     return dr;
@@ -475,6 +484,13 @@ ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   // anyone signed in may trigger it once the clock has expired (so a sleeping
   // commissioner phone can never stall draft night); the choice is deterministic
   const overdue = state.draft.deadline && Date.now() > state.draft.deadline + 2000;
+  // a clock-expiry fire declares itself ({expired:true}) and is judged by THE
+  // SERVER'S clock alone — a device with a wrong watch or stale state can ask,
+  // but it can never make a pick happen early (test draft, 18 Aug: the room
+  // watched managers get "skipped" the moment they came on the clock). The
+  // undeclared path stays: the on-clock manager's own Autopick button, or a
+  // commissioner deliberately pushing a stalled draft.
+  if (data.expired && !overdue) throw new HttpsError('failed-precondition', 'clock has not expired (server time)');
   if (!overdue && a.managerId !== onClock && !isCommish(a)) throw new HttpsError('failed-precondition', 'clock has not expired');
   const stateWithLists = await loadState(league, ctx, { withPrivate: true });
   const choice = eng.autoPickChoice(stateWithLists, onClock);
@@ -543,11 +559,12 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
     const onClock = eng.currentManagerId(state);
     if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your clock to waste');
+    // one timewaste of +30s (Ben, 14 Aug — was two of +60s)
     const used = state.draft.timewastes?.[onClock] || 0;
-    if (used >= 2) throw new HttpsError('failed-precondition', 'both timewastes burned');
+    if (used >= 1) throw new HttpsError('failed-precondition', 'timewaste already burned');
     await db().ref().update({
       [`${d}/timewastes/${onClock}`]: used + 1,
-      [`${d}/deadline`]: (state.draft.deadline || Date.now()) + 60 * 1000,
+      [`${d}/deadline`]: (state.draft.deadline || Date.now()) + 30 * 1000,
     });
     return { ok: true };
   }
@@ -590,7 +607,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     while ((onClock = eng.currentManagerId(sim)) != null) {
       const choice = eng.autoPickChoice(sim, onClock);
       if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available mid-autodraft');
-      const rec = { managerId: onClock, playerId: choice, n: toArr(sim.draft.picks).length + 1 };
+      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1 };
       sim.draft.picks = [...toArr(sim.draft.picks), rec];
       added.push(rec);
     }
@@ -779,7 +796,11 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   // t identifies each LODGING, not just the pair — waiver cleanup matches on
   // it, so re-saving an identical {in,out} after a run planned is a NEW claim
   // that survives the replay (sol r5)
-  const claims = raw.map(c => ({ in: Number(c && c.in), out: Number(c && c.out), t: Date.now() + Math.random() })); // fractional part: same-millisecond lodgings still get distinct identities
+  const claims = raw.map(c => ({
+    in: Number(c && c.in), out: Number(c && c.out),
+    inCode: ctx.PLAYER_BY_ID[Number(c && c.in)]?.code ?? null, outCode: ctx.PLAYER_BY_ID[Number(c && c.out)]?.code ?? null,
+    t: Date.now() + Math.random(), // fractional part: same-millisecond lodgings still get distinct identities
+  }));
   if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad claim');
   const tgw = eng.transferGw(state);
   // the commissioner may lodge claims FOR a manager (asManager) — validation
@@ -822,7 +843,7 @@ ACTIONS.troughSign = async ({ league, a, data, ctx, state, eng }) => {
   const squad = eng.squadAt(state, mid, tgw);
   if (!squad.some(p => p.id === outP.id)) throw new HttpsError('failed-precondition', 'that player is not yours to drop');
   if (!eng.squadShapeOk(state, [...squad.filter(p => p.id !== outP.id), inP])) throw new HttpsError('failed-precondition', 'squad shape would be illegal');
-  await appendTransfers(league, state, eng, [{ managerId: mid, outId: outP.id, inId: inP.id, gw: tgw, t: Date.now() }], tgw);
+  await appendTransfers(league, state, eng, [{ managerId: mid, outId: outP.id, outCode: outP.code ?? null, inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: Date.now() }], tgw);
   await stripLineup(league, state, mid, tgw, outP.id);
   return { ok: true, tgw };
 };
@@ -971,9 +992,10 @@ ACTIONS.tradeRespond = async ({ league, a, data, ctx, state, eng }) => {
     // symmetric records, validated inside the transfers txn: each side must own
     // what it gives and not own what it receives, and both shapes must stay legal
     const recs = [];
+    const pc = id => ctx.PLAYER_BY_ID[id]?.code ?? null;
     give.forEach((pid, i) => {
-      recs.push({ managerId: trade.from, outId: pid, inId: get[i], gw: tgw, t: Date.now(), trade: trade.id });
-      recs.push({ managerId: trade.to, outId: get[i], inId: pid, gw: tgw, t: Date.now(), trade: trade.id });
+      recs.push({ managerId: trade.from, outId: pid, outCode: pc(pid), inId: get[i], inCode: pc(get[i]), gw: tgw, t: Date.now(), trade: trade.id });
+      recs.push({ managerId: trade.to, outId: get[i], outCode: pc(get[i]), inId: pid, inCode: pc(pid), gw: tgw, t: Date.now(), trade: trade.id });
     });
     const ref = db().ref(`${base}/public/transfers`);
     const res = await ref.transaction(seeded(state.transfers, out => {
@@ -1028,10 +1050,17 @@ ACTIONS.covenantAdd = async ({ league, a, data, state }) => {
 ACTIONS.blockToggle = async ({ league, a, data, state, eng }) => {
   const mid = actingManager(a, data);
   const pid = Number(data.pid);
-  const squad = eng.squadAt(state, mid, eng.currentGwIndex());
-  if (!squad.some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
   const cur = toArr(state.tradeBlock[mid]);
-  const next = cur.includes(pid) ? cur.filter(x => x !== pid) : [...cur, pid];
+  const listing = !cur.includes(pid);
+  // Ownership gates LISTING only. It used to gate both ways, so signing away a
+  // listed player left him advertised forever with no way to pull him down —
+  // the delist was refused for the very reason it was needed (Toby, sandbox
+  // 12 Aug). Taking your own name off a list is always allowed.
+  if (listing) {
+    const squad = eng.squadAt(state, mid, eng.currentGwIndex());
+    if (!squad.some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
+  }
+  const next = listing ? [...cur, pid] : cur.filter(x => x !== pid);
   await db().ref(`${leagueBase(league)}/public/tradeBlock/${mid}`).set(next);
   return { listed: next.includes(pid) };
 };
@@ -1117,6 +1146,21 @@ const cleanAssistant = g => {
   }
   throw new HttpsError('invalid-argument', 'assistant is an archetype number or a name + bio');
 };
+// the College of Arms (Lee, 12 Aug): a shield shape and division off the
+// stable, a charge off the catalogue (null = the house monogram), two hex
+// colours. crest null entirely = back to house-issue. Counts pinned to
+// js/lore.js by functions.test.js — grow them together or the suite fails.
+const CREST_SHAPE_COUNT = 4;
+const CREST_DIVISION_COUNT = 6;
+const CREST_CHARGE_COUNT = 16;
+const cleanCrest = c => {
+  if (c === null) return null;
+  const idx = (v, n) => Number.isInteger(v) && v >= 0 && v < n;
+  if (!c || typeof c !== 'object' || !idx(c.shape, CREST_SHAPE_COUNT) || !idx(c.div, CREST_DIVISION_COUNT)
+    || (c.charge != null && !idx(c.charge, CREST_CHARGE_COUNT))
+    || !hexOk(c.c1) || !hexOk(c.c2)) throw new HttpsError('invalid-argument', 'a crest is shape + division + charge + two hex colours');
+  return { shape: c.shape, div: c.div, charge: c.charge ?? null, c1: c.c1.toLowerCase(), c2: c.c2.toLowerCase() };
+};
 const cleanBoards = b0 => {
   // up to three hoardings off the league's stable to line the home ground.
   // RAW length is checked before dedupe — a thousand-entry array must not
@@ -1190,6 +1234,7 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
   if (data.assistant !== undefined) up.assistant = cleanAssistant(data.assistant);
   if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
+  if (data.crest !== undefined) up.crest = cleanCrest(data.crest);
   if (!Object.keys(up).length) throw new HttpsError('invalid-argument', 'nothing to change');
   await managerMerge(league, state, mid, up);
   return { ok: true };
@@ -1377,6 +1422,17 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
   return { ok: true };
 };
 
+// skip one named run by exception (Toby, 12 Aug: double gameweeks, a rogue
+// Wednesday finish) — claims stay lodged and roll to the run after. id null
+// reinstates. The scheduled runner spends the flag when the slot comes due.
+ACTIONS.waiverSkip = async ({ league, a, data, state }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  const id = data.id == null ? null : String(data.id);
+  if (id != null && !/^wv-\d{4}-\d{2}-\d{2}$/.test(id)) throw new HttpsError('invalid-argument', 'not a waiver slot id');
+  await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, skip: id });
+  return { ok: true, skip: id };
+};
+
 ACTIONS.waiverRunNow = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   // A LIVE Chamber match means the pretend scores are still being invented —
@@ -1438,7 +1494,7 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
       if (!squad.some(p => p.id === outP.id)) { deny = { code: 'failed-precondition', msg: 'not yours to drop' }; return; }
       if (!eng.squadShapeOk(s, [...squad.filter(p => p.id !== outP.id), inP])) { deny = { code: 'failed-precondition', msg: 'squad shape would be illegal' }; return; }
       const transfers = toArr(pub.transfers);
-      transfers.push({ managerId: onClock, outId: outP.id, inId: inP.id, gw: tgw, t: Date.now(), windowDraft: true, n: transfers.length + 1 });
+      transfers.push({ managerId: onClock, outId: outP.id, outCode: outP.code ?? null, inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: Date.now(), windowDraft: true, n: transfers.length + 1 });
       pub.transfers = transfers;
       const lu = pub.lineups?.[onClock]?.[tgw];
       if (lu) pub.lineups[onClock][tgw] = toArr(lu).filter(id => id !== outP.id);
@@ -1694,7 +1750,9 @@ ACTIONS.importState = async ({ league, a, data }) => {
     // club identity fields travel with the manager — a backup taken after a
     // founding must restore, and the pre-draft start once exported them too
     // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards'].includes(k)) importError(`manager key "${k}"`);
+    // 'crest' was missing from this list while the block below validated it —
+    // backups taken after a College of Arms visit refused to restore (sol P2, 14 Aug)
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards', 'crest'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     // stadium shares the office's 40-char contract; old longer backups are
@@ -1709,6 +1767,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
     if (m.gaffer != null) m.gaffer = cleanGaffer(m.gaffer);
     if (m.assistant != null) m.assistant = cleanAssistant(m.assistant);
     if (m.boards != null) m.boards = cleanBoards(m.boards);
+    if (m.crest != null) m.crest = cleanCrest(m.crest);
   }
   for (const m of managers) {
     if (m.rival != null && (!midSeen.has(m.rival) || m.rival === m.id)) importError('manager rival');
@@ -1898,7 +1957,7 @@ exports.requestSignInLink = onCall({
     const m = (await db().ref(`${leagueBase(league)}/server/membership/${uid}`).get()).val();
     if (!m || !Number.isInteger(m.managerId)) return finish('suppressed', { eh: eh.slice(0, 8) });
     const link = await admin.auth().generateSignInWithEmailLink(email, {
-      url: `https://benmpolak.github.io/the-league${league.endsWith('sandbox') ? '-beta/?sandbox' : '/'}`,
+      url: league.endsWith('sandbox') ? 'https://benmpolak.github.io/the-league-beta/?sandbox' : 'https://theleaguehq.co.uk/',
       handleCodeInApp: true,
     });
     try {

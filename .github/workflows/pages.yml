@@ -1,0 +1,77 @@
+# Deploys the site to GitHub Pages through Actions instead of the legacy
+# built-in build. Why: the built-in build WEDGES when two pushes land within
+# about a minute of each other — a cancelled deploy sticks server-side as
+# "in progress" and refuses every deploy after it, and the site silently
+# stops updating while CI stays green. Bit us 2 Aug and twice on 13 Aug
+# (Marc: "it messes up if you try to commit something at the same time as
+# fpl pushes info over"). An Actions deploy with a non-cancelling
+# concurrency group QUEUES instead — a collision costs a minute, never the
+# site.
+#
+# Two triggers, both needed (the mirror.yml lesson, same shape):
+#  - push: human commits deploy immediately
+#  - workflow_run: the FPL bot commits with GITHUB_TOKEN, and GitHub
+#    deliberately never fires push workflows off such pushes — so the deploy
+#    chains off the refresh workflow completing instead. A gate step skips
+#    the deploy when the refresh was a no-op and the site already serves
+#    HEAD, because the refresh runs every five minutes around the clock.
+name: Deploy site to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Refresh FPL data"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false # queue behind a running deploy, never kill it
+
+jobs:
+  deploy:
+    # beta receives a copy of this file with the mirror push; beta stays on
+    # the legacy Pages build, so the copy must stand down there
+    if: github.repository == 'benmpolak/the-league'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run's own sha is the commit the refresh STARTED on —
+          # before the bot's data commit. Always deploy the tip of main.
+          ref: main
+      - name: Stand down when the refresh pushed nothing and nothing else moved
+        id: gate
+        if: github.event_name == 'workflow_run'
+        run: |
+          # The refresh's head_sha is the commit it STARTED on: if main still
+          # points there, it committed nothing and nobody else pushed, so the
+          # site is already current. Do NOT gate on the deployments API — the
+          # job's own `environment:` key stamps a deployment record the moment
+          # the run starts, so that gate always saw its own sha and always
+          # stood down: three "successful" deploys that shipped nothing
+          # (13 Aug, found because the site sat on the old build for hours).
+          HEAD=$(git rev-parse HEAD)
+          echo "started_on=${{ github.event.workflow_run.head_sha }} head=$HEAD"
+          if [ "$HEAD" = "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: ${{ !steps.gate.outputs.skip }}
+        uses: actions/configure-pages@v5
+      - if: ${{ !steps.gate.outputs.skip }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - if: ${{ !steps.gate.outputs.skip }}
+        id: deployment
+        uses: actions/deploy-pages@v4

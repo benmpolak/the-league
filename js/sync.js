@@ -82,6 +82,10 @@ window.WCSync = {
 onValue(ref(db, `${base}/public`), snap => window.onSharedSnapshot?.(snap.val()),
   err => console.warn('[sync] read error', err));
 onValue(ref(db, '.info/connected'), snap => window.onSyncConnection?.(!!snap.val()));
+// server-clock correction. The draft clock must NEVER run on a device's own
+// watch: one phone 40s fast was instantly "expiring" every manager the moment
+// they came on the clock (test draft, 18 Aug — Marc skipped twice, then Ian).
+onValue(ref(db, '.info/serverTimeOffset'), snap => { window.__serverTimeOffset = Number(snap.val()) || 0; });
 
 // per-user private data (autolist + blind claims) and membership follow auth
 // state. A Firebase onValue that errors once (token/connection race right

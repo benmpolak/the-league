@@ -78,6 +78,15 @@ def main():
             'cs': e.get('clean_sheets') or 0,
             'xg': float(e.get('expected_goals') or 0),
             'xa': float(e.get('expected_assists') or 0),
+            # Marc, 10 Aug: xGC plus the per-90 variants FPL already publishes.
+            # Per-90 compares a squad player to a nailed starter fairly, which
+            # raw season totals cannot. xGOT is deliberately absent — FPL has no
+            # on-target field; it would need an Opta-derived source.
+            'xgc': float(e.get('expected_goals_conceded') or 0),
+            'xg90': float(e.get('expected_goals_per_90') or 0),
+            'xa90': float(e.get('expected_assists_per_90') or 0),
+            'xgi90': float(e.get('expected_goal_involvements_per_90') or 0),
+            'xgc90': float(e.get('expected_goals_conceded_per_90') or 0),
             # PL country id — the app maps it to a flag (academy kids ship null)
             'nat': e.get('region'),
         })

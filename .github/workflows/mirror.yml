@@ -1,0 +1,54 @@
+# The sandbox site (the-league-beta) is a force-push mirror of this repo.
+# Mirroring by hand drifted for days at a time, which meant the sandbox ran
+# on stale players and stale scores — "we cant realy test because the data
+# is shite" (Ben, 13 Aug). This keeps beta current automatically.
+#
+# Two triggers, both needed:
+#  - push: human commits to main mirror immediately
+#  - cron: the FPL data refresh commits with GITHUB_TOKEN, and GitHub
+#    deliberately never fires workflows off such pushes — the 15-minute
+#    sweep catches them (matching the data refresh cadence)
+#
+# Auth is a write deploy key on the-league-beta ONLY, held in this repo's
+# BETA_DEPLOY_KEY secret. If the secret is missing the job fails loudly —
+# a silently dead mirror is the exact disease this cures.
+name: Mirror to beta
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: beta-mirror
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    # beta receives a copy of this file with the mirror push; without this
+    # guard the copy fires over there, finds no BETA_DEPLOY_KEY, and fails
+    # noisily on every sweep (sol launch audit P3). Only the source repo mirrors.
+    if: github.repository == 'benmpolak/the-league'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push main to the-league-beta
+        env:
+          KEY: ${{ secrets.BETA_DEPLOY_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then echo "BETA_DEPLOY_KEY secret is not set — mirror cannot run"; exit 1; fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
+          BETA=$(git ls-remote git@github.com:benmpolak/the-league-beta.git refs/heads/main | cut -f1)
+          LOCAL=$(git rev-parse HEAD)
+          if [ "$BETA" = "$LOCAL" ]; then echo "beta already at $LOCAL — nothing to mirror"; exit 0; fi
+          # force is mirror semantics (CLAUDE.md): beta is never a place for separate work
+          git push --force git@github.com:benmpolak/the-league-beta.git HEAD:main
+          echo "mirrored $LOCAL -> the-league-beta"

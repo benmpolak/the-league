@@ -1,0 +1,137 @@
+# Render The Podcunt Network to real voices, and commit the audio.
+#
+# Marc, 18 Aug: "how do they get re rendered. We need a better process for this
+# surely." Quite. Until now the loop was: someone edits a script, someone else
+# notices, Ben opens two terminals and remembers a command. That is how audio
+# drifts out of step with the words on screen, which has already happened once.
+#
+# So: this does the render. It only ever cuts what is OUTSTANDING — lines with
+# no audio, or whose words or cast voice have changed — because recordings are
+# filed by a hash of what is said. Re-running it when nothing changed costs
+# nothing and commits nothing.
+#
+# ── BEFORE IT CAN RUN (Ben, once) ─────────────────────────────────────────
+#
+#   1. Settings → Secrets and variables → Actions → New repository secret
+#        ELEVENLABS_API_KEY = <a key that has never been in a chat>
+#   2. That is it. Run it by hand from the Actions tab whenever you like.
+#   3. To let it run on a schedule as well, add a repository VARIABLE
+#        PODS_AUTORENDER = on
+#      Without that variable the scheduled runs exit immediately, so merging
+#      this file changes nothing until you decide otherwise.
+#
+# The schedule follows the shows: Tuesday and Friday, the same two days as the
+# waiver clock (Marc, 18 Aug). Episodes publish at midday London, so the render
+# runs at 10:00 UTC — 10:00 or 11:00 London depending on the season, and safely
+# before the slot either way. A second pass at 15:00 UTC picks up anything whose
+# results settled late; it costs nothing when there is nothing outstanding.
+#
+# It never touches main by itself — it commits to the branch it was run on.
+
+name: Render pods
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Episode ids to render (blank = everything outstanding)'
+        required: false
+        default: ''
+      max_chars:
+        description: 'Refuse a run bigger than this many characters'
+        required: false
+        default: '25000'
+      force:
+        description: 'Re-cut lines that already have audio (spends money again)'
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    # before the midday London slot, year-round
+    - cron: '0 10 * * 2,5'
+    # catch-up for anything that went final after the first pass
+    - cron: '0 15 * * 2,5'
+
+# One render at a time. Two runs committing audio to the same branch would
+# conflict on the manifest, and the loser's spend would be wasted.
+concurrency:
+  group: render-pods-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Is autorendering switched on?
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.PODS_AUTORENDER }}" != "on" ]; then
+            echo "PODS_AUTORENDER is not set to 'on' — scheduled render skipped."
+            echo "go=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'yes'
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.go == 'yes'
+        with:
+          node-version: '20'
+
+      - name: Install
+        if: steps.gate.outputs.go == 'yes'
+        run: npm ci --no-audit --no-fund
+
+      - name: Check the scripts still parse
+        if: steps.gate.outputs.go == 'yes'
+        run: npm run check
+
+      - name: Cost the job before spending anything
+        if: steps.gate.outputs.go == 'yes'
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: node scripts/render_pods.js --dry ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+
+      - name: Render
+        if: steps.gate.outputs.go == 'yes'
+        env:
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          CHROME_BIN: /usr/bin/google-chrome
+        run: |
+          if [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::error::ELEVENLABS_API_KEY is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          node scripts/render_pods.js \
+            --max-chars "${{ inputs.max_chars || '25000' }}" \
+            ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
+            ${{ inputs.force && '--force' || '' }}
+
+      - name: Prove the audio still matches the scripts
+        if: steps.gate.outputs.go == 'yes'
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: |
+          python3 -m http.server 8125 >/dev/null 2>&1 &
+          sleep 2
+          TEST_BASE_URL=http://localhost:8125 node test/podcast.smoke.js
+
+      - name: Commit the audio
+        if: steps.gate.outputs.go == 'yes'
+        run: |
+          if [ -z "$(git status --porcelain audio/)" ]; then
+            echo "Nothing outstanding — no audio changed, nothing to commit."
+            exit 0
+          fi
+          git config user.name  "the-league bot"
+          git config user.email "bot@theleaguehq.co.uk"
+          git add audio/
+          git commit -m "pods: render outstanding lines
+
+          Cut by .github/workflows/render-pods.yml. Only lines with no audio,
+          or whose words or cast voice had changed, were sent to the provider."
+          git push

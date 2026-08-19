@@ -25,6 +25,14 @@ window.Gazette = (() => {
 
   /* deterministic pick: seed → index, avoiding ids used in recent editions */
   const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  // bylines from the bootleg press corps (js/lore.js). Deterministic by hash,
+  // never the shared RNG — every phone must print the same masthead.
+  const press = (beats, key) => {
+    const roster = typeof GAZETTE_PRESS !== 'undefined' ? GAZETTE_PRESS : [];
+    const pool = roster.filter(p => beats.includes(p.beat));
+    const use = pool.length ? pool : (roster.length ? roster : [{ n: 'the Gazette football desk' }]);
+    return use[hash(key) % use.length];
+  };
 
   /* ---------- fact desk (public state only) ---------- */
 
@@ -73,7 +81,7 @@ window.Gazette = (() => {
     if (!prov) return compact ? 'SOURCE UNKNOWN' : '';
     if (prov.kind === 'draft') return compact ? `DRAFT R${prov.round} · PICK ${prov.n}` : `drafted in round ${prov.round} (No. ${prov.n} overall)`;
     if (prov.kind === 'trough') return compact ? 'TROUGH SIGNING' : 'plucked from the Trough for nothing';
-    if (prov.kind === 'waiver') return compact ? 'WAIVER CLAIM' : 'claimed off waivers';
+    if (prov.kind === 'waiver') return compact ? 'ON WAIVERS' : 'taken on waivers';
     if (prov.kind === 'trade') return compact ? 'TRADE ARRIVAL' : 'landed in a trade';
     if (prov.kind === 'window') return compact ? 'WINDOW DRAFT' : 'taken in the Window Draft';
     return compact ? 'SOURCE UNKNOWN' : '';
@@ -256,6 +264,7 @@ window.Gazette = (() => {
     ],
     'collapse-lead': [
       ['cl1', f => `Crisis club watch: ${f.tl} have now lost ${f.stL.l} on the spin after going down ${f.ws}–${f.ls} to ${f.tw}. ${f.gaffL ? `The board has given ${f.gaffL} its dreaded full backing.` : 'The board is understood to be monitoring the situation.'}`],
+      ['cl2', f => `${f.stL.l} defeats in a row for ${f.tl}, the latest a ${f.ws}–${f.ls} loss to ${f.tw}. A CLUB STATEMENT is understood to be in preparation: the board, the gaffer and the group chat have been informed, in that order.`],
     ],
     'draw-lead': [
       ['nl1', f => `${f.ta} ${f.sa}, ${f.tb} ${f.sb}. A game of two halves, both of them cagey. Nobody enjoyed it, least of all the neutrals, of which this league contains none.`],
@@ -283,6 +292,14 @@ window.Gazette = (() => {
       ['cr6', () => 'There are no easy games at this level. There are, however, several easy managers.'],
       ['cr7', () => 'The table never lies, although it has retained excellent lawyers.'],
       ['cr8', () => 'Form is temporary. Screenshots in the group chat are permanent.'],
+      /* the archive lines (Ben, 10 Aug: "100% sprinkle in all of the bits") —
+         AOE, -gate, filth, dip, sons: eleven years of group-chat canon */
+      ['cr9', () => 'The Committee continues to monitor the Axis of Evil, which continues to deny existing.'],
+      ['cr10', () => 'The Committee thanks all clubs for their concern for the integrity of the league, expressed exclusively after defeats.'],
+      ['cr11', () => 'The Gazette has a name ready for the next scandal. It ends in -gate. It always ends in -gate.'],
+      ['cr12', () => 'The Committee confirms dip will be provided on draft night. The events of 2017 must never be repeated.'],
+      ['cr13', () => 'Filth remains available in the Trough for any club bold enough to go wheeling and/or dealing.'],
+      ['cr14', () => 'That is the paper. Goodnight, sons.'],
     ],
   };
 
@@ -471,7 +488,7 @@ window.Gazette = (() => {
       <div class="prog-story-kicker">${esc(STORY_LABEL[f.kind] || STORY_LABEL.standard)}</div>
       <div class="prog-head">${esc(head)}</div>
       <div class="prog-scoreline">${esc(f.tw)} ${f.ws} &nbsp; ${esc(f.tl)} ${f.ls}</div>
-      <div class="prog-by">From our man at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
+      <div class="prog-by">By ${esc(press(['match'], `lead:${gwIdx}:${f.a}:${f.b}`).n)}, at ${esc(f.ground)}</div>${paras.map(p => `<p>${p}</p>`).join('')}</div>`;
   }
 
   function report(f, gwIdx, used) {
@@ -482,7 +499,7 @@ window.Gazette = (() => {
       const owner = star === f.starW ? f.w : f.l;
       const source = star ? provenanceLabel(provenance(owner, star.p.id, gwIdx)) : '';
       const detail = star && star.pts > 0 ? `${star.p.name} led the cast with ${star.pts}${source ? `, ${source}` : ''}.` : '';
-      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p>${detail ? `<p class="prog-match-detail">${esc(detail)}</p>` : ''}</div>`;
+      return `<div class="prog-story"><div class="prog-head">${esc(f.ta)} ${f.sa} &nbsp;${esc(f.tb)} ${f.sb}</div><p>${esc(open)}</p>${detail ? `<p class="prog-match-detail">${esc(detail)}</p>` : ''}<div class="prog-by">${esc(press(['match', 'colour'], `rep:${gwIdx}:${f.a}:${f.b}`).n)}</div></div>`;
     }
     const open = pickLine(STORY_BANK[f.kind] || 'std-report', f, seed, used);
     const details = [];
@@ -493,7 +510,7 @@ window.Gazette = (() => {
     }
     if (f.benchL > 0) details.push(`${f.tl} left ${f.benchL} attainable point${f.benchL === 1 ? '' : 's'} outside the final XI.`);
     if (f.stL.l >= 3) details.push(`${f.tl} have now lost ${f.stL.l} straight.`);
-    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}</p>${details.length ? `<p class="prog-match-detail">${esc(details.join(' '))}</p>` : ''}</div>`;
+    return `<div class="prog-story"><div class="prog-head">${esc(f.tw)} ${f.ws} &nbsp;${esc(f.tl)} ${f.ls}</div><p>${esc(open)}</p>${details.length ? `<p class="prog-match-detail">${esc(details.join(' '))}</p>` : ''}<div class="prog-by">${esc(press(['match', 'colour'], `rep:${gwIdx}:${f.a}:${f.b}`).n)}</div></div>`;
   }
 
   function nib(f, gwIdx) {
@@ -518,7 +535,10 @@ window.Gazette = (() => {
       if (aw.lo) cards.push({ k: 'WOODEN SPOON', v: teamName(aw.lo.id), d: `${aw.lo.s} points. One for the mantelpiece, preferably face-down.` });
       if (aw.jammy) cards.push({ k: 'GOT AWAY WITH IT', v: teamName(aw.jammy.w), d: `Won with ${aw.jammy.ws}. Do not ask how; do ask how often.` });
       if (aw.robbed) cards.push({ k: 'ROBBED', v: teamName(aw.robbed.l), d: `${aw.robbed.ls} points and nothing. Contact the authorities.` });
-      if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 4).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
+      // Marc's charge-sheet award closes the page (Ben, 10 Aug: "in the
+      // gazette too") — the citation is the story, so it gets the d-slot
+      if (aw.cotw) cards.push({ k: 'C*** OF THE WEEK', v: teamName(aw.cotw.id), d: `${aw.cotw.why[0].toUpperCase()}${aw.cotw.why.slice(1)}.${aw.cotw.proven ? '' : ' (A quiet week; the Committee drew lots.)'} No appeal.` });
+      if (cards.length) out.push(`<div class="prog-sec">The Back Page Awards</div><div class="prog-awards">${cards.slice(0, 5).map(c => `<div class="prog-award"><span>${esc(c.k)}</span><b>${esc(c.v)}</b><p>${esc(c.d)}</p></div>`).join('')}</div>`);
     }
 
     // Every manager's consequential team-sheet calls, not merely the winner's
@@ -570,7 +590,11 @@ window.Gazette = (() => {
         const route = t.trade ? 'trade' : t.windowDraft ? 'Window Draft' : t.waiver ? 'waivers' : 'the Trough';
         const verdict = inPts > outPts ? 'Immediate returns; recruitment department seen nodding.'
           : inPts < outPts ? 'The outgoing man won round one. Awkward.' : 'No verdict yet. The jury has gone for refreshments.';
-        return `<div class="prog-deal"><b>${esc(teamName(t.managerId))}</b><span>IN ${esc(inn.name)} &middot; OUT ${esc(outP?.name || 'vacancy')}</span><small>${esc(route)} &middot; ${esc(verdict)}</small></div>`;
+        // trades get the wire treatment (Ben, 16 Aug: an Ornstein/Romano line)
+        const scoop = t.trade ? (hash(`scoop:${gwIdx}:${t.managerId}:${t.inId}`) % 2
+          ? `David Ornberg understands both clubs consider this deal a triumph. One of them is wrong.`
+          : `Fabrizio Marano: "Here we go — done deal, confirmed, sealed, all of the words." &#128680;`) : '';
+        return `<div class="prog-deal"><b>${esc(teamName(t.managerId))}</b><span>IN ${esc(inn.name)} &middot; OUT ${esc(outP?.name || 'vacancy')}</span><small>${esc(route)} &middot; ${esc(verdict)}</small>${scoop ? `<small class="prog-scoop">${scoop}</small>` : ''}</div>`;
       }).join('');
       out.push(`<div class="prog-sec">Deals Desk</div><div class="prog-deals">${lines}</div>`);
     }
@@ -581,13 +605,13 @@ window.Gazette = (() => {
       .filter(x => x.p && x.pts >= 6).sort((x, y) => y.pts - x.pts);
     if (pickups.length) {
       const x = pickups[0];
-      out.push(`<div class="prog-sec">The Trough Watch</div><p>${esc(`${x.p.name} — ${x.t.waiver ? 'claimed off waivers' : 'signed from the Trough'} by ${teamName(x.t.managerId)} — returned ${x.pts} this week. The market sees everything, eventually.`)}</p>`);
+      out.push(`<div class="prog-sec">The Trough Watch</div><p>${esc(`${x.p.name} — ${x.t.waiver ? 'taken on waivers' : 'signed from the Trough'} by ${teamName(x.t.managerId)} — returned ${x.pts} this week. The market sees everything, eventually.`)}</p>`);
     }
     // Tactical Negligence — the week's worst bench, if it's actually bad
     const worstBench = state.managers.map(m => ({ mid: m.id, w: benchWasteOf(m.id, gwIdx) })).sort((a, b) => b.w - a.w)[0];
     if (worstBench && worstBench.w >= 10) {
       const run = benchLeaderStreak(worstBench.mid, gwIdx);
-      out.push(`<div class="prog-sec">Tactical Negligence</div><p>${esc(`${teamName(worstBench.mid)} left ${worstBench.w} points on the bench${run >= 2 ? ` — the ${ord(run)} week running they have led this table, which is now a table` : ''}. The bench order is a queue, not a punishment.`)}</p>`);
+      out.push(`<div class="prog-sec">Tactical Negligence</div><p>${esc(`${teamName(worstBench.mid)} left ${worstBench.w} points on the bench${run >= 2 ? ` — the ${ord(run)} week running they have led this table, which is now a table` : ''}. The bench order is a queue, not a punishment.`)} <span class="prog-by" style="display:inline">&mdash; ${esc(press(['tactics'], `tac:${gwIdx}`).n)}, tactics desk</span></p>`);
     }
     // Assistant Manager's Notebook — the lead story's beaten No. 2 speaks
     if (lead && typeof assistantFor === 'function') {
@@ -668,5 +692,127 @@ window.Gazette = (() => {
     }
   }
 
-  return { review, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  /* The Season Preview — edition zero, printed before a ball is kicked (Ben,
+     16 Aug: "there are rumours of Jason Stein making a comeback, surely that
+     should be headline news"). Same furniture as the review edition, fully
+     deterministic, safe with zero clubs founded. Retires itself the moment a
+     real edition exists (progTodays prefers settled gameweeks). */
+  function preview() {
+    try {
+      const mids = (state.managers || []).map(m => m.id);
+      if (!mids.length) return '';
+      const formers = (typeof FORMER_MANAGERS !== 'undefined' ? FORMER_MANAGERS : []).filter(n => n !== 'Jason Stein');
+      const out = [];
+      out.push(`<div class="prog-story prog-lead-story">
+        <div class="prog-story-kicker">EXCLUSIVE</div>
+        <div class="prog-head">STEIN LINKED WITH SENSATIONAL LEAGUE RETURN</div>
+        <div class="prog-by">By David Ornberg, wire desk</div>
+        <p>${esc('Jason Stein — remembered, where he is remembered fondly at all, as the Snake of the League, a man mired in more controversies than the rest of the register combined — has been heavily linked with a sensational return. And make no mistake: where there is smoke, the Gazette has been asked to report fire. Sources close to the player say his head has been turned. Sources closer still say he is keeping his cards close to his chest, an instinct the controversies did nothing to soften. The man himself could not be reached for comment, which insiders describe as "typical Stein".')}</p>
+        <p>${esc('Any deal faces hurdles. The League seats twelve, every chair is taken, and the Committee\'s stance is clear: the register is closed, nobody is for sale at any price, and the integrity of the league must be protected. But football moves quickly, the window is technically never shut, and one thing is certain — this saga has legs.')}</p>
+        <p>${esc('Fabrizio Marano: "Here we go soon, maybe. Not yet. But the feeling? The feeling is there."')} &#128680;</p>
+        <p class="prog-match-detail">${esc('The draft, it should be noted, is a snake format. The Committee insists this is a coincidence.')}</p>
+      </div>`);
+      // the want-away saga (Ben, 16 Aug; Geller pardoned same day — he logged
+      // in. Levy is the last of the twelve yet to report for pre-season)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">LEVY &ldquo;CONSIDERING HIS FUTURE&rdquo;</div>
+        <p>${esc('Ben Levy has stopped short of committing his future to Atlético Benfield, with those in the know saying he is weighing up his options and wants a new challenge. Asked to rule out a move, Levy ruled nothing in and nothing out, which the back pages have taken as a come-and-get-me plea to literally any other league.')}</p>
+        <p>${esc('The detail doing the damage: eleven of the twelve have reported for pre-season at the new ground. Levy has not. Those close to the dressing room say the silence is being read the only way silence can be read. Atlético Benfield\'s stance is clear — he is going nowhere, not least because there is nowhere to go and the fifty pounds is non-refundable.')}</p>
+        <p class="prog-match-detail">${esc('The Committee will not be drawn on speculation. The Gazette understands the speculation is ours.')}</p>
+        <div class="prog-by">Henry Wanton</div>
+      </div>`);
+      // Geller backed by the owners (Ben, 16 Aug) — sponsor read live so the
+      // story survives a rebrand at the Revolut Arena
+      const geller = state.managers.find(x => /geller/i.test(managerName(x.id)));
+      const backers = geller && typeof sponsorFor === 'function' ? sponsorFor(geller.id) : null;
+      if (geller && backers) {
+        out.push(`<div class="prog-story">
+          <div class="prog-head">${esc(backers.toUpperCase())} BACK GELLER IN THE MARKET</div>
+          <p>${esc(`Better news at ${teamName(geller.id)}, where principal partners ${backers} have moved to back Daniel Geller in the transfer market. The owners are understood to have made significant funds available — a war chest, in the traditional denomination — and told Geller to go and get his targets.`)}</p>
+          <p>${esc('That every player in the draft is free, and that no fee has ever been paid for anything, is regarded inside the club as a technicality. "It is about the statement," said a source close to the board. The statement is that there is money, and that it will not be spent, because it cannot be.')}</p>
+          <div class="prog-by">David Ornberg, wire desk</div>
+        </div>`);
+      }
+      // last season, as the record book has it (the title is the playoffs)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">CHAMPIONS UNTIL PROVEN OTHERWISE</div>
+        <p>${esc('Interjacksonale go again, and the question on everyone\'s lips is the oldest in football: can they do it again on a cold Tuesday night in the playoffs? Adam Jackson has reminded his rivals that form is temporary and class is permanent, and last season he had both when it mattered most.')}</p>
+        <p>${esc('WA Wanderers topped the table, and nobody remembers who topped the table. §1 of the constitution remains in force: the title is the playoffs. The table is for arguing.')}</p>
+        <div class="prog-by">Harold Summer</div>
+      </div>`);
+      // the new ground
+      out.push(`<div class="prog-story">
+        <div class="prog-head">LEAGUE MOVES INTO PURPOSE-BUILT NEW HOME</div>
+        <p>${esc('You can\'t fault the ambition. After a decade in rented accommodation, The League has completed its move to a purpose-built new home at theleaguehq.co.uk — its own Gazette, a crest from the College of Arms, and a waiver wire that runs on time. The old landlord took £145 a season and the fixtures were somebody else\'s. Enough said.')}</p>
+        <p>${esc('Those inside the club say the new facilities speak for themselves, before going on to speak for them at considerable length. Season tickets are free; the fifty pounds is for the pot; the group chat remains, regrettably, unmoderated. No comment has been received from Eli, who for years took £10 a head to have the points on time and, in fairness, had the points on time.')}</p>
+        <div class="prog-by">Alyson Unrudd</div>
+      </div>`);
+      // the draft market (Ben, 16 Aug: Haaland clear pick one, then nobody
+      // has a clue; and the snake-slot argument). Names come off the board's
+      // own rating so the shortlist tracks the live data, not a hunch.
+      const rated = (typeof PLAYERS !== 'undefined' && typeof rating === 'function')
+        ? [...PLAYERS].sort((a, b) => rating(b) - rating(a)).slice(0, 6) : [];
+      if (rated.length >= 4) {
+        const one = rated[0], chase = rated.slice(1, 5).map(p => p.name);
+        out.push(`<div class="prog-story">
+          <div class="prog-head">${esc(one.name.toUpperCase())} ONE. THEN THE ARGUMENTS.</div>
+          <p>${esc(`${one.name} goes first.${/haaland/i.test(one.name) ? ' The league\'s own proverb settles it: he who holds Haaland has won every year.' : ''} It's a no-brainer — you simply do not turn down a player of that quality, and at this level quality is everything. After that it is anyone's game: the chasing pack reads ${chase.join(', ')}, in an order nobody will commit to in writing, because writing is evidence.`)}</p>
+          <p>${esc(`Then there is the slot. Pick one takes ${one.name} and sits out twenty-three selections — an eternity in football. Pick twelve gets nothing famous and goes back-to-back at the turn, and the smart money says that is where the value is. The purists back the middle of the snake. On paper, every slot can be defended; football, famously, is not played on paper.`)}</p>
+          <p class="prog-match-detail">${esc('Asked to rank the twelve slots in order, the room produced fourteen answers, one walkout, and a man asking what "snake" means. Draft night will settle nothing.')}</p>
+          <div class="prog-by">Martin Said, chief football writer</div>
+        </div>`);
+      }
+      // the pretentious tactics essay (Marc, 16 Aug; headline Ian's)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">INVERTING THE PYRAMID SCHEME</div>
+        <p>${esc('All fantasy football is a conversation with space, and space, as Bielsa understood before it was fashionable to understand it, does not exist until somebody runs into it. The draft is not a queue; it is a pressing trap. The manager who takes a full-back in round three is not filling a position — he is making an argument about territory, and the room, if it is listening, should be worried.')}</p>
+        <p>${esc('Consider the bench — which is to say, consider absence. The English bench is transactional; the continental bench is a philosophical position, a held breath. Auto-substitution, properly understood, is gegenpressing applied to regret. And the snake format itself is a rondo: the ball comes back around, but never to the same man in the same space. He who fails to grasp this has already lost, probably in round two, probably to a goalkeeper reach.')}</p>
+        <p class="prog-match-detail">${esc('Donathan Bilson\'s twelve-part series on the geometry of the Trough continues midweek.')}</p>
+        <div class="prog-by">Donathan Bilson</div>
+      </div>`);
+      // the GAIL's essay (Marc's other commission, 16 Aug)
+      out.push(`<div class="prog-story">
+        <div class="prog-head">WHAT GAIL&rsquo;S TELLS US ABOUT THE MODERN LEAGUE</div>
+        <p>${esc('There is a GAIL\'s now where the chip shop used to be, and there is a lesson in that, if you are the sort of person who looks for lessons in laminated pastry — which, this being a season preview, you are. The League has gentrified too. Once it was a WhatsApp thread and somebody else\'s spreadsheet; now it has a crest from the College of Arms and a waiver wire that runs to a timetable, and nobody can say exactly when that happened, in the way nobody can say when the £4.20 cinnamon bun became infrastructure.')}</p>
+        <p>${esc('Progress, then, of a kind. Though one notes the pot is still fifty pounds, the arguments are still the arguments, and somewhere beneath the sourdough this remains a league that would trade the lot for one good Tuesday night. The flat white cools. The window, as ever, closes.')}</p>
+        <div class="prog-by">Yonni Liu</div>
+      </div>`);
+      // "The Twelve, Surveyed" was CUT (Ben, 16 Aug: "not into this") — dealt
+      // one-liners read as mad-libs next to the specific stories. Pre-draft
+      // there is no real per-club material; per-club colour returns when the
+      // weekly editions have actual squads and results to bite on.
+      // real data seams (Ben, 16 Aug): the deals done and the wars declared
+      // before a ball is kicked — read live from the club records
+      const sponsored = state.managers
+        .map(x => ({ t: teamName(x.id), s: typeof sponsorFor === 'function' ? sponsorFor(x.id) : null }))
+        .filter(x => x.s);
+      if (sponsored.length >= 2) {
+        out.push(`<div class="prog-sec">The Commercial Register</div><p>${esc(`The commercial department reports a record window. Principal partnerships agreed to date: ${sponsored.map(x => `${x.s} at ${x.t}`).join('; ')}. Terms undisclosed, chiefly because there are none. The Committee takes its usual cut of nothing.`)}</p>`);
+      }
+      const seen = new Set();
+      const mutual = [], oneway = [];
+      for (const x of state.managers) {
+        for (const r of rivalsOf(x.id)) {
+          const key = [Math.min(x.id, r), Math.max(x.id, r)].join(':');
+          if (rivalsOf(r).includes(x.id)) {
+            if (!seen.has(key)) { seen.add(key); mutual.push(`${teamName(x.id)} v ${teamName(r)}`); }
+          } else oneway.push(`${teamName(x.id)} have papers on ${teamName(r)}, who remain officially unaware`);
+        }
+      }
+      if (mutual.length || oneway.length) {
+        const bits = [];
+        if (mutual.length) bits.push(`Fully reciprocated and constitutionally binding: ${mutual.join('; ')} — clásicos, the lot.`);
+        if (oneway.length) bits.push(`Declared unilaterally: ${oneway.join('; ')}.`);
+        out.push(`<div class="prog-sec">The Rivalry Register</div><p>${esc(`War has been declared before a ball has been kicked. ${bits.join(' ')} The Committee notes that rivalry declarations cannot be withdrawn, only regretted.`)}</p>`);
+      }
+      if (formers.length) out.push(`<div class="prog-sec">The Rumour Mill</div><p>${esc(`Also linked with returns this window: ${formers.join(', ')}. The Gazette has verified none of these and printed all of them.`)}</p>`);
+      // midweek listings (Ian's commission, 16 Aug)
+      out.push(`<div class="prog-sec">Midweek on the Overcunt</div><p>${esc('Tuesday: the panel names its combined XI of players they sold. Wednesday: forty minutes on whether 44–40 is a bad result (it is not — it is a great result). Thursday: emergency pod if anybody\'s waiver request is processed. All episodes recorded in a garage the production team continue to describe as "iconic".')}</p>`);
+      out.push(`<div class="prog-sec">The Gazette&rsquo;s Fearless Predictions</div><p>${esc('Too close to call, so the Gazette will call it. Champions: whoever wins the playoffs — that is the point of them. Top of the table: irrelevant, see previous. The Cup: last man standing, first man blamed. The Chumpionship: hotly contested by men who will insist they were rebuilding, for the oldest prize in the league — first choice at the randomiser.')}</p>`);
+      out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc('The season starts when the draft ends. Sleep while you can.')}</p>`);
+      return out.join('');
+    } catch (e) { return ''; }
+  }
+
+  return { review, preview, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

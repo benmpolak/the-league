@@ -46,7 +46,9 @@ const chk = (name, ok, detail = '') => {
     return { phase: state.phase, tabs, prepGo: !!document.getElementById('prepGo') };
   });
   chk('P1 setup nav carries the Draft Console + waiting room signposts it',
-    p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.length === 4 && p1.prepGo,
+    // five tabs since the directory joined pre-season (Ben, 13 Aug)
+    p1.phase === 'setup' && p1.tabs.includes('draft') && p1.tabs.includes('directory')
+    && p1.tabs.length === 5 && p1.prepGo,
     JSON.stringify(p1));
 
   // ---- P2: signpost opens the scouting floor — one clean queue control per row
@@ -160,6 +162,87 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P4 arrows reorder both ways, end buttons disabled',
     p4.endsDisabled && p4.swapped && p4.restored, JSON.stringify(p4));
+
+  // ---- P4c: the filter is a LENS — ranks stay absolute, and typing one moves
+  // a player there (Marc, 13 Aug: "I want Joao Pedro 4th and it pushes
+  // everyone else down"), including while filtered to one position
+  const p4e = await page.evaluate(() => {
+    const byPos = pos => PLAYERS.filter(p => p.pos === pos).sort((a, b) => rating(b) - rating(a));
+    const fw = byPos('FW'), mf = byPos('MF'), df = byPos('DF');
+    // strikers deliberately scattered among other positions
+    setAutolist(whoami, [fw[0], mf[0], df[0], mf[1], fw[1], df[1], fw[2]].map(p => p.id));
+    const names = () => toArr(state.autolists[whoami]).map(id => PLAYER_BY_ID[id].name);
+    const before = names();
+
+    autoFilter = { pos: ['FW'], club: '' };
+    render();
+    // the queue renders twice — side card and phone drawer — so read one copy
+    const card = document.querySelector('.queue-card') || document;
+    const shownRanks = [...card.querySelectorAll('[data-autorank]')].map(i => +i.value);
+    const shownAreStrikers = [...card.querySelectorAll('.qrow .pos-badge')].every(b => b.textContent === 'FW');
+
+    // the last striker sits at #7; type 2 and he should become second overall
+    const lastFw = visibleAutoIdx()[2];
+    const moved = PLAYER_BY_ID[toArr(state.autolists[whoami])[lastFw]].name;
+    moveAuto(lastFw, 1);
+    const afterType = names();
+
+    // up while filtered steps over the hidden midfielder to the striker above
+    autoFilter = { pos: ['FW'], club: '' };
+    const vis = visibleAutoIdx();
+    const bottom = vis[vis.length - 1];
+    const bottomName = PLAYER_BY_ID[toArr(state.autolists[whoami])[bottom]].name;
+    const above = PLAYER_BY_ID[toArr(state.autolists[whoami])[vis[vis.length - 2]]].name;
+    moveAuto(bottom, vis[vis.length - 2]);
+    const afterUp = names();
+
+    // two positions at once — forwards AND midfielders (Marc, 13 Aug)
+    autoFilter = { pos: ['FW', 'MF'], club: '' };
+    render();
+    const bothPos = [...(document.querySelector('.queue-card') || document).querySelectorAll('.qrow .pos-badge')]
+      .map(b => b.textContent);
+    const twoPositions = bothPos.length === 5 && bothPos.every(t => t === 'FW' || t === 'MF')
+      && bothPos.includes('FW') && bothPos.includes('MF');
+
+    autoFilter = { pos: [], club: '' };
+    render();
+    return {
+      shownRanks, shownAreStrikers, twoPositions, bothPos,
+      ranksMatchTruth: JSON.stringify(shownRanks) === JSON.stringify([1, 5, 7]),
+      movedTo: afterType.indexOf(moved) + 1,
+      everyoneElseShifted: afterType.length === before.length && new Set(afterType).size === before.length,
+      upSteppedOverHidden: afterUp.indexOf(bottomName) + 1 < afterUp.indexOf(above) + 1,
+      rowsBackWhenCleared: (document.querySelector('.queue-card') || document).querySelectorAll('.qrow').length === before.length,
+    };
+  });
+  chk('P4e queue filters by one or several positions, keeps true ranks, and a typed rank moves a player',
+    p4e.shownAreStrikers && p4e.ranksMatchTruth && p4e.movedTo === 2
+    && p4e.everyoneElseShifted && p4e.upSteppedOverHidden && p4e.rowsBackWhenCleared && p4e.twoPositions,
+    JSON.stringify(p4e));
+
+  // ---- P4f: a club filter whose club leaves the list self-heals — it used to
+  // linger invisibly (selector said "All clubs", lens stayed shut) until Clear
+  // was pressed (sol launch-verify P3, 13 Aug)
+  const p4f = await page.evaluate(() => {
+    const byClub = {};
+    for (const p of PLAYERS) (byClub[p.team] = byClub[p.team] || []).push(p);
+    const [clubA, clubB] = Object.keys(byClub).filter(c => byClub[c].length >= 2);
+    setAutolist(whoami, [byClub[clubA][0].id, byClub[clubB][0].id]);
+    autoFilter = { pos: [], club: clubA };
+    render();
+    const rowsWhileFiltered = (document.querySelector('.queue-card') || document).querySelectorAll('.qrow').length;
+    // the filtered club's last man leaves the list
+    setAutolist(whoami, [byClub[clubB][0].id, byClub[clubB][1].id]);
+    render();
+    const card = document.querySelector('.queue-card') || document;
+    return {
+      rowsWhileFiltered,
+      filterHealed: autoFilter.club === '',
+      rowsBack: card.querySelectorAll('.qrow').length === 2,
+    };
+  });
+  chk('P4f club filter self-heals when its club leaves the list',
+    p4f.rowsWhileFiltered === 1 && p4f.filterHealed && p4f.rowsBack, JSON.stringify(p4f));
 
   // ---- P4b: drag a pool player into the queue card (synthetic HTML5 DnD)
   const p4b = await page.evaluate(() => {
@@ -331,10 +414,13 @@ const chk = (name, ok, detail = '') => {
   chk('P8c FDR tints fire on the 26/27 1–5 strength scale',
     p8c.hard === 'fdr-hard' && p8c.easy === 'fdr-easy' && p8c.mid === '', JSON.stringify(p8c));
 
-  // ---- P8d: the projected playoff bracket lives in the Data Room
+  // ---- P8d: the projected playoff bracket lives under the League Table
+  // (Marc, 9 Aug: it is seeded straight off the table, so it belongs beside it
+  // — and the Data Room is being freed up for research rather than narrative.
+  // It sits BELOW the table: Lee asked twice that the table come first.)
   const p8d = await page.evaluate(() => {
     state = buildDemoState();
-    state.view = 'data';
+    state.view = 'table';
     whoami = state.managers[0].id;
     render();
     const card = [...document.querySelectorAll('.card h2')].find(h => h.textContent.includes('Playoff Bracket'));
@@ -568,6 +654,88 @@ const chk = (name, ok, detail = '') => {
   chk('P11c 320px draft keeps Player, Rate and action together without a duplicate queue',
     p11c.table && JSON.stringify(p11c.visibleStats) === JSON.stringify(['rate']) && p11c.fits && p11c.ordered &&
     p11c.docW <= p11c.viewport && !p11c.duplicateQueue, JSON.stringify(p11c));
+
+  /* ---- P13: men who have left the league. Marc, 18 Aug: "can we do something
+     about the players out on loan/transferred out."
+
+     FPL status 'u' is not an injury — "Has joined Como permanently" means he
+     will never score again for anybody. Ranked on last season's points he sits
+     high on the board (Chalobah #42 on 136), so this is a pick-costing trap,
+     not just clutter. ---- */
+  const p13 = await page.evaluate(() => {
+    whoami = state.managers[0].id; syncNow = async () => {};
+    const departed = PLAYERS.filter(hasLeft);
+    if (!departed.length) return { none: true };
+    state.view = 'draft'; poolFilter.scope = 'avail'; poolFilter.limit = 700; save(); render();
+    // by id, not name — "Uche" and "Burns" are substrings of other men once
+    // the whole pool renders, which quietly turns this check green
+    const ids = () => new Set([...document.querySelectorAll('[data-pcard]')].map(x => +x.dataset.pcard));
+    const shownNow = ids();
+    poolFilter.scope = 'all'; render();
+    const shownAll = ids();
+    const tags = document.querySelectorAll('.left-tag').length;
+    poolFilter.scope = 'avail'; render();
+
+    // autopick must refuse them even when they sit at the top of a list
+    state.draft.order = state.managers.map(m => m.id);
+    state.phase = 'draft'; state.draft.picks = [];
+    const alive = PLAYERS.find(x => !hasLeft(x));
+    state.autolists[whoami] = [departed[0].id, alive.id];
+    const eng = Engine.make({
+      players: PLAYERS, gameweeks: GAMEWEEKS, fixtures: state.fixtures || [],
+      lastSeasonByCode: (typeof LAST_SEASON !== 'undefined' && LAST_SEASON.byCode) || {},
+    });
+    const choice = eng.autoPickChoice(state, whoami);
+
+    // ...and Big Al calls it a transfer, not an injury
+    const line = pundComment({ n: 1, managerId: whoami, playerId: departed[0].id }).line;
+    // the way to SEE them has to exist where you are standing. This control
+    // used to render only during the draft, so on the Scouting Floor the men
+    // were hidden with no way to reveal them (Marc, 18 Aug)
+    state.phase = 'setup'; state.draft.picks = []; render();
+    const sel = document.querySelector('#poolScope');
+    const revealable = !!sel && [...sel.options].some(o => o.value === 'all' && /departed/i.test(o.textContent));
+    return {
+      revealable,
+      count: departed.length,
+      hiddenByDefault: departed.every(d => !shownNow.has(d.id)),
+      shownWhenAsked: departed.every(d => shownAll.has(d.id)),
+      tagged: tags === departed.length,
+      autopickSkips: choice === alive.id,
+      alSaysGone: /GONE OUT ON LOAN|BEEN SOLD/.test(line) && !/INJURED/.test(line),
+      // a squad must never quietly lose a man it already owns
+      stillResolvable: !!PLAYER_BY_ID[departed[0].id],
+    };
+  });
+  chk('P13 departed players stay out of the pool, out of autopick, and are called what they are',
+    p13.none || Object.values(p13).every(v => v !== false), JSON.stringify(p13));
+
+  /* ---- P14: flags. Marc, 18 Aug: "the northern ireland flag is wrong, it is
+     showing the union jack, also some players dont have the nationality at
+     all." Unicode has no Northern Ireland flag, so it is drawn; and every
+     country code the feed actually sends must be mapped, so a missing flag is
+     only ever the feed's own null. ---- */
+  const p14 = await page.evaluate(() => {
+    const ni = PLAYERS.filter(x => x.nat === 242);
+    const UNION = '\u{1F1EC}\u{1F1E7}';
+    const someone = PLAYERS.find(x => x.nat === 200);
+    NAT_OVERRIDE[someone.code] = 242;
+    const overridden = natFlag(someone), overName = natOf(someone)[0];
+    delete NAT_OVERRIDE[someone.code];
+    return {
+      hasNiPlayers: ni.length > 0,
+      // drawn, named, and never the Union flag standing in
+      niDrawn: ni.every(p => /nat-svg/.test(natFlag(p)) && /Northern Ireland/.test(natFlag(p))),
+      noUnionJack: !PLAYERS.some(p => natFlag(p).includes(UNION)),
+      // every code the feed sends is mapped — a blank flag means the feed sent none
+      everyCodeMapped: PLAYERS.every(p => p.nat == null || !!NATIONS[p.nat]),
+      blanksAreFeedNulls: PLAYERS.filter(p => !natOf(p)).every(p => p.nat == null),
+      // the manual override beats the feed, and reaches the drawn flags too
+      overrideWins: overName === 'Northern Ireland' && /nat-svg/.test(overridden),
+    };
+  });
+  chk('P14 Northern Ireland is drawn, not the Union flag, and every fed code is mapped',
+    Object.values(p14).every(Boolean), JSON.stringify(p14));
 
   chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 

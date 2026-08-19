@@ -226,6 +226,17 @@ const SB = 'the-league-sandbox';
     T.mutate(LG, 'troughSign', { inId: freeMFs[2], outId: await dropMine(2, 'MF') }, tok2),
   ]);
   chk('different-player signings both land', !dA.error && !dB.error, JSON.stringify([dA.error, dB.error]));
+  // Desk §3b: every ledger record carries the immutable FPL code so a feed
+  // id shift is recoverable (scripts/heal_ids.js). Pin the trough path here;
+  // draft picks, claims, trades and the waiver run are pinned where they land.
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const trs = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {});
+    const last = trs[trs.length - 1];
+    chk('trough signing records inCode/outCode matching the feed',
+      last && last.inCode === codeOf[last.inId] && last.outCode === codeOf[last.outId],
+      JSON.stringify(last));
+  }
   // illegal shape server-rejected: a third GK
   const freeGK = freeOf('GK')[0];
   const badShape = await T.mutate(LG, 'troughSign', { inId: freeGK, outId: await dropMine(1, 'DF') }, tok1);
@@ -241,6 +252,15 @@ const SB = 'the-league-sandbox';
     const r = await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: prize, out }] }, tok);
     chk(`manager ${mid} lodges a blind claim`, !r.error, JSON.stringify(r.error));
   }
+  {
+    // Desk §3b: the stored claim carries codes, and the {in,out,t} cleanup
+    // matcher must tolerate the extra fields (it keys on the three, not the object)
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const lodgedRaw = (await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/claims/${curGw}`).get()).val();
+    const lodged = Array.isArray(lodgedRaw) ? lodgedRaw : Object.values(lodgedRaw || {});
+    chk('lodged claim carries inCode/outCode matching the feed',
+      lodged.length && lodged.every(c => c.inCode === codeOf[c.in] && c.outCode === codeOf[c.out]), JSON.stringify(lodged));
+  }
   chk('claims are invisible to other managers (rules)', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/private/${members[3].uid}/claims`, { token: tok2 })).status));
   chk('non-commissioner cannot run waivers', (await T.mutate(LG, 'waiverRunNow', {}, tok2)).error?.status === 'PERMISSION_DENIED');
   const wr = await T.mutate(LG, 'waiverRunNow', {}, tok1);
@@ -252,12 +272,29 @@ const SB = 'the-league-sandbox';
   chk('claims cleared after the run', !clA && !clB);
   const runs = (await db.ref(`v2/leagues/${LG}/server/waiverRuns`).get()).val() || {};
   chk('run recorded with status done', Object.values(runs).some(r => r.status === 'done' && r.executed));
+  {
+    // Desk §3b: the waiver-run transfer record and the lodged claim both carry codes
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const trs2 = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {});
+    const wrec = [...trs2].reverse().find(t => t.waiver);
+    chk('waiver-run transfer record carries inCode/outCode',
+      wrec && wrec.inCode === codeOf[wrec.inId] && wrec.outCode === codeOf[wrec.outId], JSON.stringify(wrec));
+  }
   const meta = (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val();
   chk('lastRun stamped', !!meta);
   const again = await T.mutate(LG, 'waiverRunNow', {}, tok1);
   chk('immediate re-run executes nothing (idempotent)', !again.error && (again.result?.executed || []).length === 0, JSON.stringify(again.result));
   // exactly-once on a shared run id: pre-claim a scheduled slot, then watch a re-claim skip
   await db.ref(`v2/leagues/${LG}/server/waiverRuns/sched-locked`).set({ status: 'done', finishedAt: Date.now() });
+
+  // the Chairman's one-shot skip (Committee, 12 Aug): a named run can be
+  // missed by exception; claims stay lodged and roll to the next run
+  chk('non-commissioner cannot skip a run', (await T.mutate(LG, 'waiverSkip', { id: 'wv-2026-09-01' }, tok2)).error?.status === 'PERMISSION_DENIED');
+  chk('a skip must name a real slot id', (await T.mutate(LG, 'waiverSkip', { id: 'gw1-post' }, tok1)).error?.status === 'INVALID_ARGUMENT');
+  chk('commissioner skips a named run', (await T.mutate(LG, 'waiverSkip', { id: 'wv-2026-09-01' }, tok1)).result?.skip === 'wv-2026-09-01');
+  chk('skip recorded on waiverMeta', (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === 'wv-2026-09-01');
+  const unskip = await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
+  chk('commissioner reinstates the run', !unskip.error && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === null);
 
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));
@@ -276,6 +313,11 @@ const SB = 'the-league-sandbox';
   const tradeRecs = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {}).filter(t => t?.trade === tradeId);
   const liveAfterTrade = [await squadAtGw(1, curGw), await squadAtGw(2, curGw)];
   chk('mid-GW trade is ledgered only for the next unplayed GW', tradeRecs.length === 2 && tradeRecs.every(t => t.gw === curGw + 1), JSON.stringify(tradeRecs));
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    chk('trade records carry inCode/outCode on both sides (Desk §3b)',
+      tradeRecs.every(t => t.inCode === codeOf[t.inId] && t.outCode === codeOf[t.outId]), JSON.stringify(tradeRecs));
+  }
   chk('mid-GW trade leaves both ongoing-GW squads byte-for-byte unchanged',
     JSON.stringify(liveAfterTrade.map(x => [...x].sort((a, b) => a - b))) === JSON.stringify(liveBeforeTrade.map(x => [...x].sort((a, b) => a - b))));
   const prop2 = await T.mutate(LG, 'tradePropose', { to: 2, give: [theirMF], get: [myMF] }, tok1);
@@ -383,16 +425,29 @@ const SB = 'the-league-sandbox';
     && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/gaffer`, { owner: true })).val == null);
   chk('junk hoarding number rejected', (await T.mutate(SB, 'clubSet', { boards: [99] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
 
+  // the College of Arms (Lee, 12 Aug): crest bounds enforced server-side
+  chk('crest cut and saved', !(await T.mutate(SB, 'clubSet', { crest: { shape: 1, div: 2, charge: 5, c1: '#0B1A3A', c2: '#E8B64C' } }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest/charge`, { owner: true })).val === 5);
+  chk('crest colours normalised to lowercase', (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest/c2`, { owner: true })).val === '#e8b64c');
+  chk('a charge off the end of the catalogue rejected', (await T.mutate(SB, 'clubSet', { crest: { shape: 0, div: 0, charge: 16, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('junk crest shape rejected', (await T.mutate(SB, 'clubSet', { crest: { shape: 'heater', div: 0, charge: 0, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('monogram crest (charge null) accepted', !(await T.mutate(SB, 'clubSet', { crest: { shape: 2, div: 1, charge: null, c1: '#ffffff', c2: '#101010' } }, sbTok2)).error);
+  chk('crest back to house-issue', !(await T.mutate(SB, 'clubSet', { crest: null }, sbTok2)).error
+    && (await T.rest('GET', `v2/leagues/${SB}/public/managers/1/crest`, { owner: true })).val == null);
+
   /* sol P2.2: server bounds pinned to the REAL catalogues in js/lore.js —
      values the client can't render must not validate */
   const loreCtx = {};
   require('vm').createContext(loreCtx);
   require('vm').runInContext(
     require('fs').readFileSync(require('path').join(__dirname, '..', 'js', 'lore.js'), 'utf8')
-    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length; this.__A = ASSISTANTS.length;', loreCtx);
+    + '\nthis.__G = GAFFERS.length; this.__B = AD_BOARDS.length; this.__A = ASSISTANTS.length;'
+    + '\nthis.__CS = CREST_SHAPES.length; this.__CD = CREST_DIVISIONS.length; this.__CC = CREST_CHARGES.length;', loreCtx);
   const fnSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'functions', 'index.js'), 'utf8');
   const GC = +fnSrc.match(/GAFFER_COUNT = (\d+)/)[1], BC = +fnSrc.match(/BOARD_COUNT = (\d+)/)[1], AC = +fnSrc.match(/ASSISTANT_COUNT = (\d+)/)[1];
   chk('server catalogue bounds match js/lore.js', loreCtx.__G === GC && loreCtx.__B === BC && loreCtx.__A === AC, `lore ${loreCtx.__G}/${loreCtx.__B}/${loreCtx.__A} vs functions ${GC}/${BC}/${AC}`);
+  const CS = +fnSrc.match(/CREST_SHAPE_COUNT = (\d+)/)[1], CD = +fnSrc.match(/CREST_DIVISION_COUNT = (\d+)/)[1], CC = +fnSrc.match(/CREST_CHARGE_COUNT = (\d+)/)[1];
+  chk('crest bounds match the College of Arms in js/lore.js', loreCtx.__CS === CS && loreCtx.__CD === CD && loreCtx.__CC === CC, `lore ${loreCtx.__CS}/${loreCtx.__CD}/${loreCtx.__CC} vs functions ${CS}/${CD}/${CC}`);
   chk('last gaffer on the stable accepted, first off the end rejected',
     !(await T.mutate(SB, 'clubSet', { gaffer: GC - 1 }, sbTok2)).error
     && (await T.mutate(SB, 'clubSet', { gaffer: GC }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
@@ -408,7 +463,11 @@ const SB = 'the-league-sandbox';
     && (await T.mutate(SB, 'clubSet', { boards: [BC] }, sbTok2)).error?.status === 'INVALID_ARGUMENT');
 
   /* sol P0.2: a backup taken after foundings must restore — the whole public
-     state with kit/sponsor/rival/gaffer/boards on managers round-trips */
+     state with kit/sponsor/rival/gaffer/boards on managers round-trips.
+     sol launch P2 (14 Aug): crest was cleared above before the export, so the
+     round-trip never carried one and importState's missing 'crest' allow-list
+     entry went unnoticed. Re-arm it so the backup under test has a crest. */
+  await T.mutate(SB, 'clubSet', { crest: { shape: 1, div: 2, charge: 5, c1: '#0b1a3a', c2: '#e8b64c' } }, sbTok2);
   const exported = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
   const reimp = await T.mutate(SB, 'importState', { state: exported }, sbTok1);
   chk('export after foundings re-imports clean (club fields allowed)', !reimp.error, JSON.stringify(reimp.error));
@@ -419,6 +478,10 @@ const SB = 'the-league-sandbox';
     && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/boards`).get()).val()) === JSON.stringify([BC - 1])
     && (await db.ref(`v2/leagues/${SB}/public/managers/1/rival`).get()).val() === 1
     && JSON.stringify((await db.ref(`v2/leagues/${SB}/public/managers/1/rivals`).get()).val()) === '[1,3]');
+  chk('crest survives the round-trip (sol launch P2)',
+    (await db.ref(`v2/leagues/${SB}/public/managers/1/crest/charge`).get()).val() === 5
+    && (await db.ref(`v2/leagues/${SB}/public/managers/1/crest/c2`).get()).val() === '#e8b64c');
+  chk('import still rejects a junk crest', (await T.mutate(SB, 'importState', { state: { ...exported, managers: exported.managers.map((m, i) => i === 1 ? { ...m, crest: { shape: 9, div: 0, charge: 0, c1: '#fff', c2: '#000' } } : m) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import still rejects a junk manager key', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map(m => ({ ...m, chef: 1 })) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects an out-of-catalogue gaffer', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, gaffer: GC }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import rejects a rival outside the roster', (await T.mutate(SB, 'importState', { state: { ...sbSeed, managers: sbSeed.managers.map((m, i) => i ? m : { ...m, rival: 55 }) } }, sbTok1)).error?.status === 'INVALID_ARGUMENT');
@@ -536,6 +599,12 @@ const SB = 'the-league-sandbox';
     T.mutate(SB, 'draftPick', { playerId: players[1].id, expectedCount: 0 }, sbTok1),
   ]);
   chk('simultaneous picks: exactly one lands', [p1, p2].filter(r => !r.error).length === 1, JSON.stringify([p1.error, p2.error]));
+  {
+    const codeOf = Object.fromEntries(players.map(p => [p.id, p.code]));
+    const sbPicks = Object.values((await db.ref(`v2/leagues/${SB}/public/draft/picks`).get()).val() || {});
+    chk('draft pick records carry the player code (Desk §3b)',
+      sbPicks.length && sbPicks.every(pk => pk.code === codeOf[pk.playerId]), JSON.stringify(sbPicks.slice(-1)));
+  }
   chk('autopick before the clock expires rejected', (await T.mutate(SB, 'draftAutopick', {}, sbTok3)).error?.status === 'FAILED_PRECONDITION');
   await db.ref(`v2/leagues/${SB}/public/draft/deadline`).set(Date.now() - 10_000);
   const [a1, a2] = await Promise.all([

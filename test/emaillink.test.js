@@ -63,6 +63,12 @@ const stubState = () => fetch(`http://127.0.0.1:${MAIL_PORT}/__state`).then(r =>
   const link = (st.sent[0]?.textContent.match(/https?:\S+/) || [])[0];
   chk('email carries a sign-in link', !!link && link.includes('oobCode='), (link || '').slice(0, 60));
   chk('link is the standard email-link format (mode=signIn)', !!link && link.includes('mode=signIn'));
+  // the continue URL is where the tap LANDS. Pinned since the domain move —
+  // sol's domain-round P3: a silent revert of the landing URL would have left
+  // this suite green while every sign-in email pointed at the wrong site.
+  const cont = decodeURIComponent((link.match(/continueUrl=([^&]+)/) || [])[1] || '');
+  chk('real-league link lands on https://theleaguehq.co.uk/',
+    cont === 'https://theleaguehq.co.uk/', cont || '(no continueUrl)');
   chk('response never contains the link', !JSON.stringify(r1).includes('oobCode'));
 
   /* ---- the delivered link completes the EXISTING flow ---- */
@@ -84,6 +90,17 @@ const stubState = () => fetch(`http://127.0.0.1:${MAIL_PORT}/__state`).then(r =>
   chk('member/unknown/revoked/malformed/bad-league responses are identical', new Set(bodies).size === 1, bodies.join(' | '));
   st = await stubState();
   chk('only the member response produced an email', st.sent.length === 2 && st.sent[1].to[0].email === 'two@test.local');
+
+  /* ---- sandbox links land on BETA, not the custom domain (sol domain P3) ----
+     fresh email: provision() createUsers, and chair@ already exists from LG */
+  await T.provision('the-league-sandbox', [{ managerId: 1, email: 'sand@test.local', role: 'commissioner' }]);
+  await clearGuard();
+  await T.call('requestSignInLink', { league: 'the-league-sandbox', email: 'sand@test.local', idempotencyKey: 'idem-sand-1' }, null);
+  st = await stubState();
+  const sandLink = (st.sent[st.sent.length - 1]?.textContent.match(/https?:\S+/) || [])[0];
+  const sandCont = decodeURIComponent(((sandLink || '').match(/continueUrl=([^&]+)/) || [])[1] || '');
+  chk('sandbox link lands on beta with ?sandbox forced',
+    sandCont === 'https://benmpolak.github.io/the-league-beta/?sandbox', sandCont || '(no sandbox mail)');
 
   /* ---- throttling by email hash: 3 per 15 min ---- */
   await clearGuard(); await stubCtl('/__reset');
