@@ -4206,7 +4206,7 @@ function maybeDrinksBreak() {
   // First break: Bon Jovi. Second break: Pitbull. Key this to the break itself,
   // not pick-number parity — in a 168-pick draft both break numbers are even.
   // (Toby, UAT night). Both synthesized; both licensing-free; both shite/brilliant.
-  playSound(track.sound);
+  const firstSpin = playSound(track.sound) || 12000;
   // ONE countdown for the whole room (Ben, test draft: "everyone should
   // start from same spot"): the break began the moment pick n landed, and
   // that instant is already shared state — the stale next-pick deadline was
@@ -4230,10 +4230,16 @@ function maybeDrinksBreak() {
   // used to play exactly once ('just the first few beeps, then nothing' —
   // Marc, test draft; Ben: 'what about playing the song?'). Repeats until
   // the countdown runs out or the Chairman calls everyone back in.
-  const anthem = setInterval(() => {
-    if (!document.body.contains(bd)) { clearInterval(anthem); return; }
-    if (DRINKS_BREAK_MS - (now() - opened) > 8000) playSound(track.sound); else clearInterval(anthem);
-  }, 12000);
+  // the anthem loops SEAMLESSLY: each spin schedules the next off the track's
+  // own reported length ("didn't work well" — test night, the fixed 12s timer
+  // left dead air between spins). Dies with the overlay or the countdown.
+  const spinAgain = () => {
+    if (!document.body.contains(bd)) return;
+    if (DRINKS_BREAK_MS - (now() - opened) < 6000) return;
+    const dur = playSound(track.sound) || 12000;
+    setTimeout(spinAgain, dur);
+  };
+  setTimeout(spinAgain, firstSpin);
   bd.onclick = () => {
     if (bd.disabled) return;
     if (netOn() && !isCommissioner()) { toast('The Chairman calls everyone back in. Enjoy the break.'); return; }
@@ -4380,26 +4386,52 @@ function playSound(kind) {
       // Livin' on a Prayer, chorus, tannoy arrangement — the drinks-break
       // anthem, commissioned by the Chairman mid-mock-draft. Synthesized like
       // everything else here; Jon Bon Jovi was unavailable for licensing.
-      const N = { G4: 392, A4: 440, B4: 494, D5: 587 };
-      const riff = [
-        ['G4', 0, .28], ['A4', .3, .28], ['B4', .62, .55],          // whoa-oh-oh
-        ['B4', 1.35, .18], ['B4', 1.56, .18], ['A4', 1.77, .18], ['G4', 1.98, .18], ['A4', 2.2, .5], // we're half way there
-        ['G4', 2.95, .28], ['A4', 3.25, .28], ['D5', 3.57, .6],     // whoa-OH
-        ['B4', 4.25, .18], ['A4', 4.46, .18], ['G4', 4.67, .18], ['A4', 4.9, .7], // livin' on a prayer
+      // Third attempt (test night, twice: once it played a single bar and
+      // stopped; looped, the bar rattled around in six seconds of dead air).
+      // Now it's the FULL chorus with a band behind it, and it returns its
+      // length so the break can loop it seamlessly.
+      const b = 0.49; // one beat at ~122 BPM
+      const N = { E2: 82.4, C3: 130.8, D3: 146.8, G4: 392, A4: 440, B4: 493.9, C5: 523.3, D5: 587.3 };
+      // bass: driving eighths, two bars each of Em, Em, C, D — twice round
+      const bassBars = ['E2', 'E2', 'C3', 'D3', 'E2', 'E2', 'C3', 'D3'];
+      bassBars.forEach((root, bar) => {
+        for (let q = 0; q < 8; q++) tone(c, N[root], (bar * 4 + q * 0.5) * b, b * 0.42, { type: 'square', gain: 0.03 });
+      });
+      // the vocal line, in beats: whoa / we're half way there / whoa-OH / livin' on a prayer
+      const line = [
+        ['G4', 0, .75], ['A4', .8, .75], ['B4', 1.6, 2.2],
+        ['B4', 4.5, .45], ['B4', 5, .45], ['A4', 5.5, .45], ['G4', 6, .45], ['A4', 6.5, 1.4],
+        ['G4', 8, .75], ['A4', 8.8, .75], ['D5', 9.6, 2.4],
+        ['D5', 12.5, .45], ['C5', 13, .45], ['B4', 13.5, .45], ['A4', 14, .45], ['B4', 14.5, 1.5],
       ];
-      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'sawtooth', gain: 0.05 });
+      for (const [note, at, len] of line) {
+        tone(c, N[note], at * b, len * b, { type: 'sawtooth', gain: 0.055 });
+        tone(c, N[note] * 2, at * b, len * b, { type: 'triangle', gain: 0.018 }); // octave shimmer over the tannoy
+      }
+      for (const [note, at, len] of line) tone(c, N[note], (at + 16) * b, len * b, { type: 'sawtooth', gain: 0.055 });
+      return Math.round(32 * b * 1000); // 8 bars — hand the loop its cue
     } else if (kind === 'pitbull') {
       // Timber, harmonica hook, same tannoy treatment — the SECOND drinks-break
       // anthem (Toby, UAT night: "should be a new song. Pitbull."). Mr Worldwide
-      // was also unavailable for licensing.
-      const N = { G4: 392, A4: 440, B4: 494, D5: 587, E5: 659 };
-      const riff = [
-        ['E5', 0, .16], ['E5', .18, .16], ['E5', .36, .16], ['D5', .54, .22], ['B4', .8, .3],   // it's going down
-        ['A4', 1.2, .16], ['B4', 1.38, .16], ['D5', 1.56, .4],                                   // I'm yelling timber
-        ['E5', 2.15, .16], ['E5', 2.33, .16], ['E5', 2.51, .16], ['D5', 2.69, .22], ['B4', 2.95, .3], // you better move
-        ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
+      // was also unavailable for licensing. Same full-band rebuild as the Jovi.
+      const b = 0.46; // ~130 BPM
+      const N = { G2: 98, B2: 123.5, C3: 130.8, D3: 146.8, G4: 392, A4: 440, B4: 493.9, D5: 587.3, E5: 659.3 };
+      const bassBars = ['G2', 'B2', 'C3', 'D3', 'G2', 'B2', 'C3', 'D3'];
+      bassBars.forEach((root, bar) => {
+        for (let q = 0; q < 4; q++) tone(c, N[root], (bar * 4 + q) * b, b * 0.5, { type: 'square', gain: 0.032 });
+      });
+      const hook = [
+        ['E5', 0, .35], ['E5', .5, .35], ['E5', 1, .35], ['D5', 1.5, .5], ['B4', 2.1, .7],
+        ['A4', 3, .35], ['B4', 3.5, .35], ['D5', 4, 1],
+        ['E5', 5.5, .35], ['E5', 6, .35], ['E5', 6.5, .35], ['D5', 7, .5], ['B4', 7.6, .7],
+        ['D5', 8.5, .35], ['B4', 9, .35], ['A4', 9.5, .5], ['G4', 10, 1.4],
       ];
-      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
+      for (const [note, at, len] of hook) {
+        tone(c, N[note], at * b, len * b, { type: 'square', gain: 0.05 });
+        tone(c, N[note], at * b + 0.012, len * b, { type: 'square', gain: 0.02 }); // harmonica detune
+      }
+      for (const [note, at, len] of hook) tone(c, N[note], (at + 16) * b, len * b, { type: 'square', gain: 0.05 });
+      return Math.round(32 * b * 1000);
     } else if (kind === 'themeGfw') {
       // Gazette Football Weekly: a lone piano and a cello, faintly sad. The
       // Podcunt Network has no audio files — the stings are synthesised like
