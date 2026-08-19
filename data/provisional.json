@@ -10,5 +10,26 @@
     "nat": 108,
     "signed": "2026-08-19",
     "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional."
+  },
+  {
+    "id": 900002,
+    "name": "Ruggeri",
+    "team": "Aston Villa",
+    "club": "AVL",
+    "pos": "DF",
+    "price": 4.5,
+    "signed": "2026-08-19",
+    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional."
+  },
+  {
+    "id": 900003,
+    "name": "Cherif",
+    "full": "Sidiki Cherif",
+    "team": "Coventry City",
+    "club": "COV",
+    "pos": "FW",
+    "price": 5.5,
+    "signed": "2026-08-19",
+    "note": "Signed and announced; awaiting the FPL feed. Committee-issued provisional."
   }
 ]
