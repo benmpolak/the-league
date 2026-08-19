@@ -645,6 +645,14 @@ tr.gone-row td.act { opacity: .8; }
 
 /* --- The League 26/27 additions --- */
 .status-chip { font-size: 12px; margin-left: 2px; }
+/* Committee placeholder: a signing the FPL feed hasn't ingested. His price and
+   Rate are hand-written, so the board says so rather than passing them off as
+   FPL figures (Marc, 19 Aug: "it's only a placeholder") */
+.prov-chip {
+  font-size: 9px; font-weight: 700; letter-spacing: .06em; vertical-align: middle;
+  margin-left: 5px; padding: 1px 4px; border-radius: 4px; white-space: nowrap;
+  color: var(--bg); background: var(--accent);
+}
 /* the playoff cutoff: dashed so it reads as a line in the sand, not a border */
 .playoff-line td { border-bottom: 2px dashed var(--accent); }
 .headshot { width: 28px; height: 36px; border-radius: 5px; object-fit: cover; object-position: top; background: var(--bg2); flex-shrink: 0; }
