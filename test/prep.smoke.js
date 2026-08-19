@@ -689,7 +689,14 @@ const chk = (name, ok, detail = '') => {
 
     // ...and Big Al calls it a transfer, not an injury
     const line = pundComment({ n: 1, managerId: whoami, playerId: departed[0].id }).line;
+    // the way to SEE them has to exist where you are standing. This control
+    // used to render only during the draft, so on the Scouting Floor the men
+    // were hidden with no way to reveal them (Marc, 18 Aug)
+    state.phase = 'setup'; state.draft.picks = []; render();
+    const sel = document.querySelector('#poolScope');
+    const revealable = !!sel && [...sel.options].some(o => o.value === 'all' && /departed/i.test(o.textContent));
     return {
+      revealable,
       count: departed.length,
       hiddenByDefault: departed.every(d => !shownNow.has(d.id)),
       shownWhenAsked: departed.every(d => shownAll.has(d.id)),
@@ -702,6 +709,33 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P13 departed players stay out of the pool, out of autopick, and are called what they are',
     p13.none || Object.values(p13).every(v => v !== false), JSON.stringify(p13));
+
+  /* ---- P14: flags. Marc, 18 Aug: "the northern ireland flag is wrong, it is
+     showing the union jack, also some players dont have the nationality at
+     all." Unicode has no Northern Ireland flag, so it is drawn; and every
+     country code the feed actually sends must be mapped, so a missing flag is
+     only ever the feed's own null. ---- */
+  const p14 = await page.evaluate(() => {
+    const ni = PLAYERS.filter(x => x.nat === 242);
+    const UNION = '\u{1F1EC}\u{1F1E7}';
+    const someone = PLAYERS.find(x => x.nat === 200);
+    NAT_OVERRIDE[someone.code] = 242;
+    const overridden = natFlag(someone), overName = natOf(someone)[0];
+    delete NAT_OVERRIDE[someone.code];
+    return {
+      hasNiPlayers: ni.length > 0,
+      // drawn, named, and never the Union flag standing in
+      niDrawn: ni.every(p => /nat-svg/.test(natFlag(p)) && /Northern Ireland/.test(natFlag(p))),
+      noUnionJack: !PLAYERS.some(p => natFlag(p).includes(UNION)),
+      // every code the feed sends is mapped — a blank flag means the feed sent none
+      everyCodeMapped: PLAYERS.every(p => p.nat == null || !!NATIONS[p.nat]),
+      blanksAreFeedNulls: PLAYERS.filter(p => !natOf(p)).every(p => p.nat == null),
+      // the manual override beats the feed, and reaches the drawn flags too
+      overrideWins: overName === 'Northern Ireland' && /nat-svg/.test(overridden),
+    };
+  });
+  chk('P14 Northern Ireland is drawn, not the Union flag, and every fed code is mapped',
+    Object.values(p14).every(Boolean), JSON.stringify(p14));
 
   chk('P12 no page errors across the run', errors.length === 0, errors.join(' | '));
 
