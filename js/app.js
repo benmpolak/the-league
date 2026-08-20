@@ -1824,6 +1824,13 @@ function viewDirectory() {
         <span class="muted dir-line">${esc(managerName(mid))} &middot; ${esc(stadium(mid))}</span>
         ${sponsorFor(mid) ? `<span class="muted dir-line">Principal partner: ${esc(sponsorFor(mid))}</span>` : ''}
         ${gafferFor(mid) ? `<span class="dir-line">${gafferChip(mid)}</span>` : ''}
+        ${(() => {
+          // first pick on draft night (Ben, GW1 eve) — a club's founding
+          // signing belongs on its record
+          const pk = (state.draft.picks || []).filter(x => x.managerId === mid).sort((a, b) => a.n - b.n)[0];
+          const p = pk && PLAYER_BY_ID[pk.playerId];
+          return p ? `<span class="muted dir-line">First pick: <b style="color:var(--text)">${esc(p.name)}</b> (#${pk.n} overall)</span>` : '';
+        })()}
         <span class="dir-line"><span class="tag" style="font-size:10.5px">&#128227; ${esc(mood.t)}</span></span>
         ${dirRivals.length ? `<span class="dir-rivals"><span class="dir-rivals-h">Rival${dirRivals.length === 1 ? '' : 's'}</span>${dirRivals.map(r => `<span class="dir-rival"><span class="dir-rival-who">${teamTag(r)}</span>${derbyTag(mid, r)}</span>`).join('')}</span>` : ''}
         ${opened ? '' : '<span class="muted dir-line" style="font-style:italic">Office unopened</span>'}
@@ -5121,9 +5128,16 @@ function nextFx(team) {
   _fxCache.set(team, v);
   return v;
 }
+// the coloured short fixture ("BOU (A)", tinted by fear) — the Vs column and
+// the phone player cells share it
+function nextFxHtml(team) {
+  const t = nextFx(team);
+  const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null;
+  return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t;
+}
 // the full column menu, Draft Fantasy style; users pick their own set (kept per device)
 const ALL_STAT_COLS = live => [
-  { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => { const t = nextFx(p.team); const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null; return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t; }, cls: ' muted', sortable: false },
+  { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => nextFxHtml(p.team), cls: ' muted', sortable: false },
   // FPL price column RETIRED (Lee read '£m' as transfer fees — there is no
   // money in this league; do not resurrect)
   { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
@@ -5159,9 +5173,10 @@ const DEFAULT_COL_KEYS = live => live
 // the season started (Iain, GW1 eve: "in the trough it'd be good to see
 // their next fixture") — once games exist, the fixture IS a decision number.
 // Saved column prefs still win over this default.
-// 320px keeps the single decision number — P11c pins Player/Rate/action
-// together there, and Vs is the column that tips it over the edge
-const MOBILE_COL_KEYS = () => matchMedia('(max-width: 360px)').matches ? ['rate'] : ['vs', 'rate'];
+// the fixture lives IN the player cell on phones (.pfx / player-mobile-meta),
+// so the lone decision-number column returns — nothing to drag sideways for
+// (Ben, GW1 eve), and P11c's 320px pin holds
+const MOBILE_COL_KEYS = () => ['rate'];
 // V2 deliberately retires the old, sprawling defaults once. Managers can
 // still add anything back; a clean first render now fits (Ben, 5 Aug).
 const COL_PREFS_KEY = `${LS_NS}-cols-v2`;
@@ -5553,7 +5568,7 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}${hasLeft(p) ? ' left-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
-        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos}</span></div></div></td>
+        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos} &middot; ${nextFxHtml(p.team)}</span></div></div></td>
         <td class="muted col-club" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td class="col-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td class="col-status">${hasLeft(p) ? leftTag(p) : statusChip(p)}</td>
@@ -6406,7 +6421,7 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'avail', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // the whole hub acts as ONE manager. Normally that's you; the Chairman may
 // take any chair (the switcher in the hub header) — every action downstream
 // already carries asManager when mid !== whoami, so the server records the
@@ -6987,7 +7002,8 @@ function bindTransfers() {
       // has its own chip; Everyone still shows the lot, owned included.
       let pool = transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
-        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p));
+        : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
+        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !hasLeft(p));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -7023,7 +7039,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
@@ -7039,7 +7055,8 @@ function bindTransfers() {
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
         <span style="width:8px"></span>
-        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
+        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' && transfersView.scope !== 'free' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
+        <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Owned players too, and men who have left the league">Everyone</button>
       </div>` + (shown.length ? table

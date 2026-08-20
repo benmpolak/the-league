@@ -1490,3 +1490,7 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .pod-time { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 30px; text-align: center; }
 .pod-tt-room .pod-now-who { color: #ff8a4c; }
 .pod-tt-room .pod-chip { border-color: #7a3418; }
+
+/* phone-only fixture in the player cell — desktop keeps the Vs column */
+.pfx { display: none; }
+@media (max-width: 700px) { .pfx { display: inline; } }
