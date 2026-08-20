@@ -1068,13 +1068,26 @@ const SB = 'the-league-sandbox';
   chk('negative expectedCount refused as INVALID_ARGUMENT (sol r5)', undoNeg.error?.status === 'INVALID_ARGUMENT', JSON.stringify(undoNeg));
   const undoOk = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 2 }, tok1);
   chk('undo with the seen count pops exactly one and re-arms the clock', !undoOk.error && undoOk.result?.total === 1 && await dl() > Date.now());
-  // pick + deadline move in ONE txn on the draft node
-  let auto = null;
-  for (let i = 1; i < 42; i++) { // 41 more autopicks fill the 3x14 board
+  // pick + deadline move in ONE txn on the draft node. The 42-pick board
+  // crosses BOTH drinks-break triggers (14 and 28), and the break is server
+  // law now (sol test-draft P0): the fill must stop at each, be refused, and
+  // resume only after the Chairman's breakDone — exactly the real night.
+  let auto = null, breaksHit = 0, breakRefused = true, breakResumed = true;
+  for (let i = 1; i < 46; i++) { // 41 more autopicks fill the 3x14 board (+2 break stops)
     auto = await T.mutate(LG, 'draftAutopick', {}, tok1);
+    if (auto.error && /drinks break/.test(auto.error.message || '')) {
+      breaksHit++;
+      breakRefused = breakRefused && auto.error.status === 'FAILED_PRECONDITION';
+      const bd = await T.mutate(LG, 'draftAdmin', { op: 'breakDone' }, tok1);
+      breakResumed = breakResumed && !bd.error;
+      if (bd.error) { auto = bd; break; }
+      continue;
+    }
     if (auto.error) break;
   }
   chk('board fills by deterministic autopick', !auto.error, JSON.stringify(auto?.error));
+  chk('both drinks breaks froze the board and were consumed by the Chairman (sol P0)',
+    breaksHit === 2 && breakRefused && breakResumed, `hit=${breaksHit}`);
   chk('final pick flips phase to season and disarms the clock',
     (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season' && await dl() === null);
   // forge the wedge sol reproduced: full board, phase stuck in draft
