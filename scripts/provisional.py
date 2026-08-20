@@ -89,11 +89,19 @@ def record(e):
 
 
 def merge(players):
-    """Append provisional records to a generated player list, replacing any
-    already present. Idempotent, so re-running the feed never doubles them."""
+    """Rebuild the provisional tail of a generated player list from
+    data/provisional.json, which is the single source of truth.
+
+    EVERY existing provisional is stripped first, then the declared ones are
+    appended. That is what makes deletion work: the handover — the whole point
+    of the mechanism — is "remove the entry, re-run". An earlier version only
+    replaced ids it found in the file, so a removed entry (or an emptied file)
+    left the placeholder in the feed for ever, silently.
+
+    Idempotent in both directions: re-running never doubles an entry, and
+    nothing declared is nothing carried."""
     entries = load()
-    if not entries:
-        return players
     ids = {e['id'] for e in entries}
-    kept = [p for p in players if p.get('id') not in ids]
+    kept = [p for p in players
+            if not p.get('provisional') and p.get('id') not in ids and p.get('id', 0) < ID_FLOOR]
     return kept + [record(e) for e in entries]

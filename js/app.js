@@ -863,13 +863,6 @@ const NATIONS = {
   217: ['Trinidad & Tobago', '🇹🇹'], 219: ['Türkiye', '🇹🇷'], 225: ['Ukraine', '🇺🇦'], 229: ['USA', '🇺🇸'],
   230: ['Uruguay', '🇺🇾'], 231: ['Uzbekistan', '🇺🇿'],
   241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', ''], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
-  // 9000+ is reserved for provisional players. This table is keyed by the PL's
-  // own region ids (all under 250) and lists only countries a current PL player
-  // comes from — Guinea isn't among them, and guessing its real id would risk
-  // flying its flag for whoever actually holds that number. A reserved key
-  // cannot shadow a real region; when the real player lands in the feed he
-  // brings his own id and this entry retires with the provisional.
-  9001: ['Guinea', '🇬🇳'],
 };
 /* Marc, 18 Aug: "some players dont have the nationality at all still."
 
