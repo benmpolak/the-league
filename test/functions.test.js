@@ -4,6 +4,9 @@
  * exactly-once runs), lineup validation, commissioner gating. */
 'use strict';
 const T = require('./testenv.js');
+const Engine = require('../js/engine.js');
+const fs = require('fs');
+const path = require('path');
 // Direct handle for the scheduled sweep. `onSchedule` exposes `.run`, which
 // lets the emulator suite exercise the real tick body without a cloud clock.
 const Functions = require('../functions/index.js');
@@ -14,8 +17,9 @@ const SB = 'the-league-sandbox';
 (async () => {
   const run = T.makeRunner('functions');
   const { chk } = run;
-  const { players } = T.genTestData();
-  const server = await T.serveTestData(require('path').join(__dirname, 'fixtures', 'testdata'));
+  const { players, gws } = T.genTestData();
+  const fixtureDir = path.join(__dirname, 'fixtures', 'testdata');
+  const server = await T.serveTestData(fixtureDir);
   await T.wipe();
 
   const members = await T.provision(LG, [
@@ -295,6 +299,49 @@ const SB = 'the-league-sandbox';
   chk('skip recorded on waiverMeta', (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === 'wv-2026-09-01');
   const unskip = await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
   chk('commissioner reinstates the run', !unskip.error && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === null);
+
+  // {next:true} must judge the run ledger and stamp the selected slot as one
+  // atomic operation. A slot already running/applying is too late to skip;
+  // a failed slot remains eligible for its retry.
+  const fixtures = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'data', 'fixtures.json'), 'utf8'));
+  const clock = Engine.make({
+    players,
+    gameweeks: gws.map(g => ({ ...g, from: g.deadline })),
+    fixtures,
+    lastSeasonByCode: {},
+    now: () => Date.now(),
+  });
+  const dueSlots = clock.waiverSchedule();
+  const runRoot = db.ref(`v2/leagues/${LG}/server/waiverRuns`);
+  for (const d of dueSlots) await runRoot.child(`sched-${d.id}`).set({ status: 'done', finishedAt: Date.now() });
+  const lastDue = dueSlots[dueSlots.length - 1];
+  if (lastDue) await runRoot.child(`sched-${lastDue.id}`).set({ status: 'running', startedAt: Date.now() });
+  const futureSlot = clock.waiverSlotId(clock.nextSlotAt(Date.now()));
+  const beforeNext = {
+    transfers: (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val(),
+    private: (await db.ref(`v2/leagues/${LG}/private`).get()).val(),
+    lastRun: (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val(),
+  };
+  const skipsFuture = await T.mutate(LG, 'waiverSkip', { next: true, id: 'wv-1999-01-01' }, tok1);
+  const afterNext = {
+    transfers: (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val(),
+    private: (await db.ref(`v2/leagues/${LG}/private`).get()).val(),
+    lastRun: (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val(),
+  };
+  chk('{next:true} skips past done and in-flight ledger slots atomically',
+    !skipsFuture.error && skipsFuture.result?.skip === futureSlot
+      && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === futureSlot,
+    JSON.stringify({ result: skipsFuture.result, error: skipsFuture.error, futureSlot, dueSlots }));
+  chk('choosing a skip touches no claims, transfers or lastRun',
+    JSON.stringify(beforeNext) === JSON.stringify(afterNext));
+  if (lastDue) {
+    await runRoot.child(`sched-${lastDue.id}`).update({ status: 'failed', finishedAt: Date.now() });
+    const retriesFailed = await T.mutate(LG, 'waiverSkip', { next: true, id: futureSlot }, tok1);
+    chk('{next:true} still selects a failed slot that the scheduler will retry',
+      !retriesFailed.error && retriesFailed.result?.skip === lastDue.id,
+      JSON.stringify({ result: retriesFailed.result, error: retriesFailed.error, lastDue }));
+  } else chk('{next:true} still selects a failed slot that the scheduler will retry', false, 'test clock produced no due slots');
+  await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
 
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));

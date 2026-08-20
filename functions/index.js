@@ -1478,7 +1478,7 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
 // skip one named run by exception (Toby, 12 Aug: double gameweeks, a rogue
 // Wednesday finish) — claims stay lodged and roll to the run after. id null
 // reinstates. The scheduled runner spends the flag when the slot comes due.
-ACTIONS.waiverSkip = async ({ league, a, data, state, ctx }) => {
+ACTIONS.waiverSkip = async ({ league, a, data, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   let id = data.id == null ? null : String(data.id);
   /* {next:true}: the SERVER names the slot. The client's idea of "next run"
@@ -1488,13 +1488,35 @@ ACTIONS.waiverSkip = async ({ league, a, data, state, ctx }) => {
      the ledger knows which slot the runner will actually process. */
   if (data.next === true) {
     const eng = ctx.eng;
-    const runs = (await db().ref(`${leagueBase(league)}/server/waiverRuns`).get()).val() || {};
-    const spent = sid => runs[`sched-${sid}`] && runs[`sched-${sid}`].status === 'done';
-    const due = eng.waiverSchedule().find(d => !spent(d.id));
-    id = due ? due.id : eng.waiverSlotId(eng.nextSlotAt(Date.now()));
+    const due = eng.waiverSchedule();
+    const future = eng.waiverSlotId(eng.nextSlotAt(Date.now()));
+    const baseRef = db().ref(leagueBase(league));
+    const seedSnap = (await baseRef.get()).val();
+    /* Select the slot and stamp the flag in ONE transaction with the run
+       ledger. A scheduled run claims its child of this same tree first; RTDB
+       then retries us against status=running/applying, so we cannot recreate
+       the draft-night TOCTOU and skip a slot already being processed. If we
+       win first, the runner sees the flag after its claim and consumes it. */
+    const res = await baseRef.transaction(cur => {
+      // Admin may invoke a transaction once against an empty local cache. Seed
+      // that attempt from a read; the server compare then retries us against
+      // any newer value, preserving the atomic ledger/public judgement.
+      const c = cur === null && seedSnap ? JSON.parse(JSON.stringify(seedSnap)) : cur;
+      if (!c) return;
+      const runs = c.server?.waiverRuns || {};
+      const unavailable = sid => ['done', 'running', 'applying'].includes(runs[`sched-${sid}`]?.status);
+      id = (due.find(d => !unavailable(d.id)) || {}).id || future;
+      c.public = c.public || {};
+      c.public.waiverMeta = { ...(c.public.waiverMeta || {}), skip: id };
+      return c;
+    });
+    if (!res.committed) throw new HttpsError('aborted', 'waiver ledger moved — retry');
+    return { ok: true, skip: id };
   }
   if (id != null && !/^wv-\d{4}-\d{2}-\d{2}$/.test(id)) throw new HttpsError('invalid-argument', 'not a waiver slot id');
-  await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, skip: id });
+  // Legacy named-slot clients and Reinstate keep working, without replacing a
+  // concurrent lastRun/control update with the action's earlier snapshot.
+  await db().ref(`${leagueBase(league)}/public/waiverMeta`).update({ skip: id });
   return { ok: true, skip: id };
 };
 
