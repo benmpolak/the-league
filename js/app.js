@@ -2427,6 +2427,41 @@ function canPick(mid, player) {
   for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, SQUAD_RULES.min[pos] - c[pos] - (pos === player.pos ? 1 : 0));
   return need <= SQUAD_RULES.size - size - 1;
 }
+/* All Squads (Ben, post-draft: "a tab where we can see everyone's team
+   lists... from the draft and then live") — every roster as it stands NOW
+   (managerSquad follows transfers), with each man's provenance: his draft
+   slot, or however he arrived since. Player-card taps come free via the
+   global [data-pcard] delegation, so the view needs no bind. */
+function squadProvenance(mid, pid) {
+  const pk = (state.draft.picks || []).find(x => x.managerId === mid && x.playerId === pid);
+  if (pk) return `R${Math.ceil(pk.n / Math.max(1, state.managers.length))} · #${pk.n}`;
+  const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
+  if (!tr) return '';
+  return tr.trade ? 'trade' : tr.windowDraft ? 'window draft' : tr.waiver ? 'waiver' : 'trough';
+}
+function viewSquads() {
+  const POS_ORDER = { GK: 0, DF: 1, MF: 2, FW: 3 };
+  const order = (state.draft.order || []).length ? state.draft.order : state.managers.map(m => m.id);
+  const cards = order.map(mid => {
+    const sq = managerSquad(mid).slice()
+      .sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || (playerDisplayName(a)).localeCompare(playerDisplayName(b)));
+    const rows = sq.map(p => `<div class="lrow" style="font-size:12.5px">
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+      ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>${leftTag(p)}
+      <span class="muted" style="margin-left:auto;font-size:10.5px;white-space:nowrap">${esc(squadProvenance(mid, p.id))}</span>
+    </div>`).join('') || '<span class="muted" style="font-size:12px">No players. A bold rebuild.</span>';
+    return `<div class="card">
+      <h3 style="margin-bottom:2px">${esc(teamName(mid))}</h3>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">${esc(managerName(mid))} &middot; ${sq.length} players</p>
+      ${rows}
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <h2>All Squads</h2>
+    <p class="muted" style="font-size:12.5px">Every roster as it stands — drafted, traded, claimed and scavenged. The tag on each man is his provenance: draft round and pick, or how he got in since. Tap a name for his card.</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px">${cards}</div>`;
+}
 function draftedIds() { return new Set(state.draft.picks.map(p => p.playerId)); }
 
 function makePick(playerId, force = false) {
@@ -2435,7 +2470,7 @@ function makePick(playerId, force = false) {
   if (!force && !canActFor(mid)) { toast(`It's ${managerName(mid)}'s pick — the group chat is watching you`); return; }
   const player = PLAYER_BY_ID[playerId];
   if (!canPick(mid, player)) { toast(`${managerName(mid)} can't fit another ${player.pos} — position limits`); return; }
-  const rec = { managerId: mid, playerId, code: PLAYER_BY_ID[playerId]?.code ?? null, n: pickNo() + 1 };
+  const rec = { managerId: mid, playerId, code: PLAYER_BY_ID[playerId]?.code ?? null, n: pickNo() + 1, t: Date.now() };
   const finishPick = total => {
     if (state.settings.pickTimer && total < totalPicks()) {
       state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
@@ -3321,6 +3356,7 @@ const NAV_ITEMS = [
   ['team', 'My Team', 'My Team'],
   ['club', 'My Club', 'Club'],
   ['directory', 'Club Directory', 'Clubs'],
+  ['squads', 'All Squads', 'Squads'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Matches', 'Matches'],
   ['cup', 'Cup Competitions', 'Cups'],
@@ -3338,6 +3374,7 @@ const NAV_ICONS = {
   team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
   club: navSvg('<path d="M12 3 5 5.5v6c0 4.5 3 7.5 7 9.5 4-2 7-5 7-9.5v-6Z"/><path d="M12 8v5M9.5 10.5h5"/>'),
   directory: navSvg('<rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>'),
+  squads: navSvg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
@@ -3430,6 +3467,7 @@ function render() {
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
     case 'club': main.innerHTML = viewClub(); bindClub(); break;
     case 'directory': main.innerHTML = viewDirectory(); bindDirectory(); break;
+    case 'squads': main.innerHTML = viewSquads(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
     case 'dash': main.innerHTML = viewDash(); bindDash(); break;
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;

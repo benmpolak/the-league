@@ -477,7 +477,9 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
     // serialised just before this txn revives the clock, and the pick must die
     if (data.expired === true && dr.deadline && Date.now() <= dr.deadline) { denyReason = 'the clock was extended — play on'; return; }
     if (arr.some(p => p.playerId === player.id)) return;
-    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1 });
+    // t: when the pick landed — the Gazette's "slowest hand in the room"
+    // desk needs it, and draft night 26/27 taught us it can't be backfilled
+    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1, t: Date.now() });
     dr.picks = arr;
     if (state.settings.pickTimer) dr.deadline = arr.length < eng.totalPicks(state) ? Date.now() + state.settings.pickTimer * 1000 : null;
     return dr;
@@ -644,7 +646,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     while ((onClock = eng.currentManagerId(sim)) != null) {
       const choice = eng.autoPickChoice(sim, onClock);
       if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available mid-autodraft');
-      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1 };
+      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1, t: Date.now() };
       sim.draft.picks = [...toArr(sim.draft.picks), rec];
       added.push(rec);
     }
