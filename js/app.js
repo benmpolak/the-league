@@ -2024,13 +2024,21 @@ function nextWaiverRun(afterTs) {
  * nextWaiverRun(now). Mirrors js/engine.js; same lookback as the server tick. */
 function nextProcessableWaiverRun() {
   const t = Date.now();
-  const due = nextSlotAt(Math.max(lastWaiverRun(), t - 14 * 24 * 3600e3));
+  // DISPLAY horizon: 2 hours, deliberately narrower than the engine's 14-day
+  // catch-up window. The hourly tick takes a due slot within the hour, so a
+  // slot still "due" after 2h was consumed by the server's run ledger — which
+  // this client cannot read (it marks pre-season slots "skipped: not in
+  // season"). GW1 eve: lastRun null made the previous Friday look due and
+  // every surface promised "waivers process in any minute now" while the
+  // Chairman was telling the group there'd be no run at all. The SERVER keeps
+  // the full 14-day lookback — that divergence is the point, not a drift.
+  const due = nextSlotAt(Math.max(lastWaiverRun(), t - 2 * 3600e3));
   return due != null && due <= t ? new Date(due) : nextWaiverRun(t);
 }
 // ...and the same, stepping over a Chairman-skipped slot (display truth)
 function nextLiveWaiverRun() {
   let run = nextProcessableWaiverRun().getTime();
-  if (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
+  while (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
   return new Date(run);
 }
 const waiverControl = () => state.waiverMeta?.control || 'auto';
@@ -5151,7 +5159,9 @@ const DEFAULT_COL_KEYS = live => live
 // the season started (Iain, GW1 eve: "in the trough it'd be good to see
 // their next fixture") — once games exist, the fixture IS a decision number.
 // Saved column prefs still win over this default.
-const MOBILE_COL_KEYS = () => ['vs', 'rate'];
+// 320px keeps the single decision number — P11c pins Player/Rate/action
+// together there, and Vs is the column that tips it over the edge
+const MOBILE_COL_KEYS = () => matchMedia('(max-width: 360px)').matches ? ['rate'] : ['vs', 'rate'];
 // V2 deliberately retires the old, sprawling defaults once. Managers can
 // still add anything back; a clean first render now fits (Ben, 5 Aug).
 const COL_PREFS_KEY = `${LS_NS}-cols-v2`;
