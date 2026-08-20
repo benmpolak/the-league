@@ -8,9 +8,15 @@
  * Usage: node test/podcast.smoke.js   (TEST_BASE_URL, CHROME_BIN as usual)
  */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const puppeteer = require('puppeteer-core');
 const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
+// the league state the shipped audio was cut from (written by render_pods
+// --state). The audio checks regenerate episodes from THIS state — a fresh
+// page invents its own league and every real-state line reads as an orphan.
+const SEED_FILE = path.join(__dirname, '..', 'audio', 'pod', 'league-state.json');
 
 let pass = 0, fail = 0;
 const chk = (name, ok, detail = '') => {
@@ -69,7 +75,15 @@ const chk = (name, ok, detail = '') => {
      script edit and Ben's next render, and the player just reads it aloud. So
      the outstanding lines are reported rather than failed — the number is what
      the next render will cost. ---- */
-  const p13 = await page.evaluate(async () => {
+  let audioPage = page;
+  if (fs.existsSync(SEED_FILE)) {
+    audioPage = await browser.newPage();
+    audioPage.on('dialog', d => d.accept());
+    await audioPage.evaluateOnNewDocument(s => localStorage.setItem('tl2627sb-league', s), fs.readFileSync(SEED_FILE, 'utf8'));
+    await audioPage.goto(baseUrl + '?sandbox&nosync', { waitUntil: 'networkidle2' });
+    await audioPage.waitForFunction(() => typeof Podcast !== 'undefined' && typeof podRecordings !== 'undefined');
+  }
+  const p13 = await audioPage.evaluate(async () => {
     _podRec = null;
     const rec = await podRecordings();
     const out = { shipped: Object.keys(rec).length, orphans: [], outstanding: [], chars: 0 };

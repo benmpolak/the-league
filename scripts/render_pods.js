@@ -349,6 +349,11 @@ async function harvest() {
     const seed = fs.readFileSync(stateFile, 'utf8');
     JSON.parse(seed); // fail here, loudly, rather than inside the page
     await page.evaluateOnNewDocument(s => localStorage.setItem('tl2627sb-league', s), seed);
+    // the seed ships WITH the audio it produced: test/podcast.smoke.js
+    // regenerates the episodes from this exact state, so the orphan check
+    // (P13) judges the recordings against the words they were cut for
+    // rather than whatever league its own fresh page invents
+    if (!DRY) fs.writeFileSync(path.join(OUT, 'league-state.json'), seed);
   }
   await page.goto(SITE + '/?sandbox&nosync', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof Podcast !== 'undefined');
