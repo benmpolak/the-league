@@ -296,6 +296,9 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 .act .star-on { color: var(--accent) !important; border-color: var(--accent) !important; }
 .side-squad { font-size: 13px; }
 .side-squad .srow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+/* the phone trough's compact makes-way rows — same taps as the pitch chips */
+.trout-row { cursor: pointer; border-radius: 8px; padding: 4px 6px !important; }
+.trout-row.sel { outline: 1.5px solid var(--accent); background: rgba(45, 212, 167, .12); }
 .quota-bar { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
 .quota-pill { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--card2); color: var(--muted); border: 1px solid var(--line); }
 .quota-pill.full { background: rgba(45,212,167,.15); color: var(--accent); border-color: var(--accent-dim); }

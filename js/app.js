@@ -5146,9 +5146,12 @@ const ALL_STAT_COLS = live => [
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'f5', 'ppg', 'pts', 'rate']
   : ['vs', 'ppg', 'pts', 'rate'];
-// phones default to the one decision number — tap any player for the full
-// story, or deliberately add columns back from Scouting tools.
-const MOBILE_COL_KEYS = () => ['rate'];
+// phones default to the decision numbers — tap any player for the full
+// story, or add columns back from Scouting tools. Vs joined rate the night
+// the season started (Iain, GW1 eve: "in the trough it'd be good to see
+// their next fixture") — once games exist, the fixture IS a decision number.
+// Saved column prefs still win over this default.
+const MOBILE_COL_KEYS = () => ['vs', 'rate'];
 // V2 deliberately retires the old, sprawling defaults once. Managers can
 // still add anything back; a clean first render now fits (Ben, 5 Aug).
 const COL_PREFS_KEY = `${LS_NS}-cols-v2`;
@@ -6463,6 +6466,24 @@ function viewTransfers() {
             <span class="pitch-name">${esc(p.name)}</span>
             <span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
           </div>`;
+    // phones: the pitch ate the whole first screen and buried the actual
+    // Trough below the fold (Ben, GW1 eve: "the trough for mobile view needs
+    // a bit of optimizing") — compact rows, same taps, half the height
+    if (matchMedia('(max-width: 700px)').matches) {
+      const row = (p, tag = '') => `
+        <div class="srow trout-row ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+          ${tag}<span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}<span>${esc(p.name)}</span>
+          <span class="muted" style="margin-left:auto;font-size:11px">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
+        </div>`;
+      return `<div class="card" style="margin-bottom:14px">
+        <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
+        <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
+        <div class="side-squad">
+          ${['GK', 'DF', 'MF', 'FW'].map(pos => starters.filter(p => p.pos === pos).map(p => row(p)).join('')).join('')}
+          ${benchFor(mid, tgw).map((p, bi) => row(p, `<span class="tag" style="font-size:9px;padding:1px 5px">B${bi + 1}</span>`)).join('')}
+        </div>
+      </div>`;
+    }
     return `<div class="card" style="margin-bottom:14px">
       <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
       <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
@@ -6927,6 +6948,11 @@ function bindTransfers() {
       // sandbox 12 Aug: "the drop down doesn't change but the player selected
       // from the pitch is the one transferred out")
       if (trOut) trOut.value = transfersView.out || '';
+      // phones: picking the outgoing man jumps you to the pool — the whole
+      // point of the tap is the list that was sitting below the fold
+      if (transfersView.out && search && matchMedia('(max-width: 700px)').matches) {
+        search.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       renderTrResults();
     });
     search.oninput = renderTrResults;
@@ -11034,6 +11060,18 @@ function showPlayerCard(pid) {
       <span class="quota-pill">FPL official ${p.pts}</span>
       <span class="quota-pill" title="FPL expected points, next gameweek">xPts next ${playerXp(p).toFixed(1)}</span>
     </div>
+    ${(() => {
+      // Iain, GW1 eve: "see a team's fixtures when I click on a player —
+      // this week should be on view but you should be able to see the rest
+      // too". The run of six, coloured by how scary they are.
+      const ups = (state.fixtures || []).filter(f => !f.finished && (f.home === p.team || f.away === p.team)).slice(0, 6);
+      if (!ups.length) return '';
+      const pill = f => {
+        const opp = f.home === p.team ? f.away : f.home;
+        return `<span class="quota-pill">GW${f.gw} <b class="${fdrCls(opp)}">${esc(TEAM_BY_NAME[opp]?.short || opp)} (${f.home === p.team ? 'H' : 'A'})</b></span>`;
+      };
+      return `<div class="quota-bar" style="margin:0 0 10px">${ups.map(pill).join('')}</div>`;
+    })()}
     ${(() => {
       const ls = lastSeasonOf(p);
       return ls ? `<p class="muted" style="font-size:12px;margin-bottom:8px"><b style="color:var(--text)">${LS_SEASON}:</b> ${ls.pts} FPL pts &middot; ${ls.g} G &middot; ${ls.a} A &middot; ${ls.cs} CS &middot; ${ls.ppg} per game &middot; ${Math.round((ls.mp || 0) / 90)} &times; 90s${ls.club && ls.club !== p.club ? ` <span class="muted">(at ${esc(ls.club)})</span>` : ''}</p>`
