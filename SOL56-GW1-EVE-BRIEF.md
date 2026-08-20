@@ -127,6 +127,48 @@ fast-surgery session: the review's job is to find what speed broke.
   320px — caught by CI, fixed width-aware, then superseded by the
   in-cell fixture. Noted for honesty.
 
+## The first real matchday (Chairman's addition — audit this like it's 19:55 Friday)
+
+None of tonight's changes touch this machinery, but tomorrow 20:00 is the
+first time ALL of it runs against real fixtures with twelve real managers,
+and it has only ever run against the chamber, the demo, and CI's synthetic
+feeds. Walk the full matchday timeline and try to break each gate:
+
+- **Lineup lock.** Lineups lock at the gameweek's first kickoff (Fri
+  20:00). Verify the SERVER refuses lineupSave/benchOrder changes for a
+  started GW — not just the client's copy ("Lineups are locked") — for
+  both the current-GW lens and any acting-as/import side door. What
+  happens to a manager who never set an XI: auto-XI at settle time, and
+  is the fallback legal (formation rules) with a 14-man squad?
+- **Trough/transfer shutter.** Trough shuts Fri 18:30 (90 min before
+  first kick) and stays shut until Tuesday's run clears it. Verify the
+  server refuses trough signs and windowless drops between 18:30 Fri and
+  the Tue run; that trades accepted mid-gameweek land GW2 not GW1 (the
+  landing-gameweek lens everywhere: squad pitches, deal receipts,
+  "deals land in GW2" tag); and that a trade accepted at 19:59:59 Friday
+  lands the right week.
+- **The vidiprinter.** First live run against real FPL events: goals,
+  assists, cards, the LOBUS KLAXON (declared Lobus scoring), dedupe on
+  feed refresh (same goal must not print twice as the 5-min feed
+  re-serves), ordering when a batch of events lands at once, and what it
+  does during the Sat 3pm blackout window when FPL stats stall.
+- **Live fast lane.** live.yml fires every 5 min while any fixture is
+  live; push_live.js writes public/liveStats; applyLiveStats overlays
+  DISPLAY-ONLY. Re-verify the safety property with real data shapes:
+  overlay can never leak into settlement, waivers, or H2H results; the
+  10-min staleness guard and feed-fresher-wins behave when the Pages
+  feed and liveStats disagree mid-match; beta/sandbox never overlays.
+- **Auto-subs + scoring settle.** When the GW finalises (Mon night):
+  bench queue takes leftmost eligible, appearance points 2/1 no 60-min
+  rule, per3Saves=0, clean-sheet-after-red per current engine rule
+  (Committee ruling still pending — flag any place the app promises
+  otherwise), DGW machinery dormant but not misfiring on a single GW.
+- **The Monday-night → Tuesday-run seam.** GW1 finishes Mon ~22:00;
+  waiverOrder for Tue 10:00 must read the FINISHED GW1 table (worst
+  feeds first), not reverse-draft — reverse-draft was only ever the
+  pre-season rule. Stale-feed guard (>90 min) vs the Monday-night feed
+  cadence.
+
 ## Named attack surfaces (priority order)
 1. **The waiver stack end-to-end for the next 5 days**: skip currently
    hand-set to `wv-2026-08-21`; Friday 10:07 tick must mark it
