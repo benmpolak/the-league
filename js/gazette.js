@@ -814,5 +814,79 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  /* The Post-Draft Special (Ben, draft night: "read all about it") — printed
+     the morning after the board fills, retired the moment GW1 kicks off and
+     the matchday edition takes the stands. Facts only from public state:
+     the picks array, the archive, and nothing anybody whispered. */
+  function draftSpecial() {
+    try {
+      const picks = (state.draft.picks || []);
+      const mgrs = (state.managers || []);
+      if (!picks.length || !mgrs.length) return '';
+      const P = id => (typeof PLAYER_BY_ID !== 'undefined' ? PLAYER_BY_ID[id] : null);
+      const mname = mid => (mgrs.find(m => m.id === mid) || {}).name || '?';
+      const lsPts = p => { const ls = p && typeof lastSeasonOf === 'function' ? lastSeasonOf(p) : null; return ls ? (ls.pts || 0) : 0; };
+      const rounds = Math.ceil(picks.length / mgrs.length);
+      const out = [];
+
+      const one = P(picks[0].playerId);
+      const oneMid = picks[0].managerId;
+      out.push(`<div class="prog-story prog-lead-story">
+        <div class="prog-story-kicker">POST-DRAFT SPECIAL</div>
+        <div class="prog-head">${esc(((one && (one.full || one.name)) || 'PICK ONE').toUpperCase())} GOES FIRST</div>
+        <div class="prog-by">By ${esc(press(['match'], 'ds-lead').n)}, in the draft room</div>
+        <p>${esc(`With the first pick of the draft, ${teamName(oneMid)} selected ${(one && (one.full || one.name)) || 'a player'}${one ? ` of ${one.team}` : ''}, and the season officially had a face. ${picks.length} picks later the board stood full: twelve squads, ${rounds} rounds, no tears that anyone will admit to. The Gazette was in the room and can report that the snake format did what snake formats do — flattered the ends, punished the middle, and gave every manager somebody to blame that isn't themselves.`)}</p>
+        <p class="prog-match-detail">${esc(`The first ball of the season is kicked with the ink still wet. The Gazette's advice, as ever: set your team.`)}</p>
+      </div>`);
+
+      const r1 = picks.slice(0, mgrs.length);
+      out.push(`<div class="prog-story">
+        <div class="prog-head">ROUND ONE, IN FULL</div>
+        <div class="prog-by">By ${esc(press(['match'], 'ds-r1').n)}</div>
+        <p>${esc(r1.map((pk, i) => { const p = P(pk.playerId); return `${i + 1}. ${teamName(pk.managerId)} — ${p ? p.name : '?'}${p ? ` (${p.club})` : ''}`; }).join('. '))}.</p>
+      </div>`);
+
+      // the bargain: the biggest last-season haul left on the board past
+      // halfway. The reach: the first round's lightest archive. Both judged
+      // on evidence, which is the only way the Gazette judges anything.
+      const half = Math.floor(picks.length / 2);
+      let steal = null;
+      for (const pk of picks.slice(half)) { const p = P(pk.playerId); if (p && (!steal || lsPts(p) > lsPts(P(steal.playerId)))) if (lsPts(p) > 0) steal = pk; }
+      let reach = null;
+      for (const pk of r1) { const p = P(pk.playerId); if (p && lsPts(p) > 0 && (!reach || lsPts(p) < lsPts(P(reach.playerId)))) reach = pk; }
+      if (steal || reach) {
+        const sp = steal && P(steal.playerId), rp = reach && P(reach.playerId);
+        out.push(`<div class="prog-story">
+          <div class="prog-head">THE BARGAIN AND THE EYEBROW</div>
+          <div class="prog-by">By ${esc(press(['tactics'], 'ds-value').n)}</div>
+          ${sp ? `<p>${esc(`Bargain of the board: ${sp.full || sp.name} (${sp.club}), ${lsPts(sp)} points last season, still sitting there at pick ${steal.n} when ${teamName(steal.managerId)} strolled up. Either eleven managers know something, or one does.`)}</p>` : ''}
+          ${rp ? `<p>${esc(`And the eyebrow: ${rp.full || rp.name} (${rp.club}) went at pick ${reach.n} — a first-round conviction pick from ${teamName(reach.managerId)} that last season's ${lsPts(rp)} points do not entirely explain. ${mname(reach.managerId)} is understood to be extremely relaxed about it, which is what everyone says.`)}</p>` : ''}
+        </div>`);
+      }
+
+      // hoarders' corner: the heaviest single-club concentration on any board
+      let hoard = null;
+      for (const m of mgrs) {
+        const counts = {};
+        for (const pk of picks) if (pk.managerId === m.id) { const p = P(pk.playerId); if (p) counts[p.team] = (counts[p.team] || 0) + 1; }
+        for (const [club, n] of Object.entries(counts)) if (!hoard || n > hoard.n) hoard = { mid: m.id, club, n };
+      }
+      const gkPick = picks.find(pk => { const p = P(pk.playerId); return p && p.pos === 'GK'; });
+      out.push(`<div class="prog-story">
+        <div class="prog-head">NOTES FROM THE FLOOR</div>
+        <div class="prog-by">By ${esc(press(['colour'], 'ds-floor').n)}</div>
+        ${hoard && hoard.n >= 3 ? `<p>${esc(`${teamName(hoard.mid)} left the room with ${hoard.n} players from ${hoard.club}, a strategy known in the trade as "putting your eggs where your mouth is". ${mname(hoard.mid)} calls it conviction. The other eleven call it a ${hoard.club} supporters' club with a fantasy team attached.`)}</p>` : ''}
+        ${gkPick ? `<p>${esc(`The first goalkeeper off the board was ${(P(gkPick.playerId) || {}).name || '?'} at pick ${gkPick.n}, taken by ${teamName(gkPick.managerId)} — ${gkPick.n <= mgrs.length * 2 ? 'early, by the standards of a position the league traditionally treats as an afterthought with gloves' : 'which tells you exactly what this league thinks of goalkeepers'}.`)}</p>` : ''}
+        <p>${esc((() => { const tw = Object.keys(state.draft.timewastes || {}).filter(k => (state.draft.timewastes || {})[k] >= 1); if (!tw.length) return 'Remarkably, not a single timewaste was burned all night. The Committee had budgeted for scenes.'; return `Timewastes burned: ${tw.map(k => teamName(+k)).join(', ')} — each taking it to the corner flag under no pressure whatsoever. The unused ones expire worthless, like most of the picks.`; })())}</p>
+      </div>`);
+
+      const last = picks[picks.length - 1];
+      const lp = P(last.playerId);
+      out.push(`<div class="prog-sec">And Finally</div>
+        <p class="muted" style="font-size:12px">${esc(`Pick ${last.n}, the final selection of the night, was ${lp ? `${lp.name} (${lp.club})` : 'made'}, by ${teamName(last.managerId)}. Somebody has to be, and the Gazette wishes him a season of spiteful excellence. The paper returns with the GW1 matchday edition. Set. Your. Team.`)}</p>`);
+      return out.join('');
+    } catch (e) { return ''; }
+  }
+
+  return { review, preview, draftSpecial, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

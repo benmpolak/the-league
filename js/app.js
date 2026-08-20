@@ -7622,7 +7622,13 @@ function progTodays() {
   }
   const last = lastFinalGw();
   if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
-  // nothing settled yet: the Season Preview is edition zero (Ben, 16 Aug)
+  // nothing settled yet: once the board is full the Post-Draft Special is
+  // the paper (Ben, draft night); before that the Season Preview is edition
+  // zero (Ben, 16 Aug). Both retire when a real edition exists above.
+  if (typeof Gazette !== 'undefined' && Gazette.draftSpecial && state.draft.picks.length) {
+    const art = Gazette.draftSpecial();
+    if (art) return { edition: 'post-draft special', gwN: null, article: art };
+  }
   if (typeof Gazette !== 'undefined' && Gazette.preview) {
     const art = Gazette.preview();
     if (art) return { edition: 'the season preview', gwN: null, article: art };
