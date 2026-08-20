@@ -461,6 +461,19 @@ const chk = (name, ok, detail = '') => {
   chk('P13c provenance lines up with the audio on disk',
     prov.ok, prov.why || `orphans: ${(prov.orphan || []).join(', ')} mismatched: ${(prov.mismatched || []).join(', ')}`);
 
+  /* ---- P13d: scheduled renders must harvest the current public board. A
+     fresh local league publishes only the pilots; after a real GW it can say
+     "nothing due" while every weekly episode is absent. The workflow fetches
+     a read-only public snapshot and passes it to BOTH the cost and render
+     steps, so the preflight and paid job judge the same scripts. ---- */
+  const podWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'render-pods.yml'), 'utf8');
+  const stateArgs = podWorkflow.match(/render_pods\.js[^\n]*--state|--state "\$RUNNER_TEMP\/league-state\.json"/g) || [];
+  chk('P13d scheduled podcast cost and render both use the current public league state',
+    /Fetch the current public league state/.test(podWorkflow)
+      && /the-league-2627\/public\.json/.test(podWorkflow)
+      && stateArgs.length >= 2,
+    `${stateArgs.length} state-aware render command(s)`);
+
   /* ---- P15: the 18 Aug tweaks. One ad break, in the middle, hosted in and
      out; Howard's fixed phrase structure; and "trough" said as a pig trough
      rather than however the engine fancies ---- */
