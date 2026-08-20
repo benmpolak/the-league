@@ -1084,6 +1084,7 @@ const SB = 'the-league-sandbox';
       continue;
     }
     if (auto.error) break;
+    if (auto.result?.total >= 42) break; // full board — the next call would be 'not drafting', correctly
   }
   chk('board fills by deterministic autopick', !auto.error, JSON.stringify(auto?.error));
   chk('both drinks breaks froze the board and were consumed by the Chairman (sol P0)',
