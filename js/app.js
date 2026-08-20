@@ -2298,7 +2298,9 @@ function setWaiverSkip(id) {
   // ledger is server-only, and the client's computed id skipped an already-
   // consumed slot on draft night 26/27 while the real next run sailed on.
   // A reinstate (null) and local mode still pass the id straight through.
-  if (netOn()) { serverAct('waiverSkip', id ? { next: true } : { id: null }).catch(() => {}); }
+  // the id rides along so a not-yet-redeployed server still lands the old
+  // behaviour rather than reading an absent id as a reinstate
+  if (netOn()) { serverAct('waiverSkip', id ? { next: true, id } : { id: null }).catch(() => {}); }
   else { state.waiverMeta = { ...state.waiverMeta, skip: id || null }; save(); render(); }
   toast(id ? 'Next run skipped — claims stay lodged and roll to the one after.'
     : 'Run reinstated — waivers process as scheduled.');
