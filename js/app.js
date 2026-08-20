@@ -9109,13 +9109,26 @@ function committeeMinutes(last) {
 // XIs as mini pitches, chips open player cards, points live once started
 function dashMiniPitch(mid, gw) {
   const xi = lineupFor(mid, gw);
+  // subs ride under the XI in queue order (Toby, GW1 eve: "on homepage it
+  // doesn't show subs — it does everywhere else")
+  const bench = benchFor(mid, gw);
   return `<div style="overflow-x:auto"><div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${
     xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p && p.pos === pos).map(p => `
       <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
         ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
-      </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div></div>`;
+      </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div>
+  ${bench.length ? `<div class="bench-strip">
+    <span class="muted" style="font-size:10px;font-weight:700;align-self:center">BENCH</span>
+    ${bench.map((p, bi) => `
+      <div class="pitch-chip mu-chip benched ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
+        <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
+        ${kitImg(p.team, p.pos === 'GK')}
+        <span class="pitch-name">${esc(p.name)}</span>
+        ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+      </div>`).join('')}
+  </div>` : ''}</div>`;
 }
 function bindDash() {
   bindInstall();
