@@ -1478,9 +1478,21 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
 // skip one named run by exception (Toby, 12 Aug: double gameweeks, a rogue
 // Wednesday finish) — claims stay lodged and roll to the run after. id null
 // reinstates. The scheduled runner spends the flag when the slot comes due.
-ACTIONS.waiverSkip = async ({ league, a, data, state }) => {
+ACTIONS.waiverSkip = async ({ league, a, data, state, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
-  const id = data.id == null ? null : String(data.id);
+  let id = data.id == null ? null : String(data.id);
+  /* {next:true}: the SERVER names the slot. The client's idea of "next run"
+     comes from public state and cannot see the run ledger — on draft night
+     26/27 it skipped a slot the ledger had already consumed ("skipped: not
+     in season") while the genuinely-next slot sailed on unprotected. Only
+     the ledger knows which slot the runner will actually process. */
+  if (data.next === true) {
+    const eng = ctx.eng;
+    const runs = (await db().ref(`${leagueBase(league)}/server/waiverRuns`).get()).val() || {};
+    const spent = sid => runs[`sched-${sid}`] && runs[`sched-${sid}`].status === 'done';
+    const due = eng.waiverSchedule().find(d => !spent(d.id));
+    id = due ? due.id : eng.waiverSlotId(eng.nextSlotAt(Date.now()));
+  }
   if (id != null && !/^wv-\d{4}-\d{2}-\d{2}$/.test(id)) throw new HttpsError('invalid-argument', 'not a waiver slot id');
   await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, skip: id });
   return { ok: true, skip: id };

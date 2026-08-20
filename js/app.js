@@ -2294,7 +2294,11 @@ function setWaiverControl(mode) {
 // one-shot exception (Committee, 12 Aug): skip a named run, claims roll over
 function setWaiverSkip(id) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
-  if (netOn()) { serverAct('waiverSkip', { id: id || null }).catch(() => {}); }
+  // online, a SKIP lets the server name the slot ({next:true}) — the run
+  // ledger is server-only, and the client's computed id skipped an already-
+  // consumed slot on draft night 26/27 while the real next run sailed on.
+  // A reinstate (null) and local mode still pass the id straight through.
+  if (netOn()) { serverAct('waiverSkip', id ? { next: true } : { id: null }).catch(() => {}); }
   else { state.waiverMeta = { ...state.waiverMeta, skip: id || null }; save(); render(); }
   toast(id ? 'Next run skipped — claims stay lodged and roll to the one after.'
     : 'Run reinstated — waivers process as scheduled.');
