@@ -281,14 +281,18 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .show-more { text-align: center; padding: 14px; }
 
-.draft-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 92px; }
+/* not sticky, and the queue never scrolls inside itself: the sidebar runs the
+   full length of the page like the pool does (Ben, draft day: "fully on the
+   right hand side and extend as long as the other side player list").
+   The pinned #clockStrip keeps the clock in view once the board scrolls off. */
+.draft-side { display: flex; flex-direction: column; gap: 16px; }
 /* drag & drop into the autopick list (laptop path; buttons cover phones) */
 tr[data-drag], .qrow[draggable] { cursor: grab; }
 .queue-card.drop-hot { outline: 2px dashed var(--accent); outline-offset: 2px; border-radius: 12px; }
-/* a 145-man list must not bury the squad panel and pick history below it —
-   the card scrolls inside itself (Marc, test draft: "hard to scroll down
-   everything else on the right side") */
-.queue-card { max-height: 52vh; overflow-y: auto; overscroll-behavior: contain; }
+/* the internal 52vh scroll lasted one day — with the sidebar no longer
+   sticky the page scrolls the whole queue naturally (Ben, draft day),
+   which also answers Marc's "hard to scroll everything else" from the
+   other direction: nothing is pinned, so nothing is buried. */
 .act .star-on { color: var(--accent) !important; border-color: var(--accent) !important; }
 .side-squad { font-size: 13px; }
 .side-squad .srow { display: flex; align-items: center; gap: 8px; padding: 4px 0; }

@@ -4809,6 +4809,7 @@ function autolistRows() {
       <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname">${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}${leftTag(p)}
       <span style="margin-left:auto;display:flex;gap:4px;flex:none">
+        ${live && !gone ? `<button class="btn small${draftRoomOpen() && canPick(currentManagerId(), p) && canActFor(currentManagerId()) ? '' : ' dim'}" data-pick="${p.id}" draggable="false" title="Draft him straight from your list">Draft</button>` : ''}
         <button class="btn ghost small icon-btn" data-autoup="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
         <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
         <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>
