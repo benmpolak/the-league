@@ -864,6 +864,98 @@ window.Gazette = (() => {
         </div>`);
       }
 
+      /* the Gazette grades the twelve — squads ranked on the only evidence in
+         existence (last season's archive points), graded on the curve, each
+         verdict picked deterministically so every phone prints the same
+         libel. An A means nothing and an F means slightly less. */
+      const boards = mgrs.map(m => {
+        const sq = picks.filter(pk => pk.managerId === m.id).map(pk => P(pk.playerId)).filter(Boolean);
+        const total = sq.reduce((t, p) => t + lsPts(p), 0);
+        const star = sq.slice().sort((a, b) => lsPts(b) - lsPts(a))[0];
+        return { mid: m.id, total, star };
+      }).sort((a, b) => b.total - a.total);
+      const GRADES = ['A', 'A−', 'B+', 'B', 'B', 'B−', 'C+', 'C', 'C', 'C−', 'D', 'F'];
+      const VERDICT_TOP = [
+        (b) => `Bookmakers' favourites, which in this league is a curse with a rosette on it.`,
+        (b) => `${b.star ? b.star.name : 'The star man'} headlines a squad assembled with actual planning, an accusation the manager denies.`,
+        (b) => `The archive says title challenge. The archive said that about somebody last year too, and he finished seventh.`,
+      ];
+      const VERDICT_MID = [
+        (b) => `Perfectly balanced, in the sense that it is equally likely to finish fourth or tenth.`,
+        (b) => `A squad the Gazette can only describe as "there". ${b.star ? b.star.name : 'The best player'} deserves better and will be told so weekly.`,
+        (b) => `Drafted like a man doing his big shop from memory. Most of the essentials, one inexplicable luxury.`,
+        (b) => `The word for this squad is "solid", which is what you call a squad when you cannot think of anything.`,
+        (b) => `A draft the manager will describe as "value-based" right up until October, and "transitional" thereafter.`,
+        (b) => `Strong spine, questionable limbs. ${b.star ? b.star.name : 'The star man'} carries it; the physio has been briefed.`,
+      ];
+      const VERDICT_BOTTOM = [
+        (b) => `The archive points total is best read sitting down. Already described by its own manager as "a project".`,
+        (b) => `A bold rebuild, in the sense that demolition is technically the first phase of one.`,
+        (b) => `${b.star ? b.star.name : 'One player'} will do a great deal of heavy lifting here, much of it emotional.`,
+        (b) => `The randomiser's first-choice slot for next season is hotly contested, and this board is contesting it early.`,
+      ];
+      out.push(`<div class="prog-story">
+        <div class="prog-head">THE GAZETTE GRADES THE TWELVE</div>
+        <div class="prog-by">By ${esc(press(['tactics'], 'ds-grades').n)}, with a red pen</div>
+        <p class="muted" style="font-size:12px">${esc('Method: last season’s archive points, totted up per squad, graded on the curve. Complaints to the letters page, which does not exist.')}</p>
+        ${(() => {
+          // no verdict repeats within the edition — a paper that copies its
+          // own jokes two lines apart gets letters (Ben, first printing)
+          const used = new Set();
+          const verdict = (bank, key, b) => {
+            const start = hash(key) % bank.length;
+            for (let t = 0; t < bank.length; t++) { const c = bank[(start + t) % bank.length]; if (!used.has(c)) { used.add(c); return c(b); } }
+            return bank[start](b);
+          };
+          return boards.map((b, i) => {
+            const bank = i < 3 ? VERDICT_TOP : i >= boards.length - 3 ? VERDICT_BOTTOM : VERDICT_MID;
+            const line = verdict(bank, 'ds-grade-' + b.mid, b);
+            return `<p><b>${esc(GRADES[i])}</b> &mdash; ${esc(`${teamName(b.mid)} (${b.total} archive pts). ${line}`)}</p>`;
+          }).join('');
+        })()}
+      </div>`);
+
+      // the stampede: the longest run of consecutive picks in one position —
+      // the moment the room looked up, saw everyone else reaching for the
+      // same shelf, and panicked as one organism
+      let run = null, cur = null;
+      for (const pk of picks) {
+        const p = P(pk.playerId); if (!p) { cur = null; continue; }
+        if (cur && cur.pos === p.pos) { cur.to = pk.n; cur.len++; } else cur = { pos: p.pos, from: pk.n, to: pk.n, len: 1 };
+        if (!run || cur.len > run.len) run = { ...cur };
+      }
+      if (run && run.len >= 4) {
+        const POS_WORD = { GK: 'goalkeepers', DF: 'defenders', MF: 'midfielders', FW: 'forwards' };
+        out.push(`<div class="prog-story">
+          <div class="prog-head">THE STAMPEDE</div>
+          <div class="prog-by">By ${esc(press(['colour'], 'ds-run').n)}</div>
+          <p>${esc(`Between picks ${run.from} and ${run.to} the room took ${run.len} consecutive ${POS_WORD[run.pos]}, a chain reaction the Gazette's behavioural desk classifies as "herd event, mid-severity". No individual manager will admit to starting it. All of them finished it.`)}</p>
+        </div>`);
+      }
+
+      // left at the altar: the best archive hauls nobody wanted, 168 times over
+      const takenIds = new Set(picks.map(pk => pk.playerId));
+      const spurned = (typeof PLAYERS !== 'undefined' ? PLAYERS : [])
+        .filter(p => !takenIds.has(p.id) && p.status !== 'u' && lsPts(p) > 0)
+        .sort((a, b) => lsPts(b) - lsPts(a)).slice(0, 3);
+      if (spurned.length) {
+        out.push(`<div class="prog-story">
+          <div class="prog-head">LEFT AT THE ALTAR</div>
+          <div class="prog-by">By ${esc(press(['colour'], 'ds-altar').n)}</div>
+          <p>${esc(`One hundred and sixty-eight picks, and still nobody rang: ${spurned.map(p => `${p.full || p.name} (${p.club}, ${lsPts(p)} pts last season)`).join('; ')}. Between them, ${spurned.reduce((t, p) => t + lsPts(p), 0)} archive points now sit in the Trough wearing their best suit. The waiver wire opens shortly, at which point every manager who ignored them will claim to have "always liked the profile".`)}</p>
+        </div>`);
+      }
+
+      /* the dugout desk — pre-draft canon, hand-written like the preview's
+         sagas. Celta Leigh-Go announced a joint-managerial structure on the
+         eve of the draft (the group chat is a public record and the Gazette
+         reads it in the bath) */
+      out.push(`<div class="prog-story">
+        <div class="prog-head">TWO MEN, ONE DUGOUT: CELTA CONFIRM JOINT REGIME</div>
+        <div class="prog-by">By ${esc(press(['wire'], 'ds-celta').n)}</div>
+        <p>${esc('Celta Leigh-Go entered the draft under a joint-managerial structure, with assistant manager Harris Rodden-Kersh installed alongside the incumbent in an arrangement the club itself compared to Evans and Houllier. The Gazette notes, purely as a matter of record, that the Evans–Houllier era produced four months of confusion, one tearful resignation, and a cup run nobody remembers. The club was approached for comment and provided two, which is the problem in miniature.')}</p>
+      </div>`);
+
       // hoarders' corner: the heaviest single-club concentration on any board
       let hoard = null;
       for (const m of mgrs) {
@@ -879,6 +971,9 @@ window.Gazette = (() => {
         ${gkPick ? `<p>${esc(`The first goalkeeper off the board was ${(P(gkPick.playerId) || {}).name || '?'} at pick ${gkPick.n}, taken by ${teamName(gkPick.managerId)} — ${gkPick.n <= mgrs.length * 2 ? 'early, by the standards of a position the league traditionally treats as an afterthought with gloves' : 'which tells you exactly what this league thinks of goalkeepers'}.`)}</p>` : ''}
         <p>${esc((() => { const tw = Object.keys(state.draft.timewastes || {}).filter(k => (state.draft.timewastes || {})[k] >= 1); if (!tw.length) return 'Remarkably, not a single timewaste was burned all night. The Committee had budgeted for scenes.'; return `Timewastes burned: ${tw.map(k => teamName(+k)).join(', ')} — each taking it to the corner flag under no pressure whatsoever. The unused ones expire worthless, like most of the picks.`; })())}</p>
       </div>`);
+
+      out.push(`<div class="prog-sec">Corrections &amp; Clarifications</div>
+        <p class="muted" style="font-size:12px">${esc('In the hours before the draft, one manager conducted a sustained public campaign on the position that the autopick list "doesn’t autopick". The autopick list does, in fact, autopick. The Gazette thanks the eleven readers who wrote in to confirm this, and notes that the manager in question then drafted first overall with time to spare, describing the matter as "closed". The Gazette regrets nothing.')}</p>`);
 
       const last = picks[picks.length - 1];
       const lp = P(last.playerId);
