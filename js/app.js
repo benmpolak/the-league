@@ -4579,6 +4579,7 @@ function viewDraft() {
       ${roomOpen && state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+30s)">&#8987; Timewaste (${1 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
       ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
+      ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<select id="pickTimerLive" title="Seconds per pick — applies from the next pick" aria-label="Pick timer">${[...new Set([10, 20, 30, 45, 60, 90, state.settings.pickTimer])].sort((x, y) => x - y).map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t}s/pick</option>`).join('')}</select>` : ''}
       ${roomOpen ? '<button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>' : ''}
       ${SANDBOX && (!netOn() || isCommissioner()) ? '<button class="btn ghost small" id="skipDraft" title="Sandbox only — autodraft every remaining pick and go straight to the season">&#9193; Skip the draft</button>' : ''}
       <button class="btn ghost small" id="heckleBtn" title="Random barb, your own words, or a player recommendation — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
@@ -4799,7 +4800,7 @@ function autolistRows() {
     return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <input class="auto-rank" type="number" min="1" max="${list.length}" value="${k + 1}" data-autorank="${k}" draggable="false"
         title="Type a number to move him there — everyone else shifts down" aria-label="${esc(p.name)} is number ${k + 1}. Type a number to move him.">
-      <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname">${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname"><span class="plink qfull" data-pcard="${p.id}">${esc(String(p.full || '').trim() || playerDisplayName(p))}</span> <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}${leftTag(p)}
       <span style="margin-left:auto;display:flex;gap:4px;flex:none">
         ${live && !gone ? `<button class="btn small${draftRoomOpen() && canPick(currentManagerId(), p) && canActFor(currentManagerId()) ? '' : ' dim'}" data-pick="${p.id}" draggable="false" title="Draft him straight from your list">Draft</button>` : ''}
@@ -5623,6 +5624,22 @@ function bindDraft() {
       }
     }, 400);
   }
+  const ptl = $('#pickTimerLive');
+  if (ptl) ptl.onchange = () => {
+    const v = Math.max(0, +ptl.value || 0);
+    if (netOn() && !isCommissioner()) { toast('Only the commissioner sets the clock'); return; }
+    if (netOn()) {
+      // the server writes public/settings/pickTimer; every future pick arms
+      // with the new length. The pick already on the clock keeps its deadline.
+      serverAct('settingsSet', { key: 'pickTimer', value: v })
+        .then(() => toast(`Pick clock is now ${v} seconds — from the next pick.`))
+        .catch(() => {});
+      return;
+    }
+    state.settings.pickTimer = v;
+    save(); render();
+    toast(`Pick clock is now ${v} seconds — from the next pick.`);
+  };
   const pb = $('#pauseDraft');
   if (pb) pb.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner pauses the draft'); return; }

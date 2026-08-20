@@ -428,6 +428,9 @@ tr.gone-row td.act { opacity: .8; }
    extra tag left the name as the only shrinkable thing and it collapsed to
    NOTHING ("correct but you need to see the name still") */
 .qrow .qname .plink { min-width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the autopick list shows the FULL name (Ben, draft night): it may wrap to a
+   second line rather than truncate — "Haala" helps nobody at pick 3 */
+.qrow .qname .plink.qfull { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
 .qrow .qname .muted { flex: none; }
 /* the rank doubles as the way to move a player: type a number, he goes there.
    Sized for a thumb and for three digits, since a long list runs past 99. */
