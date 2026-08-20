@@ -101,6 +101,33 @@ const chk = (name, ok, detail = '') => {
     saved.name === '<img src=x onerror=1>' && saved.optionText === saved.name && !saved.injected && !saved.xss,
     JSON.stringify(saved));
 
+  const availableView = await page.evaluate(() => {
+    transfersView.scope = 'avail';
+    const snap = { ...scoutSnapshot('transfers'), id: 'available-roundtrip', name: 'Available men' };
+    writeScoutViews([snap]);
+    const stored = scoutViews()[0];
+    transfersView.scope = 'free';
+    const transferApplied = applyScoutView(stored, 'transfers');
+    dataView.scope = 'all';
+    const dataApplied = applyScoutView(stored, 'data');
+    const legacy = cleanScoutView({ id: 'legacy-mf', name: 'Legacy MF', pos: 'MF', scope: 'free' });
+    return {
+      snap: snap.scope,
+      stored: stored?.scope,
+      transferApplied,
+      transferScope: transfersView.scope,
+      dataApplied,
+      dataScope: dataView.scope,
+      legacyPos: legacy?.pos,
+    };
+  });
+  chk('SC4b: Available survives a saved Trough view without leaking into surfaces that lack it',
+    availableView.snap === 'avail' && availableView.stored === 'avail'
+      && availableView.transferApplied && availableView.transferScope === 'avail'
+      && availableView.dataApplied && availableView.dataScope === 'free'
+      && JSON.stringify(availableView.legacyPos) === JSON.stringify(['MF']),
+    JSON.stringify(availableView));
+
   const comparison = await page.evaluate(() => {
     const before = JSON.stringify(sharedSnapshot());
     const buttons = [...document.querySelectorAll('.pool-table [data-compare]')];

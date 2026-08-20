@@ -5313,9 +5313,10 @@ function cleanScoutView(v) {
   const pos = (Array.isArray(v.pos) ? v.pos : [v.pos])
     .filter((p, i, a) => p && SCOUT_POS.has(p) && a.indexOf(p) === i);
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
-  // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
-  // still collapses to 'free', as it always did
-  const scope = ['all', 'owned', 'waivers'].includes(v.scope) ? v.scope : 'free';
+  // Saved views travel between surfaces, so preserve the Trough's combined
+  // Available scope here. applyScoutView degrades it to Free only on surfaces
+  // that do not have an Available filter (Data Room and the draft pool).
+  const scope = ['all', 'owned', 'waivers', 'avail'].includes(v.scope) ? v.scope : 'free';
   // minutes floor for the Data Room explorer; 0 on the surfaces that have none
   const mm = +v.minMin;
   const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
@@ -5377,7 +5378,7 @@ function applyScoutView(v, surface) {
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
   } else {
     transfersView = { ...transfersView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
