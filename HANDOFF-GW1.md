@@ -33,6 +33,30 @@ first waiver run Tue 25 Aug 10:00.
 
 ## Open, in priority order
 
+**Ben's steer, GW1 night:** focus on **live scores** (item 0) and the
+**waiver/Trough fixture work** (item 0b). The AJ sign-in prompt (item 3) is
+explicitly deferred until **after the gameweek** — do not touch the sign-in
+path mid-gameweek.
+
+### 0b. VERIFY — Trough fixtures read the landing gameweek (shipped, needs eyes)
+Fixed and deployed on GW1 night (`b26ddb3`, live — `landingGwN` is present in
+the served `js/app.js`). Wilko's report: the Trough showed Arsenal v COV, a
+match already in play, when a deal signed then lands in GW2 away at Villa.
+Every fixture in the Trough now reads through the landing-gameweek lens, and
+the column header names it (`GW2`).
+
+**Why it still needs checking:** the bug was invisible until a gameweek was
+actually in progress, and the fix has only been seen mid-GW1. Re-verify at two
+moments the weekend will produce naturally — (a) mid-Saturday with fixtures
+live, (b) after the Tuesday waiver run when the Trough reopens and the landing
+gameweek advances. Confirm the header, the column and the phone in-cell
+fixture all name the same gameweek, and that the draft console (which should
+still show the *next* fixture, not a landing one) is unaffected.
+
+Related and still open: Ian's waiver-claim UX (item 2) — reordering is fine,
+**adding** a player to the ladder is the clunky half.
+
+
 ### 0. LIVE DATA — must be bulletproof before Sat 22 Aug 12:30
 Ben: *"the lads will basically walk away if we can't get instant data into the
 game live... I want the most 11/10 foolproof answer, fixed before a match
