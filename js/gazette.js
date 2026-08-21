@@ -984,6 +984,21 @@ window.Gazette = (() => {
         <p>${esc((() => { const tw = Object.keys(state.draft.timewastes || {}).filter(k => (state.draft.timewastes || {})[k] >= 1); if (!tw.length) return 'Remarkably, not a single timewaste was burned all night. The Committee had budgeted for scenes.'; return `Timewastes burned: ${tw.map(k => teamName(+k)).join(', ')} — each taking it to the corner flag under no pressure whatsoever. The unused ones expire worthless, like most of the picks.`; })())}</p>
       </div>`);
 
+      /* Dev & Dev (Ben's commission, 21 Aug). AJ was told the developers were
+         called Dev and Dev, believed it, and asked whether they were being
+         paid. Played entirely straight, which is both funnier and, in every
+         particular the Gazette can verify, true. */
+      out.push(`<div class="prog-story">
+        <div class="prog-story-kicker">GAZETTE INVESTIGATION</div>
+        <div class="prog-head">DEV &amp; DEV: THE MEN BEHIND THE MACHINE</div>
+        <div class="prog-by">By ${esc(press(['wire'], 'ds-devs').n)}, investigations</div>
+        <p>${esc('The League\u2019s technical department consists of two men. Both are called Dev. Between them they have no surname, no photograph and no confirmed address. Neither has been seen at the ground. Neither attended the ceremony, though in fairness neither did Warner.')}</p>
+        <p>${esc('Their existence entered the public record this week when Adam Jackson, on being told the developers were called Dev and Dev, accepted this without difficulty and moved straight to the follow-up nobody else had thought to ask: "but what about all those developers?" He then enquired whether the pair were being paid. The Gazette can confirm that they are not.')}</p>
+        <p>${esc('Marc Conway, who has worked alongside them, knows the pair only as "the two lads", and during Thursday\u2019s clock crisis counselled the room to "do whatever the robots say" — a characterisation Toby Levy moved swiftly to correct. "Harsh on Devs calling them robots," he said, of two colleagues who had just repaired a live draft in under six minutes without once mentioning a babysitter.')}</p>
+        <p>${esc('Working conditions could not be established. Hours are understood to be all of them. They are summoned in English, they do not eat, and they have never asked for anything. The only public acknowledgement of their labour came at 20:10 on Thursday from Lee Warner — "Fixed!! Devs!!!" — an outburst the Gazette understands was not accompanied by a payment, a contract, or a drink.')}</p>
+        <p>${esc('Asked to clarify the pair\u2019s employment status, the Committee said the matter was under review. Asked whether they exist, the Committee said the matter was under review.')}</p>
+        <p class="prog-match-detail">${esc('Dev and Dev were approached for comment and responded immediately, at length, and in flawless English. This too was unpaid.')}</p>
+      </div>`);
       out.push(`<div class="prog-sec">Corrections &amp; Clarifications</div>
         <p class="muted" style="font-size:12px">${esc('In the hours before the draft, one manager conducted a sustained public campaign on the position that the autopick list "doesn’t autopick". The autopick list does, in fact, autopick. The Gazette thanks the eleven readers who wrote in to confirm this, and notes that the manager in question then drafted first overall with time to spare, describing the matter as "closed". The Gazette regrets nothing.')}</p>`);
 
