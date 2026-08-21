@@ -20,7 +20,7 @@ concurrency:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 32
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,22 +33,32 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
           # GW1 night (21 Aug): the cron says */5 but GitHub actually fired this
-          # ~every 25-35 min under load, and each run covered only ~4.5 min —
-          # so ~85% of the match had no coverage and updates arrived in one
-          # lump ("clearly doing it every 10 mins and grouping it all
-          # together"). GitHub's scheduler cannot be made punctual, so each run
-          # now covers the whole expected gap instead: ~28 minutes of 45s
-          # passes. The concurrency group is no-cancel, so a run that starts
-          # while another is mid-loop queues behind it rather than doubling up,
-          # and coverage joins end to end. Actions minutes are free on a public
-          # repo, and a pass outside a match window still exits in seconds.
-          for i in $(seq 1 38); do
+          # every 25-35 min under load, and each run covered only ~4.5 min — so
+          # ~85% of the match had no coverage and updates arrived in one lump
+          # ("clearly doing it every 10 mins and grouping it all together").
+          #
+          # GitHub's scheduler cannot be made punctual, so the fix is coverage,
+          # not cadence. Each run works a DEADLINE (36 min) rather than a fixed
+          # number of passes, so it is immune to how long a pass happens to
+          # take. Because the concurrency group is no-cancel, GitHub holds one
+          # running job plus one pending: any cron tick during these 36 minutes
+          # queues a successor that starts the instant this one ends, so runs
+          # meet end to end even when the scheduler is 35 minutes late.
+          #
+          # A pass costs ~1s (the FPL fetch is 0.4s), so a 30s sleep is nearly
+          # free and halves worst-case staleness. Outside a match window the
+          # first pass exits 3 and the job stands down in seconds.
+          end=$(( $(date +%s) + 36*60 ))
+          i=0
+          while [ "$(date +%s)" -lt "$end" ]; do
+            i=$((i+1))
             python3 scripts/fetch_fpl.py
             set +e
             node scripts/push_live.js
             code=$?
             set -e
-            if [ "$code" = "3" ]; then echo "no live fixtures — standing down"; break; fi
+            if [ "$code" = "3" ]; then echo "no live fixtures — standing down after $i pass(es)"; break; fi
             if [ "$code" != "0" ]; then exit "$code"; fi
-            [ "$i" = "38" ] || sleep 45
+            sleep 30
           done
+          echo "completed $i pass(es)"
