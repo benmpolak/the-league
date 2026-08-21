@@ -829,10 +829,22 @@ window.Gazette = (() => {
       const rounds = Math.ceil(picks.length / mgrs.length);
       const out = [];
 
+      /* Warner's draft night, from the group chat (Ben, 21 Aug). The skip
+         control is labelled "Ian's button" in the source and reserved for
+         Tussie by long tradition — Warner pressing it is where it starts. */
+      out.push(`<div class="prog-story prog-lead-story">
+        <div class="prog-story-kicker">POST-DRAFT SPECIAL &middot; DRAFT NIGHT SHAME</div>
+        <div class="prog-head">&ldquo;POMP-OUS PRICKS&rdquo;: THE LONG NIGHT OF LEE WARNER</div>
+        <div class="prog-by">By ${esc(press(['colour'], 'ds-warner').n)}, at the ground</div>
+        <p>${esc('The opening ceremony of the 2026 draft — the anthem, the pomp, the solemn roll call of twelve clubs — was observed in full by eleven managers and abandoned by one. "I\u2019m in the room," reported Lee Warner. "Skipped the bollocks." The Gazette notes, because somebody must, that the skip control is reserved by long tradition for Ian Tussie and labelled as such. Warner did not merely skip the ceremony; he skipped it using another man\u2019s button. "You missed the best bit," said Ric Blank.')}</p>
+        <p>${esc('Ninety seconds later, the man who could not sit through the anthem became the conscience of the league. It was Warner who caught the clock running at thirty seconds when sixty had been promised — "I thought it was 60 secs???? 30 is a joke" — Warner who demanded the pause, Warner who demanded the restart, and Warner who at 20:10 delivered the verdict the technical staff will have framed: "Fixed!! Devs!!!"')}</p>
+        <p>${esc('The performance did not soften. Over the following hour the assembled Committee were designated "fucking nerds". The evening was revealed to have cost him a holiday — "I\u2019m literally missing a holiday for this shit" — during which, he wished it known, he was "definitely not living on a prayer". He called for the restoration of the old regime: "Bring back Draft Fantasy." The Chairman observed that Warner must have hated the World Cup. Toby Levy counselled hydration.')}</p>
+        <p>${esc('Then, at 20:59, the reckoning. "You\u2019ll all be pleased to know my laptop has been doing this for 5 mins — thank god for my assistant." The man who skipped the ceremony was saved by the assistant manager he had installed as a joke that afternoon. Harris Rodden-Kersh drafted through the outage and holds, on the only evidence available, a better in-game record than his senior partner.')}</p>
+        <p class="prog-match-detail">${esc('Warner drafted second overall and finished the night with a squad and a grievance. The Committee wishes him a restful remainder of his holiday and reminds him that the ceremony is optional; the judgment is not.')}</p>
+      </div>`);
       const one = P(picks[0].playerId);
       const oneMid = picks[0].managerId;
-      out.push(`<div class="prog-story prog-lead-story">
-        <div class="prog-story-kicker">POST-DRAFT SPECIAL</div>
+      out.push(`<div class="prog-story">
         <div class="prog-head">${esc(((one && (one.full || one.name)) || 'PICK ONE').toUpperCase())} GOES FIRST</div>
         <div class="prog-by">By ${esc(press(['match'], 'ds-lead').n)}, in the draft room</div>
         <p>${esc(`With the first pick of the draft, ${teamName(oneMid)} selected ${(one && (one.full || one.name)) || 'a player'}${one ? ` of ${one.team}` : ''}, and the season officially had a face. ${picks.length} picks later the board stood full: twelve squads, ${rounds} rounds, no tears that anyone will admit to. The Gazette was in the room and can report that the snake format did what snake formats do — flattered the ends, punished the middle, and gave every manager somebody to blame that isn't themselves.`)}</p>
@@ -950,19 +962,6 @@ window.Gazette = (() => {
          sagas. Celta Leigh-Go announced a joint-managerial structure on the
          eve of the draft (the group chat is a public record and the Gazette
          reads it in the bath) */
-      /* Warner's draft night, from the group chat (Ben, 21 Aug). The skip
-         control is labelled "Ian's button" in the source and reserved for
-         Tussie by long tradition — Warner pressing it is where it starts. */
-      out.push(`<div class="prog-story">
-        <div class="prog-story-kicker">DRAFT NIGHT SHAME</div>
-        <div class="prog-head">&ldquo;POMP-OUS PRICKS&rdquo;: THE LONG NIGHT OF LEE WARNER</div>
-        <div class="prog-by">By ${esc(press(['colour'], 'ds-warner').n)}, at the ground</div>
-        <p>${esc('The opening ceremony of the 2026 draft — the anthem, the pomp, the solemn roll call of twelve clubs — was observed in full by eleven managers and abandoned by one. "I\u2019m in the room," reported Lee Warner. "Skipped the bollocks." The Gazette notes, because somebody must, that the skip control is reserved by long tradition for Ian Tussie and labelled as such. Warner did not merely skip the ceremony; he skipped it using another man\u2019s button. "You missed the best bit," said Ric Blank.')}</p>
-        <p>${esc('Ninety seconds later, the man who could not sit through the anthem became the conscience of the league. It was Warner who caught the clock running at thirty seconds when sixty had been promised — "I thought it was 60 secs???? 30 is a joke" — Warner who demanded the pause, Warner who demanded the restart, and Warner who at 20:10 delivered the verdict the technical staff will have framed: "Fixed!! Devs!!!"')}</p>
-        <p>${esc('The performance did not soften. Over the following hour the assembled Committee were designated "fucking nerds". The evening was revealed to have cost him a holiday — "I\u2019m literally missing a holiday for this shit" — during which, he wished it known, he was "definitely not living on a prayer". He called for the restoration of the old regime: "Bring back Draft Fantasy." The Chairman observed that Warner must have hated the World Cup. Toby Levy counselled hydration.')}</p>
-        <p>${esc('Then, at 20:59, the reckoning. "You\u2019ll all be pleased to know my laptop has been doing this for 5 mins — thank god for my assistant." The man who skipped the ceremony was saved by the assistant manager he had installed as a joke that afternoon. Harris Rodden-Kersh drafted through the outage and holds, on the only evidence available, a better in-game record than his senior partner.')}</p>
-        <p class="prog-match-detail">${esc('Warner drafted second overall and finished the night with a squad and a grievance. The Committee wishes him a restful remainder of his holiday and reminds him that the ceremony is optional; the judgment is not.')}</p>
-      </div>`);
       out.push(`<div class="prog-story">
         <div class="prog-head">TWO MEN, ONE DUGOUT: CELTA CONFIRM JOINT REGIME</div>
         <div class="prog-by">By ${esc(press(['wire'], 'ds-celta').n)}</div>
