@@ -33,6 +33,47 @@ first waiver run Tue 25 Aug 10:00.
 
 ## Open, in priority order
 
+### 0. THE ONE THAT DECIDES THE PROJECT — get live data off GitHub's scheduler
+Ben, GW1 night: *"the lads will basically walk away if we can't get instant
+data into the game live."* Treat this as priority zero.
+
+**Root cause is not our code.** A pass costs ~1s (the FPL fetch is 0.4s). The
+problem is that `.github/workflows/live.yml` depends on GitHub's *scheduled*
+workflows, which are explicitly best-effort: tonight a `*/5` cron fired at
+19:55, 20:29, 20:53, 21:23 — gaps of 24-34 minutes. No amount of tuning makes
+GitHub punctual.
+
+**The fix already exists in this codebase, one file over.** `waiverTick`
+(`functions/index.js`, `onSchedule({ schedule: '7 * * * *' })`) runs on Google
+Cloud Scheduler and has fired on time every time — the waiver run ledger
+proves it. Cloud Scheduler accepts `* * * * *`.
+
+Proposed: add a **`liveTick` scheduled function, every minute**, that does what
+`scripts/push_live.js` does — read FPL, write `public/liveStats` — and returns
+in milliseconds when no fixture is live. That removes GitHub from the live
+path entirely and makes worst-case staleness ~60s + FPL's own lag.
+
+Notes for whoever builds it:
+- Use FPL's per-gameweek live endpoint (`/api/event/{id}/live/`), not
+  `bootstrap-static`, which is far heavier than this needs.
+- Keep the safety property intact: `liveStats` is a DISPLAY-ONLY overlay.
+  Settlement, waivers and the server engine must continue to read the
+  canonical Pages feed. Do not let a live fetch influence scoring.
+- Reuse the existing staleness/clear-down behaviour: clear the node when no
+  fixture is live, exactly as `push_live.js` does today.
+- Cost on the existing Blaze plan is effectively nil: ~43k invocations/month
+  against a 2M free tier, and Cloud Scheduler's first three jobs are free
+  (this would be the second). Confirm before promising Ben a number.
+- Keep `live.yml` as a belt-and-braces fallback at first; retire it once the
+  function has survived a full matchday.
+- **This needs a functions deploy, so ask Ben before deploying.**
+
+**Interim state as of tonight:** `live.yml` was rewritten to work a 36-minute
+deadline at a 30s cadence with a no-cancel concurrency group, so successive
+runs meet end to end and the 25-minute silences should be gone. That is a
+mitigation, not the fix — it still depends on GitHub firing at all.
+
+
 ### 1. FEATURE — the Gazette should keep stories for a week (Ben's ask, tonight)
 > "the gazette old stories disappearing was disappointing — i think you should
 > keep stories for a week... and then move them out... like old news moves
