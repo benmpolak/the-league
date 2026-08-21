@@ -1498,3 +1498,8 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 /* phone-only fixture in the player cell — desktop keeps the Vs column */
 .pfx { display: none; }
 @media (max-width: 700px) { .pfx { display: inline; } }
+
+/* the wireless back catalogue — folded away under the two current shows */
+.pod-archive { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.pod-archive summary { cursor: pointer; font-size: 12.5px; font-weight: 700; }
+.pod-archive .pod-row { padding: 5px 0; }

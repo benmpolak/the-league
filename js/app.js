@@ -7916,13 +7916,35 @@ function mediaSection() {
     </div>`;
   }).join('');
   if (!rows.trim()) return '';
+  /* The back catalogue (Ben, 21 Aug: "we should file the old eps somewhere").
+     The desk only ever carries what is current, so the moment the GW1 previews
+     published, draft night became unreachable — recordings we had paid to cut,
+     with no door to them. Everything the schedule has ever published, newest
+     first, minus the two on the desk. */
+  const currentIds = new Set(['gfw', 'tt'].map(id => Podcast.latest(id)?.id).filter(Boolean));
+  const back = Podcast.published()
+    .filter(p => !currentIds.has(p.id))
+    .map(p => ({ p, ep: Podcast.episode(p.show, p.kind, p.gw) }))
+    .filter(x => x.ep);
+  const archive = back.length ? `<details class="pod-archive">
+    <summary>The back catalogue <span class="tag">${back.length}</span></summary>
+    <p class="muted" style="font-size:11.5px;margin:6px 0 8px">Every episode either station has broadcast. Nothing is ever deleted; the Committee has learned what happens to things that are.</p>
+    ${back.map(({ p, ep }) => `<div class="pod-row" data-podopen="${esc(ep.id)}">
+      <div class="pod-badge pod-${esc(p.show)}">${Podcast.logoSvg(p.show, 26)}</div>
+      <div class="pod-main">
+        <span style="font-size:12.5px">${esc(ep.title)}</span>
+        <span class="muted" style="font-size:11.5px">${esc(ep.dek)}</span>
+      </div>
+      <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
+    </div>`).join('')}
+  </details>` : '';
   return launch
     ? `<div class="prog-sec">Also in edition zero: the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
-      ${rows}`
+      ${rows}${archive}`
     : `<div class="prog-sec">The Media Desk</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
-      ${rows}`;
+      ${rows}${archive}`;
 }
 // id → the episode object, without trusting the id string
 function podById(id) {

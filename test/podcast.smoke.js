@@ -532,8 +532,10 @@ const chk = (name, ok, detail = '') => {
       const room = document.querySelector('.gazette-room');
       const head = [...room.querySelectorAll('.prog-sec')].map(x => x.textContent)
         .find(t => /wireless|Media Desk/i.test(t)) || '';
-      const rows = [...room.querySelectorAll('.pod-row')].length;
-      const titles = [...room.querySelectorAll('.pod-main')].map(x => x.textContent);
+      // desk rows only — the back catalogue is .pod-row too (added 21 Aug)
+      const deskRows = [...room.querySelectorAll('.pod-row')].filter(x => !x.closest('.pod-archive'));
+      const rows = deskRows.length;
+      const titles = deskRows.map(x => x.querySelector('.pod-main')?.textContent || '');
       document.querySelectorAll('.gazette-room').forEach(x => x.closest('.overlay')?.remove());
       return { head, rows, titles };
     };
