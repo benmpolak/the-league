@@ -11128,7 +11128,7 @@ function bindSettings() {
     // RTDB hands a gw-keyed map back as an ARRAY when its keys are 0,1,2… and
     // the import gate requires plain objects (sol R2 P2) — canonicalise on the
     // way out so the file always round-trips
-    for (const k of ['adjustments', 'claims']) {
+    for (const k of ['adjustments', 'claims', 'watchlists']) {
       if (Array.isArray(out[k])) out[k] = Object.fromEntries(out[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
     }
     const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
@@ -11148,7 +11148,7 @@ function bindSettings() {
         if (!imported.lineups) { imported.lineups = {}; imported.transfers = []; }
         if (!imported.waivers) imported.waivers = {};
         // older exports carry the RTDB array shape (sol R2 P2) — canonicalise
-        for (const k of ['adjustments', 'claims']) {
+        for (const k of ['adjustments', 'claims', 'watchlists']) {
           if (Array.isArray(imported[k])) imported[k] = Object.fromEntries(imported[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
         }
         state = imported;

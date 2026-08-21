@@ -711,11 +711,51 @@ const SB = 'the-league-sandbox';
   // or every export became unimportable)
   chk('watchlist lands in the owner\'s private node', !(await T.mutate(LG, 'watchlistSet', { pids: [players[0].id, players[1].id] }, tok2)).error
     && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/watchlist`).get()).val()) === JSON.stringify([players[0].id, players[1].id]));
+  const ownerOneWatchBefore = (await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/watchlist`).get()).val();
+  chk('watchlistSet cannot write another manager through an asManager payload',
+    !(await T.mutate(LG, 'watchlistSet', { pids: [players[2].id], asManager: 1 }, tok2)).error
+      && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/watchlist`).get()).val()) === JSON.stringify([players[2].id])
+      && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/watchlist`).get()).val()) === JSON.stringify(ownerOneWatchBefore));
   chk('watchlist with unknown player rejected', (await T.mutate(LG, 'watchlistSet', { pids: [999999] }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('watchlist with duplicates rejected', (await T.mutate(LG, 'watchlistSet', { pids: [players[0].id, players[0].id] }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('oversized watchlist rejected', (await T.mutate(LG, 'watchlistSet', { pids: Array.from({ length: 301 }, (_, i) => i + 1) }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('a watchlist is never readable in public state',
     (await db.ref(`v2/leagues/${LG}/public/watchlists`).get()).val() == null);
+
+  // Deadline-brief adversarial repros (21 Aug): importState now applies the
+  // callable's watchlist validation, accepts RTDB's array-shaped manager map,
+  // and refuses atomically when managerUid is incomplete.
+  const wlArrayImport = await T.mutate(LG, 'importState', {
+    state: { ...seed, watchlists: [null, [players[0].id], [players[1].id]] },
+  }, tok1);
+  chk('array-shaped watchlist manager map round-trips to the right private owners',
+    !wlArrayImport.error
+      && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/watchlist`).get()).val()) === JSON.stringify([players[0].id])
+      && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/watchlist`).get()).val()) === JSON.stringify([players[1].id])
+      && (await db.ref(`v2/leagues/${LG}/public/watchlists`).get()).val() == null,
+    JSON.stringify(wlArrayImport));
+  const wlUnknownImport = await T.mutate(LG, 'importState', {
+    state: { ...seed, watchlists: { 2: [999999] } },
+  }, tok1);
+  chk('import rejects an unknown watchlist player',
+    wlUnknownImport.error?.status === 'INVALID_ARGUMENT', JSON.stringify(wlUnknownImport));
+  const wlDupeImport = await T.mutate(LG, 'importState', {
+    state: { ...seed, watchlists: { 2: [players[0].id, players[0].id] } },
+  }, tok1);
+  chk('import rejects a repeated watchlist player',
+    wlDupeImport.error?.status === 'INVALID_ARGUMENT', JSON.stringify(wlDupeImport));
+  const savedWlUid3 = (await db.ref(`v2/leagues/${LG}/server/managerUid/3`).get()).val();
+  await db.ref(`v2/leagues/${LG}/server/managerUid/3`).remove();
+  const privateBeforeMissingUid = (await db.ref(`v2/leagues/${LG}/private`).get()).val();
+  const wlMissingUidImport = await T.mutate(LG, 'importState', {
+    state: { ...seed, watchlists: { 3: [players[2].id] } },
+  }, tok1);
+  chk('missing managerUid refuses the whole import instead of silently dropping a watchlist',
+    wlMissingUidImport.error?.status === 'INVALID_ARGUMENT'
+      && JSON.stringify((await db.ref(`v2/leagues/${LG}/private`).get()).val()) === JSON.stringify(privateBeforeMissingUid),
+    JSON.stringify(wlMissingUidImport));
+  await db.ref(`v2/leagues/${LG}/server/managerUid/3`).set(savedWlUid3);
+  await T.mutate(LG, 'importState', { state: seed }, tok1);
 
   // claim validation: ownership, drop legality, squad shape, caps
   const freeFWs = freeOf('FW');
@@ -1309,6 +1349,8 @@ const SB = 'the-league-sandbox';
 
   /* ---------------- reset stash + restore ---------------- */
   chk('restore before any stash-bearing reset peeks the PREVIOUS stash or refuses cleanly', true); // the earlier autodraft reset already stashed — asserted below by overwrite
+  chk('watchlist is present before the stash-bearing reset',
+    !(await T.mutate(SB, 'watchlistSet', { pids: [players[0].id, players[1].id] }, sbTok2)).error);
   await T.mutate(SB, 'resetLeague', { confirm: 'RESET' }, sbTok1);
   chk('reset installed setup', (await db.ref(`v2/leagues/${SB}/public/phase`).get()).val() === 'setup');
   chk('restore is Chairman-only', (await T.mutate(SB, 'resetRestore', { confirm: 'RESTORE' }, sbTok2)).error?.status === 'PERMISSION_DENIED');
@@ -1320,9 +1362,11 @@ const SB = 'the-league-sandbox';
   const restored = await T.mutate(SB, 'resetRestore', { confirm: 'RESTORE' }, sbTok1);
   const backPub = (await db.ref(`v2/leagues/${SB}/public`).get()).val();
   const backClaims = Object.values((await db.ref(`v2/leagues/${SB}/private/${sbUid2}/claims/${sbGw}`).get()).val() || {});
-  chk('restore brings back the whole game — phase, all 42 picks AND private claims',
+  const backWatchlist = (await db.ref(`v2/leagues/${SB}/private/${sbUid2}/watchlist`).get()).val();
+  chk('restore brings back the whole game — phase, all 42 picks, claims AND watchlist',
     !restored.error && backPub.phase === 'season' && Object.values(backPub.draft?.picks || {}).length === 42
-    && backClaims.length === 1 && backClaims[0].in === freeFW.id, JSON.stringify(restored.error || backPub.phase));
+    && backClaims.length === 1 && backClaims[0].in === freeFW.id
+    && JSON.stringify(backWatchlist) === JSON.stringify([players[0].id, players[1].id]), JSON.stringify(restored.error || backPub.phase));
   chk('the stash survives its own restore (a mistaken restore can be reset again)',
     !(await T.mutate(SB, 'resetRestore', { peek: true }, sbTok1)).error);
 

@@ -1830,7 +1830,7 @@ function cleanSettingsPatch(sIn) {
   return out;
 }
 
-ACTIONS.importState = async ({ league, a, data }) => {
+ACTIONS.importState = async ({ league, a, data, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   const s = data.state;
   if (!isPlainObj(s)) importError('not an object');
@@ -1884,7 +1884,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
   }
   // RTDB coerces a gw-keyed map whose keys are 0,1,2… into an ARRAY, and an
   // exported file carries that shape back (sol R2 P2) — canonicalise, don't refuse
-  for (const k of ['adjustments', 'claims']) {
+  for (const k of ['adjustments', 'claims', 'watchlists']) {
     if (Array.isArray(s[k])) s[k] = Object.fromEntries(s[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
   }
   for (const k of ['lineups', 'benchOrders', 'shirtNums', 'tradeBlock', 'lobus', 'adjustments', 'claims', 'autolists', 'watchlists']) {
@@ -1931,9 +1931,18 @@ ACTIONS.importState = async ({ league, a, data }) => {
   // watchlists ride the same private rails as autolists: a restore keeps each
   // manager's lens, and no manager's watchlist ever lands in public state
   for (const [mid, arr] of Object.entries(s.watchlists || {})) {
-    const list = toArr(arr);
+    const midN = Number(mid);
+    if (!Number.isInteger(midN) || !midSeen.has(midN)) importError(`watchlist manager "${mid}"`);
+    if (!Array.isArray(arr) && !isPlainObj(arr)) importError('watchlist entries');
+    const list = toArr(arr).map(Number);
     if (list.length > 300) importError('watchlist too long');
+    if (list.some(id => !Number.isInteger(id) || !ctx.PLAYER_BY_ID[id])) importError('watchlist names an unknown player');
+    if (new Set(list).size !== list.length) importError('watchlist repeats a player');
     const uid = mem[mid];
+    // A restore is all-or-nothing. Silently dropping private data because the
+    // membership index is incomplete is worse than refusing the backup: the
+    // Chairman gets a clean error and can repair provisioning first.
+    if (list.length && !uid) importError(`watchlist manager "${mid}" has no uid`);
     if (uid) (priv[uid] = priv[uid] || {}).watchlist = list;
   }
   upd[`${base}/private`] = Object.keys(priv).length ? priv : null;
