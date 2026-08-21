@@ -1503,3 +1503,20 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .pod-archive { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .pod-archive summary { cursor: pointer; font-size: 12.5px; font-weight: 700; }
 .pod-archive .pod-row { padding: 5px 0; }
+
+/* "NEW EDITION" flash on the Gazette front page until you open it */
+.prog-card { position: relative; }
+.prog-new { position: absolute; top: 10px; right: 10px; background: var(--accent);
+  color: #06231b; font-size: 10px; font-weight: 800; letter-spacing: .06em;
+  padding: 3px 7px; border-radius: 5px; }
+
+/* the Gazette nudge inside "Needs your attention" — catches the eye, clears
+   itself the moment the edition is opened */
+.gz-nudge { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: var(--card2); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 10px; margin-bottom: 10px; cursor: pointer; color: var(--text); font: inherit; }
+.gz-nudge:hover { background: rgba(45, 212, 167, .10); }
+.gz-nudge-tag { background: var(--accent); color: #06231b; font-size: 9.5px; font-weight: 800;
+  letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; flex: none; }
+.gz-nudge-copy { font-size: 12.5px; line-height: 1.3; min-width: 0; }
+.gz-nudge-go { margin-left: auto; color: var(--accent); flex: none; }

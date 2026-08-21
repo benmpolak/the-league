@@ -3735,6 +3735,7 @@ function renderNav() {
       const crocked = lineupFor(whoami, cur).filter(pid => 'isnu'.includes(PLAYER_BY_ID[pid]?.status)).length;
       if (crocked) dots.team = crocked;
     }
+    if (typeof gazetteUnread === 'function' && gazetteUnread()) dots.dash = 1;
   }
   const allowed = state.phase === 'draft' ? DRAFT_NAV : new Set(NAV_ITEMS.map(([id]) => id));
   const available = NAV_ITEMS.filter(([id]) => allowed.has(id));
@@ -7439,6 +7440,17 @@ function viewDash() {
     <div class="dash-side-stack">
     <div class="card dash-attention">
       <h2>Needs your attention</h2>
+      ${gazetteUnread() ? `<button type="button" class="gz-nudge" id="gzNudge">
+        <span class="gz-nudge-tag">NEW</span>
+        <span class="gz-nudge-copy"><b>${esc(String(progTodays()?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${(() => {
+          // the lead headline, lifted from the paper so the nudge can never
+          // promise a story the edition does not carry
+          const sc = document.createElement('div'); sc.innerHTML = progTodays()?.article || '';
+          const h = sc.querySelector('.prog-head')?.textContent || '';
+          return h ? ` &mdash; ${esc(h)}` : '';
+        })()}</span>
+        <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+      </button>` : ''}
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
@@ -7808,6 +7820,29 @@ function progTodays() {
 // clickable into so it doesn't take the screen over") — nameplate, the
 // lead headline and standfirst, one button. The edition opens in the
 // reading room overlay.
+/* Has this reader seen today's paper? (Ben, 21 Aug: "how can we inform people
+   the Gazette has new content?") An edition is identified by its name and
+   gameweek, so the marker clears itself the moment a new one goes to press.
+   Per-device, like every other 'seen' stamp here — no backend, nothing shared. */
+const GZ_SEEN_KEY = `${LS_NS}-gazette-seen`;
+const gazetteEditionId = () => { const t = progTodays(); return t ? `${t.edition}:${t.gwN ?? '-'}` : ''; };
+const gazetteUnread = () => { const id = gazetteEditionId(); return !!id && localStorage.getItem(GZ_SEEN_KEY) !== id; };
+const markGazetteRead = () => { const id = gazetteEditionId(); if (id) localStorage.setItem(GZ_SEEN_KEY, id); };
+// the WhatsApp drop — the group chat is how this league actually finds out
+// anything (the Minutes and the GW preview already work exactly this way)
+function gazetteShareText() {
+  const today = progTodays();
+  if (!today) return '';
+  const scratch = document.createElement('div');
+  scratch.innerHTML = today.article;
+  const head = scratch.querySelector('.prog-head')?.textContent || '';
+  const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
+  const stand = firstP.split(/(?<=[.!?])\s/)[0] || '';
+  const others = [...scratch.querySelectorAll('.prog-head')].slice(1, 4).map(h => `· ${h.textContent}`);
+  return [`📰 THE LEAGUE GAZETTE — ${String(today.edition).toUpperCase()}${today.gwN ? ` · GW${today.gwN}` : ''}`,
+    '', head, stand, '', ...(others.length ? ['Also inside:', ...others, ''] : []),
+    'Read it: https://theleaguehq.co.uk/'].join('\n');
+}
 function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
   const today = progTodays();
@@ -7832,8 +7867,12 @@ function programmeCard() {
         ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
         <div class="prog-front-by">${esc(byline)}</div>
       </div>
-      <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
+        <button class="btn ghost small" id="progShare" title="Copy the front page for the group chat">&#128203; Share</button>
+      </div>
     </div>
+    ${gazetteUnread() ? '<span class="prog-new" aria-label="New edition">NEW EDITION</span>' : ''}
   </div>`;
 }
 // the reading room: the full edition, typeset for reading, archive inside
@@ -9244,7 +9283,17 @@ function dashMiniPitch(mid, gw) {
 function bindDash() {
   bindInstall();
   const pr = $('#progRead');
-  if (pr) pr.onclick = () => gazetteSheet();
+  if (pr) pr.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const gzn = $('#gzNudge');
+  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const psh = $('#progShare');
+  if (psh) psh.onclick = () => {
+    const txt = gazetteShareText();
+    if (!txt) return;
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(
+      () => toast('Front page copied — paste it into the group chat.'),
+      () => { window.prompt('Copy the front page:', txt); });
+  };
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
