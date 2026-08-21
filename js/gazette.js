@@ -950,17 +950,18 @@ window.Gazette = (() => {
          sagas. Celta Leigh-Go announced a joint-managerial structure on the
          eve of the draft (the group chat is a public record and the Gazette
          reads it in the bath) */
-      /* Warner and the ceremony (Ben supplied the quote, 21 Aug). The skip
+      /* Warner's draft night, from the group chat (Ben, 21 Aug). The skip
          control is labelled "Ian's button" in the source and reserved for
-         Tussie by long tradition — Warner pressing it is the story. */
+         Tussie by long tradition — Warner pressing it is where it starts. */
       out.push(`<div class="prog-story">
         <div class="prog-story-kicker">DRAFT NIGHT SHAME</div>
-        <div class="prog-head">&ldquo;POMP-OUS PRICKS&rdquo;: WARNER SKIPS THE CEREMONY</div>
-        <div class="prog-by">By ${esc(press(['colour'], 'ds-ceremony').n)}, at the ground</div>
-        <p>${esc('The opening ceremony of the 2026 draft — the anthem, the pomp, the solemn roll call of twelve clubs — was observed in full by eleven managers and abandoned by one. "POMP-OUS PRICKS," screamed Lee Warner, and pressed skip.')}</p>
-        <p>${esc('The Gazette notes, because somebody must, that the skip control is reserved by long tradition for Ian Tussie and is labelled as such. Warner did not merely skip the ceremony; he skipped it using another man\u2019s button. Tussie sat through the anthem like a gentleman and has declined to comment, which the Gazette reads as devastation.')}</p>
-        <p>${esc('Celta Leigh-Go were, it should be remembered, operating a joint-managerial regime on the night. Neither man could sit still for the anthem. The Committee has considered the matter and issued a statement: the ceremony is optional, the judgment is not.')}</p>
-        <p class="prog-match-detail">${esc('He then drafted second overall. The Gazette awaits the karmic settlement with interest.')}</p>
+        <div class="prog-head">&ldquo;POMP-OUS PRICKS&rdquo;: THE LONG NIGHT OF LEE WARNER</div>
+        <div class="prog-by">By ${esc(press(['colour'], 'ds-warner').n)}, at the ground</div>
+        <p>${esc('The opening ceremony of the 2026 draft — the anthem, the pomp, the solemn roll call of twelve clubs — was observed in full by eleven managers and abandoned by one. "I\u2019m in the room," reported Lee Warner. "Skipped the bollocks." The Gazette notes, because somebody must, that the skip control is reserved by long tradition for Ian Tussie and labelled as such. Warner did not merely skip the ceremony; he skipped it using another man\u2019s button. "You missed the best bit," said Ric Blank.')}</p>
+        <p>${esc('Ninety seconds later, the man who could not sit through the anthem became the conscience of the league. It was Warner who caught the clock running at thirty seconds when sixty had been promised — "I thought it was 60 secs???? 30 is a joke" — Warner who demanded the pause, Warner who demanded the restart, and Warner who at 20:10 delivered the verdict the technical staff will have framed: "Fixed!! Devs!!!"')}</p>
+        <p>${esc('The performance did not soften. Over the following hour the assembled Committee were designated "fucking nerds". The evening was revealed to have cost him a holiday — "I\u2019m literally missing a holiday for this shit" — during which, he wished it known, he was "definitely not living on a prayer". He called for the restoration of the old regime: "Bring back Draft Fantasy." The Chairman observed that Warner must have hated the World Cup. Toby Levy counselled hydration.')}</p>
+        <p>${esc('Then, at 20:59, the reckoning. "You\u2019ll all be pleased to know my laptop has been doing this for 5 mins — thank god for my assistant." The man who skipped the ceremony was saved by the assistant manager he had installed as a joke that afternoon. Harris Rodden-Kersh drafted through the outage and holds, on the only evidence available, a better in-game record than his senior partner.')}</p>
+        <p class="prog-match-detail">${esc('Warner drafted second overall and finished the night with a squad and a grievance. The Committee wishes him a restful remainder of his holiday and reminds him that the ceremony is optional; the judgment is not.')}</p>
       </div>`);
       out.push(`<div class="prog-story">
         <div class="prog-head">TWO MEN, ONE DUGOUT: CELTA CONFIRM JOINT REGIME</div>
