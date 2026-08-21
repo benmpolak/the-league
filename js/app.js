@@ -6225,6 +6225,107 @@ function viewTeam() {
    A number-cruncher on the same projections as the Crystal Ball, spoken like
    a lower-league No. 2. Deterministic — NOT a chatbot (that's on the
    Committee's wishlist and needs a server + a budget). ----- */
+/* ----- Asking him back (Marc, 21 Aug: "i want to be able to have a
+   conversation with it. eg should i start osula or emersonn").
+   Still deterministic, and deliberately so: he answers out of the same
+   projections the briefing above uses, so he can never quote a number the
+   rest of the app disagrees with. He recognises a small set of questions and
+   says plainly when a question isn't one of them — a No. 2 who bluffed would
+   be worse than one who admits the brief is narrow. ----- */
+let asstAsked = { q: '', html: '' };
+// find a man by loose name, squad first — "osula" and "emersonn" both land
+function asstFindPlayer(q, mid, gwIdx) {
+  const n = normName(q);
+  if (!n) return { miss: q };
+  const score = p => {
+    const nm = normName(p.name), full = normName(p.full || '');
+    if (nm === n || full === n) return 3;
+    if (nm.startsWith(n) || full.startsWith(n)) return 2;
+    if (nm.includes(n) || full.includes(n)) return 1;
+    return 0;
+  };
+  const mine = new Set(squadAt(mid, gwIdx).map(p => p.id));
+  const hits = PLAYERS.map(p => ({ p, s: score(p) })).filter(x => x.s > 0)
+    // his own players win a tie: you are far likelier to be asking about them
+    .sort((a, b) => b.s - a.s || (mine.has(b.p.id) ? 1 : 0) - (mine.has(a.p.id) ? 1 : 0) || rating(b.p) - rating(a.p));
+  if (!hits.length) return { miss: q };
+  const top = hits.filter(x => x.s === hits[0].s);
+  const clear = top.length === 1 || mine.has(top[0].p.id) || top[0].s === 3;
+  return clear ? { p: hits[0].p } : { ambiguous: top.slice(0, 4).map(x => x.p) };
+}
+// everything he knows about a man for one gameweek, in one place
+function asstRead(p, mid, gwIdx) {
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  const fx = teamFixturesInGw(p.team, gwN);
+  const ownerMid = state.managers.map(m => m.id).find(m => squadAt(m, gwIdx).some(x => x.id === p.id));
+  return {
+    p, fx, proj: assistantGwProj(p, gwIdx), ownerMid,
+    mine: ownerMid === mid,
+    out: hasLeft(p),
+    doubt: p.status === 'd', crocked: p.status === 'i', banned: p.status === 's',
+    opps: fx.map(f => `${TEAM_BY_NAME[f.home === p.team ? f.away : f.home]?.short || '?'} (${f.home === p.team ? 'H' : 'A'})`).join(' + '),
+  };
+}
+function asstVerdictLine(a, b, gwN) {
+  const gap = a.proj - b.proj;
+  const decisive = m => m.out ? 'he has left the Premier League'
+    : !m.fx.length ? `${m.p.team} have no fixture in GW${gwN}`
+      : m.banned ? 'he is suspended' : m.crocked ? 'he is injured' : null;
+  const bad = decisive(a), worse = decisive(b);
+  if (worse && !bad) return { pick: a, why: `${pname(b.p)} is not an option — ${worse}.` };
+  if (bad && !worse) return { pick: b, why: `${pname(a.p)} is not an option — ${bad}.` };
+  if (bad && worse) return { pick: null, why: `Neither. ${pname(a.p)}: ${bad}. ${pname(b.p)}: ${worse}. Look elsewhere.` };
+  if (Math.abs(gap) < 0.5) {
+    const dbt = a.doubt !== b.doubt ? (a.doubt ? b : a) : null;
+    return dbt
+      ? { pick: dbt, why: `Nothing in it on the numbers, so it goes on fitness: ${pname(dbt === a ? b.p : a.p)} is carrying a knock.` }
+      : { pick: null, why: 'A coin toss, and I would not thank anyone who pretended otherwise. Start whichever you will be less annoyed about.' };
+  }
+  const win = gap > 0 ? a : b, lose = gap > 0 ? b : a;
+  return { pick: win, why: `${Math.abs(gap).toFixed(1)} points in it over the week${lose.doubt ? `, and ${pname(lose.p)} is flagged on top` : ''}.` };
+}
+function assistantAnswer(mid, gwIdx, question) {
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  const raw = String(question || '').trim();
+  if (!raw) return '';
+  const say = body => `<div class="asst-answer"><p class="muted asst-q">&ldquo;${esc(raw)}&rdquo;</p>${body}</div>`;
+  const card = m => `<div class="lrow" style="font-size:12.5px;justify-content:space-between">
+      <span>${pname(m.p)} <span class="muted">${esc(m.p.club)} ${m.p.pos}${m.mine ? '' : m.ownerMid != null ? ` · ${esc(teamName(m.ownerMid))}` : ' · free'}</span></span>
+      <span class="muted">${m.fx.length ? esc(m.opps) : 'no fixture'} · <b style="color:var(--text)">${m.proj.toFixed(1)}</b> proj</span>
+    </div>`;
+
+  // "osula or emersonn" — with or without the rest of the sentence around it
+  const stripped = raw.replace(/^\s*(should i|shall i|do i|who do i|who should i)\s+(start|play|pick|field)?\s*/i, '');
+  const orParts = stripped.split(/\s+or\s+|\s*\/\s*|\s+vs?\.?\s+/i).map(s => s.replace(/[?.!,]+$/, '').trim()).filter(Boolean);
+  if (orParts.length === 2) {
+    const A = asstFindPlayer(orParts[0], mid, gwIdx), B = asstFindPlayer(orParts[1], mid, gwIdx);
+    for (const [side, r] of [['first', A], ['second', B]]) {
+      if (r.miss) return say(`<p>I have no one called <b>${esc(r.miss)}</b> on any list I keep. Spell him the way the site does and I'll look again.</p>`);
+      if (r.ambiguous) return say(`<p>Which ${esc(side === 'first' ? orParts[0] : orParts[1])}? I have ${r.ambiguous.map(p => `${pname(p)} <span class="muted">(${esc(p.club)})</span>`).join(', ')}.</p>`);
+    }
+    const a = asstRead(A.p, mid, gwIdx), b = asstRead(B.p, mid, gwIdx);
+    const v = asstVerdictLine(a, b, gwN);
+    return say(`${card(a)}${card(b)}
+      <p style="margin-top:8px">${v.pick ? `<b>${pname(v.pick.p)}.</b> ` : ''}${v.why}</p>
+      ${v.pick && !v.pick.mine ? `<p class="muted" style="font-size:11.5px">Mind you, ${v.pick.ownerMid != null ? `${esc(teamName(v.pick.ownerMid))} owns him` : 'he is in the Trough'} — so that is a signing, not a team sheet.</p>` : ''}`);
+  }
+
+  // a single name: the same read, without the argument
+  const one = asstFindPlayer(stripped.replace(/^(is|how is|what about|whats up with|what's up with)\s+/i, '').replace(/\b(fit|playing|any good|worth it|ok|okay)\b/gi, ''), mid, gwIdx);
+  if (one.p) {
+    const m = asstRead(one.p, mid, gwIdx);
+    const note = m.out ? 'He has left the Premier League. He is not coming back for you.'
+      : !m.fx.length ? `No fixture in GW${gwN}. He cannot score from the sofa.`
+        : m.banned ? `Suspended. ${esc(m.p.news || 'No details from the club.')}`
+          : m.crocked ? `Injured. ${esc(m.p.news || 'No details from the club.')}`
+            : m.doubt ? `Flagged — ${esc(m.p.news || 'no details')}. I would have a plan B warming up.`
+              : `Fit as far as the club are saying. ${m.fx.length > 1 ? 'And he plays twice.' : ''}`;
+    return say(`${card(m)}<p style="margin-top:8px">${note}</p>`);
+  }
+  if (one.ambiguous) return say(`<p>Narrow it down for me: ${one.ambiguous.map(p => `${pname(p)} <span class="muted">(${esc(p.club)})</span>`).join(', ')}.</p>`);
+
+  return say(`<p>That is above my pay grade. Ask me <b>&ldquo;Osula or Emerson&rdquo;</b> and I'll give you a straight answer, or a single name and I'll tell you whether he is fit and who he plays. The rest of it is on the briefing above.</p>`);
+}
 function assistantGwProj(p, gwIdx) {
   const gwN = GAMEWEEKS[gwIdx]?.n;
   if (!gwN || !state.fixtures?.length) return 0;
@@ -6298,7 +6399,15 @@ function assistantCard(mid, gw) {
   return head(`
     <p class="muted" style="font-size:11.5px;margin-bottom:6px">Briefing for GW${gwN}. Same numbers as the Crystal Ball — projections, not prophecy.</p>
     ${brief}
-    ${tipRows ? `<h3 style="margin-top:10px">The shopping list</h3>${tipRows}` : ''}`);
+    ${tipRows ? `<h3 style="margin-top:10px">The shopping list</h3>${tipRows}` : ''}
+    <h3 style="margin-top:12px">Ask him</h3>
+    <div class="asst-ask">
+      <input type="text" id="asstAsk" placeholder="Osula or Emerson?" aria-label="Ask your assistant manager about a player"
+        value="${esc(asstAsked.q)}" maxlength="120" autocomplete="off">
+      <button class="btn small" id="asstAskGo">Ask</button>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:4px">Two names and he picks one; one name and he tells you if the man is fit. He reads the same projections as the briefing, so he cannot tell you something the rest of the site denies.</p>
+    ${asstAsked.html}`);
 }
 
 /* ----- Next Six: the current squad's fixture runway. Deliberately small —
@@ -6341,6 +6450,23 @@ function nextSixCard(mid) {
 function bindTeam() {
   const n6 = $('#next6');
   if (n6) n6.ontoggle = () => localStorage.setItem(NEXT6_KEY, n6.open ? '1' : '0');
+  const ask = $('#asstAsk'), askGo = $('#asstAskGo');
+  if (ask && askGo) {
+    // he advises on the first gameweek that has not kicked off, exactly as the
+    // briefing above does — asking about a week already played helps nobody
+    const put = () => {
+      let ai = teamView.gw;
+      while (ai < REGULAR_GWS - 1 && gwHasStarted(ai)) ai++;
+      asstAsked = { q: ask.value, html: assistantAnswer(teamView.mid, ai, ask.value) };
+      render();
+      // put the cursor back where the manager left it, so a follow-up is one
+      // keystroke rather than a hunt for the box
+      const again = $('#asstAsk');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    };
+    askGo.onclick = put;
+    ask.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); put(); } };
+  }
   $('#teamMgr').onchange = e => { teamView.mid = +e.target.value; teamView.transferOut = null; render(); };
   const btm = $('#backToMine');
   if (btm) btm.onclick = () => { teamView.mid = whoami; teamView.transferOut = null; render(); };

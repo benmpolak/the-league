@@ -722,6 +722,11 @@ input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
 
 /* --- The League 26/27 additions --- */
 .status-chip { font-size: 12px; margin-left: 2px; }
+/* asking the No. 2 back (Marc, 21 Aug) */
+.asst-ask { display: flex; gap: 6px; align-items: center; }
+.asst-ask input { flex: 1; min-width: 0; }
+.asst-answer { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg2); }
+.asst-answer .asst-q { font-size: 11.5px; font-style: italic; margin-bottom: 6px; }
 /* the Trough watchlist eye: dim until you are watching him (Marc, 20 Aug) */
 .watch-btn { opacity: .45; }
 .watch-btn:hover, .watch-btn:focus-visible { opacity: 1; }
