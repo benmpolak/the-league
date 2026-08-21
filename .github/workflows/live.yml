@@ -20,7 +20,7 @@ concurrency:
 jobs:
   live:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 32
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +32,17 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          for i in 1 2 3 4 5 6; do
+          # GW1 night (21 Aug): the cron says */5 but GitHub actually fired this
+          # ~every 25-35 min under load, and each run covered only ~4.5 min —
+          # so ~85% of the match had no coverage and updates arrived in one
+          # lump ("clearly doing it every 10 mins and grouping it all
+          # together"). GitHub's scheduler cannot be made punctual, so each run
+          # now covers the whole expected gap instead: ~28 minutes of 45s
+          # passes. The concurrency group is no-cancel, so a run that starts
+          # while another is mid-loop queues behind it rather than doubling up,
+          # and coverage joins end to end. Actions minutes are free on a public
+          # repo, and a pass outside a match window still exits in seconds.
+          for i in $(seq 1 38); do
             python3 scripts/fetch_fpl.py
             set +e
             node scripts/push_live.js
@@ -40,5 +50,5 @@ jobs:
             set -e
             if [ "$code" = "3" ]; then echo "no live fixtures — standing down"; break; fi
             if [ "$code" != "0" ]; then exit "$code"; fi
-            [ "$i" = "6" ] || sleep 45
+            [ "$i" = "38" ] || sleep 45
           done
