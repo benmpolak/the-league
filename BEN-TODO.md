@@ -8,6 +8,33 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 03. THE TROUGH WATCHLIST — one function to deploy (21 Aug)
+
+Marc, 21 Aug: "we want to add a watchlist feature that then becomes another
+filter on trough." Built and tested on
+`claude/committee-awards-count-week-4uo6bz` (20 assertions): tap the eye beside
+anyone in the Trough — free, on waivers, or owned by somebody else — and a
+fourth scope chip shows only those men.
+
+He chose a list of its own rather than a reuse of the autopick list, and
+private. It therefore rides under `private/{uid}/watchlist`, exactly as the
+autolist and blind claims do, excluded from the public snapshot. **`sync.js`
+needed no change** — it already streams that whole node.
+
+**What you need to do:** deploy `ACTIONS.watchlistSet`. It is a near-copy of
+`autolistSet` — validates the ids, writes the list, grants nothing.
+
+**Until you do, it does not work on the live league.** The write is refused and
+the next private snapshot clears the list, so the eye will look like it is not
+sticking. It works fully in `?sandbox&nosync`. Worth telling Marc which of
+those he is looking at if he tries it before the deploy.
+
+It is deliberately inert: watching a man signs, claims, drafts and shortlists
+nobody, and the test pins every one of those. A watchlist that quietly did
+something would be found out on a waiver run rather than on screen.
+
+---
+
 ## 02. CEREMONY vs FIRST PICK — the race Toby's test draft exposed (18 Aug, PRE-THURSDAY)
 
 **What happened (sandbox test draft, 18 Aug ~23:20):** Toby started the
@@ -595,16 +622,35 @@ top and tail suppressed, so there is no second copy of the copy to drift.
 ### 5e. Pods — what is actually left (18 Aug)
 
 Both pilots are finished: 46 of 46 lines carry a real voice, nothing
-outstanding, all of it merged and live. Three things remain, none urgent:
+outstanding, all of it merged and live. Three things remain:
 
-1. **Press Run workflow once, as a rehearsal.** `render-pods.yml` has never
-   run — zero runs. With everything already rendered it will cost nothing and
-   commit nothing, but it proves the secret is set and the path works. Do it
-   while it does not matter, rather than discovering it on draft night, which
-   is the one episode a timer cannot catch (see 5d).
-2. **`PODS_AUTORENDER = on`** if you want the Tuesday/Friday renders to happen
-   without you. Until that repository variable exists the scheduled runs fire
-   and immediately skip.
+> **UPDATE 21 Aug — item 2 is now wanted, not optional.** Marc: "why have the
+> voices for todays scheduled podcasts not autorendered?" Because the gate is
+> doing its job. `render-pods.yml` has now fired three times on schedule
+> (18 Aug ×2, 21 Aug) and skipped every one. Today's
+> [run 32472164891](https://github.com/benmpolak/the-league/actions/runs/32472164891)
+> started 10:20 UTC, reported success, and finished in **eight seconds** with
+> every step after the gate marked `skipped`. The log:
+>
+>     if [ "schedule" = "schedule" ] && [ "" != "on" ]; then
+>     PODS_AUTORENDER is not set to 'on' — scheduled render skipped.
+>
+> The empty string is the missing variable. Nothing is broken.
+
+1. **Press Run workflow once, as a rehearsal.** Still the right first move, and
+   note the gate does NOT apply to a manual run — only to `schedule` — so you
+   can prove the path today without setting anything. With everything already
+   rendered it costs nothing and commits nothing, but it proves the secret is
+   set and the path works. **`ELEVENLABS_API_KEY` has never actually been
+   exercised**: no run has reached the Render step, so a missing or wrong key
+   would not yet have shown up anywhere. Do it while it does not matter, rather
+   than discovering it on draft night, which is the one episode a timer cannot
+   catch (see 5d).
+2. **`PODS_AUTORENDER = on`** — Settings → Secrets and variables → Actions →
+   **Variables** → New repository variable. Marc wants the Tuesday/Friday
+   renders happening without you. Do it *after* the rehearsal run above, so the
+   first billed render is one you are watching rather than one that fires at
+   10:00 while you are asleep.
 3. **`audio/buffer-out.mp3`** — a loose 97KB file on `main`, outside
    `audio/pod/`, from the ring-announcer experiment. Nothing plays it, but it
    ships to everyone who loads the site. Delete it unless it is headed
