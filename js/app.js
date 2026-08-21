@@ -200,7 +200,11 @@ let state = load() || freshState();
 const SYNC_OFF = new URLSearchParams(location.search).has('nosync');
 const WHO_KEY = `${LS_NS}-whoami`;
 const SPECT_KEY = `${LS_NS}-spectate`;
-let whoami = +localStorage.getItem(WHO_KEY) || null; // manager id, -1 = spectator
+// Online identity is unknown until Firebase Auth + the server-owned membership
+// have both answered. Never paint an old PIN-era localStorage identity while
+// those asynchronous reads are in flight: after the draft reordered managers,
+// that startup fallback showed everybody Toby's club on the home page.
+let whoami = SYNC_OFF ? (+localStorage.getItem(WHO_KEY) || null) : null; // manager id, -1 = spectator
 let syncConnected = false;
 let demoMode = false;
 let demoBackup = null;
@@ -214,7 +218,10 @@ const netOn = () => syncOn() && !demoMode;
 // from localStorage — an old stored whoami grants nothing once auth is live
 let authUser = null;      // {uid, email} | null
 let membership = null;    // {managerId, role} | null
+let authResolved = !syncOn();
+let membershipResolved = !syncOn();
 let spectating = localStorage.getItem(SPECT_KEY) === '1';
+const identityLoading = () => netOn() && (!authResolved || (!!authUser && !membershipResolved));
 function syncIdentity() {
   if (!netOn()) return;
   whoami = membership ? membership.managerId : (spectating ? -1 : null);
@@ -469,15 +476,27 @@ window.onPrivateSnapshot = node => {
   applyPrivateNode(node);
 };
 window.onMembershipSnapshot = m => {
+  const previous = whoami;
   membership = m || null;
+  membershipResolved = true;
   syncIdentity();
+  // A team lens chosen before online identity resolved must not stick to the
+  // first manager in the array. On a genuine identity transition, land on the
+  // signed-in manager's club; later browsing choices remain untouched.
+  if (membership && whoami !== previous) teamView.mid = whoami;
   if (membership && _pendingPrivate !== undefined) { applyPrivateNode(_pendingPrivate); _pendingPrivate = undefined; }
   render();
   if (membership) { ceremonyReportFailures = 0; reportCeremonyReady(); }
 };
 window.onAuthChanged = u => {
   authUser = u;
-  if (!u) { membership = null; _pendingPrivate = undefined; }
+  authResolved = true;
+  // sync.js delivers auth before attaching this user's membership listener.
+  // Clear the previous user's identity during that gap; a truthy-to-truthy
+  // account switch must never flash or retain the old club either.
+  membership = null;
+  membershipResolved = !u;
+  _pendingPrivate = undefined;
   syncIdentity();
   render();
 };
@@ -3537,7 +3556,18 @@ function renderIdentity() {
   ov = document.createElement('div');
   ov.id = 'whoOverlay';
   ov.className = 'overlay';
-  if (netOn() && authUser && !membership) {
+  if (identityLoading()) {
+    const err = window._lastSyncErr;
+    ov.innerHTML = `<div class="card" style="max-width:480px;width:94%;text-align:center">
+      <h2>Finding your club&hellip;</h2>
+      <p class="muted" style="font-size:13px">Checking this device's sign-in against the league.</p>
+      ${err ? `<p style="font-size:12.5px;margin-top:10px;color:#ffd76e">The ${esc(err.label)} check is retrying (${esc(err.code)}).</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn small" id="whoReload" style="flex:1">&#8635; Reload</button>
+          <button class="btn ghost small" id="whoSignOut" style="flex:1">Sign out</button>
+        </div>` : ''}
+    </div>`;
+  } else if (netOn() && authUser && !membership) {
     // signed in with an email the league doesn't know
     // the tech line turns a stuck user's device into the diagnostic probe:
     // "connection DOWN" = transport (home-wifi filters break the database
@@ -7318,7 +7348,7 @@ function viewDash() {
   // Toby got a dashboard of Ben's team and reasonably concluded the app
   // thought he WAS Ben
   const identified = (whoami && whoami !== -1) || demoMode || !netOn();
-  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : state.managers[0].id;
+  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : null;
   const cur = currentGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
@@ -7326,20 +7356,20 @@ function viewDash() {
   const my = started ? gwManagerPoints(mid, cur) : projectedGwScore(mid, cur);
   const their = opp ? (started ? gwManagerPoints(opp, cur) : projectedGwScore(opp, cur)) : 0;
   const pct = pair ? Math.round(liveWinProb(pair[0], pair[1], cur) * 100) : null;
-  const flags = squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
+  const flags = mid == null ? [] : squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
   const offersIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid);
   const myCl = myClaims(mid);
   const table = h2hStandings(true);
-  const myPos = table.findIndex(r => r.id === mid) + 1;
+  const myPos = mid == null ? 0 : table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   return `
   ${foundingCard()}
   <div class="settings-grid">
     ${!identified ? `
     <div class="card" style="border-color:var(--accent)">
-      <h2>Who goes there?</h2>
-      <p class="rules-p">You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.</p>
-      <button class="btn" id="dashSignIn">Sign in</button>
+      <h2>${identityLoading() ? 'Finding your club&hellip;' : 'Who goes there?'}</h2>
+      <p class="rules-p">${identityLoading() ? `Checking this device's sign-in against the league.` : `You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.`}</p>
+      ${identityLoading() ? '' : '<button class="btn" id="dashSignIn">Sign in</button>'}
     </div>` : `
     <div class="card">
       <h2>GW${GAMEWEEKS[cur].n} — Your Matchup</h2>
@@ -7403,7 +7433,7 @@ function viewDash() {
       <div style="overflow-x:auto"><table class="pool-table">
         <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
         <tbody>
-        ${table.map((r, i) => `<tr class="${i === 7 ? 'playoff-line' : ''}"${r.id === mid ? ' style="background:rgba(45,212,167,.07)"' : ''}>
+        ${table.map((r, i) => `<tr class="${i === 7 ? 'playoff-line' : ''}"${mid != null && r.id === mid ? ' style="background:rgba(45,212,167,.07)"' : ''}>
           <td class="muted">${i + 1}</td>
           <td>${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b></td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
