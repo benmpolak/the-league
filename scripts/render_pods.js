@@ -339,6 +339,22 @@ async function harvest() {
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
   const page = await browser.newPage();
   page.on('dialog', d => d.accept());
+  // --state <file>: seed the harvest page with a league snapshot (the REAL
+  // league's public state, fetched read-only) so post-draft episodes generate
+  // from the actual board. Without it the page is a fresh local league and
+  // only the pilots exist — fine before draft night, useless after (Ben,
+  // draft night). The file is the app's own save shape; load() migrates it.
+  const stateFile = opt('state', '');
+  if (stateFile) {
+    const seed = fs.readFileSync(stateFile, 'utf8');
+    JSON.parse(seed); // fail here, loudly, rather than inside the page
+    await page.evaluateOnNewDocument(s => localStorage.setItem('tl2627sb-league', s), seed);
+    // the seed ships WITH the audio it produced: test/podcast.smoke.js
+    // regenerates the episodes from this exact state, so the orphan check
+    // (P13) judges the recordings against the words they were cut for
+    // rather than whatever league its own fresh page invents
+    if (!DRY) fs.writeFileSync(path.join(OUT, 'league-state.json'), seed);
+  }
   await page.goto(SITE + '/?sandbox&nosync', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof Podcast !== 'undefined');
   const eps = await page.evaluate(() => Podcast.published().map(p => {

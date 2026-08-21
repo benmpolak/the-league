@@ -118,6 +118,10 @@ onAuthStateChanged(auth, user => {
   for (const off of detachers) off();
   detachers = [];
   authEpoch++;
+  // Tell app.js that the previous identity is gone BEFORE attaching the new
+  // user's reads. Their membership then arrives as the second, authoritative
+  // half of startup; no stale manager can render in between.
+  window.onAuthChanged?.(user ? { uid: user.uid, email: user.email } : null);
   if (user) {
     detachers.push(attachUserRead(user, authEpoch, `${base}/private/${user.uid}`,
       v => window.onPrivateSnapshot?.(v), 'private'));
@@ -127,7 +131,6 @@ onAuthStateChanged(auth, user => {
     window.onPrivateSnapshot?.(null);
     window.onMembershipSnapshot?.(null);
   }
-  window.onAuthChanged?.(user ? { uid: user.uid, email: user.email } : null);
 });
 
 // finish a magic-link sign-in if this load is one — and if it goes wrong,

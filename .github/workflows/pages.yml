@@ -72,6 +72,19 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
+      # The API can refuse with "in progress deployment" for a few seconds
+      # after the PREVIOUS run finishes — the record outlives the job that
+      # made it. The concurrency queue can't see that, so a fresh deploy
+      # occasionally lands in the gap and dies (three failure emails on
+      # draft night alone). One paced retry absorbs the race; a genuine
+      # failure fails the retry too and the run still goes red.
       - if: ${{ !steps.gate.outputs.skip }}
         id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      - name: Wait out the stale deployment record
+        if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' }}
+        run: sleep 75
+      - if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' }}
+        id: deployment-retry
         uses: actions/deploy-pages@v4

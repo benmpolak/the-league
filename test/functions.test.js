@@ -4,6 +4,9 @@
  * exactly-once runs), lineup validation, commissioner gating. */
 'use strict';
 const T = require('./testenv.js');
+const Engine = require('../js/engine.js');
+const fs = require('fs');
+const path = require('path');
 // Direct handle for the scheduled sweep. `onSchedule` exposes `.run`, which
 // lets the emulator suite exercise the real tick body without a cloud clock.
 const Functions = require('../functions/index.js');
@@ -14,8 +17,9 @@ const SB = 'the-league-sandbox';
 (async () => {
   const run = T.makeRunner('functions');
   const { chk } = run;
-  const { players } = T.genTestData();
-  const server = await T.serveTestData(require('path').join(__dirname, 'fixtures', 'testdata'));
+  const { players, gws } = T.genTestData();
+  const fixtureDir = path.join(__dirname, 'fixtures', 'testdata');
+  const server = await T.serveTestData(fixtureDir);
   await T.wipe();
 
   const members = await T.provision(LG, [
@@ -295,6 +299,49 @@ const SB = 'the-league-sandbox';
   chk('skip recorded on waiverMeta', (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === 'wv-2026-09-01');
   const unskip = await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
   chk('commissioner reinstates the run', !unskip.error && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === null);
+
+  // {next:true} must judge the run ledger and stamp the selected slot as one
+  // atomic operation. A slot already running/applying is too late to skip;
+  // a failed slot remains eligible for its retry.
+  const fixtures = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'data', 'fixtures.json'), 'utf8'));
+  const clock = Engine.make({
+    players,
+    gameweeks: gws.map(g => ({ ...g, from: g.deadline })),
+    fixtures,
+    lastSeasonByCode: {},
+    now: () => Date.now(),
+  });
+  const dueSlots = clock.waiverSchedule();
+  const runRoot = db.ref(`v2/leagues/${LG}/server/waiverRuns`);
+  for (const d of dueSlots) await runRoot.child(`sched-${d.id}`).set({ status: 'done', finishedAt: Date.now() });
+  const lastDue = dueSlots[dueSlots.length - 1];
+  if (lastDue) await runRoot.child(`sched-${lastDue.id}`).set({ status: 'running', startedAt: Date.now() });
+  const futureSlot = clock.waiverSlotId(clock.nextSlotAt(Date.now()));
+  const beforeNext = {
+    transfers: (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val(),
+    private: (await db.ref(`v2/leagues/${LG}/private`).get()).val(),
+    lastRun: (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val(),
+  };
+  const skipsFuture = await T.mutate(LG, 'waiverSkip', { next: true, id: 'wv-1999-01-01' }, tok1);
+  const afterNext = {
+    transfers: (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val(),
+    private: (await db.ref(`v2/leagues/${LG}/private`).get()).val(),
+    lastRun: (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val(),
+  };
+  chk('{next:true} skips past done and in-flight ledger slots atomically',
+    !skipsFuture.error && skipsFuture.result?.skip === futureSlot
+      && (await db.ref(`v2/leagues/${LG}/public/waiverMeta/skip`).get()).val() === futureSlot,
+    JSON.stringify({ result: skipsFuture.result, error: skipsFuture.error, futureSlot, dueSlots }));
+  chk('choosing a skip touches no claims, transfers or lastRun',
+    JSON.stringify(beforeNext) === JSON.stringify(afterNext));
+  if (lastDue) {
+    await runRoot.child(`sched-${lastDue.id}`).update({ status: 'failed', finishedAt: Date.now() });
+    const retriesFailed = await T.mutate(LG, 'waiverSkip', { next: true, id: futureSlot }, tok1);
+    chk('{next:true} still selects a failed slot that the scheduler will retry',
+      !retriesFailed.error && retriesFailed.result?.skip === lastDue.id,
+      JSON.stringify({ result: retriesFailed.result, error: retriesFailed.error, lastDue }));
+  } else chk('{next:true} still selects a failed slot that the scheduler will retry', false, 'test clock produced no due slots');
+  await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
 
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));
@@ -1068,13 +1115,27 @@ const SB = 'the-league-sandbox';
   chk('negative expectedCount refused as INVALID_ARGUMENT (sol r5)', undoNeg.error?.status === 'INVALID_ARGUMENT', JSON.stringify(undoNeg));
   const undoOk = await T.mutate(LG, 'draftAdmin', { op: 'undo', expectedCount: 2 }, tok1);
   chk('undo with the seen count pops exactly one and re-arms the clock', !undoOk.error && undoOk.result?.total === 1 && await dl() > Date.now());
-  // pick + deadline move in ONE txn on the draft node
-  let auto = null;
-  for (let i = 1; i < 42; i++) { // 41 more autopicks fill the 3x14 board
+  // pick + deadline move in ONE txn on the draft node. The 42-pick board
+  // crosses BOTH drinks-break triggers (14 and 28), and the break is server
+  // law now (sol test-draft P0): the fill must stop at each, be refused, and
+  // resume only after the Chairman's breakDone — exactly the real night.
+  let auto = null, breaksHit = 0, breakRefused = true, breakResumed = true;
+  for (let i = 1; i < 46; i++) { // 41 more autopicks fill the 3x14 board (+2 break stops)
     auto = await T.mutate(LG, 'draftAutopick', {}, tok1);
+    if (auto.error && /drinks break/.test(auto.error.message || '')) {
+      breaksHit++;
+      breakRefused = breakRefused && auto.error.status === 'FAILED_PRECONDITION';
+      const bd = await T.mutate(LG, 'draftAdmin', { op: 'breakDone' }, tok1);
+      breakResumed = breakResumed && !bd.error;
+      if (bd.error) { auto = bd; break; }
+      continue;
+    }
     if (auto.error) break;
+    if (auto.result?.total >= 42) break; // full board — the next call would be 'not drafting', correctly
   }
   chk('board fills by deterministic autopick', !auto.error, JSON.stringify(auto?.error));
+  chk('both drinks breaks froze the board and were consumed by the Chairman (sol P0)',
+    breaksHit === 2 && breakRefused && breakResumed, `hit=${breaksHit}`);
   chk('final pick flips phase to season and disarms the clock',
     (await db.ref(`v2/leagues/${LG}/public/phase`).get()).val() === 'season' && await dl() === null);
   // forge the wedge sol reproduced: full board, phase stuck in draft

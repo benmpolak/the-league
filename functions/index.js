@@ -424,6 +424,21 @@ function draftCeremonyStatus(state) {
   return { count, total: order.length, complete: order.length > 0 && count === order.length };
 }
 
+// The drinks break, SERVER-owned (sol test-draft round, P0: the client-side
+// freeze left the server door open — an {expired:true} autopick advanced the
+// board mid-break, and breakDone/timewaste raced each other's blind updates).
+// Due when the board sits exactly on a third and that round is unconsumed.
+// Mirrors app.js drinksBreakAt; pass the txn's draft node for the committed
+// truth, or omit it for a pre-txn courtesy check against the loaded state.
+function breakDue(state, eng, draft) {
+  const dr = draft || state.draft;
+  const n = toArr(dr.picks).length;
+  if (!n) return null;
+  const t = eng.totalPicks(state);
+  const due = n === Math.round(t / 3) || n === Math.round(2 * t / 3);
+  return due && !toArr(dr.breaksDone).includes(n) ? n : null;
+}
+
 /* ----- draft ----- */
 ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
   const base = leagueBase(league);
@@ -439,26 +454,37 @@ ACTIONS.draftPick = async ({ league, a, data, ctx, state, eng }) => {
     throw new HttpsError('failed-precondition', 'draft is complete');
   }
   if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your pick');
+  if (breakDue(state, eng)) throw new HttpsError('failed-precondition', 'the room is on a drinks break — picks resume when the Chairman restarts the clock');
   const player = ctx.PLAYER_BY_ID[data.playerId];
   if (!player) throw new HttpsError('invalid-argument', 'unknown player');
   if (!eng.canPick(state, onClock, player)) throw new HttpsError('failed-precondition', 'illegal pick (position limits or locked arrival)');
   const expected = Number.isInteger(data.expectedCount) ? data.expectedCount : state.draft.picks.length;
+  let denyReason = null;
   // ONE txn on the whole draft node: pick + next deadline land atomically, and
   // any concurrent undo (same node) is serialised by the database — the
   // pick-vs-undo race cannot interleave at this level
   const res = await db().ref(`${base}/public/draft`).transaction(seededObj(state.draft, dr => {
+    denyReason = null;
     const arr = toArr(dr.picks).map(x => ({ ...x }));
     if (arr.length !== expected) return;
     // Re-check the committed draft node inside the pick transaction. The last
     // ceremony acknowledgement and a keen first click may arrive together.
     if (!arr.length && !draftCeremonyStatus({ draft: dr }).complete) return;
+    // the break check must hold against the COMMITTED node — the pre-txn one
+    // above only gives a polite message (sol P0: mid-break autopick landed)
+    if (breakDue(state, eng, dr)) { denyReason = 'the room is on a drinks break — picks resume when the Chairman restarts the clock'; return; }
+    // a declared expiry re-verifies the deadline it is executing: a timewaste
+    // serialised just before this txn revives the clock, and the pick must die
+    if (data.expired === true && dr.deadline && Date.now() <= dr.deadline) { denyReason = 'the clock was extended — play on'; return; }
     if (arr.some(p => p.playerId === player.id)) return;
-    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1 });
+    // t: when the pick landed — the Gazette's "slowest hand in the room"
+    // desk needs it, and draft night 26/27 taught us it can't be backfilled
+    arr.push({ managerId: onClock, playerId: player.id, code: player.code ?? null, n: arr.length + 1, t: Date.now() });
     dr.picks = arr;
     if (state.settings.pickTimer) dr.deadline = arr.length < eng.totalPicks(state) ? Date.now() + state.settings.pickTimer * 1000 : null;
     return dr;
   }));
-  if (!res.committed) throw new HttpsError('aborted', 'the board moved on');
+  if (!res.committed) throw new HttpsError(denyReason ? 'failed-precondition' : 'aborted', denyReason || 'the board moved on');
   const total = toArr(res.snapshot.val()?.picks).length;
   // phase lives outside the draft node; the seal txn re-verifies fullness so a
   // concurrent undo can't be overwritten. If the process dies here, the next
@@ -492,10 +518,14 @@ ACTIONS.draftAutopick = async ({ league, a, data, ctx, state, eng }) => {
   // commissioner deliberately pushing a stalled draft.
   if (data.expired && !overdue) throw new HttpsError('failed-precondition', 'clock has not expired (server time)');
   if (!overdue && a.managerId !== onClock && !isCommish(a)) throw new HttpsError('failed-precondition', 'clock has not expired');
+  // sol P0: a due break refuses the autopick outright — the frozen deadline
+  // WILL be overdue mid-break, and that must not advance the board. The pick
+  // txn re-verifies against the committed node; this gives the clean message.
+  if (breakDue(state, eng)) throw new HttpsError('failed-precondition', 'the room is on a drinks break — the clock is frozen');
   const stateWithLists = await loadState(league, ctx, { withPrivate: true });
   const choice = eng.autoPickChoice(stateWithLists, onClock);
   if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available');
-  return ACTIONS.draftPick({ league, a: { ...a, managerId: onClock }, data: { playerId: choice, expectedCount: state.draft.picks.length }, ctx, state, eng });
+  return ACTIONS.draftPick({ league, a: { ...a, managerId: onClock }, data: { playerId: choice, expectedCount: state.draft.picks.length, expired: data.expired === true }, ctx, state, eng });
 };
 
 ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
@@ -559,13 +589,22 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
     const onClock = eng.currentManagerId(state);
     if (a.managerId !== onClock && !isCommish(a)) throw new HttpsError('permission-denied', 'not your clock to waste');
-    // one timewaste of +30s (Ben, 14 Aug — was two of +60s)
-    const used = state.draft.timewastes?.[onClock] || 0;
-    if (used >= 1) throw new HttpsError('failed-precondition', 'timewaste already burned');
-    await db().ref().update({
-      [`${d}/timewastes/${onClock}`]: used + 1,
-      [`${d}/deadline`]: (state.draft.deadline || Date.now()) + 30 * 1000,
-    });
+    // one timewaste of +30s (Ben, 14 Aug — was two of +60s). A same-node txn,
+    // not a blind update (sol P0: timewaste raced breakDone and stamped the
+    // fresh clock with a stale, already-expired deadline; a mid-break waste
+    // also shifted the shared break anchor by thirty seconds).
+    let twDeny = null;
+    const twRes = await db().ref(d).transaction(seededObj(state.draft, dr => {
+      twDeny = null;
+      if (breakDue(state, eng, dr)) { twDeny = 'the room is on a drinks break — the clock is frozen'; return; }
+      if (toArr(dr.picks).length !== state.draft.picks.length) { twDeny = 'the board moved on — that clock is gone'; return; }
+      const used = dr.timewastes && typeof dr.timewastes === 'object' ? (dr.timewastes[onClock] || 0) : 0;
+      if (used >= 1) { twDeny = 'timewaste already burned'; return; }
+      dr.timewastes = { ...(dr.timewastes && typeof dr.timewastes === 'object' ? dr.timewastes : {}), [onClock]: used + 1 };
+      dr.deadline = (dr.deadline || Date.now()) + 30 * 1000;
+      return dr;
+    }));
+    if (!twRes.committed) throw new HttpsError('failed-precondition', twDeny || 'the board moved on');
     return { ok: true };
   }
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
@@ -607,7 +646,7 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
     while ((onClock = eng.currentManagerId(sim)) != null) {
       const choice = eng.autoPickChoice(sim, onClock);
       if (choice == null) throw new HttpsError('failed-precondition', 'no legal pick available mid-autodraft');
-      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1 };
+      const rec = { managerId: onClock, playerId: choice, code: ctx.PLAYER_BY_ID[choice]?.code ?? null, n: toArr(sim.draft.picks).length + 1, t: Date.now() };
       sim.draft.picks = [...toArr(sim.draft.picks), rec];
       added.push(rec);
     }
@@ -704,8 +743,22 @@ ACTIONS.draftAdmin = async ({ league, a, data, state, eng, ctx }) => {
   }
   if (op === 'breakDone') {
     if (!state.draft.picks.length && !draftCeremonyStatus(state).complete) throw new HttpsError('failed-precondition', 'the draft room is not open');
-    await db().ref().update({ [`${d}/breaksDone`]: [...state.draft.breaksDone, data.round ?? state.draft.breaksDone.length], [`${d}/deadline`]: Date.now() + (state.settings.pickTimer || 30) * 1000 });
-    return { ok: true };
+    // Ending the break CONSUMES it and arms a fresh server-time clock in ONE
+    // txn (sol P0: the old blind update raced expiries — 11/12 runs advanced
+    // the board during the break or armed nothing). The round is derived from
+    // the committed node, never trusted from the request; a second press
+    // finds no break due and is a harmless no-op, not a second fresh clock.
+    let already = false;
+    const bdRes = await db().ref(d).transaction(seededObj(state.draft, dr => {
+      already = false;
+      const due = breakDue(state, eng, dr);
+      if (!due) { already = true; return dr; }
+      dr.breaksDone = [...toArr(dr.breaksDone), due];
+      if (state.settings.pickTimer) dr.deadline = Date.now() + state.settings.pickTimer * 1000;
+      return dr;
+    }));
+    if (!bdRes.committed) throw new HttpsError('aborted', 'the draft room moved on — try again');
+    return { ok: true, already };
   }
   if (op === 'undo') {
     // draft-night tool only: during the draft, or immediately after the final
@@ -1437,11 +1490,45 @@ ACTIONS.waiverControl = async ({ league, a, data, state }) => {
 // skip one named run by exception (Toby, 12 Aug: double gameweeks, a rogue
 // Wednesday finish) — claims stay lodged and roll to the run after. id null
 // reinstates. The scheduled runner spends the flag when the slot comes due.
-ACTIONS.waiverSkip = async ({ league, a, data, state }) => {
+ACTIONS.waiverSkip = async ({ league, a, data, ctx }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
-  const id = data.id == null ? null : String(data.id);
+  let id = data.id == null ? null : String(data.id);
+  /* {next:true}: the SERVER names the slot. The client's idea of "next run"
+     comes from public state and cannot see the run ledger — on draft night
+     26/27 it skipped a slot the ledger had already consumed ("skipped: not
+     in season") while the genuinely-next slot sailed on unprotected. Only
+     the ledger knows which slot the runner will actually process. */
+  if (data.next === true) {
+    const eng = ctx.eng;
+    const due = eng.waiverSchedule();
+    const future = eng.waiverSlotId(eng.nextSlotAt(Date.now()));
+    const baseRef = db().ref(leagueBase(league));
+    const seedSnap = (await baseRef.get()).val();
+    /* Select the slot and stamp the flag in ONE transaction with the run
+       ledger. A scheduled run claims its child of this same tree first; RTDB
+       then retries us against status=running/applying, so we cannot recreate
+       the draft-night TOCTOU and skip a slot already being processed. If we
+       win first, the runner sees the flag after its claim and consumes it. */
+    const res = await baseRef.transaction(cur => {
+      // Admin may invoke a transaction once against an empty local cache. Seed
+      // that attempt from a read; the server compare then retries us against
+      // any newer value, preserving the atomic ledger/public judgement.
+      const c = cur === null && seedSnap ? JSON.parse(JSON.stringify(seedSnap)) : cur;
+      if (!c) return;
+      const runs = c.server?.waiverRuns || {};
+      const unavailable = sid => ['done', 'running', 'applying'].includes(runs[`sched-${sid}`]?.status);
+      id = (due.find(d => !unavailable(d.id)) || {}).id || future;
+      c.public = c.public || {};
+      c.public.waiverMeta = { ...(c.public.waiverMeta || {}), skip: id };
+      return c;
+    });
+    if (!res.committed) throw new HttpsError('aborted', 'waiver ledger moved — retry');
+    return { ok: true, skip: id };
+  }
   if (id != null && !/^wv-\d{4}-\d{2}-\d{2}$/.test(id)) throw new HttpsError('invalid-argument', 'not a waiver slot id');
-  await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, skip: id });
+  // Legacy named-slot clients and Reinstate keep working, without replacing a
+  // concurrent lastRun/control update with the action's earlier snapshot.
+  await db().ref(`${leagueBase(league)}/public/waiverMeta`).update({ skip: id });
   return { ok: true, skip: id };
 };
 

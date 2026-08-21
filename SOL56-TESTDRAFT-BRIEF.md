@@ -105,6 +105,85 @@ Three-layer fix:
   (data/backups/league-v2-2026-08-18-draft-eve.json, gitignored).
 - Ben Levy sign-in still outstanding (runbook blocker, chase today).
 
+## §7 ADDENDUM — draft-day morning delta (20 Aug). Re-run over ed384e4..HEAD.
+
+Merged the morning of the draft, so it gets FULL suspicion:
+
+### Provisional players (Marc's branch, merged 55d93a6)
+
+Committee-issued players the FPL feed doesn't list yet — Suzuki (AVL GK),
+Ruggeri (AVL DF), Cherif (COV FW). Hand-written price, PROV chip on the board.
+
+- IDs live at 900001+ (`scripts/provisional.py` ID_FLOOR); merged into BOTH
+  js/data.js and data/data.json by fetch_fpl.py, so client and server see the
+  same men. **Attack:** the 15-minute refresh Action runs fetch_fpl.py from
+  main — prove a scheduled refresh PRESERVES provisionals (a refresh that
+  drops them leaves an owner holding "#900001 (unknown)" mid-draft). Prove
+  the server accepts a draftPick of 900001 (functions load data.json at
+  runtime — no redeploy should be needed; confirm). Prove rating() gives a
+  price-prior rating (no history, no crash), autopick can legally take one,
+  and XI/squad legality, stats scoring (he must score NOTHING until real),
+  auto-subs and the gazette all survive a provisional on a squad.
+- The handover procedure (real player lands in feed → Chairman hands over,
+  entry deleted) is DOCUMENTED but untested tonight — flag anything that
+  would corrupt a squad at handover time, it's a post-draft risk.
+- nat 9001 = reserved Guinea entry in NATIONS (provisional-only namespace).
+
+### Also merged/known
+
+- Marc's DRAFT-NIGHT-BRIEF.md audit agrees the barrier is server-sound and
+  corrects the 9 Aug skip diagnosis (timer + enforcement-appearing-mid-draft,
+  not seconds of skew). Its proposed clock fix is ALREADY LIVE (18 Aug,
+  §2 above) plus the {expired:true} server gate it didn't ask for. Its
+  force-start policy options (name-and-shame, enforced wait, Ian's-button
+  semantics, autoComplete coherence) are NOT BUILT — tonight runs current
+  behaviour. Do not report these as regressions; do flag anything that makes
+  tonight's current behaviour worse than the brief believes.
+- Israel (105) added to NATIONS; scripts/__pycache__ ejected from the repo.
+
+## §8 RE-VERIFY — your P0 and P2, fixed (20 Aug, same day)
+
+Your NO-GO round found two. Both are addressed on main; re-run your own
+repros and re-issue the verdict.
+
+### P0 — the break is now server-owned and atomic (functions/index.js)
+
+- `breakDue(state, eng, dr?)` is the single server predicate (mirrors
+  app.js drinksBreakAt; pass the txn's node for committed truth).
+- `draftAutopick`: refuses outright while a break is due (the frozen
+  deadline WILL be overdue mid-break — that must not advance the board).
+- `draftPick`: pre-txn courtesy refusal AND a committed-node check INSIDE
+  the pick txn. A declared expiry ({expired:true}) also re-verifies
+  `dr.deadline` inside the txn, so a timewaste serialised just before it
+  kills the forced pick ("the clock was extended — play on").
+- `timewaste`: now a same-node txn — refused during a due break (this also
+  pins the shared break anchor), refused when the committed pick count
+  moved, one per manager enforced against the committed node.
+- `breakDone`: one txn that derives the due round from the committed node
+  (never trusts `data.round`), consumes it and arms a fresh server-time
+  clock together. A second press finds no break due → harmless no-op
+  (`already: true`), never a second fresh clock.
+- Deliberately NOT gated: `autoComplete` (sandbox-only board-filler — a
+  break must not wedge it) and `roomOpen`/`undo` (unchanged).
+- I could not run the emulator here (no Java on this machine) — offline
+  suites are green; **your emulator repros are the acceptance test. Re-run
+  all three races and the mid-break {expired:true} probe.**
+
+### P2 — scout views round-trip position sets (js/app.js)
+
+- `cleanScoutView`: pos is canonically an ARRAY — legacy string views
+  migrate to one-element arrays, junk dropped, dupes deduped.
+- `applyScoutView`: the pool gets the full set; the Data Room and
+  transfers (still single-string surfaces) get the position when the set
+  has exactly one, else All — honest degradation, never a silent pick.
+- Re-run: save GK+DF on the scouting floor, reopen, both restored; legacy
+  "MF" view still lands.
+
+NOTE the deployed Cloud Functions are one deploy BEHIND this fix until the
+Chairman runs deploy:functions — verdict the repo, but say loudly if the
+deploy is still pending when you finish.
+
 ## Verdict format
 
-Findings by severity (P0 blocks Thursday), each with a repro. Then the word.
+Findings by severity (P0 blocks TONIGHT — the draft is this evening), each
+with a repro. Then the word.

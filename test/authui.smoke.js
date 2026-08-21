@@ -26,6 +26,11 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
   const p = await browser.newPage();
   p.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
 
+  // Exact field repro: an installed app carries an old local identity, while
+  // the live manager array now begins with Toby because it is in draft order.
+  // app.js renders synchronously; Firebase Auth + membership arrive later.
+  await p.evaluateOnNewDocument(() => localStorage.setItem('tl2627-whoami', '2'));
+
   // block the real sync.js; we inject a stub after app.js boots
   await p.setRequestInterception(true);
   p.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
@@ -33,9 +38,8 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
   await p.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof state !== 'undefined');
 
-  // plant a stale device identity from the PIN era, then bring the stub online
+  // bring the stub online while Auth is still unresolved
   await p.evaluate(() => {
-    localStorage.setItem('tl2627-whoami', '5'); // old identity — must grant nothing
     const calls = [];
     window._calls = calls;
     window.WCSync = {
@@ -52,6 +56,7 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
     // a season-phase public snapshot, no pins/claims/autolists (v2 shape)
     const s = freshState();
     s.phase = 'season';
+    s.managers = [s.managers.find(m => m.id === 2), ...s.managers.filter(m => m.id !== 2)];
     s.draft.order = s.managers.map(m => m.id);
     delete s.pins;
     window.onSharedSnapshot(JSON.parse(JSON.stringify({
@@ -64,6 +69,14 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
   await new Promise(r => setTimeout(r, 300)); // deferred snapshot apply
 
   chk('stale localStorage identity grants nothing', await p.evaluate(() => whoami === null));
+  chk('unresolved startup shows no first-manager dashboard or table highlight', await p.evaluate(() =>
+    document.querySelector('#main')?.textContent.includes('Finding your club')
+    && !document.querySelector('#main')?.textContent.includes('Your Matchup')
+    && ![...document.querySelectorAll('#main tbody tr')].some(tr => tr.getAttribute('style')?.includes('background'))));
+
+  // Firebase says this device is signed out: loading yields to the real sign-in UI.
+  await p.evaluate(() => window.onAuthChanged(null));
+  await new Promise(r => setTimeout(r, 100));
   chk('sign-in overlay shows the email form', await p.evaluate(() =>
     !!document.querySelector('#whoOverlay #whoEmail') && !document.querySelector('#whoOverlay [data-who="5"]')));
 
@@ -80,11 +93,13 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
 
   // membership arrives → identity granted, overlay clears
   await p.evaluate(() => {
+    teamView.mid = 2; // a lens opened during startup must not remain Toby
     window.onAuthChanged({ uid: 'u-test', email: 'ben@example.com' });
     window.onMembershipSnapshot({ managerId: 1, role: 'commissioner' });
   });
   await new Promise(r => setTimeout(r, 200));
   chk('membership grants identity', await p.evaluate(() => whoami === 1 && isCommissioner()));
+  chk('membership replaces a startup first-manager team lens', await p.evaluate(() => teamView.mid === 1));
   chk('overlay clears once signed in', await p.evaluate(() => !document.querySelector('#whoOverlay')));
 
   // private snapshot feeds own claims/autolist
@@ -120,6 +135,7 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
       call: () => Promise.resolve({ ok: true }),
       auth: { user: () => null, sendLink: () => Promise.resolve(), completeLink: () => Promise.resolve(false), signOut: () => Promise.resolve() },
     };
+    window.onAuthChanged(null); // the blocked sync module would deliver this
     window.onSyncConnection(true);
     const s = freshState();
     window.onSharedSnapshot(JSON.parse(JSON.stringify({

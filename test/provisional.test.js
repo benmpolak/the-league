@@ -47,6 +47,14 @@ chk('every declared provisional reached data/data.json (the server)',
 chk('client and server carry the identical provisional set',
   JSON.stringify(clientProv.map(p => p.id).sort()) === JSON.stringify(serverProv.map(p => p.id).sort()));
 
+// the handover is "delete the entry, re-run the merge". A placeholder left
+// behind after its real player lands is the whole feature failing quietly, so
+// the feed must carry NOTHING the file does not declare.
+const declaredIds = new Set(declared.map(e => e.id));
+const orphans = [...clientProv, ...serverProv].filter(p => !declaredIds.has(p.id));
+chk('no placeholder survives in the feed that provisional.json no longer declares',
+  orphans.length === 0, orphans.map(p => `${p.id} ${p.name}`).join(', ') || 'none');
+
 // ids must never be able to collide with a real FPL element id
 const realMax = Math.max(...PLAYERS.filter(p => !p.provisional).map(p => p.id));
 chk('provisional ids sit far above every real FPL id',

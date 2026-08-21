@@ -90,11 +90,19 @@ jobs:
         if: steps.gate.outputs.go == 'yes'
         run: npm run check
 
+      - name: Fetch the current public league state
+        if: steps.gate.outputs.go == 'yes'
+        run: |
+          curl --fail --silent --show-error --retry 3 \
+            'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app/v2/leagues/the-league-2627/public.json' \
+            > "$RUNNER_TEMP/league-state.json"
+          node -e "const s=require(process.env.RUNNER_TEMP + '/league-state.json'); if(s.phase !== 'season' || !Array.isArray(s.draft?.picks)) throw Error('live league snapshot is not a season');"
+
       - name: Cost the job before spending anything
         if: steps.gate.outputs.go == 'yes'
         env:
           CHROME_BIN: /usr/bin/google-chrome
-        run: node scripts/render_pods.js --dry ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+        run: node scripts/render_pods.js --dry --state "$RUNNER_TEMP/league-state.json" ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
 
       - name: Render
         if: steps.gate.outputs.go == 'yes'
@@ -107,6 +115,7 @@ jobs:
             exit 1
           fi
           node scripts/render_pods.js \
+            --state "$RUNNER_TEMP/league-state.json" \
             --max-chars "${{ inputs.max_chars || '25000' }}" \
             ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
             ${{ inputs.force && '--force' || '' }}

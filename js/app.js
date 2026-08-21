@@ -200,7 +200,11 @@ let state = load() || freshState();
 const SYNC_OFF = new URLSearchParams(location.search).has('nosync');
 const WHO_KEY = `${LS_NS}-whoami`;
 const SPECT_KEY = `${LS_NS}-spectate`;
-let whoami = +localStorage.getItem(WHO_KEY) || null; // manager id, -1 = spectator
+// Online identity is unknown until Firebase Auth + the server-owned membership
+// have both answered. Never paint an old PIN-era localStorage identity while
+// those asynchronous reads are in flight: after the draft reordered managers,
+// that startup fallback showed everybody Toby's club on the home page.
+let whoami = SYNC_OFF ? (+localStorage.getItem(WHO_KEY) || null) : null; // manager id, -1 = spectator
 let syncConnected = false;
 let demoMode = false;
 let demoBackup = null;
@@ -214,7 +218,10 @@ const netOn = () => syncOn() && !demoMode;
 // from localStorage — an old stored whoami grants nothing once auth is live
 let authUser = null;      // {uid, email} | null
 let membership = null;    // {managerId, role} | null
+let authResolved = !syncOn();
+let membershipResolved = !syncOn();
 let spectating = localStorage.getItem(SPECT_KEY) === '1';
+const identityLoading = () => netOn() && (!authResolved || (!!authUser && !membershipResolved));
 function syncIdentity() {
   if (!netOn()) return;
   whoami = membership ? membership.managerId : (spectating ? -1 : null);
@@ -471,15 +478,27 @@ window.onPrivateSnapshot = node => {
   applyPrivateNode(node);
 };
 window.onMembershipSnapshot = m => {
+  const previous = whoami;
   membership = m || null;
+  membershipResolved = true;
   syncIdentity();
+  // A team lens chosen before online identity resolved must not stick to the
+  // first manager in the array. On a genuine identity transition, land on the
+  // signed-in manager's club; later browsing choices remain untouched.
+  if (membership && whoami !== previous) teamView.mid = whoami;
   if (membership && _pendingPrivate !== undefined) { applyPrivateNode(_pendingPrivate); _pendingPrivate = undefined; }
   render();
   if (membership) { ceremonyReportFailures = 0; reportCeremonyReady(); }
 };
 window.onAuthChanged = u => {
   authUser = u;
-  if (!u) { membership = null; _pendingPrivate = undefined; }
+  authResolved = true;
+  // sync.js delivers auth before attaching this user's membership listener.
+  // Clear the previous user's identity during that gap; a truthy-to-truthy
+  // account switch must never flash or retain the old club either.
+  membership = null;
+  membershipResolved = !u;
+  _pendingPrivate = undefined;
   syncIdentity();
   render();
 };
@@ -867,13 +886,6 @@ const NATIONS = {
   217: ['Trinidad & Tobago', '🇹🇹'], 219: ['Türkiye', '🇹🇷'], 225: ['Ukraine', '🇺🇦'], 229: ['USA', '🇺🇸'],
   230: ['Uruguay', '🇺🇾'], 231: ['Uzbekistan', '🇺🇿'],
   241: ['England', '🏴󠁧󠁢󠁥󠁮󠁧󠁿'], 242: ['Northern Ireland', ''], 243: ['Scotland', '🏴󠁧󠁢󠁳󠁣󠁴󠁿'], 244: ['Wales', '🏴󠁧󠁢󠁷󠁬󠁳󠁿'],
-  // 9000+ is reserved for provisional players. This table is keyed by the PL's
-  // own region ids (all under 250) and lists only countries a current PL player
-  // comes from — Guinea isn't among them, and guessing its real id would risk
-  // flying its flag for whoever actually holds that number. A reserved key
-  // cannot shadow a real region; when the real player lands in the feed he
-  // brings his own id and this entry retires with the provisional.
-  9001: ['Guinea', '🇬🇳'],
 };
 /* Marc, 18 Aug: "some players dont have the nationality at all still."
 
@@ -1835,6 +1847,13 @@ function viewDirectory() {
         <span class="muted dir-line">${esc(managerName(mid))} &middot; ${esc(stadium(mid))}</span>
         ${sponsorFor(mid) ? `<span class="muted dir-line">Principal partner: ${esc(sponsorFor(mid))}</span>` : ''}
         ${gafferFor(mid) ? `<span class="dir-line">${gafferChip(mid)}</span>` : ''}
+        ${(() => {
+          // first pick on draft night (Ben, GW1 eve) — a club's founding
+          // signing belongs on its record
+          const pk = (state.draft.picks || []).filter(x => x.managerId === mid).sort((a, b) => a.n - b.n)[0];
+          const p = pk && PLAYER_BY_ID[pk.playerId];
+          return p ? `<span class="muted dir-line">First pick: <b style="color:var(--text)">${esc(p.name)}</b> (#${pk.n} overall)</span>` : '';
+        })()}
         <span class="dir-line"><span class="tag" style="font-size:10.5px">&#128227; ${esc(mood.t)}</span></span>
         ${dirRivals.length ? `<span class="dir-rivals"><span class="dir-rivals-h">Rival${dirRivals.length === 1 ? '' : 's'}</span>${dirRivals.map(r => `<span class="dir-rival"><span class="dir-rival-who">${teamTag(r)}</span>${derbyTag(mid, r)}</span>`).join('')}</span>` : ''}
         ${opened ? '' : '<span class="muted dir-line" style="font-style:italic">Office unopened</span>'}
@@ -2035,13 +2054,21 @@ function nextWaiverRun(afterTs) {
  * nextWaiverRun(now). Mirrors js/engine.js; same lookback as the server tick. */
 function nextProcessableWaiverRun() {
   const t = Date.now();
-  const due = nextSlotAt(Math.max(lastWaiverRun(), t - 14 * 24 * 3600e3));
+  // DISPLAY horizon: 2 hours, deliberately narrower than the engine's 14-day
+  // catch-up window. The hourly tick takes a due slot within the hour, so a
+  // slot still "due" after 2h was consumed by the server's run ledger — which
+  // this client cannot read (it marks pre-season slots "skipped: not in
+  // season"). GW1 eve: lastRun null made the previous Friday look due and
+  // every surface promised "waivers process in any minute now" while the
+  // Chairman was telling the group there'd be no run at all. The SERVER keeps
+  // the full 14-day lookback — that divergence is the point, not a drift.
+  const due = nextSlotAt(Math.max(lastWaiverRun(), t - 2 * 3600e3));
   return due != null && due <= t ? new Date(due) : nextWaiverRun(t);
 }
 // ...and the same, stepping over a Chairman-skipped slot (display truth)
 function nextLiveWaiverRun() {
   let run = nextProcessableWaiverRun().getTime();
-  if (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
+  while (state.waiverMeta?.skip === waiverSlotId(run)) run = nextWaiverRun(run).getTime();
   return new Date(run);
 }
 const waiverControl = () => state.waiverMeta?.control || 'auto';
@@ -2305,7 +2332,13 @@ function setWaiverControl(mode) {
 // one-shot exception (Committee, 12 Aug): skip a named run, claims roll over
 function setWaiverSkip(id) {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman controls the Trough'); return; }
-  if (netOn()) { serverAct('waiverSkip', { id: id || null }).catch(() => {}); }
+  // online, a SKIP lets the server name the slot ({next:true}) — the run
+  // ledger is server-only, and the client's computed id skipped an already-
+  // consumed slot on draft night 26/27 while the real next run sailed on.
+  // A reinstate (null) and local mode still pass the id straight through.
+  // the id rides along so a not-yet-redeployed server still lands the old
+  // behaviour rather than reading an absent id as a reinstate
+  if (netOn()) { serverAct('waiverSkip', id ? { next: true, id } : { id: null }).catch(() => {}); }
   else { state.waiverMeta = { ...state.waiverMeta, skip: id || null }; save(); render(); }
   toast(id ? 'Next run skipped — claims stay lodged and roll to the one after.'
     : 'Run reinstated — waivers process as scheduled.');
@@ -2438,6 +2471,41 @@ function canPick(mid, player) {
   for (const pos of ['GK', 'DF', 'MF', 'FW']) need += Math.max(0, SQUAD_RULES.min[pos] - c[pos] - (pos === player.pos ? 1 : 0));
   return need <= SQUAD_RULES.size - size - 1;
 }
+/* All Squads (Ben, post-draft: "a tab where we can see everyone's team
+   lists... from the draft and then live") — every roster as it stands NOW
+   (managerSquad follows transfers), with each man's provenance: his draft
+   slot, or however he arrived since. Player-card taps come free via the
+   global [data-pcard] delegation, so the view needs no bind. */
+function squadProvenance(mid, pid) {
+  const pk = (state.draft.picks || []).find(x => x.managerId === mid && x.playerId === pid);
+  if (pk) return `R${Math.ceil(pk.n / Math.max(1, state.managers.length))} · #${pk.n}`;
+  const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
+  if (!tr) return '';
+  return tr.trade ? 'trade' : tr.windowDraft ? 'window draft' : tr.waiver ? 'waiver' : 'trough';
+}
+function viewSquads() {
+  const POS_ORDER = { GK: 0, DF: 1, MF: 2, FW: 3 };
+  const order = (state.draft.order || []).length ? state.draft.order : state.managers.map(m => m.id);
+  const cards = order.map(mid => {
+    const sq = managerSquad(mid).slice()
+      .sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || (playerDisplayName(a)).localeCompare(playerDisplayName(b)));
+    const rows = sq.map(p => `<div class="lrow" style="font-size:12.5px">
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+      ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span>${leftTag(p)}
+      <span class="muted" style="margin-left:auto;font-size:10.5px;white-space:nowrap">${esc(squadProvenance(mid, p.id))}</span>
+    </div>`).join('') || '<span class="muted" style="font-size:12px">No players. A bold rebuild.</span>';
+    return `<div class="card">
+      <h3 style="margin-bottom:2px">${esc(teamName(mid))}</h3>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">${esc(managerName(mid))} &middot; ${sq.length} players</p>
+      ${rows}
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <h2>All Squads</h2>
+    <p class="muted" style="font-size:12.5px">Every roster as it stands — drafted, traded, claimed and scavenged. The tag on each man is his provenance: draft round and pick, or how he got in since. Tap a name for his card.</p>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px">${cards}</div>`;
+}
 function draftedIds() { return new Set(state.draft.picks.map(p => p.playerId)); }
 
 function makePick(playerId, force = false) {
@@ -2446,7 +2514,7 @@ function makePick(playerId, force = false) {
   if (!force && !canActFor(mid)) { toast(`It's ${managerName(mid)}'s pick — the group chat is watching you`); return; }
   const player = PLAYER_BY_ID[playerId];
   if (!canPick(mid, player)) { toast(`${managerName(mid)} can't fit another ${player.pos} — position limits`); return; }
-  const rec = { managerId: mid, playerId, code: PLAYER_BY_ID[playerId]?.code ?? null, n: pickNo() + 1 };
+  const rec = { managerId: mid, playerId, code: PLAYER_BY_ID[playerId]?.code ?? null, n: pickNo() + 1, t: Date.now() };
   const finishPick = total => {
     if (state.settings.pickTimer && total < totalPicks()) {
       state.draft.deadline = Date.now() + state.settings.pickTimer * 1000;
@@ -3352,6 +3420,7 @@ const NAV_ITEMS = [
   ['team', 'My Team', 'My Team'],
   ['club', 'My Club', 'Club'],
   ['directory', 'Club Directory', 'Clubs'],
+  ['squads', 'All Squads', 'Squads'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Matches', 'Matches'],
   ['cup', 'Cup Competitions', 'Cups'],
@@ -3369,6 +3438,7 @@ const NAV_ICONS = {
   team: navSvg('<path d="M8 3 2.5 6.5 5 10.5l2-1V21h10V9.5l2 1 2.5-4L16 3a4 4 0 0 1-8 0Z"/>'),
   club: navSvg('<path d="M12 3 5 5.5v6c0 4.5 3 7.5 7 9.5 4-2 7-5 7-9.5v-6Z"/><path d="M12 8v5M9.5 10.5h5"/>'),
   directory: navSvg('<rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/>'),
+  squads: navSvg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
@@ -3461,6 +3531,7 @@ function render() {
     case 'team': main.innerHTML = viewTeam(); bindTeam(); break;
     case 'club': main.innerHTML = viewClub(); bindClub(); break;
     case 'directory': main.innerHTML = viewDirectory(); bindDirectory(); break;
+    case 'squads': main.innerHTML = viewSquads(); break;
     case 'h2h': main.innerHTML = viewH2H(); bindH2H(); break;
     case 'dash': main.innerHTML = viewDash(); bindDash(); break;
     case 'transfers': main.innerHTML = viewTransfers(); bindTransfers(); break;
@@ -3509,7 +3580,18 @@ function renderIdentity() {
   ov = document.createElement('div');
   ov.id = 'whoOverlay';
   ov.className = 'overlay';
-  if (netOn() && authUser && !membership) {
+  if (identityLoading()) {
+    const err = window._lastSyncErr;
+    ov.innerHTML = `<div class="card" style="max-width:480px;width:94%;text-align:center">
+      <h2>Finding your club&hellip;</h2>
+      <p class="muted" style="font-size:13px">Checking this device's sign-in against the league.</p>
+      ${err ? `<p style="font-size:12.5px;margin-top:10px;color:#ffd76e">The ${esc(err.label)} check is retrying (${esc(err.code)}).</p>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn small" id="whoReload" style="flex:1">&#8635; Reload</button>
+          <button class="btn ghost small" id="whoSignOut" style="flex:1">Sign out</button>
+        </div>` : ''}
+    </div>`;
+  } else if (netOn() && authUser && !membership) {
     // signed in with an email the league doesn't know
     // the tech line turns a stuck user's device into the diagnostic probe:
     // "connection DOWN" = transport (home-wifi filters break the database
@@ -4230,7 +4312,7 @@ function maybeDrinksBreak() {
   // First break: Bon Jovi. Second break: Pitbull. Key this to the break itself,
   // not pick-number parity — in a 168-pick draft both break numbers are even.
   // (Toby, UAT night). Both synthesized; both licensing-free; both shite/brilliant.
-  playSound(track.sound);
+  const firstSpin = playSound(track.sound) || 12000;
   // ONE countdown for the whole room (Ben, test draft: "everyone should
   // start from same spot"): the break began the moment pick n landed, and
   // that instant is already shared state — the stale next-pick deadline was
@@ -4254,10 +4336,18 @@ function maybeDrinksBreak() {
   // used to play exactly once ('just the first few beeps, then nothing' —
   // Marc, test draft; Ben: 'what about playing the song?'). Repeats until
   // the countdown runs out or the Chairman calls everyone back in.
-  const anthem = setInterval(() => {
-    if (!document.body.contains(bd)) { clearInterval(anthem); return; }
-    if (DRINKS_BREAK_MS - (now() - opened) > 8000) playSound(track.sound); else clearInterval(anthem);
-  }, 12000);
+  // the anthem loops SEAMLESSLY: each spin schedules the next off the track's
+  // own reported length ("didn't work well" — test night, the fixed 12s timer
+  // left dead air between spins). A spin only starts if the WHOLE track fits
+  // in the remaining countdown (sol P3: a flat 6s cutoff let the final Jovi
+  // run 5.44s past the two minutes). Dies with the overlay.
+  const spinAgain = dur => {
+    if (!document.body.contains(bd)) return;
+    if (DRINKS_BREAK_MS - (now() - opened) < dur) return;
+    const d = playSound(track.sound) || dur;
+    setTimeout(() => spinAgain(d), d);
+  };
+  setTimeout(() => spinAgain(firstSpin), firstSpin);
   bd.onclick = () => {
     if (bd.disabled) return;
     if (netOn() && !isCommissioner()) { toast('The Chairman calls everyone back in. Enjoy the break.'); return; }
@@ -4404,26 +4494,52 @@ function playSound(kind) {
       // Livin' on a Prayer, chorus, tannoy arrangement — the drinks-break
       // anthem, commissioned by the Chairman mid-mock-draft. Synthesized like
       // everything else here; Jon Bon Jovi was unavailable for licensing.
-      const N = { G4: 392, A4: 440, B4: 494, D5: 587 };
-      const riff = [
-        ['G4', 0, .28], ['A4', .3, .28], ['B4', .62, .55],          // whoa-oh-oh
-        ['B4', 1.35, .18], ['B4', 1.56, .18], ['A4', 1.77, .18], ['G4', 1.98, .18], ['A4', 2.2, .5], // we're half way there
-        ['G4', 2.95, .28], ['A4', 3.25, .28], ['D5', 3.57, .6],     // whoa-OH
-        ['B4', 4.25, .18], ['A4', 4.46, .18], ['G4', 4.67, .18], ['A4', 4.9, .7], // livin' on a prayer
+      // Third attempt (test night, twice: once it played a single bar and
+      // stopped; looped, the bar rattled around in six seconds of dead air).
+      // Now it's the FULL chorus with a band behind it, and it returns its
+      // length so the break can loop it seamlessly.
+      const b = 0.49; // one beat at ~122 BPM
+      const N = { E2: 82.4, C3: 130.8, D3: 146.8, G4: 392, A4: 440, B4: 493.9, C5: 523.3, D5: 587.3 };
+      // bass: driving eighths, two bars each of Em, Em, C, D — twice round
+      const bassBars = ['E2', 'E2', 'C3', 'D3', 'E2', 'E2', 'C3', 'D3'];
+      bassBars.forEach((root, bar) => {
+        for (let q = 0; q < 8; q++) tone(c, N[root], (bar * 4 + q * 0.5) * b, b * 0.42, { type: 'square', gain: 0.03 });
+      });
+      // the vocal line, in beats: whoa / we're half way there / whoa-OH / livin' on a prayer
+      const line = [
+        ['G4', 0, .75], ['A4', .8, .75], ['B4', 1.6, 2.2],
+        ['B4', 4.5, .45], ['B4', 5, .45], ['A4', 5.5, .45], ['G4', 6, .45], ['A4', 6.5, 1.4],
+        ['G4', 8, .75], ['A4', 8.8, .75], ['D5', 9.6, 2.4],
+        ['D5', 12.5, .45], ['C5', 13, .45], ['B4', 13.5, .45], ['A4', 14, .45], ['B4', 14.5, 1.5],
       ];
-      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'sawtooth', gain: 0.05 });
+      for (const [note, at, len] of line) {
+        tone(c, N[note], at * b, len * b, { type: 'sawtooth', gain: 0.055 });
+        tone(c, N[note] * 2, at * b, len * b, { type: 'triangle', gain: 0.018 }); // octave shimmer over the tannoy
+      }
+      for (const [note, at, len] of line) tone(c, N[note], (at + 16) * b, len * b, { type: 'sawtooth', gain: 0.055 });
+      return Math.round(32 * b * 1000); // 8 bars — hand the loop its cue
     } else if (kind === 'pitbull') {
       // Timber, harmonica hook, same tannoy treatment — the SECOND drinks-break
       // anthem (Toby, UAT night: "should be a new song. Pitbull."). Mr Worldwide
-      // was also unavailable for licensing.
-      const N = { G4: 392, A4: 440, B4: 494, D5: 587, E5: 659 };
-      const riff = [
-        ['E5', 0, .16], ['E5', .18, .16], ['E5', .36, .16], ['D5', .54, .22], ['B4', .8, .3],   // it's going down
-        ['A4', 1.2, .16], ['B4', 1.38, .16], ['D5', 1.56, .4],                                   // I'm yelling timber
-        ['E5', 2.15, .16], ['E5', 2.33, .16], ['E5', 2.51, .16], ['D5', 2.69, .22], ['B4', 2.95, .3], // you better move
-        ['D5', 3.35, .16], ['B4', 3.53, .16], ['A4', 3.71, .22], ['G4', 3.95, .6],               // you better dance
+      // was also unavailable for licensing. Same full-band rebuild as the Jovi.
+      const b = 0.46; // ~130 BPM
+      const N = { G2: 98, B2: 123.5, C3: 130.8, D3: 146.8, G4: 392, A4: 440, B4: 493.9, D5: 587.3, E5: 659.3 };
+      const bassBars = ['G2', 'B2', 'C3', 'D3', 'G2', 'B2', 'C3', 'D3'];
+      bassBars.forEach((root, bar) => {
+        for (let q = 0; q < 4; q++) tone(c, N[root], (bar * 4 + q) * b, b * 0.5, { type: 'square', gain: 0.032 });
+      });
+      const hook = [
+        ['E5', 0, .35], ['E5', .5, .35], ['E5', 1, .35], ['D5', 1.5, .5], ['B4', 2.1, .7],
+        ['A4', 3, .35], ['B4', 3.5, .35], ['D5', 4, 1],
+        ['E5', 5.5, .35], ['E5', 6, .35], ['E5', 6.5, .35], ['D5', 7, .5], ['B4', 7.6, .7],
+        ['D5', 8.5, .35], ['B4', 9, .35], ['A4', 9.5, .5], ['G4', 10, 1.4],
       ];
-      for (const [note, at, dur] of riff) tone(c, N[note], at, dur, { type: 'square', gain: 0.045 });
+      for (const [note, at, len] of hook) {
+        tone(c, N[note], at * b, len * b, { type: 'square', gain: 0.05 });
+        tone(c, N[note], at * b + 0.012, len * b, { type: 'square', gain: 0.02 }); // harmonica detune
+      }
+      for (const [note, at, len] of hook) tone(c, N[note], (at + 16) * b, len * b, { type: 'square', gain: 0.05 });
+      return Math.round(32 * b * 1000);
     } else if (kind === 'themeGfw') {
       // Gazette Football Weekly: a lone piano and a cello, faintly sad. The
       // Podcunt Network has no audio files — the stings are synthesised like
@@ -4576,6 +4692,7 @@ function viewDraft() {
       ${roomOpen && state.settings.pickTimer ? `<button class="btn ghost small" id="timewasteBtn" title="Take it to the corner flag (+30s)">&#8987; Timewaste (${1 - (state.draft.timewastes?.[mid] || 0)} left)</button>` : ''}
       ${!netOn() || isCommissioner() ? `<button class="btn ghost small" id="undoPick" ${n === 0 ? 'disabled' : ''}>Undo last</button>` : ''}
       ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<button class="btn ghost small" id="pauseDraft">${state.draft.paused ? '&#9654; Resume' : '&#9208; Pause'}</button>` : ''}
+      ${roomOpen && (!netOn() || isCommissioner()) && state.settings.pickTimer ? `<select id="pickTimerLive" title="Seconds per pick — applies from the next pick" aria-label="Pick timer">${[...new Set([10, 20, 30, 45, 60, 90, state.settings.pickTimer])].sort((x, y) => x - y).map(t => `<option value="${t}" ${state.settings.pickTimer === t ? 'selected' : ''}>${t}s/pick</option>`).join('')}</select>` : ''}
       ${roomOpen ? '<button class="btn ghost small" id="autoPick" title="Your autopick list first, then best available. Only the manager on the clock (or the Chairman) can press it.">&#129302; Autopick</button>' : ''}
       ${SANDBOX && (!netOn() || isCommissioner()) ? '<button class="btn ghost small" id="skipDraft" title="Sandbox only — autodraft every remaining pick and go straight to the season">&#9193; Skip the draft</button>' : ''}
       <button class="btn ghost small" id="heckleBtn" title="Random barb, your own words, or a player recommendation — lands biggest on the picker's screen. One per 15 seconds.">&#128227; Heckle</button>
@@ -4796,9 +4913,10 @@ function autolistRows() {
     return `<div class="lrow qrow" draggable="true" data-qdrag="${k}" style="font-size:12.5px${gone ? ';opacity:.45;text-decoration:line-through' : ''}">
       <input class="auto-rank" type="number" min="1" max="${list.length}" value="${k + 1}" data-autorank="${k}" draggable="false"
         title="Type a number to move him there — everyone else shifts down" aria-label="${esc(p.name)} is number ${k + 1}. Type a number to move him.">
-      <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname">${pname(p)} <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
+      <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="qname"><span class="plink qfull" data-pcard="${p.id}">${esc(String(p.full || '').trim() || playerDisplayName(p))}</span> <span class="muted" style="font-size:11px">${esc(p.club)}</span></span>
       ${gone ? '<span class="tag gone-tag" title="Already drafted — autopick skips him">GONE</span>' : ''}${wontFit ? '<span class="tag warn-tag" title="Your squad is full at this position — autopick skips him">won&rsquo;t fit</span>' : ''}${leftTag(p)}
       <span style="margin-left:auto;display:flex;gap:4px;flex:none">
+        ${live && !gone ? `<button class="btn small${draftRoomOpen() && canPick(currentManagerId(), p) && canActFor(currentManagerId()) ? '' : ' dim'}" data-pick="${p.id}" draggable="false" title="Draft him straight from your list">Draft</button>` : ''}
         <button class="btn ghost small icon-btn" data-autoup="${k}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
         <button class="btn ghost small icon-btn" data-autodown="${k}" ${i === vis.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
         <button class="btn ghost small icon-btn" data-autodel="${k}" aria-label="Remove">&#10005;</button>
@@ -5064,9 +5182,16 @@ function nextFx(team) {
   _fxCache.set(team, v);
   return v;
 }
+// the coloured short fixture ("BOU (A)", tinted by fear) — the Vs column and
+// the phone player cells share it
+function nextFxHtml(team) {
+  const t = nextFx(team);
+  const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null;
+  return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t;
+}
 // the full column menu, Draft Fantasy style; users pick their own set (kept per device)
 const ALL_STAT_COLS = live => [
-  { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => { const t = nextFx(p.team); const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null; return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t; }, cls: ' muted', sortable: false },
+  { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => nextFxHtml(p.team), cls: ' muted', sortable: false },
   // FPL price column RETIRED (Lee read '£m' as transfer fees — there is no
   // money in this league; do not resurrect)
   { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
@@ -5097,8 +5222,14 @@ const ALL_STAT_COLS = live => [
 const DEFAULT_COL_KEYS = live => live
   ? ['vs', 'f5', 'ppg', 'pts', 'rate']
   : ['vs', 'ppg', 'pts', 'rate'];
-// phones default to the one decision number — tap any player for the full
-// story, or deliberately add columns back from Scouting tools.
+// phones default to the decision numbers — tap any player for the full
+// story, or add columns back from Scouting tools. Vs joined rate the night
+// the season started (Iain, GW1 eve: "in the trough it'd be good to see
+// their next fixture") — once games exist, the fixture IS a decision number.
+// Saved column prefs still win over this default.
+// the fixture lives IN the player cell on phones (.pfx / player-mobile-meta),
+// so the lone decision-number column returns — nothing to drag sideways for
+// (Ben, GW1 eve), and P11c's 320px pin holds
 const MOBILE_COL_KEYS = () => ['rate'];
 // V2 deliberately retires the old, sprawling defaults once. Managers can
 // still add anything back; a clean first render now fits (Ben, 5 Aug).
@@ -5230,11 +5361,16 @@ function cleanScoutView(v) {
   const allowedCols = new Set(ALL_STAT_COLS(seasonHasStats()).map(c => c.k));
   const cols = toArr(v.cols).filter((k, i, a) => allowedCols.has(k) && a.indexOf(k) === i);
   const sort = SCOUT_SORTS.has(v.sort) ? v.sort : 'rate';
-  const pos = SCOUT_POS.has(v.pos) ? v.pos : '';
+  // pos is canonically an ARRAY now the pool filter is a set (sol test-draft
+  // P2: GK+DF saved as "" and restored as nothing). A legacy string view
+  // migrates to a one-element array; junk entries are dropped, dupes deduped.
+  const pos = (Array.isArray(v.pos) ? v.pos : [v.pos])
+    .filter((p, i, a) => p && SCOUT_POS.has(p) && a.indexOf(p) === i);
   const team = TEAM_BY_NAME[v.team] ? v.team : '';
-  // 'owned' is the Data Room's third scope; anything else (transfers' 'waivers')
-  // still collapses to 'free', as it always did
-  const scope = ['all', 'owned', 'waivers'].includes(v.scope) ? v.scope : 'free';
+  // Saved views travel between surfaces, so preserve the Trough's combined
+  // Available scope here. applyScoutView degrades it to Free only on surfaces
+  // that do not have an Available filter (Data Room and the draft pool).
+  const scope = ['all', 'owned', 'waivers', 'avail'].includes(v.scope) ? v.scope : 'free';
   // minutes floor for the Data Room explorer; 0 on the surfaces that have none
   const mm = +v.minMin;
   const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
@@ -5289,12 +5425,16 @@ function applyScoutView(v, surface) {
   if (!clean) return false;
   _colPrefs = clean.cols.length ? clean.cols : DEFAULT_COL_KEYS(seasonHasStats());
   localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
+  // the pool speaks position SETS; the Data Room and transfers still speak a
+  // single string — a multi-position view honestly degrades to All there
+  // rather than silently picking one of the saved positions
+  const posOne = clean.pos.length === 1 ? clean.pos[0] : '';
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
   } else {
-    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
+    transfersView = { ...transfersView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
   return true;
 }
@@ -5483,7 +5623,7 @@ function poolTable() {
     <tbody>
       ${rows.map(p => `
       <tr class="${statusClass(p)}${taken.has(p.id) ? ' gone-row' : ''}${hasLeft(p) ? ' left-row' : ''}"${canQueue && !taken.has(p.id) ? ` draggable="true" data-drag="${p.id}"` : ''}>
-        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos}</span></div></div></td>
+        <td class="pcol"><div class="pcell">${photoImg(p)}<div class="player-copy"><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<span class="player-mobile-meta">${esc(p.club)} &middot; ${p.pos} &middot; ${nextFxHtml(p.team)}</span></div></div></td>
         <td class="muted col-club" style="white-space:nowrap">${flagImg(p.team)} ${esc(p.club)}</td>
         <td class="col-pos"><span class="pos-badge pos-${p.pos}">${p.pos}</span></td>
         <td class="col-status">${hasLeft(p) ? leftTag(p) : statusChip(p)}</td>
@@ -5611,6 +5751,22 @@ function bindDraft() {
       }
     }, 400);
   }
+  const ptl = $('#pickTimerLive');
+  if (ptl) ptl.onchange = () => {
+    const v = Math.max(0, +ptl.value || 0);
+    if (netOn() && !isCommissioner()) { toast('Only the commissioner sets the clock'); return; }
+    if (netOn()) {
+      // the server writes public/settings/pickTimer; every future pick arms
+      // with the new length. The pick already on the clock keeps its deadline.
+      serverAct('settingsSet', { key: 'pickTimer', value: v })
+        .then(() => toast(`Pick clock is now ${v} seconds — from the next pick.`))
+        .catch(() => {});
+      return;
+    }
+    state.settings.pickTimer = v;
+    save(); render();
+    toast(`Pick clock is now ${v} seconds — from the next pick.`);
+  };
   const pb = $('#pauseDraft');
   if (pb) pb.onclick = () => {
     if (netOn() && !isCommissioner()) { toast('Only the commissioner pauses the draft'); return; }
@@ -6320,7 +6476,7 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'free', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'avail', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // the whole hub acts as ONE manager. Normally that's you; the Chairman may
 // take any chair (the switcher in the hub header) — every action downstream
 // already carries asManager when mid !== whoami, so the server records the
@@ -6390,6 +6546,24 @@ function viewTransfers() {
             <span class="pitch-name">${esc(p.name)}</span>
             <span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
           </div>`;
+    // phones: the pitch ate the whole first screen and buried the actual
+    // Trough below the fold (Ben, GW1 eve: "the trough for mobile view needs
+    // a bit of optimizing") — compact rows, same taps, half the height
+    if (matchMedia('(max-width: 700px)').matches) {
+      const row = (p, tag = '') => `
+        <div class="srow trout-row ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+          ${tag}<span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}<span>${esc(p.name)}</span>
+          <span class="muted" style="margin-left:auto;font-size:11px">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
+        </div>`;
+      return `<div class="card" style="margin-bottom:14px">
+        <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
+        <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
+        <div class="side-squad">
+          ${['GK', 'DF', 'MF', 'FW'].map(pos => starters.filter(p => p.pos === pos).map(p => row(p)).join('')).join('')}
+          ${benchFor(mid, tgw).map((p, bi) => row(p, `<span class="tag" style="font-size:9px;padding:1px 5px">B${bi + 1}</span>`)).join('')}
+        </div>
+      </div>`;
+    }
     return `<div class="card" style="margin-bottom:14px">
       <h2>&#128101; ${esc(teamName(mid))} <span class="muted" style="font-weight:400;font-size:12px">tap the player who makes way</span></h2>
       <div class="quota-bar" style="margin:2px 0 8px">${quotaPills(mid)}</div>
@@ -6854,6 +7028,11 @@ function bindTransfers() {
       // sandbox 12 Aug: "the drop down doesn't change but the player selected
       // from the pitch is the one transferred out")
       if (trOut) trOut.value = transfersView.out || '';
+      // phones: picking the outgoing man jumps you to the pool — the whole
+      // point of the tap is the list that was sitting below the fold
+      if (transfersView.out && search && matchMedia('(max-width: 700px)').matches) {
+        search.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       renderTrResults();
     });
     search.oninput = renderTrResults;
@@ -6879,7 +7058,8 @@ function bindTransfers() {
       let pool = transfersView.scope === 'watch' ? watchIds(mid).map(id => PLAYER_BY_ID[id]).filter(Boolean)
         : transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
-        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p));
+        : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
+        : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !hasLeft(p));
       if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
@@ -6915,7 +7095,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
@@ -6931,7 +7111,8 @@ function bindTransfers() {
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
         <span style="width:8px"></span>
-        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
+        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' && transfersView.scope !== 'free' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
+        <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Owned players too, and men who have left the league">Everyone</button>
         <button class="btn small ${transfersView.scope === 'watch' ? '' : 'ghost'}" data-trscope="watch" title="Only the players you are watching — owned or free">&#128065; Watchlist${watchIds(mid).length ? ` (${watchIds(mid).length})` : ''}</button>
@@ -7208,7 +7389,7 @@ function viewDash() {
   // Toby got a dashboard of Ben's team and reasonably concluded the app
   // thought he WAS Ben
   const identified = (whoami && whoami !== -1) || demoMode || !netOn();
-  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : state.managers[0].id;
+  const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : null;
   const cur = currentGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
@@ -7216,20 +7397,20 @@ function viewDash() {
   const my = started ? gwManagerPoints(mid, cur) : projectedGwScore(mid, cur);
   const their = opp ? (started ? gwManagerPoints(opp, cur) : projectedGwScore(opp, cur)) : 0;
   const pct = pair ? Math.round(liveWinProb(pair[0], pair[1], cur) * 100) : null;
-  const flags = squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
+  const flags = mid == null ? [] : squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
   const offersIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid);
   const myCl = myClaims(mid);
   const table = h2hStandings(true);
-  const myPos = table.findIndex(r => r.id === mid) + 1;
+  const myPos = mid == null ? 0 : table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   return `
   ${foundingCard()}
   <div class="settings-grid">
     ${!identified ? `
     <div class="card" style="border-color:var(--accent)">
-      <h2>Who goes there?</h2>
-      <p class="rules-p">You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.</p>
-      <button class="btn" id="dashSignIn">Sign in</button>
+      <h2>${identityLoading() ? 'Finding your club&hellip;' : 'Who goes there?'}</h2>
+      <p class="rules-p">${identityLoading() ? `Checking this device's sign-in against the league.` : `You're browsing as a spectator. Sign in and the league knows whose team, matchup and waivers to show you.`}</p>
+      ${identityLoading() ? '' : '<button class="btn" id="dashSignIn">Sign in</button>'}
     </div>` : `
     <div class="card">
       <h2>GW${GAMEWEEKS[cur].n} — Your Matchup</h2>
@@ -7293,7 +7474,7 @@ function viewDash() {
       <div style="overflow-x:auto"><table class="pool-table">
         <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
         <tbody>
-        ${table.map((r, i) => `<tr class="${i === 7 ? 'playoff-line' : ''}"${r.id === mid ? ' style="background:rgba(45,212,167,.07)"' : ''}>
+        ${table.map((r, i) => `<tr class="${i === 7 ? 'playoff-line' : ''}"${mid != null && r.id === mid ? ' style="background:rgba(45,212,167,.07)"' : ''}>
           <td class="muted">${i + 1}</td>
           <td>${kitSvg(r.id)} <b>${esc(r.team || r.name)}</b></td>
           <td class="num">${r.p}</td><td class="num">${r.w}</td><td class="num">${r.d}</td><td class="num">${r.l}</td>
@@ -7610,7 +7791,13 @@ function progTodays() {
   }
   const last = lastFinalGw();
   if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
-  // nothing settled yet: the Season Preview is edition zero (Ben, 16 Aug)
+  // nothing settled yet: once the board is full the Post-Draft Special is
+  // the paper (Ben, draft night); before that the Season Preview is edition
+  // zero (Ben, 16 Aug). Both retire when a real edition exists above.
+  if (typeof Gazette !== 'undefined' && Gazette.draftSpecial && state.draft.picks.length) {
+    const art = Gazette.draftSpecial();
+    if (art) return { edition: 'post-draft special', gwN: null, article: art };
+  }
   if (typeof Gazette !== 'undefined' && Gazette.preview) {
     const art = Gazette.preview();
     if (art) return { edition: 'the season preview', gwN: null, article: art };
@@ -9011,13 +9198,26 @@ function committeeMinutes(last) {
 // XIs as mini pitches, chips open player cards, points live once started
 function dashMiniPitch(mid, gw) {
   const xi = lineupFor(mid, gw);
+  // subs ride under the XI in queue order (Toby, GW1 eve: "on homepage it
+  // doesn't show subs — it does everywhere else")
+  const bench = benchFor(mid, gw);
   return `<div style="overflow-x:auto"><div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${
     xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p && p.pos === pos).map(p => `
       <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
         ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
-      </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div></div>`;
+      </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div>
+  ${bench.length ? `<div class="bench-strip">
+    <span class="muted" style="font-size:10px;font-weight:700;align-self:center">BENCH</span>
+    ${bench.map((p, bi) => `
+      <div class="pitch-chip mu-chip benched ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
+        <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
+        ${kitImg(p.team, p.pos === 'GK')}
+        <span class="pitch-name">${esc(p.name)}</span>
+        ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+      </div>`).join('')}
+  </div>` : ''}</div>`;
 }
 function bindDash() {
   bindInstall();
@@ -10972,6 +11172,18 @@ function showPlayerCard(pid) {
       <span class="quota-pill">FPL official ${p.pts}</span>
       <span class="quota-pill" title="FPL expected points, next gameweek">xPts next ${playerXp(p).toFixed(1)}</span>
     </div>
+    ${(() => {
+      // Iain, GW1 eve: "see a team's fixtures when I click on a player —
+      // this week should be on view but you should be able to see the rest
+      // too". The run of six, coloured by how scary they are.
+      const ups = (state.fixtures || []).filter(f => !f.finished && (f.home === p.team || f.away === p.team)).slice(0, 6);
+      if (!ups.length) return '';
+      const pill = f => {
+        const opp = f.home === p.team ? f.away : f.home;
+        return `<span class="quota-pill">GW${f.gw} <b class="${fdrCls(opp)}">${esc(TEAM_BY_NAME[opp]?.short || opp)} (${f.home === p.team ? 'H' : 'A'})</b></span>`;
+      };
+      return `<div class="quota-bar" style="margin:0 0 10px">${ups.map(pill).join('')}</div>`;
+    })()}
     ${(() => {
       const ls = lastSeasonOf(p);
       return ls ? `<p class="muted" style="font-size:12px;margin-bottom:8px"><b style="color:var(--text)">${LS_SEASON}:</b> ${ls.pts} FPL pts &middot; ${ls.g} G &middot; ${ls.a} A &middot; ${ls.cs} CS &middot; ${ls.ppg} per game &middot; ${Math.round((ls.mp || 0) / 90)} &times; 90s${ls.club && ls.club !== p.club ? ` <span class="muted">(at ${esc(ls.club)})</span>` : ''}</p>`
