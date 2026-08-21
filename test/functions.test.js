@@ -705,6 +705,18 @@ const SB = 'the-league-sandbox';
   chk('autolist with unknown player rejected', (await T.mutate(LG, 'autolistSet', { pids: [999999] }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('autolist with duplicates rejected', (await T.mutate(LG, 'autolistSet', { pids: [players[0].id, players[0].id] }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('oversized autolist rejected', (await T.mutate(LG, 'autolistSet', { pids: Array.from({ length: 301 }, (_, i) => i + 1) }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  // watchlist: same private rails as the autolist, and it must survive a
+  // restore without ever touching public state (Marc's feature, 21 Aug —
+  // sharedSnapshot carries `watchlists`, so importState had to learn the key
+  // or every export became unimportable)
+  chk('watchlist lands in the owner\'s private node', !(await T.mutate(LG, 'watchlistSet', { pids: [players[0].id, players[1].id] }, tok2)).error
+    && JSON.stringify((await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/watchlist`).get()).val()) === JSON.stringify([players[0].id, players[1].id]));
+  chk('watchlist with unknown player rejected', (await T.mutate(LG, 'watchlistSet', { pids: [999999] }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('watchlist with duplicates rejected', (await T.mutate(LG, 'watchlistSet', { pids: [players[0].id, players[0].id] }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('oversized watchlist rejected', (await T.mutate(LG, 'watchlistSet', { pids: Array.from({ length: 301 }, (_, i) => i + 1) }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('a watchlist is never readable in public state',
+    (await db.ref(`v2/leagues/${LG}/public/watchlists`).get()).val() == null);
+
   // claim validation: ownership, drop legality, squad shape, caps
   const freeFWs = freeOf('FW');
   const myFW2 = byPos(await squadOf(2), 'FW')[0];

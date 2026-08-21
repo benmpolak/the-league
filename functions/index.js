@@ -1770,7 +1770,7 @@ const IMPORT_ALLOWED = new Set([
   'phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades',
   'covenants', 'waiverMeta', 'adjustments', 'shirtNums', 'draftPool',
   'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup',
-  'claims', 'autolists',
+  'claims', 'autolists', 'watchlists',
 ]);
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
@@ -1887,7 +1887,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
   for (const k of ['adjustments', 'claims']) {
     if (Array.isArray(s[k])) s[k] = Object.fromEntries(s[k].map((v, i) => [i, v]).filter(([, v]) => v != null));
   }
-  for (const k of ['lineups', 'benchOrders', 'shirtNums', 'tradeBlock', 'lobus', 'adjustments', 'claims', 'autolists']) {
+  for (const k of ['lineups', 'benchOrders', 'shirtNums', 'tradeBlock', 'lobus', 'adjustments', 'claims', 'autolists', 'watchlists']) {
     if (s[k] != null && !isPlainObj(s[k])) importError(k);
     if (s[k] != null && Object.keys(s[k]).length > 200) importError(`${k} too large`);
   }
@@ -1905,7 +1905,7 @@ ACTIONS.importState = async ({ league, a, data }) => {
   const base = leagueBase(league);
   const pub = {};
   for (const k of Object.keys(s)) {
-    if (IMPORT_ALLOWED.has(k) && k !== 'claims' && k !== 'autolists') pub[k] = s[k];
+    if (IMPORT_ALLOWED.has(k) && k !== 'claims' && k !== 'autolists' && k !== 'watchlists') pub[k] = s[k];
   }
   const upd = { [`${base}/public`]: pub };
   const mem = (await db().ref(`${base}/server/managerUid`).get()).val() || {};
@@ -1927,6 +1927,14 @@ ACTIONS.importState = async ({ league, a, data }) => {
     if (list.length > 300) importError('autolist too long');
     const uid = mem[mid];
     if (uid) (priv[uid] = priv[uid] || {}).autolist = list;
+  }
+  // watchlists ride the same private rails as autolists: a restore keeps each
+  // manager's lens, and no manager's watchlist ever lands in public state
+  for (const [mid, arr] of Object.entries(s.watchlists || {})) {
+    const list = toArr(arr);
+    if (list.length > 300) importError('watchlist too long');
+    const uid = mem[mid];
+    if (uid) (priv[uid] = priv[uid] || {}).watchlist = list;
   }
   upd[`${base}/private`] = Object.keys(priv).length ? priv : null;
   await db().ref().update(upd);
