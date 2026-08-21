@@ -137,14 +137,34 @@ Claims are being lodged now for Tuesday's run, so this has a real audience.
 > "Every time I refresh it asks me to confirm my email. Not impacting site
 > usage, just annoying."
 
-Cause (read, not yet proven): `js/sync.js → completeLink()` runs on every load
-and prompts whenever `isSignInWithEmailLink(href)` is true but `EMAIL_KEY` is
-absent from localStorage. The URL is only scrubbed **after** a successful
-`signInWithEmailLink`. So a saved/bookmarked/home-screened URL that still
-carries the oob code re-triggers the prompt forever.
-Suggested fix: if a user is already signed in, scrub the sign-in params and
-return without prompting; and scrub on failure too, so a dead link cannot
-nag. Do NOT regress the paste-a-link rescue path.
+**Diagnosed but deliberately NOT fixed on GW1 night** — this is the sign-in
+path, the real magic-link flow cannot be exercised properly headless, and a
+mistake here means nobody can sign in to set a team. Do it in daylight, with
+time to test.
+
+**Cause.** `js/sync.js -> completeLink()` runs on every load. It prompts
+whenever `isSignInWithEmailLink(href)` is true but `EMAIL_KEY` is missing from
+localStorage, and the URL is only scrubbed AFTER a successful
+`signInWithEmailLink`. So a URL still carrying the oob code — bookmarked,
+added to the home screen, or simply never navigated away from — re-arms the
+prompt on every load, forever.
+
+**Design worked out on the night (adopt or improve):**
+- Extract a `scrub()` that strips the sign-in params, and call it on EVERY
+  exit path, not just success.
+- If the device is already signed in, scrub and return without prompting.
+- **The trap:** a persisted session is restored ASYNCHRONOUSLY, so at module
+  load `auth.currentUser` is still null even for someone signed in. Checking
+  it directly races and prompts exactly the people it should leave alone.
+  Await one `onAuthStateChanged` callback first, then decide.
+- On `auth/invalid-action-code` or `expired-action-code`, scrub as well: a
+  spent code can never succeed, so it must stop nagging.
+- Leave the URL intact if the user merely cancels the prompt, so they can
+  retry within the session.
+- **Do not regress the paste-a-link rescue path** — `completeLink(href)` with
+  an explicit href must still throw its friendly error for a non-link.
+- Cover with `test/emaillink.test.js` (20 checks today) plus the authui
+  browser smoke before pushing.
 
 ### 4. TEST — `product.smoke #5` is red, and it may be my doing
 `#5 Gazette archive opens a back edition and returns to today's paper` fails
