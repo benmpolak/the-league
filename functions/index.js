@@ -1556,6 +1556,28 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
     await db().ref(`${base}/public/windowDraft`).set({ status: 'live', order, turn: 0, passes: 0, picks: [] });
     return { ok: true };
   }
+  // Admit ONE man to the Trough without opening the window (Marc, 21 Aug:
+  // Osman was never a signing — FPL had simply never created him until he
+  // played). isArrival cannot tell that from a real transfer: both surface as
+  // an id the draft-night snapshot has never seen. Recording him in the
+  // snapshot at his current club states what was already true — he was at that
+  // club on draft night — and leaves every genuine arrival locked.
+  if (op === 'admit') {
+    if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+    const pid = Number(data.playerId);
+    const p = ctx.PLAYER_BY_ID[pid];
+    if (!p) throw new HttpsError('invalid-argument', 'unknown player');
+    const pool = state.draftPool;
+    if (!pool || !pool.ids) throw new HttpsError('failed-precondition', 'no draft pool to admit him to');
+    // refuse the case this is NOT for: an id the snapshot already knows is a
+    // man who moved clubs, and the Window Draft is exactly where he belongs
+    const was = pool.ids[pid];
+    if (was !== undefined && was !== p.club) {
+      throw new HttpsError('failed-precondition', `${p.name} moved from ${was} to ${p.club} — that is a window arrival, not a late feed entry`);
+    }
+    await db().ref(`${base}/public/draftPool/ids/${pid}`).set(p.club);
+    return { ok: true, admitted: pid, club: p.club };
+  }
   if (!['pick', 'pass', 'end'].includes(op)) throw new HttpsError('invalid-argument', 'unknown op');
   if (op === 'end' && !isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   if (!state.windowDraft || state.windowDraft.status !== 'live') throw new HttpsError('failed-precondition', 'no window draft running');
