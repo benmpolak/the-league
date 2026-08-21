@@ -555,7 +555,15 @@ const chk = (name, ok, detail = '') => {
       deskHeading: /Media Desk/i.test(after.head),
       deskBothShows: after.rows === 2,
       deskNotPilots: after.titles.every(t => !/edition zero/.test(t)),
-      deskIsDraft: after.titles.some(t => /Draft|DRAFT/.test(t)),
+      // ...showing whatever the schedule says is CURRENT for each show. This
+      // used to assert the word "Draft", which only held in the window between
+      // draft night and the next preview slot — it expired at noon the day
+      // after the real draft and reddened CI (21 Aug). Ask the schedule.
+      deskIsCurrent: ['gfw', 'tt'].every(id => {
+        const ep = Podcast.published().find(e => e.show === id);
+        const title = ep && Podcast.episode(ep.show, ep.kind, ep.gw)?.title;
+        return !!title && after.titles.some(t => t.includes(title));
+      }),
     };
   });
   chk('P17 pilots sit with the season preview; everything after sits with the Gazette',
