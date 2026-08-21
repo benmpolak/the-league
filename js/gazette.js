@@ -950,6 +950,18 @@ window.Gazette = (() => {
          sagas. Celta Leigh-Go announced a joint-managerial structure on the
          eve of the draft (the group chat is a public record and the Gazette
          reads it in the bath) */
+      /* Warner and the ceremony (Ben supplied the quote, 21 Aug). The skip
+         control is labelled "Ian's button" in the source and reserved for
+         Tussie by long tradition — Warner pressing it is the story. */
+      out.push(`<div class="prog-story">
+        <div class="prog-story-kicker">DRAFT NIGHT SHAME</div>
+        <div class="prog-head">&ldquo;POMP-OUS PRICKS&rdquo;: WARNER SKIPS THE CEREMONY</div>
+        <div class="prog-by">By ${esc(press(['colour'], 'ds-ceremony').n)}, at the ground</div>
+        <p>${esc('The opening ceremony of the 2026 draft — the anthem, the pomp, the solemn roll call of twelve clubs — was observed in full by eleven managers and abandoned by one. "POMP-OUS PRICKS," screamed Lee Warner, and pressed skip.')}</p>
+        <p>${esc('The Gazette notes, because somebody must, that the skip control is reserved by long tradition for Ian Tussie and is labelled as such. Warner did not merely skip the ceremony; he skipped it using another man\u2019s button. Tussie sat through the anthem like a gentleman and has declined to comment, which the Gazette reads as devastation.')}</p>
+        <p>${esc('Celta Leigh-Go were, it should be remembered, operating a joint-managerial regime on the night. Neither man could sit still for the anthem. The Committee has considered the matter and issued a statement: the ceremony is optional, the judgment is not.')}</p>
+        <p class="prog-match-detail">${esc('He then drafted second overall. The Gazette awaits the karmic settlement with interest.')}</p>
+      </div>`);
       out.push(`<div class="prog-story">
         <div class="prog-head">TWO MEN, ONE DUGOUT: CELTA CONFIRM JOINT REGIME</div>
         <div class="prog-by">By ${esc(press(['wire'], 'ds-celta').n)}</div>
