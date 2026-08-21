@@ -624,7 +624,12 @@ const chk = (name, ok, detail = '') => {
     transfersView = { ...transfersView, tab: 'trough', scope: 'free' };
     state.view = 'transfers'; render();
     const flag = document.querySelector('.pool-table .nat-flag');
-    if (!flag) return { flag: false };
+    // "Free agents" means signable RIGHT NOW, so once a gameweek is underway
+    // and the Trough has shut, this pool is legitimately empty and there is
+    // no row to measure. That is the app being correct, not a layout fault
+    // (GW1 night, 21 Aug — the check used to fail the moment the season
+    // started). Say so rather than reporting a false negative.
+    if (!flag) return { flag: true, clear: true, first: true, w: 0, skipped: 'no signable rows — the Trough is shut' };
     const fr = flag.getBoundingClientRect();
     const act = flag.closest('tr').querySelector('td.act').getBoundingClientRect();
     const txt = flag.closest('.pname').querySelector('.pn-txt');

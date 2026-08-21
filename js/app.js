@@ -5185,7 +5185,13 @@ function nextFx(team) {
 }
 // the coloured short fixture ("BOU (A)", tinted by fear) — the Vs column and
 // the phone player cells share it
-function nextFxHtml(team) {
+function nextFxHtml(team, gwN = null) {
+  // gwN names the gameweek the reader actually cares about. In the Trough that
+  // is the LANDING gameweek, not the live one: during GW1 the naive "next
+  // unfinished fixture" showed Arsenal v COV — a match that had already
+  // kicked off — while any deal signed then lands in GW2 away at Villa
+  // (Wilko, GW1 night: "the trough doesn't show gameweek 2's games").
+  if (gwN != null) return nextOppHtml(team, gwN);
   const t = nextFx(team);
   const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null;
   return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t;
@@ -7066,7 +7072,12 @@ function bindTransfers() {
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
       const s = transfersView.sort;
       const live = seasonHasStats();
-      const cols = STAT_COLS(live);
+      const landingGwN = GAMEWEEKS[transferGw()]?.n ?? null;
+      // every fixture shown in the Trough is read through the landing-gameweek
+      // lens — the same rule Marc applied to the pitch and bench chips
+      const cols = STAT_COLS(live).map(c => c.k === 'vs'
+        ? { ...c, h: landingGwN ? `GW${landingGwN}` : c.h, t: 'Fixture in the gameweek this deal lands in', v: (m, p) => nextFxHtml(p.team, landingGwN) }
+        : c);
       pool.sort(metricSort(s));
       const twNow = troughWindow();
       const clearsTxt = !twNow.open
@@ -7096,7 +7107,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
