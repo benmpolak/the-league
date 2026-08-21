@@ -2224,6 +2224,24 @@ function wdAdvance(passed, newPick = null) {
   if (!netOn()) { state.windowDraft = apply(state.windowDraft); after(); return; }
   // online: the pick/pass mutation already advanced the turn server-side
 }
+/* Admit one man to the Trough without opening the window (Marc, 21 Aug:
+   "he isnt a new player hes just a player who wasnt on the official fpl game
+   until he played in a match last week. the holding pen is for players who are
+   added to the game because they have moved clubs").
+
+   isArrival asks whether the draft-night snapshot has this id at this club, so
+   it cannot tell a genuine signing from a lad the feed had simply never
+   created. Both arrive as an unknown id. Writing him into the snapshot at his
+   current club says "he was here on draft night, at this club" — which for an
+   academy player is the plain truth, and leaves every real arrival locked. */
+function admitArrival(pid) {
+  const p = PLAYER_BY_ID[pid];
+  if (!p || !state.draftPool?.ids) return;
+  if (netOn()) { serverAct('windowDraft', { op: 'admit', playerId: pid }).catch(() => toast('The Chairman only. Or the window has already been run.')); return; }
+  state.draftPool = { ...state.draftPool, ids: { ...state.draftPool.ids, [pid]: p.club } };
+  save(); render();
+  toast(`${p.name} is loose in the Trough. He was never in the window.`);
+}
 function wdFinish() {
   if (state.windowDraft?.status === 'done') return;
   const done = () => {
@@ -6673,7 +6691,8 @@ function viewTransfers() {
       wdCard = `<div class="card" style="margin-bottom:14px">
         <h2>The Window <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
         <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough. No more WhatsApp draft, no more Ben Levy day.</p>
-        <p style="font-size:12px;margin-top:6px"><b>In the holding pen:</b> ${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `${pname(p)} <span class="muted">(${esc(p.club)})</span>`).join(' · ')}${arrivals.length > 15 ? ` <span class="muted">+${arrivals.length - 15} more</span>` : ''}</p>
+        <p style="font-size:12px;margin-top:6px"><b>In the holding pen:</b></p>
+        <div class="pen-list">${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `<span class="pen-man">${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him to the Trough without a Window Draft.">&rarr; Trough</button>` : ''}</span>`).join('')}${arrivals.length > 15 ? `<span class="muted">+${arrivals.length - 15} more</span>` : ''}</div>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wdStart">Start the Window Draft</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
@@ -6954,6 +6973,12 @@ function bindTransfers() {
     state.windowDraft = { status: 'live', order: ord, turn: 0, passes: 0, picks: [] };
     save(); render();
   };
+  document.querySelectorAll('[data-admit]').forEach(b => b.onclick = () => {
+    const p = PLAYER_BY_ID[+b.dataset.admit];
+    if (!p) return;
+    if (!confirm(`Admit ${p.name} (${p.club}) straight to the Trough?\n\nOnly for a player the feed added late — an academy debut, a name FPL had never created. A man who actually moved clubs belongs in the Window Draft.`)) return;
+    admitArrival(+b.dataset.admit);
+  });
   const wdr = $('#wdRelease');
   if (wdr) wdr.onclick = () => { if (confirm('Release every new arrival straight into the Trough — no Window Draft?')) wdFinish(); };
   const wde = $('#wdEnd');
