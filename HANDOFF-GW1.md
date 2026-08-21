@@ -33,46 +33,75 @@ first waiver run Tue 25 Aug 10:00.
 
 ## Open, in priority order
 
-### 0. THE ONE THAT DECIDES THE PROJECT — get live data off GitHub's scheduler
-Ben, GW1 night: *"the lads will basically walk away if we can't get instant
-data into the game live."* Treat this as priority zero.
+### 0. LIVE DATA — must be bulletproof before Sat 22 Aug 12:30
+Ben: *"the lads will basically walk away if we can't get instant data into the
+game live... I want the most 11/10 foolproof answer, fixed before a match
+kicks off tomorrow."* **Hard deadline: Saturday 12:30 (Hull v Man Utd).** Then
+15:00 ×3, 17:30, and Sunday.
 
-**Root cause is not our code.** A pass costs ~1s (the FPL fetch is 0.4s). The
-problem is that `.github/workflows/live.yml` depends on GitHub's *scheduled*
-workflows, which are explicitly best-effort: tonight a `*/5` cron fired at
-19:55, 20:29, 20:53, 21:23 — gaps of 24-34 minutes. No amount of tuning makes
-GitHub punctual.
+**Root cause, established.** Not our code — a pass costs ~1s (FPL fetch 0.4s).
+`live.yml` depends on GitHub *scheduled* workflows, which are best-effort by
+design: a `*/5` cron fired at 19:55, 20:29, 20:53, 21:23 on GW1 night. Gaps of
+24-34 minutes, so ~85% of the match had no coverage and updates arrived in one
+lump. No GitHub setting fixes this. `waiverTick`
+(`onSchedule({schedule:'7 * * * *'})`) has fired on time every hour since
+launch — Google Cloud Scheduler is punctual where GitHub is not.
 
-**The fix already exists in this codebase, one file over.** `waiverTick`
-(`functions/index.js`, `onSchedule({ schedule: '7 * * * *' })`) runs on Google
-Cloud Scheduler and has fired on time every time — the waiver run ledger
-proves it. Cloud Scheduler accepts `* * * * *`.
+**Target:** during any live fixture, `public/liveStats` is never more than
+~60s old, and a failure can never be silent.
 
-Proposed: add a **`liveTick` scheduled function, every minute**, that does what
-`scripts/push_live.js` does — read FPL, write `public/liveStats` — and returns
-in milliseconds when no fixture is live. That removes GitHub from the live
-path entirely and makes worst-case staleness ~60s + FPL's own lag.
+Build all four layers. They must fail independently.
 
-Notes for whoever builds it:
-- Use FPL's per-gameweek live endpoint (`/api/event/{id}/live/`), not
-  `bootstrap-static`, which is far heavier than this needs.
-- Keep the safety property intact: `liveStats` is a DISPLAY-ONLY overlay.
-  Settlement, waivers and the server engine must continue to read the
-  canonical Pages feed. Do not let a live fetch influence scoring.
-- Reuse the existing staleness/clear-down behaviour: clear the node when no
-  fixture is live, exactly as `push_live.js` does today.
-- Cost on the existing Blaze plan is effectively nil: ~43k invocations/month
-  against a 2M free tier, and Cloud Scheduler's first three jobs are free
-  (this would be the second). Confirm before promising Ben a number.
-- Keep `live.yml` as a belt-and-braces fallback at first; retire it once the
-  function has survived a full matchday.
-- **This needs a functions deploy, so ask Ben before deploying.**
+**Layer 1 — primary: `liveTick`, a scheduled function, every minute.**
+`onSchedule({ schedule: '* * * * *', region: 'europe-west1' })` doing what
+`scripts/push_live.js` does: read FPL, write `public/liveStats`, clear the node
+when nothing is live. Use FPL's per-gameweek live endpoint
+(`/api/event/{id}/live/`), not `bootstrap-static`. Return in milliseconds when
+no fixture is live. Cost is nil on the existing Blaze plan (~43k invocations
+vs a 2M free tier; Cloud Scheduler's first three jobs are free, this is the
+second) — verify rather than assume.
 
-**Interim state as of tonight:** `live.yml` was rewritten to work a 36-minute
-deadline at a 30s cadence with a no-cancel concurrency group, so successive
-runs meet end to end and the 25-minute silences should be gone. That is a
-mitigation, not the fix — it still depends on GitHub firing at all.
+**Layer 2 — independent fallback: keep `live.yml` running.** Different
+infrastructure, different failure mode. Do NOT retire it until the function has
+survived a full matchday. Both writers must be idempotent and last-write-wins
+safe: whoever writes most recently wins, and neither can corrupt the other.
 
+**Layer 3 — self-healing: a `liveRefresh` callable + client auto-heal.** Any
+signed-in client that sees a live fixture with a stale overlay calls it, and it
+does one immediate fetch-and-write. Rate-limit hard (per-uid AND global, reuse
+the `mailGuard` sliding-bucket pattern) so twelve phones cannot stampede FPL or
+your bill. Client calls it at most once per staleness episode, never in a loop.
+
+**Layer 4 — visible truth: a freshness indicator.** Show the live overlay's
+age where scores are read ("Live · updated 14s ago"), amber past ~90s, and
+say plainly when it is stale. Silent failure is what burned trust on GW1 night
+— the lads had to guess. Also surface last-write age in the Chairman's
+pre-flight card.
+
+**Hard constraints.**
+- `liveStats` stays DISPLAY-ONLY. Settlement, waivers, H2H results and the
+  server engine continue to read the canonical Pages feed. Nothing in this work
+  may make a live fetch capable of changing a score. This is THE safety
+  property — sol has cleared it twice; do not regress it.
+- Never commit a secret. The function uses the existing service-account path.
+- **Ask Ben before deploying functions.** He is the only one who deploys.
+- Full suites green before each push, including `test:emu`
+  (`PATH="/opt/homebrew/opt/openjdk/bin:$PATH"`).
+
+**Acceptance — demonstrate, do not assert.**
+1. Emulator tests for `liveTick` (writes, clears when nothing live, is
+   idempotent) and `liveRefresh` (rate limits bite, unauthenticated refused).
+2. A real observation during the 12:30 match: sample `liveStats.t` ten times
+   over ~10 minutes and show the age never exceeds ~90s.
+3. Fallback proof: with the function disabled or erroring, the GitHub workflow
+   still writes and the overlay still updates.
+4. The indicator shows a true age and visibly degrades when the feed stalls.
+
+**If it is not confidently done by 11:30 Saturday, STOP.** Do not deploy
+half-finished server code before a matchday. Instead spend the remaining time
+making the GitHub fallback as robust as possible (self-chaining via a PAT is
+the strongest GitHub-only option, but it needs Ben to create the token), and
+tell Ben plainly where it stands.
 
 ### 1. FEATURE — the Gazette should keep stories for a week (Ben's ask, tonight)
 > "the gazette old stories disappearing was disappointing — i think you should
