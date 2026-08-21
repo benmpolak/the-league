@@ -840,6 +840,18 @@ ACTIONS.autolistSet = async ({ league, a, data, ctx }) => {
   return { ok: true };
 };
 
+// The Trough watchlist (Marc, 20 Aug). Private per manager, like the autolist
+// — it lives under private/{uid} so no other manager's snapshot can ever carry
+// it. Deliberately inert: watching a player is a lens on the Trough and grants
+// nothing, so this writes a list and validates it, and nothing else reads it.
+ACTIONS.watchlistSet = async ({ league, a, data, ctx }) => {
+  const pids = intArray(data.pids, 'pids', 300);
+  if (new Set(pids).size !== pids.length) throw new HttpsError('invalid-argument', 'watchlist repeats a player');
+  if (pids.some(id => !ctx.PLAYER_BY_ID[id])) throw new HttpsError('invalid-argument', 'watchlist names an unknown player');
+  await db().ref(`${leagueBase(league)}/private/${a.uid}/watchlist`).set(pids);
+  return { ok: true };
+};
+
 ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   const g = Number(data.gwIndex);
   const cur = eng.currentGwIndex();

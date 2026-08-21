@@ -266,7 +266,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -422,9 +422,10 @@ function applySharedSnapshot(data) {
   const defaults = freshState();
   const wasPhase = state.phase;
   for (const k of SHARED_KEYS) {
-    // online, claims/autolists never travel in the public snapshot — they are
-    // per-owner private data fed by onPrivateSnapshot. Keep the local copy.
-    if (netOn() && (k === 'claims' || k === 'autolists')) continue;
+    // online, claims/autolists/watchlists never travel in the public snapshot —
+    // they are per-owner private data fed by onPrivateSnapshot. Keep the local
+    // copy. A watchlist is nobody else's business (Marc, 20 Aug).
+    if (netOn() && (k === 'claims' || k === 'autolists' || k === 'watchlists')) continue;
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
   applySquadRules(state.settings);
@@ -465,6 +466,7 @@ function applyPrivateNode(node) {
   const mid = membership?.managerId;
   if (mid == null) return;
   state.autolists = { ...state.autolists, [mid]: toArr(node?.autolist) };
+  state.watchlists = { ...state.watchlists, [mid]: toArr(node?.watchlist) };
   const claims = {};
   for (const [g, arr] of Object.entries(node?.claims || {})) claims[g] = { [mid]: toArr(arr) };
   state.claims = claims;
@@ -536,6 +538,7 @@ function freshState() {
     },
     draft: { order: [], picks: [], breaksDone: [], timewastes: {}, paused: false, pausedLeft: 0, ceremonyReady: {} },
     autolists: {},         // managerId -> [pid] ranked personal autopick list / shortlist
+    watchlists: {},        // managerId -> [pid] private Trough watchlist — a lens, never an action
     lineups: {},           // managerId -> { gwIndex: [pid x11] }
     shirtNums: {},         // managerId -> { pid: customNumber }
     transfers: [],         // [{managerId, outId, inId, gw, n, t, trade?, waiver?}]
@@ -752,6 +755,7 @@ function load() {
     if (s && !s.lineups) { s.lineups = {}; s.transfers = []; } // migrate pre-lineup saves
     if (s && !s.claims) s.claims = {};
     if (s && !s.autolists) s.autolists = {};
+    if (s && !s.watchlists) s.watchlists = {};
     if (s && !s.trades) s.trades = [];
     if (s && s.pins) delete s.pins; // PINs retired — real sign-in now
     if (s && !s.covenants) s.covenants = [];
@@ -2556,6 +2560,26 @@ function setAutolist(mid, arr) {
   state.autolists[mid] = arr;
   if (netOn()) serverAct('autolistSet', { pids: arr }).catch(() => {});
   save(); render();
+}
+/* The Trough watchlist (Marc, 20 Aug). Deliberately NOT the autopick list: the
+   autolist is an instruction — if your clock dies, take this man — whereas a
+   watchlist is only a lens on the Trough. Watching somebody must never sign,
+   claim or draft him, so nothing outside the Trough filter reads this. */
+const watchIds = mid => toArr(state.watchlists?.[mid]);
+const watchBtnHtml = (mid, pid) => {
+  const on = isWatched(mid, pid);
+  return `<button class="btn ghost small icon-btn watch-btn${on ? ' watch-on' : ''}" data-watch="${pid}" aria-pressed="${on}" aria-label="${on ? 'Stop watching' : 'Watch'} ${esc(PLAYER_BY_ID[pid]?.name || 'this player')}" title="${on ? 'On your watchlist — tap to drop him' : 'Watch him: he joins your private Trough watchlist'}">&#128065;</button>`;
+};
+const isWatched = (mid, pid) => watchIds(mid).includes(pid);
+function toggleWatch(mid, pid) {
+  const cur = watchIds(mid);
+  const next = cur.includes(pid) ? cur.filter(x => x !== pid) : [...cur, pid];
+  state.watchlists = { ...state.watchlists, [mid]: next };
+  // the write is fire-and-forget, as the autolist's is: a watchlist that fails
+  // to reach the cloud is a lost preference, not a lost pick
+  if (netOn()) serverAct('watchlistSet', { pids: next }).catch(() => {});
+  save();
+  return next;
 }
 
 /* ---------------- lineups ---------------- */
@@ -7031,7 +7055,8 @@ function bindTransfers() {
       // filter was a superset of the one beside it (Toby, sandbox 12 Aug:
       // "surely it should only be the everyone filter that has both"). Waivers
       // has its own chip; Everyone still shows the lot, owned included.
-      let pool = transfersView.scope === 'all' ? [...PLAYERS]
+      let pool = transfersView.scope === 'watch' ? watchIds(mid).map(id => PLAYER_BY_ID[id]).filter(Boolean)
+        : transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
         : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
         : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !hasLeft(p));
@@ -7073,7 +7098,7 @@ function bindTransfers() {
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
-            <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}</div></td>
+            <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>
@@ -7090,7 +7115,9 @@ function bindTransfers() {
         <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Owned players too, and men who have left the league">Everyone</button>
+        <button class="btn small ${transfersView.scope === 'watch' ? '' : 'ghost'}" data-trscope="watch" title="Only the players you are watching — owned or free">&#128065; Watchlist${watchIds(mid).length ? ` (${watchIds(mid).length})` : ''}</button>
       </div>` + (shown.length ? table
+        : transfersView.scope === 'watch' ? `<span class="muted">Nothing on your watchlist yet. Tap the ${'\u{1F441}'} beside anyone in the Trough — owned or free — and he turns up here. Only you can see it.</span>`
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
         // now that Free agents means signable, it empties honestly in the hours
         // after a gameweek, when everyone spare is still claim-only
@@ -7101,6 +7128,20 @@ function bindTransfers() {
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
       results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
       results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => { transfersView.scope = b.dataset.trscope; transfersView.limit = 20; renderTrResults(); });
+      results.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => {
+        if (!canActFor(mid)) { toast('Sign in to keep a watchlist'); return; }
+        const pid = +b.dataset.watch;
+        const on = toggleWatch(mid, pid).includes(pid);
+        toast(on ? `${PLAYER_BY_ID[pid]?.name || 'He'} is on your watchlist` : `${PLAYER_BY_ID[pid]?.name || 'He'} is off your watchlist`);
+        // in the watchlist lens the row has just left the list, so redraw;
+        // elsewhere only the button changed
+        if (transfersView.scope === 'watch') { renderTrResults(); return; }
+        results.querySelectorAll(`[data-watch="${pid}"]`).forEach(x => x.outerHTML = watchBtnHtml(mid, pid));
+        // the tally on the scope chip is part of the same thought — leaving it
+        // stale until the next full render reads as the tap not registering
+        const chip = results.querySelector('[data-trscope="watch"]');
+        if (chip) chip.innerHTML = `&#128065; Watchlist${watchIds(mid).length ? ` (${watchIds(mid).length})` : ''}`;
+      });
       results.querySelectorAll('[data-trtrade]').forEach(b => b.onclick = () => {
         const [other, get] = b.dataset.trtrade.split(':').map(Number);
         transfersView.tab = 'trades'; window._tradeFocus = { other, get }; render();

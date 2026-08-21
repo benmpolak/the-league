@@ -722,6 +722,10 @@ input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
 
 /* --- The League 26/27 additions --- */
 .status-chip { font-size: 12px; margin-left: 2px; }
+/* the Trough watchlist eye: dim until you are watching him (Marc, 20 Aug) */
+.watch-btn { opacity: .45; }
+.watch-btn:hover, .watch-btn:focus-visible { opacity: 1; }
+.watch-btn.watch-on { opacity: 1; color: var(--accent) !important; border-color: var(--accent) !important; }
 /* Committee placeholder: a signing the FPL feed hasn't ingested. His price and
    Rate are hand-written, so the board says so rather than passing them off as
    FPL figures (Marc, 19 Aug: "it's only a placeholder") */
