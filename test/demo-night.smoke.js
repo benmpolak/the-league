@@ -441,8 +441,10 @@ const chk = (name, ok, detail = '') => {
       const fx = document.querySelector('.fx')?.getBoundingClientRect();
       results.highlightsInside = !!yt && !!fx && yt.left >= fx.left - 1 && yt.right <= fx.right + 1;
       const ytLink = document.querySelector('.fx-yt');
+      // straight to Sky Sports Football's channel search (Ben, GW1 night —
+      // "directly to the sky sports football youtube highlights")
       results.highlightsLink = ytLink?.target === '_blank' && ytLink?.rel === 'noopener'
-        && ytLink.href.includes(encodeURIComponent(`${TEAMS[0].name} vs ${TEAMS[1].name} Premier League highlights`));
+        && ytLink.href.includes('@SkySportsFootball/search');
       state.hamCup = { gw: 20, drawnAt: Date.now(), openedAt: Date.now(), frozen: [...ownedIdsAt(currentGwIndex())], entries: {} };
       hamView = { q: '', sel: null, pos: '', club: '' }; measure('cup');
       results.width = width;

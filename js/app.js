@@ -9899,16 +9899,17 @@ function viewH2H() {
           const live = f.started && !fxOver(f);
           const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''} – ${f.as ?? ''}`;
           // tappable like the dashboard ticker (Ben, GW1 night: "can we get
-          // this clickable on the matches/fixtures too?") — same match centre
-          const ytq = encodeURIComponent(`${f.home} ${f.away} ${f.hs ?? ''} ${f.as ?? ''} highlights`);
+          // this clickable on the matches/fixtures too?") — same match
+          // centre. The row keeps its original five columns: a sixth child
+          // made the grid wrap tall ("the fixtures have gone a bit big"), so
+          // highlights live in the match centre and on the games page.
           return `<div class="h2h-fx fx-row" data-fx="${f.id}" style="font-size:12.5px;cursor:pointer" title="Tap for scorers and lineups">
             <span class="fx-name fx-l">${esc(f.home)}</span>
             <span class="fx-chip">${flagImg(f.home)}</span>
             <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : fxOver(f) && f.started ? ' <span class="muted" style="font-size:10px">FT</span>' : ''}</span>
             <span class="fx-chip">${flagImg(f.away)}</span>
             <span class="fx-name">${esc(f.away)}</span>
-            ${fxOver(f) ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654;</a>` : ''}
-          </div>`;
+          </div>${fixtureScorersLine(f)}`;
         }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
       })()}
     </div>`;
@@ -10850,14 +10851,23 @@ function viewFixtures() {
     ${list.map(f => {
       const live = f.started && !fxOver(f); // fp: the whistle ends it here too
       const score = !f.started ? new Date(f.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''}–${f.as ?? ''}`;
-      const ytq = encodeURIComponent(`${f.home} vs ${f.away} Premier League highlights`);
-      return `<div class="fx ${live ? 'live' : ''}" data-fx="${f.id}" style="cursor:pointer" title="Tap for scorers, assists and who featured">
+      // straight to Sky Sports Football's own channel (Ben, GW1 night: "if
+      // the link could go directly to the sky sports football youtube
+      // highlights") — their channel search puts the official cut first
+      const ytq = encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`);
+      // scorers live ON the page; a tap unfolds the full match centre inline
+      // (lineups, assists, who featured — owner tags and all). Ben, GW1
+      // night: "better to have the epl games page have the lineups and
+      // scorers — i like the feature with the who owned still so leave that"
+      const open = fxView.open === f.id;
+      const detail = open ? (() => { const c = fixtureCardBody(f); return `<div class="fx-detail">${c.body}</div>`; })() : '';
+      return `<div class="fx ${live ? 'live' : ''}" data-fx="${f.id}" style="cursor:pointer" title="${open ? 'Fold it away' : 'Tap for the full match centre'}">
         <div class="fx-team right"><span>${esc(f.home)}</span>${flagImg(f.home)}</div>
         <span class="fx-score">${score}</span>
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
         <span class="fx-time">${live ? `${f.minutes}'` : (fxOver(f) && f.started ? 'FT' : '')}</span>
-        ${fxOver(f) && f.started ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654; Highlights</a>` : ''}
-      </div>`;
+        ${fxOver(f) && f.started ? `<a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${ytq}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
+      </div>${fixtureScorersLine(f)}${detail}`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
 }
@@ -10868,16 +10878,20 @@ function bindFixtures() {
   if (fs) fs.onclick = () => syncNow(true); // inline onclick= is dead under the CSP
   document.querySelectorAll('[data-fx]').forEach(el => el.onclick = e => {
     if (e.target.closest('.fx-yt')) return; // the Highlights link keeps its job
-    showFixtureCard(+el.dataset.fx);
+    // the detail unfolds in place on the games page; one open at a time
+    const id = +el.dataset.fx;
+    fxView.open = fxView.open === id ? null : id;
+    render();
   });
 }
 // tap a game → the match centre (Ben, UAT night: "pulling the lineups and
 // scorers in games… assists too"). Everything comes from our own gw stats —
 // scorers, assists, cards, who featured — with league-owner tags. Pre-match
 // it lists both clubs' owned men (predicted XIs aren't public FPL data).
-function showFixtureCard(fxId) {
-  const f = state.fixtures.find(x => x.id === fxId);
-  if (!f) return;
+// the match centre's body, shared by the popup (dashboard ticker, Matches
+// page) and the EPL games page's inline expansion (Ben, GW1 night: "better to
+// have the epl games page have the lineups and scorers — leave the who owned")
+function fixtureCardBody(f) {
   const gwIdx = GAMEWEEKS.findIndex(g => g.n === f.gw);
   const ev = gwIdx >= 0 ? gwEvent(gwIdx) : null;
   const ownedBy = {};
@@ -10907,12 +10921,35 @@ function showFixtureCard(fxId) {
   };
   const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? 0}–${f.as ?? 0}`;
   const status = fxOver(f) && f.started ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
+  const body = `<h3 style="margin-top:10px">${esc(f.home)}</h3>${side(f.home)}
+    <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}`;
+  return { score, status, body, ownedBy };
+}
+// one glanceable line for the games page: both clubs' scorers, owners tagged
+function fixtureScorersLine(f) {
+  if (!f.started) return '';
+  const gwIdx = GAMEWEEKS.findIndex(g => g.n === f.gw);
+  const ev = gwIdx >= 0 ? gwEvent(gwIdx) : null;
+  if (!ev) return '';
+  const ownedBy = {};
+  for (const mm of state.managers) for (const sp of squadAt(mm.id, gwIdx)) ownedBy[sp.id] = mm.id;
+  const scorers = PLAYERS.filter(p => (p.team === f.home || p.team === f.away) && ev.playerStats?.[p.id]?.g > 0)
+    .map(p => {
+      const n = ev.playerStats[p.id].g;
+      const tag = ownedBy[p.id] != null ? ` <span class="muted">(${esc(teamName(ownedBy[p.id]))})</span>` : '';
+      return `${esc(p.name)}${n > 1 ? ` ×${n}` : ''}${tag}`;
+    });
+  return scorers.length ? `<div class="fx-scorers">&#9917; ${scorers.join(', ')}</div>` : '';
+}
+function showFixtureCard(fxId) {
+  const f = state.fixtures.find(x => x.id === fxId);
+  if (!f) return;
+  const { score, status, body } = fixtureCardBody(f);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:460px;width:94%;max-height:86vh;overflow-y:auto">
     <h2 style="text-align:center">${flagImg(f.home)} ${esc(f.home)} <span class="gold">${score}</span> ${esc(f.away)} ${flagImg(f.away)} <span class="tag">${status}</span></h2>
-    <h3 style="margin-top:10px">${esc(f.home)}</h3>${side(f.home)}
-    <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}
+    ${body}
     <div style="text-align:center;margin-top:12px"><button class="btn ghost small" id="fxcClose">Close</button></div>
   </div>`;
   document.body.appendChild(ov);
