@@ -170,9 +170,24 @@ shape (not built, not agreed):
 > "don't love functionality for making waiver claims. Bit clunky... Reordering
 > list is easier but adding players to it isn't."
 
-Reordering is good; **adding** a player to the claim ladder is the clunky
-half. Not diagnosed. Worth watching someone do it on a phone before designing.
-Claims are being lodged now for Tuesday's run, so this has a real audience.
+**Diagnosed (22 Aug, Fable 5).** Adding a claim is three disconnected steps
+in the wrong order: (1) you must pick who goes OUT first, elsewhere, before
+the pool's Claim buttons even arm (they sit dim with a tap-to-explain);
+(2) then find and tap the player you actually came for; (3) the lodged claim
+lands silently at the BOTTOM of the ladder and the receipt tells you to go
+to a third place to reorder it. Backwards to how a manager thinks ("I want
+HIM" comes first) and split across three locations for one thought.
+
+**Proposed design (not built):** invert it for claims only — tap **Claim**
+on the player you want; the confirm sheet then asks who makes way (compact
+squad picker inside the sheet, legal drops only, XI men flagged) and where
+on the ladder it slots (top / bottom, defaulting to bottom). One sheet, one
+thought. Reordering stays exactly as it is — Ian likes it. Sign-outright
+keeps the current out-first flow.
+
+**Do NOT ship this mid-weekend:** claims for Tuesday's run are being lodged
+through the current flow right now. Build it Sunday/Monday in daylight, with
+the r3ui/prep waiver smokes extended for the new sheet.
 
 ### 3. BUG — repeated "confirm your email" prompt (AJ, via Toby)
 > "Every time I refresh it asks me to confirm my email. Not impacting site
