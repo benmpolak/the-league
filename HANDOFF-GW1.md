@@ -161,6 +161,13 @@ making the GitHub fallback as robust as possible (self-chaining via a PAT is
 the strongest GitHub-only option, but it needs Ben to create the token), and
 tell Ben plainly where it stands.
 
+### DECIDED — highlights stay on the channel-search link (Ben, GW1 Sat night)
+"ok it's pretty good as it is tbh." The Highlights button opens Sky Sports
+Football's channel pre-searched for the match — official cut is the top
+result, one extra tap. The exact-video upgrade (YouTube Data API key +
+fetch-action enrichment of fixtures.json) was designed and OFFERED; Ben
+declined the key. Do not re-pitch unless he raises it.
+
 ### 1b. FEATURE — deputise the holding pen (Ben, GW1 Sat 21:18)
 > "why dont i give you the ability to do so" (to Marc)
 
