@@ -141,9 +141,17 @@ const chk = (name, ok, detail = '') => {
     // fp counts as over for liveness and for "still to play"
     out.liveOff = !anyMatchLive();
     out.fracDone = playerFixtureState(PLAYERS[0], 1).frac === 0 && playerFixtureState(PLAYERS[0], 1).st === 'done';
+    // highlights href: the curated exact video wins; absence falls back to
+    // the app-safe search deep-link (Ben/Marc, GW1 night)
+    state.highlights = { 777: 'abc123DEF45' };
+    out.ytExact = fxYtHref(state.fixtures[0]);
+    state.highlights = null;
+    out.ytFallback = fxYtHref(state.fixtures[0]);
     state.liveStats = null; vidiFeed = [];
     return out;
   });
+  chk('highlights: curated fixture gets the exact watch link', /watch\?v=abc123DEF45$/.test(vidi.ytExact), vidi.ytExact);
+  chk('highlights: uncurated fixture falls back to the app-safe search', /results\?search_query=.*sky%20sports/.test(vidi.ytFallback), vidi.ytFallback);
   chk('vidi: a goal arriving via the overlay reaches the tape', vidi.goalLine, JSON.stringify(vidi));
   chk('vidi: the same overlay stamp never prints twice', vidi.noDup);
   chk('vidi: the next stamp prints the assist', vidi.assistLine, JSON.stringify(vidi));

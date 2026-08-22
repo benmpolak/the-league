@@ -3011,6 +3011,14 @@ let liveTimer = null;
 // data checks, which kept the pill burning and matches "LIVE" all night.
 // Every DISPLAY surface asks fxOver; settlement keeps the slow, safe flag.
 const fxOver = f => !!(f.finished || f.fp);
+// the Highlights href: the EXACT Sky video when the curated map has this
+// fixture (Ben, GW1 night — "e.g. youtube.com/watch?v=..."), else a search
+// deep-link the YouTube app handles (the channel-page URL form does not)
+function fxYtHref(f) {
+  const vid = state.highlights?.[String(f.id)];
+  if (vid && /^[\w-]{6,20}$/.test(vid)) return `https://www.youtube.com/watch?v=${vid}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`sky sports ${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away} highlights`)}`;
+}
 function anyMatchLive() { return state.fixtures.some(f => f.started && !fxOver(f)); }
 
 /* ---- the Vidiprinter (ledger #8 — Tussie's Soccer-Saturday ticker) ----
@@ -3338,12 +3346,16 @@ async function syncNow(manual = false) {
   if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
-    const [statsRes, fxRes] = await Promise.all([
+    const [statsRes, fxRes, hlRes] = await Promise.all([
       fetch(`data/stats.json${bust}`),
       fetch(`data/fixtures.json${bust}`),
+      fetch(`data/highlights.json${bust}`).catch(() => null), // optional, hand-curated
     ]);
     const stats = await statsRes.json();
     const fixtures = await fxRes.json();
+    // exact Sky highlights videos by fixture id (Ben, GW1 night) — absence
+    // of the file, or of any given match, just means the search fallback
+    if (hlRes?.ok) { try { state.highlights = await hlRes.json(); } catch { /* keep the old map */ } }
     state.feedGenerated = stats.generated || null; // for the stale-feed warning
     state.fixtures = fixtures
       .filter(f => f.date)
@@ -10851,10 +10863,6 @@ function viewFixtures() {
     ${list.map(f => {
       const live = f.started && !fxOver(f); // fp: the whistle ends it here too
       const score = !f.started ? new Date(f.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''}–${f.as ?? ''}`;
-      // straight to Sky Sports Football's own channel (Ben, GW1 night: "if
-      // the link could go directly to the sky sports football youtube
-      // highlights") — their channel search puts the official cut first
-      const ytq = encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`);
       // scorers live ON the page; a tap unfolds the full match centre inline
       // (lineups, assists, who featured — owner tags and all). Ben, GW1
       // night: "better to have the epl games page have the lineups and
@@ -10866,7 +10874,7 @@ function viewFixtures() {
         <span class="fx-score">${score}</span>
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
         <span class="fx-time">${live ? `${f.minutes}'` : (fxOver(f) && f.started ? 'FT' : '')}</span>
-        ${fxOver(f) && f.started ? `<a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${ytq}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
+        ${fxOver(f) && f.started ? `<a class="fx-yt" href="${fxYtHref(f)}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
       </div>${fixtureScorersLine(f)}${detail}`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
@@ -10921,13 +10929,17 @@ function fixtureCardBody(f) {
         // proper sources cost keys, scraping or an Opta id-mapping project;
         // the counts give the line for free). ↩ = came off, ↪ = came on.
         const shape = ['DF', 'MF', 'FW'].map(pos => starters.filter(x => x.p.pos === pos).length).join('-');
-        rows.push(`<div class="lrow" style="font-size:11px"><span class="muted">Lined up ${shape}</span></div>`);
-        rows.push(['GK', 'DF', 'MF', 'FW'].map(pos => {
-          const men = starters.filter(x => x.p.pos === pos);
-          return men.length ? `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="muted" style="flex:none;width:24px">${pos}</span><span>${men.map(({ p, s }) => `${pname(p)} <span class="muted">${fxOver(f) && s.min < 90 && !s.rc ? '&#8617; ' : ''}${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : '';
-        }).join(''));
+        rows.push(`<div class="ms-sheet">
+          <div class="ms-shape">STARTING XI &middot; ${shape}</div>
+          ${['GK', 'DF', 'MF', 'FW'].map(pos => {
+            const men = starters.filter(x => x.p.pos === pos);
+            return men.length ? `<div class="ms-row"><span class="pos-chip">${pos}</span><span>${men.map(({ p, s }) => `${pname(p)} <span class="muted">${fxOver(f) && s.min < 90 && !s.rc ? '&#8617; ' : ''}${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : '';
+          }).join('')}
+          ${bench.length ? `<div class="ms-row"><span class="pos-chip">SUB</span><span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">&#8618; ${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : ''}
+        </div>`);
+      } else if (bench.length) {
+        rows.push(`<div class="ms-row"><span class="pos-chip">SUB</span><span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">&#8618; ${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>`);
       }
-      if (bench.length) rows.push(`<div class="lrow" style="font-size:11.5px;flex-wrap:wrap"><span class="muted" style="flex:none">Bench:</span>&nbsp;<span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">&#8618; ${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>`);
       if (!played.length) rows.push('<p class="muted" style="font-size:12px">No one on the pitch yet.</p>');
     } else {
       const owned = PLAYERS.filter(p => p.team === club && ownedBy[p.id] != null);
@@ -10941,9 +10953,9 @@ function fixtureCardBody(f) {
   const status = fxOver(f) && f.started ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
   // the highlights ride inside the match centre too ("where is youtube?")
   const yt = fxOver(f) && f.started
-    ? `<div style="text-align:center;margin-top:10px"><a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`)}" target="_blank" rel="noopener">&#9654; Highlights on Sky Sports Football</a></div>` : '';
-  const body = `<h3 style="margin-top:10px">${esc(f.home)}</h3>${side(f.home)}
-    <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}${yt}`;
+    ? `<div style="text-align:center;margin-top:10px"><a class="fx-yt" href="${fxYtHref(f)}" target="_blank" rel="noopener">&#9654; Highlights on Sky Sports</a></div>` : '';
+  const body = `<h3 class="ms-club">${flagImg(f.home)} ${esc(f.home)}</h3>${side(f.home)}
+    <h3 class="ms-club">${flagImg(f.away)} ${esc(f.away)}</h3>${side(f.away)}${yt}`;
   return { score, status, body, ownedBy };
 }
 // one glanceable line for the games page: both clubs' scorers, owners tagged

@@ -378,6 +378,12 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
    double rule, newspaper-style, before they move out to the archive */
 .prog-backpage { border-top: 3px double var(--line); margin-top: 22px; padding-top: 12px; }
 .prog-backpage-rule { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+/* the match centre teamsheet (Ben, GW1 night: "it's a bit shit" — tidied) */
+.ms-club { display: flex; align-items: center; gap: 7px; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ms-sheet { margin-top: 4px; }
+.ms-shape { font-size: 10px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; margin: 4px 0 5px; }
+.ms-row { display: grid; grid-template-columns: 32px 1fr; gap: 8px; align-items: baseline; font-size: 12.5px; line-height: 1.55; padding: 2.5px 0; }
+.pos-chip { display: inline-flex; justify-content: center; font-size: 9.5px; letter-spacing: .06em; color: var(--muted); background: rgba(255,255,255,.06); border-radius: 4px; padding: 2px 0; }
 /* the games page: scorers on the sheet, the match centre unfolds in place */
 .fx-scorers { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); text-align: center; margin: 2px 0 6px; }
 .fx-detail { grid-column: 1 / -1; border-left: 3px solid var(--line); background: rgba(255,255,255,.02); border-radius: 8px; padding: 8px 12px 12px; margin: 2px 0 10px; }
