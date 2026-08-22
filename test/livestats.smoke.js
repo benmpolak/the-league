@@ -83,7 +83,7 @@ const chk = (name, ok, detail = '') => {
     const readPill = () => {
       renderSyncArea();
       const el = document.querySelector('#syncArea .live-pill');
-      return el ? { cls: el.className, txt: el.textContent } : null;
+      return el ? { cls: el.className, txt: el.textContent, title: el.title } : null;
     };
     const keepFx = state.fixtures, keepLv = state.liveStats, keepFeed = state.feedGenerated;
     state.fixtures = [{ started: true, finished: false, date: new Date().toISOString(), home: 'A', away: 'B' }];
@@ -107,8 +107,10 @@ const chk = (name, ok, detail = '') => {
     renderSyncArea();
     return out;
   });
-  chk('pill: fresh overlay shows seconds, plain LIVE style',
-    pill.fresh && /LIVE · 14s/.test(pill.fresh.txt) && !/amber|stale/.test(pill.fresh.cls), JSON.stringify(pill.fresh));
+  // silent in health: a fresh wire shows the plain LIVE dot, no counter —
+  // the exact age lives in the tooltip (Ben, GW1 Saturday, seeing "LIVE · 0s")
+  chk('pill: fresh overlay is the plain LIVE dot, age only in the tooltip',
+    pill.fresh && !/·/.test(pill.fresh.txt) && /14s/.test(pill.fresh.title) && !/amber|stale/.test(pill.fresh.cls), JSON.stringify(pill.fresh));
   chk('pill: ~3 min old goes amber', pill.amber && /amber/.test(pill.amber.cls) && /3m/.test(pill.amber.txt), JSON.stringify(pill.amber));
   chk('pill: 20 min old is visibly stale', pill.stale && /stale/.test(pill.stale.cls) && /20m/.test(pill.stale.txt), JSON.stringify(pill.stale));
   chk('pill: a fresh canonical feed rescues an old overlay', pill.feedRescues && !/amber|stale/.test(pill.feedRescues.cls), JSON.stringify(pill.feedRescues));

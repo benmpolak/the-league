@@ -3809,14 +3809,19 @@ function renderSyncArea() {
     // is what burned trust) — green under ~90s, amber to 5 min, stale beyond.
     // Not in the demo: its scores are fictional, and DEMO + LIVE side by side
     // both misleads and overflows the 320px header (ux3 D10/G1b, 22 Aug)
+    // silent in health, loud in failure (Ben, GW1 Saturday, seeing "LIVE ·
+    // 0s": "do we actually need it" — not while it's healthy): the plain
+    // LIVE dot when the wire is fresh; the age appears only once the wire
+    // is genuinely behind, which is the one moment it must not be silent
     const age = liveDataAgeMs();
-    if (age == null) bits.push('<span class="live-pill"><span class="rec"></span>LIVE</span>');
-    else {
-      const cls = age <= 90e3 ? '' : age <= 5 * 60e3 ? ' amber' : ' stale';
-      const title = age <= 90e3 ? `Live scores — updated ${fmtLiveAge(age)} ago`
-        : age <= 5 * 60e3 ? `Live scores running ${fmtLiveAge(age)} behind — the wire may be slow`
-          : `Live scores are STALE — nothing has landed for ${fmtLiveAge(age)}. The feed still refreshes every ~15 min; scores are lagging, not lost.`;
-      bits.push(`<span class="live-pill${cls}" title="${title}"><span class="rec"></span>LIVE &middot; ${fmtLiveAge(age)}</span>`);
+    if (age == null || age <= 90e3) {
+      bits.push(`<span class="live-pill" title="${age == null ? 'Live scores' : `Live scores — updated ${fmtLiveAge(age)} ago`}"><span class="rec"></span>LIVE</span>`);
+    } else {
+      const stale = age > 5 * 60e3;
+      const title = stale
+        ? `Live scores are STALE — nothing has landed for ${fmtLiveAge(age)}. The feed still refreshes every ~15 min; scores are lagging, not lost.`
+        : `Live scores running ${fmtLiveAge(age)} behind — the wire may be slow`;
+      bits.push(`<span class="live-pill${stale ? ' stale' : ' amber'}" title="${title}"><span class="rec"></span>LIVE &middot; ${fmtLiveAge(age)}</span>`);
     }
   }
   // (the old separate "feed stale" chip is gone — the LIVE pill above now
@@ -7931,28 +7936,97 @@ function programmeCard() {
     ${gazetteUnread() ? '<span class="prog-new" aria-label="New edition">NEW EDITION</span>' : ''}
   </div>`;
 }
+/* Everything the paper has ever printed, newest first (Ben, GW1 night:
+ * "keep stories for a week... old news moves down the page... then move
+ * out"). Editions are deterministic functions of state, so each print date
+ * is DERIVED from the calendar rather than stored — which also makes every
+ * back edition immutable by construction: a review prints when its gameweek
+ * settles, a matchday edition at its deadline, the Post-Draft Special on
+ * GW1 eve, the Season Preview in the build-up week. `article` is lazy so
+ * listing the archive never writes a word. */
+function gazetteEditions() {
+  const pick = (arr, seed) => arr[seed % arr.length];
+  const gw1 = GAMEWEEKS[0] ? new Date(GAMEWEEKS[0].from).getTime() : Date.now();
+  const eds = [];
+  for (let i = 0; i < REGULAR_GWS; i++) {
+    const st = gwStatus(i);
+    if (st === 'final') {
+      eds.push({ key: `rev${i}`, kind: 'review', edition: 'review edition', gwN: GAMEWEEKS[i].n, gw: i,
+        printed: new Date(GAMEWEEKS[i].to || GAMEWEEKS[i].from).getTime() + 20 * 3600e3,
+        article: () => reviewArticle(i, pick) });
+    } else if ((gwDeadlinePassed(i) || gwUnderway(i))) {
+      const art = previewArticle(i, pick);
+      if (art) eds.push({ key: `md${i}`, kind: 'matchday', edition: 'matchday edition', gwN: GAMEWEEKS[i].n, gw: null,
+        printed: new Date(GAMEWEEKS[i].from).getTime(), article: () => art });
+    }
+  }
+  if (typeof Gazette !== 'undefined' && Gazette.draftSpecial && state.draft.picks.length) {
+    const art = Gazette.draftSpecial();
+    if (art) eds.push({ key: 'special', kind: 'special', edition: 'post-draft special', gwN: null, gw: null,
+      printed: gw1 - 24 * 3600e3, article: () => art });
+  }
+  if (typeof Gazette !== 'undefined' && Gazette.preview) {
+    const art = Gazette.preview();
+    if (art) eds.push({ key: 'preview', kind: 'preview', edition: 'the season preview', gwN: null, gw: null,
+      printed: gw1 - 5 * 864e5, article: () => art });
+  }
+  return eds.sort((a, b) => b.printed - a.printed);
+}
+// which edition in the log is the one progTodays() serves as the paper
+function gazetteLeadKey(today) {
+  if (!today) return null;
+  if (today.edition === 'matchday edition') return `md${currentGwIndex()}`;
+  if (today.edition === 'review edition') return `rev${today.gw}`;
+  if (today.edition === 'post-draft special') return 'special';
+  if (today.edition === 'the season preview') return 'preview';
+  return null;
+}
+
 // the reading room: the full edition, typeset for reading, archive inside
 function gazetteSheet(gwIdx = null) {
   const pick = (arr, seed) => arr[seed % arr.length];
   const settled = [];
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') settled.push(i);
   const today = progTodays();
-  const showing = gwIdx != null && settled.includes(gwIdx)
-    ? { edition: gwIdx === today?.gw ? 'review edition' : 'review edition — from the archive', gwN: GAMEWEEKS[gwIdx].n, article: reviewArticle(gwIdx, pick), gw: gwIdx }
-    : today;
+  const eds = gazetteEditions();
+  // what is on the lectern: today's paper, a settled review, or one of the
+  // named pre-season editions (they live in the archive forever — the
+  // Post-Draft Special must not vanish the day GW1 settles; Ben, GW1 night)
+  let showing = today, atKey = null;
+  if (gwIdx === 'special' || gwIdx === 'preview') {
+    const e = eds.find(x => x.kind === gwIdx);
+    if (e) { showing = { edition: `${e.edition} — from the archive`, gwN: e.gwN, article: e.article(), gw: null }; atKey = e.key; }
+  } else if (gwIdx != null && settled.includes(gwIdx)) {
+    showing = { edition: gwIdx === today?.gw ? 'review edition' : 'review edition — from the archive', gwN: GAMEWEEKS[gwIdx].n, article: reviewArticle(gwIdx, pick), gw: gwIdx };
+    atKey = `rev${gwIdx}`;
+  }
   if (!showing) return;
   progView.gw = showing.gw ?? null;
   const at = showing.gw ?? null;
+  // this week's back pages: everything printed in the last seven days that
+  // isn't the edition on the lectern, stacked beneath it in descending
+  // freshness — old news moves down the page before it moves out (Ben)
+  const leadKey = atKey || gazetteLeadKey(today);
+  const backPages = atKey ? [] : eds.filter(e =>
+    e.key !== leadKey && Date.now() - e.printed < 7 * 864e5);
+  const backHtml = backPages.length ? `<div class="prog-backpages">
+    ${backPages.map(e => `<div class="prog-backpage">
+      <div class="prog-backpage-rule">Earlier this week &middot; ${esc(e.edition)}${e.gwN != null ? ` &middot; Gameweek ${e.gwN}` : ''}</div>
+      ${e.article()}
+    </div>`).join('')}
+  </div>` : '';
   // show the nav whenever there is anywhere to GO — another settled edition,
-  // or back to today's paper. The old count-based condition vanished the whole
-  // nav when you were READING the only archived edition while today's paper
-  // was a different one (matchday edition), stranding the reader in the
+  // a named back edition, or today's paper. The old count-based condition
+  // vanished the whole nav when you were READING the only archived edition
+  // while today's paper was a different one, stranding the reader in the
   // archive with no way back (product review #5, went red 21 Aug).
-  const showToday = at != null && today && at !== (today.gw ?? null);
-  const archNav = settled.some(i => i !== at) || showToday ? `
+  const named = eds.filter(e => e.kind === 'special' || e.kind === 'preview');
+  const showToday = atKey != null && today;
+  const archNav = settled.some(i => `rev${i}` !== atKey) || named.some(e => e.key !== atKey) || showToday ? `
     <div class="prog-arch">
       <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
-      ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
+      ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${atKey === `rev${i}` ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
+      ${named.map(e => `<button class="btn ghost small" data-progw="${e.key}" ${atKey === e.key ? 'disabled' : ''}>${e.kind === 'special' ? 'Draft Special' : 'Season Preview'}</button>`).join('')}
       ${showToday ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
     </div>` : '';
   const replacing = !!document.querySelector('.gazette-room');
@@ -7964,6 +8038,7 @@ function gazetteSheet(gwIdx = null) {
     ${progMasthead(showing.edition, showing.gwN)}
     ${showing.article}
     ${mediaSection()}
+    ${backHtml}
     ${archNav}
   </div>`;
   document.body.appendChild(ov);
@@ -7971,7 +8046,8 @@ function gazetteSheet(gwIdx = null) {
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   ov.querySelector('#gzClose').onclick = () => closeOv(ov);
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
-    gazetteSheet(b.dataset.progw === 'today' ? null : +b.dataset.progw);
+    const v = b.dataset.progw;
+    gazetteSheet(v === 'today' ? null : (v === 'special' || v === 'preview') ? v : +v);
   });
   ov.querySelectorAll('[data-podopen]').forEach(b => b.onclick = e => {
     e.stopPropagation();
