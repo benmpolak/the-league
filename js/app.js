@@ -3276,7 +3276,6 @@ function vidiCard(compact = false) {
   return `<div class="card" style="margin-top:14px">
     <h2>The Vidiprinter ${live ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">every incident, straight off the wire</span></h2>
     <div class="vidi-tape">${rows || '<div class="vidi-line" style="color:var(--muted)">The tape is quiet. Kick-off will fix that.</div>'}</div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px">Sponsored by Ceefax page 302. Lines land as the feed refreshes (~5&ndash;10 min on matchdays); the tape lives on this device.</p>
   </div>`;
 }
 
@@ -7457,7 +7456,9 @@ function viewDash() {
   const flags = mid == null ? [] : squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
   const offersIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid);
   const myCl = myClaims(mid);
-  const table = h2hStandings(true);
+  // settled results only — the table must not shuffle mid-match (Toby, GW1
+  // weekend: "Does table update live?" — killed by Chairman's order, 22 Aug)
+  const table = h2hStandings(false);
   const myPos = mid == null ? 0 : table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   return `
@@ -7479,7 +7480,6 @@ function viewDash() {
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
-      <div class="preview-note chant">${esc(chantFor(pair[0], pair[1], cur))}</div>
       <div class="mu-grid dash-mu" style="margin-top:10px">
         ${pair.map(pmid => `<div>
           <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
@@ -7538,7 +7538,7 @@ function viewDash() {
     ${latestBusinessCard(true)}
     </div>`}
     <div class="card">
-      <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">win 3 &middot; draw 1</span></h2>
+      <h2>The Table</h2>
       <div style="overflow-x:auto"><table class="pool-table">
         <thead><tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Pts</th></tr></thead>
         <tbody>
@@ -7550,7 +7550,7 @@ function viewDash() {
         </tr>`).join('')}
         </tbody>
       </table></div>
-      <p class="muted" style="font-size:10.5px;margin-top:4px">The dashed line is the playoff cut. <button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
+      <p class="muted" style="font-size:10.5px;margin-top:4px"><button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
     </div>
   </div>
   ${identified ? '' : latestBusinessCard(true)}
@@ -9712,8 +9712,9 @@ function gwPreviewCard(i) {
 
 function viewH2H() {
   const cur = currentGwIndex();
-  const liveNow = GAMEWEEKS.slice(0, REGULAR_GWS).some((g, i) => gwStatus(i) === 'live');
-  const standings = h2hStandings(liveNow);
+  // settled results only (Toby, GW1 weekend) — in-play scores stay on the
+  // matchup cards and the Vidiprinter; the standings wait for the whistle
+  const standings = h2hStandings(false);
   // the standings table itself moved to the League Table page (Ben, 1 Aug:
   // "the head to head table is what should be in the league table") — this
   // page is Matches: fixtures, preview, playoffs, points grid, crystal ball
@@ -10055,7 +10056,8 @@ function viewTable() {
   // 1 for a draw, W/D/L columns like Draft Fantasy. Overall FPL points is a
   // tiebreak column, not the ranking.
   const cur = currentGwIndex();
-  const liveNow = anyMatchLive();
+  // (the table no longer ranks in-play scores — Toby, GW1 weekend — so the
+  // LIVE tag and the live standings feed are gone with it)
   const mode = tableView.mode;
   // Marc, 9 Aug: Last 3 / Last 5 become any window you like, capped at the
   // number of gameweeks that have actually finished — offering "last 12" in
@@ -10063,7 +10065,7 @@ function viewTable() {
   const maxN = Math.max(1, finishedGwIdxs().length);
   const formN = Math.min(Math.max(1, tableView.n || 5), maxN);
   const form = mode === 'overall' ? null : formStandings(formN);
-  const standings = form ? null : h2hStandings(true);
+  const standings = form ? null : h2hStandings(false);
   const rowsData = form ? form.rows : standings;
   const toggles = `<div class="pool-controls" style="margin:0 0 10px">
       <button class="btn small ${mode === 'overall' ? '' : 'ghost'}" data-tblmode="overall">Overall</button>
@@ -10088,7 +10090,7 @@ function viewTable() {
   const nCols = form ? 4 : 10; // QF column retired — the bracket below carries it now
   return `
     <div class="card" style="margin-bottom:14px">
-      <h2>The Table ${liveNow && !form ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'win 3 &middot; draw 1 &middot; loss 0 &middot; tiebreak: overall points'}</span></h2>
+      <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'settled gameweeks only &middot; win 3 &middot; draw 1 &middot; tiebreak: overall points'}</span></h2>
       ${toggles}
       ${formNote}
       <div style="overflow-x:auto">
