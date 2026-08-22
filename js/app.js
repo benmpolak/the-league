@@ -9921,7 +9921,7 @@ function viewH2H() {
             <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : fxOver(f) && f.started ? ' <span class="muted" style="font-size:10px">FT</span>' : ''}</span>
             <span class="fx-chip">${flagImg(f.away)}</span>
             <span class="fx-name">${esc(f.away)}</span>
-          </div>${fixtureScorersLine(f)}`;
+          </div>`;
         }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
       })()}
     </div>`;
@@ -10875,7 +10875,7 @@ function viewFixtures() {
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
         <span class="fx-time">${live ? `${f.minutes}'` : (fxOver(f) && f.started ? 'FT' : '')}</span>
         ${fxOver(f) && f.started ? `<a class="fx-yt" href="${fxYtHref(f)}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
-      </div>${fixtureScorersLine(f)}${detail}`;
+      </div>${detail}`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
 }
@@ -10957,26 +10957,6 @@ function fixtureCardBody(f) {
   const body = `<h3 class="ms-club">${flagImg(f.home)} ${esc(f.home)}</h3>${side(f.home)}
     <h3 class="ms-club">${flagImg(f.away)} ${esc(f.away)}</h3>${side(f.away)}${yt}`;
   return { score, status, body, ownedBy };
-}
-// one glanceable line for the games page: both clubs' scorers, owners tagged
-function fixtureScorersLine(f) {
-  if (!f.started) return '';
-  const gwIdx = GAMEWEEKS.findIndex(g => g.n === f.gw);
-  const ev = gwIdx >= 0 ? gwEvent(gwIdx) : null;
-  if (!ev) return '';
-  const ownedBy = {};
-  for (const mm of state.managers) for (const sp of squadAt(mm.id, gwIdx)) ownedBy[sp.id] = mm.id;
-  // home men under the home side, away under the away, ball in the middle —
-  // a joint list reads as nothing in a 2–1 (Ben, GW1 night: "needs to be
-  // clearer who has scored for which team")
-  const list = club => PLAYERS.filter(p => p.team === club && ev.playerStats?.[p.id]?.g > 0)
-    .map(p => {
-      const n = ev.playerStats[p.id].g;
-      const tag = ownedBy[p.id] != null ? ` <span class="muted">(${esc(teamName(ownedBy[p.id]))})</span>` : '';
-      return `${esc(p.name)}${n > 1 ? ` ×${n}` : ''}${tag}`;
-    }).join(', ');
-  const h = list(f.home), a = list(f.away);
-  return (h || a) ? `<div class="fx-scorers"><span class="fxs-h">${h}</span><span class="fxs-sep">&#9917;</span><span class="fxs-a">${a}</span></div>` : '';
 }
 function showFixtureCard(fxId) {
   const f = state.fixtures.find(x => x.id === fxId);
