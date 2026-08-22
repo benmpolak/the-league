@@ -135,6 +135,43 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     && rc.sideways === 'a sideways move' && rc.jury === 'jury still out' && rc.mistake === 'an expensive mistake'
     && rc.incomplete === null, JSON.stringify(rc));
 
+  /* the week's back pages + permanent archive slots (Ben, GW1 night: "keep
+     stories for a week... old news moves down the page... then move out").
+     The Post-Draft Special must survive GW1 settling — it vanished before. */
+  const week = await page.evaluate(async () => {
+    const out = {};
+    document.querySelectorAll('.overlay').forEach(o => o.remove());
+    gazetteSheet();
+    const room = () => document.querySelector('.gazette-room');
+    const rules = () => [...(room()?.querySelectorAll('.prog-backpage-rule') || [])].map(x => x.textContent.trim());
+    const nav = () => [...(room()?.querySelectorAll('[data-progw]') || [])].map(b => b.dataset.progw);
+    out.backRules = rules(); out.navVals = nav();
+    const sp = [...room().querySelectorAll('[data-progw]')].find(b => b.dataset.progw === 'special');
+    sp?.click(); await new Promise(r => setTimeout(r, 80));
+    out.specialPlate = room()?.querySelector('.prog-date')?.textContent || '';
+    const back = [...room().querySelectorAll('[data-progw]')].find(b => b.dataset.progw === 'today');
+    back?.click(); await new Promise(r => setTimeout(r, 80));
+    out.backPlate = room()?.querySelector('.prog-date')?.textContent || '';
+    // eight days on: the special has aged out of the week stack but keeps
+    // its archive slot forever
+    const realNow = Date.now;
+    Date.now = () => realNow() + 8 * 864e5;
+    try { gazetteSheet(); out.agedRules = rules(); out.agedNav = nav(); }
+    finally { Date.now = realNow; }
+    room()?.closest('.overlay')?.remove();
+    return out;
+  });
+  chk('reading room stacks the week\'s back pages beneath the lead',
+    week.backRules.length >= 1 && week.backRules.some(r => /post-draft special/i.test(r)), JSON.stringify(week.backRules));
+  chk('archive offers permanent Draft Special and Season Preview slots',
+    week.navVals.includes('special') && week.navVals.includes('preview'), JSON.stringify(week.navVals));
+  chk('Draft Special opens from the archive and Today returns',
+    /post-draft special/i.test(week.specialPlate) && /from the archive/i.test(week.specialPlate) && !/from the archive/i.test(week.backPlate),
+    JSON.stringify({ sp: week.specialPlate, back: week.backPlate }));
+  chk('after a week the special leaves the stack but keeps its archive slot',
+    !week.agedRules.some(r => /post-draft special/i.test(r)) && week.agedNav.includes('special'),
+    JSON.stringify({ agedRules: week.agedRules, agedNav: week.agedNav }));
+
   /* record book: computed, tie-safe, renders */
   const rb = await page.evaluate(() => {
     const recs = seasonRecordsNow(0);
