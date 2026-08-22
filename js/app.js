@@ -10966,13 +10966,17 @@ function fixtureScorersLine(f) {
   if (!ev) return '';
   const ownedBy = {};
   for (const mm of state.managers) for (const sp of squadAt(mm.id, gwIdx)) ownedBy[sp.id] = mm.id;
-  const scorers = PLAYERS.filter(p => (p.team === f.home || p.team === f.away) && ev.playerStats?.[p.id]?.g > 0)
+  // home men under the home side, away under the away, ball in the middle —
+  // a joint list reads as nothing in a 2–1 (Ben, GW1 night: "needs to be
+  // clearer who has scored for which team")
+  const list = club => PLAYERS.filter(p => p.team === club && ev.playerStats?.[p.id]?.g > 0)
     .map(p => {
       const n = ev.playerStats[p.id].g;
       const tag = ownedBy[p.id] != null ? ` <span class="muted">(${esc(teamName(ownedBy[p.id]))})</span>` : '';
       return `${esc(p.name)}${n > 1 ? ` ×${n}` : ''}${tag}`;
-    });
-  return scorers.length ? `<div class="fx-scorers">&#9917; ${scorers.join(', ')}</div>` : '';
+    }).join(', ');
+  const h = list(f.home), a = list(f.away);
+  return (h || a) ? `<div class="fx-scorers"><span class="fxs-h">${h}</span><span class="fxs-sep">&#9917;</span><span class="fxs-a">${a}</span></div>` : '';
 }
 function showFixtureCard(fxId) {
   const f = state.fixtures.find(x => x.id === fxId);
