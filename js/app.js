@@ -10916,12 +10916,18 @@ function fixtureCardBody(f) {
       const starters = played.filter(x => x.s.st).sort((a, b) => posOrder[a.p.pos] - posOrder[b.p.pos] || b.s.min - a.s.min);
       const bench = played.filter(x => !x.s.st).sort((a, b) => b.s.min - a.s.min);
       if (starters.length) {
+        // FPL publishes no formations, but the XI's own shape is ours to
+        // count (Ben: "can we not pull that data from elsewhere?" — the
+        // proper sources cost keys, scraping or an Opta id-mapping project;
+        // the counts give the line for free). ↩ = came off, ↪ = came on.
+        const shape = ['DF', 'MF', 'FW'].map(pos => starters.filter(x => x.p.pos === pos).length).join('-');
+        rows.push(`<div class="lrow" style="font-size:11px"><span class="muted">Lined up ${shape}</span></div>`);
         rows.push(['GK', 'DF', 'MF', 'FW'].map(pos => {
           const men = starters.filter(x => x.p.pos === pos);
-          return men.length ? `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="muted" style="flex:none;width:24px">${pos}</span><span>${men.map(({ p, s }) => `${pname(p)} <span class="muted">${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : '';
+          return men.length ? `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="muted" style="flex:none;width:24px">${pos}</span><span>${men.map(({ p, s }) => `${pname(p)} <span class="muted">${fxOver(f) && s.min < 90 && !s.rc ? '&#8617; ' : ''}${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : '';
         }).join(''));
       }
-      if (bench.length) rows.push(`<div class="lrow" style="font-size:11.5px;flex-wrap:wrap"><span class="muted" style="flex:none">Bench:</span>&nbsp;<span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>`);
+      if (bench.length) rows.push(`<div class="lrow" style="font-size:11.5px;flex-wrap:wrap"><span class="muted" style="flex:none">Bench:</span>&nbsp;<span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">&#8618; ${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>`);
       if (!played.length) rows.push('<p class="muted" style="font-size:12px">No one on the pitch yet.</p>');
     } else {
       const owned = PLAYERS.filter(p => p.team === club && ownedBy[p.id] != null);
