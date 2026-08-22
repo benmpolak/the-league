@@ -72,8 +72,9 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     const reasons = rows.every(r => /—/.test(r.textContent));
     return { count: rows.length, labels, reasons, overflow: document.documentElement.scrollWidth <= 391 };
   });
-  chk('#3 pre-flight shows seven reasoned lights for the Chairman',
-    pf.count === 7 && pf.reasons === true && pf.overflow === true, JSON.stringify(pf));
+  // eight since 22 Aug: the Live wire light joined for the GW1 live-scores work
+  chk('#3 pre-flight shows eight reasoned lights for the Chairman',
+    pf.count === 8 && pf.labels.includes('Live wire') && pf.reasons === true && pf.overflow === true, JSON.stringify(pf));
 
   /* #3b — the card sits behind the admin gate (source pin; module-scope
      netOn/isCommissioner can't be stubbed from the page) */
@@ -85,11 +86,16 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   /* UX #1 — a Trough signing produces a receipt with GW + lineup impact */
   const rc = await page.evaluate(async () => {
     window.__autoConfirm = true;
+    // mid-gameweek the Trough is shut and NO player is signable right now —
+    // the app being correct crashed this probe (22 Aug, inP undefined). Force
+    // it open: the receipt flow is what's under test, not the shutter.
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: 'open' };
     const mid = state.managers[0].id;
     const tgw = transferGw();
     const owned = ownedIdsAt(tgw);
     const outP = squadAt(mid, tgw).find(x => x.pos === 'MF');
     const inP = PLAYERS.find(pl => !owned.has(pl.id) && !arrivalLocked(pl) && pl.pos === 'MF' && !onWaivers(pl));
+    if (!inP) return { fail: 'no signable MF even with the Trough forced open' };
     state.view = 'transfers'; transfersView.tab = 'trough'; transfersView.out = outP.id; render();
     document.querySelector('#trSearch').value = inP.name; document.querySelector('#trSearch').dispatchEvent(new Event('input'));
     await new Promise(r => setTimeout(r, 80));

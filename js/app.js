@@ -2155,6 +2155,19 @@ function applyLiveStats() {
   if (ev && ev.final) return; // a settled round is never repainted
   state.matchStats[key] = { gw: lv.n - 1, label: ev?.label || `GW${lv.n}`, date: ev?.date, final: false, playerStats: lv.playerStats };
 }
+/* Layer 4 of the live fast lane (GW1 night: the overlay went quiet and the
+ * lads had to guess): the freshest stamp we hold for live scores — the fast
+ * lane's write time or the canonical feed's build time, whichever is newer. */
+function liveDataAgeMs() {
+  const stamps = [];
+  const lv = state.liveStats;
+  if (lv && lv.t && !SANDBOX && !demoMode && !state.mock) stamps.push(lv.t);
+  if (state.feedGenerated) { const t = new Date(state.feedGenerated).getTime(); if (t) stamps.push(t); }
+  return stamps.length ? Math.max(0, Date.now() - Math.max(...stamps)) : null;
+}
+// compact by design: the pill lives in the 320px header (r3ui overflow guard)
+const fmtLiveAge = ms => ms < 100e3 ? `${Math.max(0, Math.round(ms / 1000))}s`
+  : ms < 3600e3 ? `${Math.round(ms / 60000)}m` : `${Math.round(ms / 3600e3)}h`;
 // is this player currently stuck on waivers (claim-only), or free to sign now?
 function onWaivers(p) {
   const tw = troughWindow();
@@ -3234,6 +3247,26 @@ setInterval(() => {
     if (el) el.innerHTML = waiverClockLine();
   }
 }, 30e3);
+/* Live wire truth + self-heal (GW1 night). Every 10s during a live match the
+ * LIVE pill re-renders so its age is real, and — Layer 3 — a client staring
+ * at a stale overlay asks the server for ONE immediate fetch-and-write per
+ * staleness episode. Never a loop: the trigger re-arms only after fresh data
+ * actually lands, and a hard cooldown backs that up. Server-side rate limits
+ * (per-uid AND global) mean twelve phones can't stampede anything. */
+let liveHealArmed = true, liveHealLastAt = 0;
+setInterval(() => {
+  if (document.hidden || !anyMatchLive()) return;
+  renderSyncArea();
+  const age = liveDataAgeMs();
+  if (age == null) return;
+  if (age < 2 * 60e3) { liveHealArmed = true; return; }
+  if (!liveHealArmed || !netOn() || !authUser || SANDBOX || demoMode || state.mock) return;
+  if (Date.now() - liveHealLastAt < 5 * 60e3) return;
+  liveHealArmed = false; liveHealLastAt = Date.now();
+  window.WCSync?.liveRefresh?.()
+    .then(r => console.log('[live] self-heal', JSON.stringify(r)))
+    .catch(e => console.warn('[live] self-heal failed', e));
+}, 10e3);
 function vidiCard(compact = false) {
   vidiEraCheck();
   const live = anyMatchLive();
@@ -3772,12 +3805,24 @@ function renderSyncArea() {
   // demo/sandbox live as small chips up here, not a banner over the app
   if (demoMode) bits.push('<button class="tag mode-chip demo-chip" id="demoChip"><span class="rec"></span>DEMO</button>');
   if (SANDBOX && !demoMode) bits.push('<button class="tag mode-chip sandbox-chip" id="sandboxChip"><span class="rec"></span>SANDBOX</button>');
-  if (anyMatchLive()) bits.push('<span class="live-pill"><span class="rec"></span>LIVE</span>');
-  // the feed going quiet on a matchday should be visible, not discovered
-  if (state.feedGenerated && anyMatchLive()) {
-    const ageH = (Date.now() - new Date(state.feedGenerated).getTime()) / 3600000;
-    if (ageH > 1.5) bits.push(`<span class="tag" style="background:#4a3a10;color:#ffd98a" title="The stats feed normally refreshes every few minutes on matchdays. Scores may be lagging.">&#9888; feed ${ageH < 2 ? '90m' : Math.round(ageH) + 'h'} stale</span>`);
+  if (anyMatchLive() && !demoMode) {
+    // the pill tells the truth about its own age (GW1 night: silent failure
+    // is what burned trust) — green under ~90s, amber to 5 min, stale beyond.
+    // Not in the demo: its scores are fictional, and DEMO + LIVE side by side
+    // both misleads and overflows the 320px header (ux3 D10/G1b, 22 Aug)
+    const age = liveDataAgeMs();
+    if (age == null) bits.push('<span class="live-pill"><span class="rec"></span>LIVE</span>');
+    else {
+      const cls = age <= 90e3 ? '' : age <= 5 * 60e3 ? ' amber' : ' stale';
+      const title = age <= 90e3 ? `Live scores — updated ${fmtLiveAge(age)} ago`
+        : age <= 5 * 60e3 ? `Live scores running ${fmtLiveAge(age)} behind — the wire may be slow`
+          : `Live scores are STALE — nothing has landed for ${fmtLiveAge(age)}. The feed still refreshes every ~15 min; scores are lagging, not lost.`;
+      bits.push(`<span class="live-pill${cls}" title="${title}"><span class="rec"></span>LIVE &middot; ${fmtLiveAge(age)}</span>`);
+    }
   }
+  // (the old separate "feed stale" chip is gone — the LIVE pill above now
+  // carries its own age and degrades visibly, and two warnings overflowed
+  // the 320px header. One pill, one truth.)
   if (syncOn()) {
     bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Offline — the league is read-only until you reconnect'}" title="${syncConnected ? 'Live sync: connected' : 'Offline — the league is read-only until you reconnect'}">&#9679;</span>`);
     // signed in but membership never landed: SAY so — a pill reading "Sign in"
@@ -7898,11 +7943,17 @@ function gazetteSheet(gwIdx = null) {
   if (!showing) return;
   progView.gw = showing.gw ?? null;
   const at = showing.gw ?? null;
-  const archNav = settled.length > 1 || (settled.length === 1 && at !== settled[0]) ? `
+  // show the nav whenever there is anywhere to GO — another settled edition,
+  // or back to today's paper. The old count-based condition vanished the whole
+  // nav when you were READING the only archived edition while today's paper
+  // was a different one (matchday edition), stranding the reader in the
+  // archive with no way back (product review #5, went red 21 Aug).
+  const showToday = at != null && today && at !== (today.gw ?? null);
+  const archNav = settled.some(i => i !== at) || showToday ? `
     <div class="prog-arch">
       <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
       ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${at === i ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
-      ${at != null && today && at !== today.gw ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
+      ${showToday ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
     </div>` : '';
   const replacing = !!document.querySelector('.gazette-room');
   document.querySelectorAll('.gazette-room').forEach(x => x.closest('.overlay')?.remove());
@@ -10893,6 +10944,18 @@ function preflightCard() {
   rows.push(light(age == null ? 'warn' : mins <= 30 ? 'ok' : mins <= 90 ? 'warn' : 'bad', 'Stats feed',
     age == null ? 'no feed stamp in memory — refresh' : `updated ${mins} min ago${mins > 90 ? ' — waivers will refuse to run on this' : ''}`,
     ` <button class="btn ghost small" id="pfSync">&#8635; refresh</button>`));
+  // 1b. the live wire (GW1 night: it stalled silently) — last fast-lane write
+  const lvT = state.liveStats?.t || null;
+  const lvAge = lvT ? Date.now() - lvT : null;
+  if (anyMatchLive()) {
+    rows.push(light(lvAge != null && lvAge <= 90e3 ? 'ok' : lvAge != null && lvAge <= 5 * 60e3 ? 'warn' : 'bad', 'Live wire',
+      lvAge == null ? 'match in play but NO fast-lane write — check liveTick (Cloud Scheduler) and the live.yml fallback'
+        : `last write ${fmtLiveAge(lvAge)} ago${lvAge > 5 * 60e3 ? ' — the fast lane has stalled; the Pages feed still lands every ~15 min' : ''}`));
+  } else {
+    rows.push(light('info', 'Live wire', lvT
+      ? `idle — last write ${new Date(lvT).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`
+      : 'idle — no match in play, the overlay is clear'));
+  }
   // 2. the chamber
   const mk = state.mock;
   rows.push(SANDBOX
@@ -10926,7 +10989,7 @@ function preflightCard() {
     ` <a class="btn ghost small" href="https://github.com/benmpolak/the-league/actions/workflows/backup.yml" target="_blank" rel="noopener">open</a>`));
   return `<div class="card">
     <h2>Pre-flight <span class="tag">Chairman only</span></h2>
-    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Seven checks before you trust a matchday to the machinery. Green means go; every light says why.</p>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">Eight checks before you trust a matchday to the machinery. Green means go; every light says why.</p>
     ${rows.join('')}
   </div>`;
 }

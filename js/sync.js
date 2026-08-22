@@ -49,6 +49,12 @@ window.WCSync = {
   // the one write path: server-authoritative mutation
   call: (action, data = {}) => mutateFn({ league: LEAGUE, action, data }).then(r => r.data),
 
+  // live fast lane self-heal (GW1 night): a client that sees a live match with
+  // a stale overlay asks the server for one immediate fetch-and-write. Hard
+  // rate-limited server-side; app.js calls it at most once per staleness
+  // episode, never in a loop. Display-only — it can never touch a score.
+  liveRefresh: () => httpsCallable(functions, 'liveRefresh')({}).then(r => r.data),
+
   auth: {
     user: () => auth.currentUser,
     async sendLink(email) {
