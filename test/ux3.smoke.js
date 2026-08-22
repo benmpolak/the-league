@@ -524,7 +524,11 @@ const SEED_SEASON = `(() => {
     const q = ov.querySelector('#gsq');
     const ownedIds = new Set(state.draft.picks.map(pk => pk.playerId));
     const freeP = [...PLAYERS].sort((a, b) => b.pts - a.pts).find(p => !ownedIds.has(p.id));
-    state.draftPool = { at: 1, ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.id === freeP.id ? '__elsewhere__' : p.club])) };
+    // an arrival is a man the draft-night snapshot never saw. Changing his
+    // club used to do it, but moving between two PL clubs is no longer
+    // arriving — he was already on the game (Marc, 21 Aug) — so leave him out
+    // of the snapshot entirely, which is what a genuine new arrival looks like
+    state.draftPool = { at: 1, ids: Object.fromEntries(PLAYERS.filter(p => p.id !== freeP.id).map(p => [p.id, p.club])) };
     q.value = freeP.name; q.dispatchEvent(new Event('input'));
     const label = ov.querySelector('.gs-row .gs-sub:last-of-type')?.textContent || '';
     state.draftPool = null;

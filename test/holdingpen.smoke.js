@@ -46,14 +46,19 @@ const chk = (name, ok, detail = '') => {
     state.draftPool = { at: Date.now(), ids };
 
     ok('the late feed entry is in the pen', arrivalLocked(latecomer), latecomer.name);
-    ok('the man who moved clubs is in the pen too', arrivalLocked(mover), mover.name);
+    // Marc, 21 Aug: "konsa was already on the game and drafted by somebody" —
+    // moving between two PL clubs is not arriving, and the man who owns him
+    // must still be able to field him
+    ok('a man who moved between PL clubs is NOT penned', !arrivalLocked(mover), `${mover.name} ZZZ -> ${mover.club}`);
 
     admitArrival(latecomer.id);
     ok('admitting the latecomer frees him', !arrivalLocked(latecomer));
-    ok('and leaves the genuine arrival locked', arrivalLocked(mover), mover.name);
     ok('he is signable in the Trough now',
       PLAYERS.filter(x => !ownedIdsAt(0).has(x.id) && !arrivalLocked(x)).some(x => x.id === latecomer.id));
     ok('nobody else was released', Object.keys(state.draftPool.ids).length === Object.keys(ids).length + 1);
+    // the two engines must agree, or the server refuses an XI the client offered
+    ok('client and server read arrivals identically',
+      String(isArrival).includes('=== undefined'), 'js/app.js matches js/engine.js');
     return out.join('\n');
   });
   for (const line of report.split('\n')) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));

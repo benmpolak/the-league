@@ -8,46 +8,67 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
-## 04. THE HOLDING PEN HAS TWO MEN IN IT, AND ONE OF THEM MAY BE UNFIELDABLE (21 Aug)
+## 04. THE HOLDING PEN — the rule was wrong, and it is now fixed (21 Aug)
 
-Reconstructed by diffing the published feed from draft night (20 Aug, ~20:43)
-against now. The pen holds exactly two, and they are not the same case:
+Reconstructed by diffing draft night's published feed (20 Aug ~20:43) against
+now. The pen held exactly two men:
 
 | | Player | What actually happened |
 |---|---|---|
-| id 600 | **Osman**, MF, Brighton | **Never existed** at the snapshot. He did not move — FPL had no record of him until he played. Should be on waivers with everyone else. |
-| id 31 | **Konsa**, DF | **Moved** Aston Villa → Arsenal. A genuine window arrival. |
+| id 600 | **Osman**, MF, Brighton | Never existed at the snapshot. He did not move — FPL had no record of him until he played. |
+| id 31 | **Konsa**, DF | Moved Aston Villa → Arsenal. Already on the game, already drafted. |
 
-**So "Skip it — release all to the Trough" is the wrong button right now.** It
-would spring Konsa into the Trough as well, when he is exactly who the Window
-Draft exists for. "Start the Window Draft" is equally wrong — it would run a
-snake draft over Osman, who was never an arrival. There is no correct
-no-deploy option; §03's per-player admit is the right answer, and its server
-guard deliberately refuses Konsa (`moved from AVL to ARS`).
+**The Chairman's ruling (Marc, 21 Aug): neither belongs in the pen.** "konsa
+was already on the game and drafted by somebody. osman wasnt on the game but
+only because of an error on the fpl data feed, he should be on waivers."
 
-### The part that needs looking at before the GW2 deadline
+That matches CLAUDE.md, which describes the Window Draft as "a snake draft over
+new PL arrivals". A man moving between two PL clubs is not arriving.
 
-`arrivalLocked` does not care about ownership, but `lockedArrivals()` — the
-list rendered in the pen — filters owned players out. So **if anyone drafted
-Konsa while he was a Villa player, that manager cannot field him and cannot
-see why**:
+### What changed
 
-- `lineupSave` refuses any XI containing a locked arrival
-  (`functions/index.js:1354` — "locked or unknown player")
-- he does not appear in the pen, because he is owned
-- nothing on screen explains the rejection
+`isArrival` fired on a club CHANGE as well as an unknown id, so every intra-PL
+transfer went back in the pen. Worse, `arrivalLocked` ignores ownership while
+`lockedArrivals()` filters owned men out of the pen list — so whoever drafted
+Konsa could not field him (`lineupSave` refuses a locked arrival,
+`functions/index.js:1354`), could not see him in the pen, and got no
+explanation. It did not bite this week only because GW1 had already deadlined.
 
-GW1's deadline has passed so it does not bite this week, but it bites at GW2
-unless the window is run or he is admitted.
+It now asks the one question that matters — did draft night know this id:
 
-**And a rules question that is the Committee's, not mine.** `isArrival` fires
-on a club CHANGE as well as an unknown id (`state.draftPool.ids[p.id] !==
-p.club`). CLAUDE.md describes the Window Draft as "a snake draft over new PL
-arrivals" — and Konsa is not new to the Premier League, he moved within it.
-If a player moving between two PL clubs should stay with his fantasy owner,
-that is a one-line change to `isArrival`; if he should go back in the pool,
-the current behaviour is right and only the unfieldable-and-unexplained part
-needs fixing. Worth settling before somebody loses a player they drafted.
+    const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
+
+Changed in **both** `js/app.js` and `js/engine.js`, and they must ship
+together: if only the client moves, it will offer an XI the server refuses.
+`test/holdingpen.smoke.js` pins that the two agree.
+
+**Konsa is fixed by that alone.** **Osman still needs the per-player admit**
+(§03's button, same deploy) — his id genuinely never existed on draft night, so
+no rule can tell him apart from a real new signing. One click and he is on
+waivers with everyone else.
+
+**Do not press "Skip it — release all to the Trough" in the meantime.** With
+the old rule live it would spring Konsa too.
+
+---
+
+## 05. THE TEST SUITE ASSUMES A PRE-KICKOFF LEAGUE (21 Aug, after 17:30Z)
+
+GW1's deadline passed at 17:30Z and free agents went to zero — everyone spare
+is now claim-only. Four things in the suite depend on a signable free agent
+existing, and all four broke at that moment. None of them is a code fault:
+
+- `prep.smoke` **P11b** — fails; the Free agents pool is empty, so there is no
+  row whose flag it can measure
+- `product.smoke` — **crashes** (`Cannot read properties of undefined`) picking
+  a free agent to sign
+- `feature-fixes.review` — **crashes** the same way
+- `engine.parity` — silently drops to 6 checks from 8, skipping the three
+  waiver assertions ("no suitable free agent in demo pool")
+
+The last one is the one I would fix first: it does not fail, it just quietly
+stops testing. All four want a seeded pre-kickoff state rather than the live
+calendar. `podcast.smoke` P17 is also red, but it was red before kickoff.
 
 ---
 

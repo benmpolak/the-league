@@ -1569,11 +1569,10 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
     if (!p) throw new HttpsError('invalid-argument', 'unknown player');
     const pool = state.draftPool;
     if (!pool || !pool.ids) throw new HttpsError('failed-precondition', 'no draft pool to admit him to');
-    // refuse the case this is NOT for: an id the snapshot already knows is a
-    // man who moved clubs, and the Window Draft is exactly where he belongs
-    const was = pool.ids[pid];
-    if (was !== undefined && was !== p.club) {
-      throw new HttpsError('failed-precondition', `${p.name} moved from ${was} to ${p.club} — that is a window arrival, not a late feed entry`);
+    // a man the snapshot already knows was never in the pen — isArrival only
+    // fires on an id draft night never saw, so there is nothing to admit
+    if (pool.ids[pid] !== undefined) {
+      throw new HttpsError('failed-precondition', `${p.name} was on the game at draft night — he was never in the pen`);
     }
     await db().ref(`${base}/public/draftPool/ids/${pid}`).set(p.club);
     return { ok: true, admitted: pid, club: p.club };

@@ -166,7 +166,13 @@
     }
 
     /* ---- new arrivals ---- */
-    const isArrival = (state, p) => !!state.draftPool?.ids && state.draftPool.ids[p.id] !== p.club;
+    // The pen is for players genuinely NEW to the Premier League. A man who
+    // moves between two PL clubs was already on the game and already drafted,
+    // so he stays with his owner (Marc, 21 Aug: "konsa was already on the game
+    // and drafted by somebody"). Comparing the club as well used to send every
+    // intra-PL transfer back to the pen, where the owner could not even field
+    // him. Membership of the draft-night snapshot is the whole question.
+    const isArrival = (state, p) => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
     const arrivalLocked = isArrival;
 
     /* ---- draft ---- */
