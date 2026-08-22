@@ -579,6 +579,22 @@ window.Gazette = (() => {
     const lore = lead ? oldFiles(lead) : '';
     if (lore) out.push(`<div class="prog-sec">From the Old Files</div><p>${esc(lore)}</p>`);
 
+    // GW1 special: the conversion of the sceptics (Ben, GW1 night — "ric
+    // blank who very nearly left the League" and "Iain who doesnt believe
+    // in AI" both go in the paper). One edition only; the archive keeps it.
+    if (gwIdx === 0) {
+      const ric = (state.managers || []).find(x => /blank/i.test(managerName(x.id)));
+      const ian = (state.managers || []).find(x => /tussie/i.test(managerName(x.id)));
+      if (ric || ian) {
+        out.push(`<div class="prog-story">
+          <div class="prog-head">THE CONVERTS: SCEPTICS CLAIM CREDIT AS NEW ERA LANDS</div>
+          ${ric ? `<p>${esc(`Remarkable scenes in the boardroom, where Ric Blank — a man who came within one strongly-worded message of leaving The League altogether this summer — has spent the opening weekend telling anyone who will listen that "we've built a new game using AI", and that he is "very happy to take credit for it". Sources describe the U-turn as "shameless" and "completely in character". The Committee has noted the word "we".`)}</p>` : ''}
+          ${ian ? `<p>${esc(`Meanwhile Ian Tussie, the league's most decorated non-believer in artificial intelligence — on record that the machines will never take a football man's job — was seen refreshing the Gazette twice before breakfast and declaring himself "excited for the Sunday splash". The Gazette, which is written by the machines, thanks him for his readership.`)}</p>` : ''}
+          <div class="prog-by">Henry Wanton, boardroom desk</div>
+        </div>`);
+      }
+    }
+
     // Completed business only. Blind claims remain private; the paper judges
     // deals after they have happened, as God and the tabloids intended.
     const business = [...state.transfers].filter(t => t.gw <= gwIdx && PLAYER_BY_ID[t.inId])

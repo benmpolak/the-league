@@ -485,17 +485,25 @@ const SEED_SEASON = `(() => {
 
     // ranking property: with a 3-letter query, every prefix match (short OR
     // full name — the same fields the palette ranks on) precedes every
-    // partial-only match
-    const pre = normName(ownedP.name).slice(0, 3);
-    type(pre);
-    const rowPids = [...ov.querySelectorAll('.gs-row')].map(r => +r.dataset.pcard);
-    const ranks = rowPids.map(pid => {
+    // partial-only match. HUNT for a prefix the live dataset answers with
+    // BOTH classes — pinning one player's prefix went red whenever a data
+    // refresh left it without partial matches (22 Aug, hasBoth:false).
+    const rankFor = pre => pid => {
       const pl = PLAYER_BY_ID[pid];
       const nm = normName(pl.name), fl = normName(pl.full || '');
       return (nm === pre || fl === pre) ? 0 : (nm.startsWith(pre) || fl.startsWith(pre)) ? 1 : 2;
-    });
-    const rankedOk = ranks.every((r, i) => i === 0 || r >= ranks[i - 1]);
-    const hasBoth = ranks.some(r => r <= 1) && ranks.includes(2);
+    };
+    let rankedOk = false, hasBoth = false;
+    for (const cand of [ownedP, ...PLAYERS.slice(0, 40)]) {
+      const pre = normName(cand.name).slice(0, 3);
+      if (pre.length < 3) continue;
+      type(pre);
+      const ranks = [...ov.querySelectorAll('.gs-row')].map(r => +r.dataset.pcard).map(rankFor(pre));
+      const ok = ranks.every((r, i) => i === 0 || r >= ranks[i - 1]);
+      const both = ranks.some(r => r <= 1) && ranks.includes(2);
+      if (both) { rankedOk = ok; hasBoth = true; break; }
+      rankedOk = ok; // ordering must hold even when only one class answers
+    }
 
     type(freeP.name);
     const freeLabel = ov.querySelector('.gs-row .gs-sub:last-of-type')?.textContent || '';
