@@ -57,6 +57,23 @@ Related and still open: Ian's waiver-claim UX (item 2) — reordering is fine,
 **adding** a player to the ladder is the clunky half.
 
 
+> **SAT 22 AUG 16:10 — PRIORITY ZERO ACCEPTED, ITEM 0b VERIFIED.** Deployed
+> morning of the 22nd, then measured during the real matches: across both
+> sampling runs spanning the 12:30 and into the 15:00 block, the overlay's
+> WORST observed age was **30.6s** (target ≤90s; most samples 6-30s), with
+> liveTick logging per-minute writes and player counts climbing 53→63→129 as
+> matches joined. Fallback proven independently (live.yml wrote all night
+> before the function existed). Trough landing-gameweek fix (0b) verified on
+> production mid-match: header GW2, cells show GW2 opponents. Remaining 0b
+> moment: re-check after Tuesday's run when the Trough reopens. Sol's second
+> audit: no P0/P1; its P2 (wrong saved email trapping a link) and P3
+> (streaming byte cap) both fixed, tested and deployed same day. Also shipped
+> Saturday: table counts settled GWs only (Toby), the week-of-back-pages
+> Gazette with permanent Draft Special/Season Preview archive slots (Ben),
+> the quiet-when-healthy LIVE pill (Ben/Lee), AJ sign-in fix, Lee's clutter
+> strip. The laptop stalled repeatedly all afternoon (home-wifi DNS); the
+> server lane never noticed — as designed.
+>
 > **SAT 22 AUG ~08:30 UPDATE (Fable 5).** All four layers are BUILT, all
 > suites green (offline + browser + emu incl. 23 new livetick checks), and
 > pushed. `liveTick` + `liveRefresh` are in `functions/index.js` but NOT
