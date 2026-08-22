@@ -2189,7 +2189,11 @@ function onWaivers(p) {
    until the transfer window shuts. The Chairman then runs the Window Draft —
    snaking backwards from the original order (pick 12 goes first) until a full
    lap of passes — and whatever's left spills into the Trough. */
-const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] !== p.club;
+// Only a player the draft-night snapshot has never seen is an arrival. Moving
+// between two PL clubs is not arriving — he was already on the game and
+// already drafted, and he stays with his owner (Marc, 21 Aug). Keep this
+// identical to js/engine.js or the server will refuse an XI the client offered.
+const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
 const arrivalLocked = p => isArrival(p); // unlocks when the Window Draft ends (snapshot refreshes)
 function lockedArrivals() {
   if (!state.draftPool?.ids) return [];
