@@ -161,6 +161,19 @@ making the GitHub fallback as robust as possible (self-chaining via a PAT is
 the strongest GitHub-only option, but it needs Ben to create the token), and
 tell Ben plainly where it stands.
 
+### 1b. FEATURE — deputise the holding pen (Ben, GW1 Sat 21:18)
+> "why dont i give you the ability to do so" (to Marc)
+
+The `admit` op (release a non-signing from the pen to the Trough) is
+Chairman-only by design, and FPL keeps minting late players — four more on
+GW1 Saturday alone, each needing Ben's two taps. Ben wants Marc empowered.
+Design for daylight, NOT a 9pm permissions change on the mutation layer:
+a `penStewards` list of manager ids the Chairman sets (server-validated,
+commissioner-only to change), honoured by the `admit` check alone — a
+steward can release from the pen and do nothing else. Server + pen UI +
+emulator tests (steward allowed, stranger refused, steward cannot touch any
+other commissioner op).
+
 ### 1. FEATURE — the Gazette should keep stories for a week (Ben's ask, tonight)
 > "the gazette old stories disappearing was disappointing — i think you should
 > keep stories for a week... and then move them out... like old news moves
