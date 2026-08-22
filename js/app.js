@@ -9702,7 +9702,6 @@ function gwPreviewCard(i) {
         </div>
         <div class="venue-line">at ${esc(stadium(r.a))}</div>
         ${notes(r).map(n => `<div class="preview-note">${esc(n)}</div>`).join('')}
-        <div class="preview-note chant">${esc(chantFor(r.a, r.b, i))}</div>
       </div>`;
     }).join('')}
     ${trough}
