@@ -17,7 +17,7 @@ const T = require('./testenv.js');
 const Functions = require('../functions/index.js'); // onSchedule exposes .run
 
 const LG = 'the-league-2627';
-const FPL_PORT = 8127;
+const FPL_PORT = 8128; // 8127 belongs to emaillink's mail stub — stay clear
 
 /* ---- mutable FPL stub ---- */
 const fpl = {

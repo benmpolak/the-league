@@ -44,6 +44,24 @@ const EMAIL_KEY = 'tl-auth-email';
 
 const mutateFn = httpsCallable(functions, 'mutate');
 
+/* ---- email-link completion (AJ's prompt-on-every-refresh, fixed 22 Aug) ----
+ * A URL still carrying the one-time sign-in code — bookmarked, saved to the
+ * home screen, or simply never navigated away from — used to re-arm the
+ * "confirm your email" prompt on EVERY load, forever, because the code was
+ * only scrubbed from the address bar after a successful sign-in. Now every
+ * exit that spends or refuses the code scrubs it; the one deliberate
+ * exception is the user cancelling the prompt, so they can retry within the
+ * session. */
+const scrub = () => history.replaceState(null, '',
+  location.pathname + (LEAGUE.endsWith('sandbox') ? '?sandbox' : '') + location.hash);
+// The persisted session restores ASYNCHRONOUSLY: at module load
+// auth.currentUser is still null even for a signed-in device, so deciding on
+// it directly would prompt exactly the people who need nothing. Await the
+// first auth callback — it fires with the restored user or a definitive null.
+const firstAuth = new Promise(resolve => {
+  const off = onAuthStateChanged(auth, user => { off(); resolve(user); });
+});
+
 window.WCSync = {
   league: LEAGUE,
   // the one write path: server-authoritative mutation
@@ -67,17 +85,27 @@ window.WCSync = {
     },
     // completes a magic-link visit; returns true if this page load was one
     async completeLink(href = location.href) {
+      const ownUrl = href === location.href;
       if (!isSignInWithEmailLink(auth, href)) {
-        if (href !== location.href) throw new Error('That doesn’t look like a sign-in link — paste the whole link from the email.');
+        // the paste-a-link rescue path must keep its friendly error
+        if (!ownUrl) throw new Error('That doesn’t look like a sign-in link — paste the whole link from the email.');
         return false;
       }
+      // a device that is already signed in needs nothing from this link —
+      // scrub the leftover code (AJ's bookmarked link) and say nothing
+      if (ownUrl && await firstAuth) { scrub(); return false; }
       let email = localStorage.getItem(EMAIL_KEY);
       if (!email) email = prompt('Confirm your email to finish signing in:');
-      if (!email) return false;
-      await signInWithEmailLink(auth, email.trim(), href);
+      if (!email) return false; // cancelled — leave the URL so a retry this session can work
+      try {
+        await signInWithEmailLink(auth, email.trim(), href);
+      } catch (e) {
+        // a spent or expired code can never succeed — it must stop nagging
+        if (ownUrl && (e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code')) scrub();
+        throw e;
+      }
       localStorage.removeItem(EMAIL_KEY);
-      // scrub the one-time code from the address bar
-      if (href === location.href) history.replaceState(null, '', location.pathname + (LEAGUE.endsWith('sandbox') ? '?sandbox' : '') + location.hash);
+      if (ownUrl) scrub(); // the one-time code has been spent
       return true;
     },
     signOut: () => signOut(auth),
