@@ -8,6 +8,88 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 04. THE HOLDING PEN — the rule was wrong, and this branch fixes it (21 Aug)
+
+Branch: `claude/holding-pen-arrivals`, cut fresh from main.
+
+Reconstructed by diffing draft night's published feed (20 Aug ~20:43) against
+now. The pen held exactly two men:
+
+| | Player | What actually happened |
+|---|---|---|
+| id 600 | **Osman**, MF, Brighton | Never existed at the snapshot. He did not move — FPL had no record of him until he played. |
+| id 31 | **Konsa**, DF | Moved Aston Villa → Arsenal. Already on the game, already drafted. |
+
+**The Chairman's ruling (Marc, 21 Aug): neither belongs in the pen.** "konsa
+was already on the game and drafted by somebody. osman wasnt on the game but
+only because of an error on the fpl data feed, he should be on waivers."
+
+That matches CLAUDE.md, which calls the Window Draft "a snake draft over new PL
+arrivals". A man moving between two PL clubs is not arriving. Confirmed against
+the feed: Konsa kept id 31 AND code 199798 across the move — FPL updates the
+record rather than creating one.
+
+### The live consequence, which is worse than a mislabelled card
+
+`arrivalLocked` ignores ownership, but `lockedArrivals()` — the pen list —
+filters owned men out. So whoever drafted Konsa **cannot field him and cannot
+see why**: `lineupSave` refuses a locked arrival (`functions/index.js:1354`),
+he is absent from the pen because he is owned, and nothing on screen explains
+the rejected XI. GW1 was already deadlined when he moved, so it has not bitten
+yet. GW2's deadline is Fri 28 Aug.
+
+### What this branch changes
+
+`isArrival` now asks the one question that matters — did draft night know this
+id — in **both** `js/app.js` and `js/engine.js`:
+
+    const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
+
+They must ship together: a client that offers an XI the server refuses is worse
+than either rule alone. `test/holdingpen.smoke.js` pins that the two agree.
+
+Plus a per-player **"→ Trough"** beside each man in the pen (Chairman only), and
+`windowDraft op:'admit'` behind it, which writes him into the snapshot at his
+current club.
+
+`ux3` G7b built its test arrival by changing a player's club — the case that is
+no longer one — so it now omits him from the snapshot instead.
+
+### Order of operations
+
+1. Merge this branch.
+2. Deploy functions (the rule lives in the engine the server runs).
+3. Press **→ Trough** on Osman. He lands claim-only on waivers — the trough
+   window is shut because a gameweek is underway, not because anyone closed it
+   — and clears at the next run, **Tue 25 Aug 10:00 London**.
+
+**Konsa needs no button.** Step 2 alone unlocks him.
+
+**Do not press "Skip it — release all to the Trough" before then.** With the old
+rule still live on the server it would spring Konsa into the Trough as well.
+
+---
+
+## 05. THE TEST SUITE ASSUMES A PRE-KICKOFF LEAGUE (21 Aug, after 17:30Z)
+
+GW1's deadline passed at 17:30Z and free agents went to zero — everyone spare is
+claim-only until the next run. Four things depend on a signable free agent
+existing, and all four broke at that moment. None is a code fault:
+
+- `prep.smoke` **P11b** — fails; the Free agents pool is empty, so there is no
+  row whose flag it can measure
+- `product.smoke` — **crashes** (`Cannot read properties of undefined`) picking
+  a free agent to sign
+- `feature-fixes.review` — **crashes** the same way
+- `engine.parity` — silently drops from 8 checks to 6, skipping the three waiver
+  assertions ("no suitable free agent in demo pool")
+
+The last is the one I would fix first: it does not fail, it just quietly stops
+testing. All four want a seeded pre-kickoff state rather than the live calendar.
+`podcast.smoke` P17 is also red, but it was red before kickoff.
+
+---
+
 ## 02. CEREMONY vs FIRST PICK — the race Toby's test draft exposed (18 Aug, PRE-THURSDAY)
 
 **What happened (sandbox test draft, 18 Aug ~23:20):** Toby started the
