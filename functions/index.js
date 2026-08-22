@@ -2152,10 +2152,14 @@ exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', re
  * lets a signed-in client that sees a stale overlay during a live match
  * request one immediate fetch-and-write, rate-limited per-uid AND globally.
  *
- * DISPLAY-ONLY — the safety property sol has cleared twice: nothing here (or
- * anywhere server-side) READS liveStats. Settlement, waivers, H2H and the
- * engine consume only the canonical Pages feed. This block may write exactly
- * one node, v2/leagues/the-league-2627/public/liveStats, and nothing else. */
+ * DISPLAY-ONLY — the safety property sol has now cleared three times: no
+ * scoring, settlement or waiver logic consumes liveStats. Settlement, H2H
+ * and the engine read only the canonical Pages feed. Precisely (sol, 22 Aug):
+ * this block's league-state output is the single node
+ * v2/leagues/the-league-2627/public/liveStats; liveRefresh additionally
+ * writes its fixed, hashed rate-limit buckets under v2/mailGuard; and
+ * resetLeague's stash/restore copies the whole public tree byte-for-byte,
+ * liveStats included, without ever interpreting it. */
 const FPL_BASE = process.env.FPL_API_URL || 'https://fantasy.premierleague.com/api';
 const LIVE_LEAGUE = 'the-league-2627'; // the sandbox fakes its own matchdays (the Chamber)
 const liveRef = () => db().ref(`${leagueBase(LIVE_LEAGUE)}/public/liveStats`);
@@ -2165,7 +2169,24 @@ const LIVE_WINDOW_MS = 3.5 * 3600e3;       // and is capped 3.5h after it
 async function fetchFplJson(rel, label, maxBytes) {
   const r = await fetch(`${FPL_BASE}/${rel}`, { headers: { 'User-Agent': 'the-league/1.0' } });
   if (!r.ok) throw new Error(`${label} ${r.status}`);
-  return Feed.parseJson(await r.text(), label, maxBytes); // size-capped, parsed as data only
+  // enforce the cap WHILE streaming (sol P3, 22 Aug): buffering first meant a
+  // hostile or broken endpoint could out-eat the function's memory before the
+  // nominal cap ever ran. The overage aborts the read, not the process.
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0, text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw new Error(`${label}: oversized (> ${maxBytes} bytes)`);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  text += decoder.decode();
+  return Feed.parseJson(text, label, maxBytes); // parsed as data only
 }
 
 /* Site fixtures give kickoff times, so the every-minute tick can answer "could

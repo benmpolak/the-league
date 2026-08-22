@@ -33,6 +33,11 @@ function serveFpl() {
     if (u.pathname === '/fixtures/') body = fpl.fixtures.filter(f => !u.searchParams.get('event') || String(f.event) === u.searchParams.get('event'));
     else if (/^\/event\/\d+\/live\/$/.test(u.pathname)) body = fpl.live;
     if (fpl.fail) { res.writeHead(500); res.end('boom'); return; }
+    if (fpl.oversize) { // 3MB of JSON against the 2MB fixtures cap (sol P3)
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([{ pad: 'x'.repeat(3 * 1024 * 1024) }]));
+      return;
+    }
     if (!body) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -139,6 +144,15 @@ const el = (id, stats, explain) => ({ id, stats, ...(explain ? { explain } : {})
   await Functions.liveTick.run({});
   v = await node();
   chk('liveTick: DGW explain becomes per-fixture fx rows', Array.isArray(v?.playerStats?.[105]?.fx) && v.playerStats[105].fx.length === 2 && v.playerStats[105].fx[0].g === 2 && v.playerStats[105].fx[1].min === 45, JSON.stringify(v?.playerStats?.[105]));
+
+  // an oversized FPL response must abort DURING the stream (sol P3): the cap
+  // fires while reading, the invocation survives, the last overlay stands
+  fpl.oversize = true;
+  let osThrew = false;
+  await Functions.liveTick.run({}).catch(e => { osThrew = /oversized/.test(String(e.message)); });
+  chk('liveTick: oversized FPL stream aborts at the cap, not at the memory limit', osThrew);
+  chk('liveTick: oversized response left the last good overlay intact', (await node())?.playerStats?.[105]?.g === 2);
+  fpl.oversize = false;
 
   // FPL erroring must fail LOUDLY (scheduler retries) and corrupt nothing
   fpl.fail = true;

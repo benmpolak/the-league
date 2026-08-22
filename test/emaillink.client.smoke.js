@@ -136,6 +136,28 @@ async function freshLink() {
   chk('cancel: prompted exactly once', s4.prompts === 1, `prompts=${s4.prompts}`);
   chk('cancel: not signed in, URL kept for an in-session retry', !s4.signedIn && /oobCode/.test(s4.search), JSON.stringify(s4));
 
+  /* ── 4b: sol P2 — a WRONG saved email must not trap a good link ── */
+  const link4b = await freshLink();
+  const ctx4b = await browser.createBrowserContext();
+  const p4b = await newPage(ctx4b, { emailKey: 'wrong@lt.local' });
+  await p4b.goto(link4b, { waitUntil: 'domcontentloaded' });
+  await p4b.waitForFunction(() => window.__prompts > 0, { timeout: 8000 }).catch(() => {});
+  await new Promise(r => setTimeout(r, 400));
+  const s4b = await p4b.evaluate(() => ({
+    signedIn: !!window.WCSync?.auth.user(), prompts: window.__prompts,
+    search: location.search, key: localStorage.getItem('tl-auth-email'),
+  }));
+  chk('wrong saved email: re-prompts instead of silently looping', s4b.prompts === 1, JSON.stringify(s4b));
+  chk('wrong saved email: suspect key dropped, link kept alive', s4b.key === null && /oobCode/.test(s4b.search) && !s4b.signedIn, JSON.stringify(s4b));
+  await p4b.close();
+  // the same link then works with the right email — it was never burned
+  const p4c = await newPage(ctx4b, { emailKey: EMAIL });
+  await p4c.goto(link4b, { waitUntil: 'domcontentloaded' });
+  await p4c.waitForFunction(() => window.WCSync && WCSync.auth.user(), { timeout: 8000 }).catch(() => {});
+  const s4c = await settle(p4c);
+  chk('wrong saved email: the rescued link still signs in with the right one', s4c.signedIn && s4c.email === EMAIL, JSON.stringify(s4c));
+  await p4c.close();
+
   /* ── 5: the paste-a-link rescue path keeps its friendly error ── */
   const s5 = await p4.evaluate(() =>
     WCSync.auth.completeLink('https://example.com/definitely-not-a-link')

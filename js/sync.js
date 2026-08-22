@@ -95,14 +95,33 @@ window.WCSync = {
       // scrub the leftover code (AJ's bookmarked link) and say nothing
       if (ownUrl && await firstAuth) { scrub(); return false; }
       let email = localStorage.getItem(EMAIL_KEY);
+      const fromStore = !!email; // a stored email is a guess, not the user's word
       if (!email) email = prompt('Confirm your email to finish signing in:');
       if (!email) return false; // cancelled — leave the URL so a retry this session can work
+      const attempt = async addr => {
+        try {
+          await signInWithEmailLink(auth, addr.trim(), href);
+        } catch (e) {
+          // a spent or expired code can never succeed — it must stop nagging
+          if (ownUrl && (e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code')) scrub();
+          throw e;
+        }
+      };
       try {
-        await signInWithEmailLink(auth, email.trim(), href);
+        await attempt(email);
       } catch (e) {
-        // a spent or expired code can never succeed — it must stop nagging
-        if (ownUrl && (e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code')) scrub();
-        throw e;
+        // sol P2 (22 Aug): a WRONG saved email used to trap a perfectly good
+        // link in a silent retry loop — the failure kept the bad key and never
+        // asked again. The code may still be fine, so if the email came from
+        // storage (never from the user's own typing), drop the suspect key
+        // and give them one prompt to put the right address to the same link.
+        // A network failure proves nothing about the key, so it is spared.
+        const codeSpent = e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code';
+        if (!fromStore || codeSpent || e?.code === 'auth/network-request-failed') throw e;
+        localStorage.removeItem(EMAIL_KEY);
+        const again = prompt('That saved email doesn’t match this link. Confirm the email the link was sent to:');
+        if (!again) return false; // cancelled — URL stays for another go
+        await attempt(again);
       }
       localStorage.removeItem(EMAIL_KEY);
       if (ownUrl) scrub(); // the one-time code has been spent
