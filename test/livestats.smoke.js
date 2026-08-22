@@ -116,6 +116,40 @@ const chk = (name, ok, detail = '') => {
   chk('pill: a fresh canonical feed rescues an old overlay', pill.feedRescues && !/amber|stale/.test(pill.feedRescues.cls), JSON.stringify(pill.feedRescues));
   chk('pill: huge ages compact to hours', pill.hours && /9h/.test(pill.hours.txt), JSON.stringify(pill.hours));
 
+  // the Vidiprinter hears the overlay (Ben, GW1 evening: the fast lane was
+  // silently eating the tape's baseline) and live fixture truth merges in
+  const vidi = await page.evaluate(() => {
+    const out = {};
+    const pid = PLAYERS[0].id;
+    demoMode = false;
+    state.phase = 'season';
+    state.fixtures = [{ id: 777, gw: 1, date: new Date().toISOString(), home: PLAYERS[0].team, away: 'Phantom', started: true, finished: false, minutes: 40, hs: 0, as: 0 }];
+    state.matchStats = { gw1: { gw: 0, final: false, playerStats: { [pid]: { min: 45, st: 1, g: 0 } } } };
+    state.feedGenerated = null;
+    vidiFeed = [];
+    const t1 = Date.now();
+    state.liveStats = { n: 1, t: t1, playerStats: { [pid]: { min: 55, st: 1, g: 1 } }, fx: [{ id: 777, hs: 1, as: 0, started: true, fp: false, min: 55 }] };
+    applyLiveStats();
+    out.goalLine = vidiFeed.length === 1 && /GOAL/.test(vidiFeed[0].txt) && vidiFeed[0].txt.includes(PLAYERS[0].name);
+    out.fxMerged = state.fixtures[0].hs === 1 && state.fixtures[0].minutes === 55;
+    applyLiveStats(); // same stamp — the tape must not stutter
+    out.noDup = vidiFeed.length === 1;
+    state.liveStats = { n: 1, t: t1 + 60e3, playerStats: { [pid]: { min: 65, st: 1, g: 1, a: 1 } }, fx: [{ id: 777, hs: 1, as: 0, started: true, fp: true, min: 90 }] };
+    applyLiveStats();
+    out.assistLine = vidiFeed.length === 2 && /assist/.test(vidiFeed[0].txt);
+    out.whistleMerged = state.fixtures[0].fp === true && state.fixtures[0].minutes === 90;
+    // fp counts as over for liveness and for "still to play"
+    out.liveOff = !anyMatchLive();
+    out.fracDone = playerFixtureState(PLAYERS[0], 1).frac === 0 && playerFixtureState(PLAYERS[0], 1).st === 'done';
+    state.liveStats = null; vidiFeed = [];
+    return out;
+  });
+  chk('vidi: a goal arriving via the overlay reaches the tape', vidi.goalLine, JSON.stringify(vidi));
+  chk('vidi: the same overlay stamp never prints twice', vidi.noDup);
+  chk('vidi: the next stamp prints the assist', vidi.assistLine, JSON.stringify(vidi));
+  chk('fx merge: score and minutes land from the overlay', vidi.fxMerged, JSON.stringify(vidi));
+  chk('fx merge: the provisional whistle ends the match everywhere', vidi.whistleMerged && vidi.liveOff && vidi.fracDone, JSON.stringify(vidi));
+
   chk('fresh liveStats overlays the live round (non-final)', r.freshApplies);
   chk('stale liveStats is ignored — the feed is truth', r.staleIgnored);
   chk('a fresher canonical feed outranks the overlay', r.feedWins);

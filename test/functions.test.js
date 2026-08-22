@@ -814,7 +814,10 @@ const SB = 'the-league-sandbox';
 
   /* ---------------- window draft: one atomic transaction ---------------- */
   // (the re-import above rebuilt LG in season phase with fresh squads)
-  const mkArrival = async pid => T.initAdmin().database().ref(`v2/leagues/${LG}/public/draftPool/ids/${pid}`).set('Wrexham');
+  // an arrival is a man DRAFT NIGHT NEVER SAW — absent from the snapshot
+  // entirely (Marc's holding-pen fix, 22 Aug: a club mismatch is just an
+  // intra-PL transfer and stays with his owner)
+  const mkArrival = async pid => T.initAdmin().database().ref(`v2/leagues/${LG}/public/draftPool/ids/${pid}`).set(null);
   const wdFree = freeOf('MF').slice(-4); // untouched by earlier signings
   await mkArrival(wdFree[0]); await mkArrival(wdFree[1]);
   chk('window draft start is Chairman-only', (await T.mutate(LG, 'windowDraft', { op: 'start' }, tok2)).error?.status === 'PERMISSION_DENIED');
@@ -847,7 +850,7 @@ const SB = 'the-league-sandbox';
   const lastPass = await T.mutate(LG, 'windowDraft', { op: 'pass', expectedTurn: 3 }, tok1); // snake: lap 2 starts back at 1
   chk('third consecutive pass closes the window', !lastPass.error && lastPass.result?.status === 'done', JSON.stringify(lastPass));
   const poolAfter = (await db.ref(`v2/leagues/${LG}/public/draftPool/ids/${wdFree[1]}`).get()).val();
-  chk('draftPool refreshed in the same commit (leftover arrival unlocked)', poolAfter !== 'Wrexham');
+  chk('draftPool refreshed in the same commit (leftover arrival unlocked)', poolAfter != null, JSON.stringify(poolAfter));
   chk('acting on a finished window rejected', (await T.mutate(LG, 'windowDraft', { op: 'pass' }, tok1)).error?.status === 'FAILED_PRECONDITION');
 
   /* ---------------- waivers: recoverable, effectively exactly-once ---------------- */

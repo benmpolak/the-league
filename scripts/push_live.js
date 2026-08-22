@@ -25,7 +25,9 @@ const LEAGUE = 'the-league-2627'; // the sandbox fakes its own matchdays (the Ch
   });
   const ref = admin.database().ref(`v2/leagues/${LEAGUE}/public/liveStats`);
 
-  const live = fixtures.find(f => f && f.started && !f.finished);
+  // fp = finished_provisional: the whistle has gone even if FPL's slow
+  // `finished` flag hasn't — without it this loop ran all night on GW1
+  const live = fixtures.find(f => f && f.started && !f.finished && !f.fp);
   if (!live) {
     // nothing in play — clear a leftover overlay exactly once, then stand down
     if ((await ref.get()).val() != null) { await ref.set(null); console.log('cleared stale liveStats'); }

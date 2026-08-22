@@ -2296,16 +2296,28 @@ async function pushLiveOnce() {
   const win = fixtures.filter(f => kickWindow(f, now));
   if (!win.length) return { live: false, cleared: await clearLiveOverlay() };
   // inside a window, FPL's own fixture flags decide what is ACTUALLY live
-  let liveGw = null;
+  let liveGw = null, gwFx = null;
   for (const gwN of [...new Set(win.map(f => f.gw).filter(Number.isInteger))]) {
-    const fpl = await fetchFplJson(`fixtures/?event=${gwN}`, 'fpl fixtures', 2 * 1024 * 1024);
-    if (toArr(fpl).some(f => f && f.started && !(f.finished || f.finished_provisional))) { liveGw = gwN; break; }
+    const fpl = toArr(await fetchFplJson(`fixtures/?event=${gwN}`, 'fpl fixtures', 2 * 1024 * 1024));
+    if (fpl.some(f => f && f.started && !(f.finished || f.finished_provisional))) { liveGw = gwN; gwFx = fpl; break; }
   }
   if (liveGw == null) return { live: false, cleared: await clearLiveOverlay() };
   const live = await fetchFplJson(`event/${liveGw}/live/`, 'fpl live', Feed.LIMITS.statsBytes);
   const playerStats = liveRows(live && live.elements);
+  // live fixture truth rides along: scores, minutes and the provisional
+  // whistle reach clients within a minute instead of the Pages feed's ~15
+  // (GW1 evening: finished matches sat "still to play" on the slow flag).
+  // Compact allowlisted rows, matched client-side by FPL fixture id.
+  const fx = gwFx.filter(f => f && Number.isInteger(f.id)).slice(0, 20).map(f => ({
+    id: f.id,
+    hs: Number.isFinite(f.team_h_score) ? f.team_h_score : null,
+    as: Number.isFinite(f.team_a_score) ? f.team_a_score : null,
+    started: !!f.started,
+    fp: !!(f.finished_provisional || f.finished),
+    min: Number.isFinite(f.minutes) ? Math.max(0, Math.min(120, f.minutes)) : 0,
+  }));
   const t = Date.now();
-  await liveRef().set({ n: liveGw, t, playerStats });
+  await liveRef().set({ n: liveGw, t, playerStats, fx });
   _overlayMaybeSet = true;
   return { live: true, n: liveGw, t, players: Object.keys(playerStats).length };
 }

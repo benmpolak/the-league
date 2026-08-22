@@ -144,6 +144,10 @@ def main():
         'as': f.get('team_a_score'),
         'started': bool(f.get('started')),
         'finished': bool(f.get('finished')),
+        # FPL's `finished` waits HOURS for bonus/data checks (ARS-COV sat
+        # "live" for 12h on GW1 night); finished_provisional flips at the
+        # whistle. Display surfaces use fp; settlement keeps the slow flag.
+        'fp': bool(f.get('finished_provisional')),
         'minutes': f.get('minutes') or 0,
     } for f in fx]
     (ROOT / 'data' / 'fixtures.json').write_text(

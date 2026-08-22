@@ -22,7 +22,7 @@ const FPL_PORT = 8128; // 8127 belongs to emaillink's mail stub — stay clear
 /* ---- mutable FPL stub ---- */
 const fpl = {
   hits: 0,
-  fixtures: [{ id: 21, event: 2, started: true, finished: false, finished_provisional: false }],
+  fixtures: [{ id: 21, event: 2, started: true, finished: false, finished_provisional: false, team_h_score: 1, team_a_score: 0, minutes: 67 }],
   live: { elements: [] },
 };
 function serveFpl() {
@@ -123,6 +123,9 @@ const el = (id, stats, explain) => ({ id, stats, ...(explain ? { explain } : {})
   await Functions.liveTick.run({});
   let v = await node();
   chk('liveTick: writes {n, t, playerStats}', v && v.n === 2 && typeof v.t === 'number' && Date.now() - v.t < 60e3, JSON.stringify(v && { n: v.n, t: v.t }));
+  chk('liveTick: live fixture truth rides along (id/score/fp/minutes)',
+    Array.isArray(v?.fx) && v.fx[0]?.id === 21 && v.fx[0].hs === 1 && v.fx[0].as === 0 && v.fx[0].fp === false && v.fx[0].min === 67 && v.fx[0].started === true,
+    JSON.stringify(v?.fx));
   chk('liveTick: starter row mapped like fetch_fpl.py', v?.playerStats?.[101]?.min === 67 && v.playerStats[101].st === 1 && v.playerStats[101].sub === 0 && v.playerStats[101].g === 1, JSON.stringify(v?.playerStats?.[101]));
   chk('liveTick: sub row mapped (st 0, sub 1, sv carried)', v?.playerStats?.[102]?.st === 0 && v.playerStats[102].sub === 1 && v.playerStats[102].sv === 3 && v.playerStats[102].gc === 1, JSON.stringify(v?.playerStats?.[102]));
   chk('liveTick: zero-minute player excluded', v?.playerStats?.[103] === undefined);

@@ -1065,10 +1065,13 @@ function playerFixtureState(p, gwN) {
   if (!fx.length) return { st: 'none', frac: state.fixtures.some(x => x.gw === gwN) ? 0 : 1, fx };
   // frac = the share of this player's gameweek still to come. A double counts
   // per fixture: one done + one not started = half the expectation banked.
-  const fracs = fx.map(f => f.finished ? 0 : f.started ? Math.max(0, (90 - Math.min(90, f.minutes || 0)) / 90) : 1);
+  // fxOver honours the provisional whistle: FPL's slow `finished` kept whole
+  // finished matches "still to play" for hours (AJ/Toby, GW1 evening — Konsa
+  // and Ballard played, scored 0, and the needs line counted them as to come)
+  const fracs = fx.map(f => fxOver(f) ? 0 : f.started ? Math.max(0, (90 - Math.min(90, f.minutes || 0)) / 90) : 1);
   const frac = fracs.reduce((a, b) => a + b, 0) / fx.length;
   const st = fracs.every(fr => fr === 0) ? 'done'
-    : fx.some(f => f.started && !f.finished) ? 'live'
+    : fx.some(f => f.started && !fxOver(f)) ? 'live'
     : fracs.every(fr => fr === 1) ? 'pre' : 'mixed';
   return { st, frac, fx };
 }
@@ -2153,8 +2156,32 @@ function applyLiveStats() {
   const key = `gw${lv.n}`;
   const ev = state.matchStats[key];
   if (ev && ev.final) return; // a settled round is never repainted
+  // live fixture truth rides along with the overlay: scores, minutes and the
+  // provisional whistle (fp) land within a minute, so "still to play", the
+  // pill and the scoreboards stop waiting on the Pages feed's slow flags
+  if (Array.isArray(lv.fx)) {
+    for (const lf of lv.fx) {
+      const f = state.fixtures.find(x => x.id === lf.id);
+      if (!f) continue;
+      if (lf.hs != null) f.hs = lf.hs;
+      if (lf.as != null) f.as = lf.as;
+      if (lf.started) f.started = true;
+      if (lf.fp) f.fp = true;
+      if ((lf.min || 0) > (f.minutes || 0)) f.minutes = lf.min;
+    }
+  }
+  // the tape watches the overlay too (Ben, GW1 Saturday evening: "the
+  // vidiprinter isn't working"). The fast lane silently refreshed matchStats
+  // every minute, so by the time the Pages feed arrived, syncNow's diff — the
+  // only place the Vidiprinter listened — had nothing left to say. Diff each
+  // NEW overlay stamp against what was showing before it lands.
+  if (lv.t !== vidiLiveT && state.phase === 'season') {
+    try { vidiDiff(lv.n - 1, ev?.playerStats || null, lv.playerStats); } catch (e) { console.warn('[vidi]', e); }
+    vidiLiveT = lv.t;
+  }
   state.matchStats[key] = { gw: lv.n - 1, label: ev?.label || `GW${lv.n}`, date: ev?.date, final: false, playerStats: lv.playerStats };
 }
+let vidiLiveT = 0; // last overlay stamp the tape has diffed — one report per write
 /* Layer 4 of the live fast lane (GW1 night: the overlay went quiet and the
  * lads had to guess): the freshest stamp we hold for live scores — the fast
  * lane's write time or the canonical feed's build time, whichever is newer. */
@@ -2980,7 +3007,11 @@ function h2hStandings(includeLive = false, uptoGw = REGULAR_GWS) {
 // to data/stats.json + data/fixtures.json. The app just reads those files —
 // player ids are FPL's own, so there is no name-matching to go wrong.
 let liveTimer = null;
-function anyMatchLive() { return state.fixtures.some(f => f.started && !f.finished); }
+// fp = whistle gone (finished_provisional): FPL's `finished` waits hours for
+// data checks, which kept the pill burning and matches "LIVE" all night.
+// Every DISPLAY surface asks fxOver; settlement keeps the slow, safe flag.
+const fxOver = f => !!(f.finished || f.fp);
+function anyMatchLive() { return state.fixtures.some(f => f.started && !fxOver(f)); }
 
 /* ---- the Vidiprinter (ledger #8 — Tussie's Soccer-Saturday ticker) ----
    Every stats sync is diffed against the last; anything that happened
@@ -5201,7 +5232,7 @@ function projPts(p, n) {
   const fromN = GAMEWEEKS[curI].n + (gwIsOver(curI) ? 1 : 0);
   let games = 0;
   for (const f of state.fixtures) {
-    if (f.finished) continue;
+    if (fxOver(f)) continue;
     if (f.gw >= fromN && f.gw < fromN + n && (f.home === p.team || f.away === p.team)) games++;
   }
   return games * playerXp(p);
@@ -9650,6 +9681,11 @@ function bindH2H() {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
     showMatchup(a, b, i);
   });
+  // the real-fixture rows open the same match centre as the dashboard ticker
+  document.querySelectorAll('[data-fx]').forEach(el => el.onclick = e => {
+    if (e.target.closest('.fx-yt')) return; // the Highlights link keeps its job
+    showFixtureCard(+el.dataset.fx);
+  });
   const prev = $('#gwPrev'), next = $('#gwNext');
   if (prev) prev.onclick = () => { h2hView.gw = Math.max(0, h2hView.gw - 1); render(); };
   if (next) next.onclick = () => { h2hView.gw = Math.min(REGULAR_GWS - 1, h2hView.gw + 1); render(); };
@@ -9860,14 +9896,18 @@ function viewH2H() {
       ${(() => {
         const fxs = state.fixtures.filter(f => f.gw === g.n);
         return fxs.map(f => {
-          const live = f.started && !f.finished;
+          const live = f.started && !fxOver(f);
           const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''} – ${f.as ?? ''}`;
-          return `<div class="h2h-fx fx-row" style="font-size:12.5px">
+          // tappable like the dashboard ticker (Ben, GW1 night: "can we get
+          // this clickable on the matches/fixtures too?") — same match centre
+          const ytq = encodeURIComponent(`${f.home} ${f.away} ${f.hs ?? ''} ${f.as ?? ''} highlights`);
+          return `<div class="h2h-fx fx-row" data-fx="${f.id}" style="font-size:12.5px;cursor:pointer" title="Tap for scorers and lineups">
             <span class="fx-name fx-l">${esc(f.home)}</span>
             <span class="fx-chip">${flagImg(f.home)}</span>
-            <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : ''}</span>
+            <span class="fx-score" style="font-size:12px">${score}${live ? ` <span class="rec" style="display:inline-block"></span>` : fxOver(f) && f.started ? ' <span class="muted" style="font-size:10px">FT</span>' : ''}</span>
             <span class="fx-chip">${flagImg(f.away)}</span>
             <span class="fx-name">${esc(f.away)}</span>
+            ${fxOver(f) ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654;</a>` : ''}
           </div>`;
         }).join('') || '<p class="muted" style="font-size:12px">No fixtures scheduled yet.</p>';
       })()}
@@ -10808,15 +10848,15 @@ function viewFixtures() {
   ${Object.entries(byDay).map(([day, list]) => `
     <div class="fx-day"><h3>${day}</h3><div class="fx-grid">
     ${list.map(f => {
-      const live = f.started && !f.finished;
+      const live = f.started && !fxOver(f); // fp: the whistle ends it here too
       const score = !f.started ? new Date(f.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? ''}–${f.as ?? ''}`;
       const ytq = encodeURIComponent(`${f.home} vs ${f.away} Premier League highlights`);
       return `<div class="fx ${live ? 'live' : ''}" data-fx="${f.id}" style="cursor:pointer" title="Tap for scorers, assists and who featured">
         <div class="fx-team right"><span>${esc(f.home)}</span>${flagImg(f.home)}</div>
         <span class="fx-score">${score}</span>
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
-        <span class="fx-time">${live ? `${f.minutes}'` : (f.finished ? 'FT' : '')}</span>
-        ${f.finished ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654; Highlights</a>` : ''}
+        <span class="fx-time">${live ? `${f.minutes}'` : (fxOver(f) && f.started ? 'FT' : '')}</span>
+        ${fxOver(f) && f.started ? `<a class="fx-yt" href="https://www.youtube.com/results?search_query=${ytq}" target="_blank" rel="noopener" title="Match highlights on YouTube">&#9654; Highlights</a>` : ''}
       </div>`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
@@ -10866,7 +10906,7 @@ function showFixtureCard(fxId) {
     return rows.filter(Boolean).join('');
   };
   const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? 0}–${f.as ?? 0}`;
-  const status = f.finished ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
+  const status = fxOver(f) && f.started ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:460px;width:94%;max-height:86vh;overflow-y:auto">
@@ -11427,7 +11467,7 @@ function showPlayerCard(pid) {
       // Iain, GW1 eve: "see a team's fixtures when I click on a player —
       // this week should be on view but you should be able to see the rest
       // too". The run of six, coloured by how scary they are.
-      const ups = (state.fixtures || []).filter(f => !f.finished && (f.home === p.team || f.away === p.team)).slice(0, 6);
+      const ups = (state.fixtures || []).filter(f => !fxOver(f) && (f.home === p.team || f.away === p.team)).slice(0, 6);
       if (!ups.length) return '';
       const pill = f => {
         const opp = f.home === p.team ? f.away : f.home;
