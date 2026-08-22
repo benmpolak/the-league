@@ -10909,8 +10909,20 @@ function fixtureCardBody(f) {
       rows.push(line(played.filter(x => x.s.rc).map(x => ({ ...x, n: 1 })), '&#128997;', 'Sent off'));
       rows.push(line(played.filter(x => x.s.og).map(x => ({ ...x, n: x.s.og })), '&#128552;', 'Own goals'));
       rows.push(line(played.filter(x => x.s.ps).map(x => ({ ...x, n: x.s.ps })), '&#129508;', 'Pen saves'));
-      if (played.length) rows.push(`<div class="lrow" style="font-size:11.5px"><span class="muted">Featured:</span>&nbsp;${played.sort((a, b) => b.s.min - a.s.min).map(({ p, s }) => `${pname(p)} <span class="muted">${s.min}'</span>`).join(', ')}</div>`);
-      else rows.push('<p class="muted" style="font-size:12px">No one on the pitch yet.</p>');
+      // a proper teamsheet, not a flat list (Ben, GW1 night: "get this more
+      // into the proper lineups in order") — the XI by position with minutes,
+      // the bench beneath, owner tags throughout
+      const posOrder = { GK: 0, DF: 1, MF: 2, FW: 3 };
+      const starters = played.filter(x => x.s.st).sort((a, b) => posOrder[a.p.pos] - posOrder[b.p.pos] || b.s.min - a.s.min);
+      const bench = played.filter(x => !x.s.st).sort((a, b) => b.s.min - a.s.min);
+      if (starters.length) {
+        rows.push(['GK', 'DF', 'MF', 'FW'].map(pos => {
+          const men = starters.filter(x => x.p.pos === pos);
+          return men.length ? `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="muted" style="flex:none;width:24px">${pos}</span><span>${men.map(({ p, s }) => `${pname(p)} <span class="muted">${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>` : '';
+        }).join(''));
+      }
+      if (bench.length) rows.push(`<div class="lrow" style="font-size:11.5px;flex-wrap:wrap"><span class="muted" style="flex:none">Bench:</span>&nbsp;<span>${bench.map(({ p, s }) => `${pname(p)} <span class="muted">${s.min}'</span>${ownTag(p.id)}`).join(' &middot; ')}</span></div>`);
+      if (!played.length) rows.push('<p class="muted" style="font-size:12px">No one on the pitch yet.</p>');
     } else {
       const owned = PLAYERS.filter(p => p.team === club && ownedBy[p.id] != null);
       rows.push(owned.length
@@ -10921,8 +10933,11 @@ function fixtureCardBody(f) {
   };
   const score = !f.started ? new Date(f.date).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) : `${f.hs ?? 0}–${f.as ?? 0}`;
   const status = fxOver(f) && f.started ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
+  // the highlights ride inside the match centre too ("where is youtube?")
+  const yt = fxOver(f) && f.started
+    ? `<div style="text-align:center;margin-top:10px"><a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`)}" target="_blank" rel="noopener">&#9654; Highlights on Sky Sports Football</a></div>` : '';
   const body = `<h3 style="margin-top:10px">${esc(f.home)}</h3>${side(f.home)}
-    <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}`;
+    <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}${yt}`;
   return { score, status, body, ownedBy };
 }
 // one glanceable line for the games page: both clubs' scorers, owners tagged
