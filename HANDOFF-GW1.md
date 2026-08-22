@@ -57,6 +57,23 @@ Related and still open: Ian's waiver-claim UX (item 2) — reordering is fine,
 **adding** a player to the ladder is the clunky half.
 
 
+> **SAT 22 AUG ~08:30 UPDATE (Fable 5).** All four layers are BUILT, all
+> suites green (offline + browser + emu incl. 23 new livetick checks), and
+> pushed. `liveTick` + `liveRefresh` are in `functions/index.js` but NOT
+> deployed — Ben deploys (`npm run deploy:functions`). Remaining for today:
+> deploy, then the matchday acceptance below during the 12:30. Note FPL still
+> had Friday's ARS-COV as started/!finished at 08:20, so live.yml has looped
+> all night writing a fresh overlay — harmless, and liveTick reads FPL's
+> `finished_provisional` so it stands down where the workflow can't.
+> Separately: product #5 (Gazette archive strand) is FIXED, and seven
+> calendar-expired checks were season-proofed (see 5db4201).
+>
+> **Banked for after the gameweek — "too much text clogging things up"**
+> (Ben's WhatsApp screenshots, GW1 night): the AI-invented chant line on the
+> matchup card ("One B.Fernandes!..."), "win 3 · draw 1" beside The Table
+> heading, "The dashed line is the playoff cut." footer, and the Vidiprinter's
+> "Sponsored by Ceefax page 302..." line. The lads want less furniture text.
+
 ### 0. LIVE DATA — must be bulletproof before Sat 22 Aug 12:30
 Ben: *"the lads will basically walk away if we can't get instant data into the
 game live... I want the most 11/10 foolproof answer, fixed before a match
