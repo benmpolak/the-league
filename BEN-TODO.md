@@ -8,6 +8,49 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 04. THE HOLDING PEN HAS TWO MEN IN IT, AND ONE OF THEM MAY BE UNFIELDABLE (21 Aug)
+
+Reconstructed by diffing the published feed from draft night (20 Aug, ~20:43)
+against now. The pen holds exactly two, and they are not the same case:
+
+| | Player | What actually happened |
+|---|---|---|
+| id 600 | **Osman**, MF, Brighton | **Never existed** at the snapshot. He did not move — FPL had no record of him until he played. Should be on waivers with everyone else. |
+| id 31 | **Konsa**, DF | **Moved** Aston Villa → Arsenal. A genuine window arrival. |
+
+**So "Skip it — release all to the Trough" is the wrong button right now.** It
+would spring Konsa into the Trough as well, when he is exactly who the Window
+Draft exists for. "Start the Window Draft" is equally wrong — it would run a
+snake draft over Osman, who was never an arrival. There is no correct
+no-deploy option; §03's per-player admit is the right answer, and its server
+guard deliberately refuses Konsa (`moved from AVL to ARS`).
+
+### The part that needs looking at before the GW2 deadline
+
+`arrivalLocked` does not care about ownership, but `lockedArrivals()` — the
+list rendered in the pen — filters owned players out. So **if anyone drafted
+Konsa while he was a Villa player, that manager cannot field him and cannot
+see why**:
+
+- `lineupSave` refuses any XI containing a locked arrival
+  (`functions/index.js:1354` — "locked or unknown player")
+- he does not appear in the pen, because he is owned
+- nothing on screen explains the rejection
+
+GW1's deadline has passed so it does not bite this week, but it bites at GW2
+unless the window is run or he is admitted.
+
+**And a rules question that is the Committee's, not mine.** `isArrival` fires
+on a club CHANGE as well as an unknown id (`state.draftPool.ids[p.id] !==
+p.club`). CLAUDE.md describes the Window Draft as "a snake draft over new PL
+arrivals" — and Konsa is not new to the Premier League, he moved within it.
+If a player moving between two PL clubs should stay with his fantasy owner,
+that is a one-line change to `isArrival`; if he should go back in the pool,
+the current behaviour is right and only the unfieldable-and-unexplained part
+needs fixing. Worth settling before somebody loses a player they drafted.
+
+---
+
 ## 03. THE TROUGH WATCHLIST — one function to deploy (21 Aug)
 
 Marc, 21 Aug: "we want to add a watchlist feature that then becomes another
