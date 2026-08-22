@@ -10854,7 +10854,7 @@ function viewFixtures() {
       // straight to Sky Sports Football's own channel (Ben, GW1 night: "if
       // the link could go directly to the sky sports football youtube
       // highlights") — their channel search puts the official cut first
-      const ytq = encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`);
+
       // scorers live ON the page; a tap unfolds the full match centre inline
       // (lineups, assists, who featured — owner tags and all). Ben, GW1
       // night: "better to have the epl games page have the lineups and
@@ -10866,11 +10866,26 @@ function viewFixtures() {
         <span class="fx-score">${score}</span>
         <div class="fx-team"><span>${flagImg(f.away)}</span><span>${esc(f.away)}</span></div>
         <span class="fx-time">${live ? `${f.minutes}'` : (fxOver(f) && f.started ? 'FT' : '')}</span>
-        ${fxOver(f) && f.started ? `<a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${ytq}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
+        ${fxOver(f) && f.started ? `<a class="fx-yt" href="${highlightsUrl(f)}" target="_blank" rel="noopener" title="Highlights on Sky Sports Football">&#9654; Highlights</a>` : ''}
       </div>${fixtureScorersLine(f)}${detail}`;
     }).join('')}
     </div></div>`).join('') || '<div class="card"><p class="muted">No fixtures scheduled for this gameweek yet.</p></div>'}`;
 }
+/* Highlights on Sky Sports Football (Ben, GW1 night). Their channel search
+   only finds the cut if we ask for the club the way THEY title it: four of our
+   names are FPL abbreviations that appear in no video title on earth, so
+   "Hull City 2-0 Man Utd" found nothing and read as a generic link (Marc,
+   22 Aug). Only the abbreviations are mapped — "Ipswich Town" for Sky's
+   "Ipswich" is a superset and searches fine, a wrong short name does not. */
+const SKY_NAME = {
+  'Man Utd': 'Manchester United',
+  'Man City': 'Manchester City',
+  'Spurs': 'Tottenham',
+  "Nott'm Forest": 'Nottingham Forest',
+};
+const skyName = t => SKY_NAME[t] || t;
+const highlightsQuery = f => `${skyName(f.home)} ${f.hs ?? ''}-${f.as ?? ''} ${skyName(f.away)}`;
+const highlightsUrl = f => `https://www.youtube.com/@SkySportsFootball/search?query=${encodeURIComponent(highlightsQuery(f))}`;
 function bindFixtures() {
   const sel = $('#fxGw');
   if (sel) sel.onchange = e => { fxView.gw = +e.target.value; render(); };
@@ -10941,7 +10956,7 @@ function fixtureCardBody(f) {
   const status = fxOver(f) && f.started ? 'FT' : f.started ? `${f.minutes}&prime; LIVE` : 'kick-off';
   // the highlights ride inside the match centre too ("where is youtube?")
   const yt = fxOver(f) && f.started
-    ? `<div style="text-align:center;margin-top:10px"><a class="fx-yt" href="https://www.youtube.com/@SkySportsFootball/search?query=${encodeURIComponent(`${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away}`)}" target="_blank" rel="noopener">&#9654; Highlights on Sky Sports Football</a></div>` : '';
+    ? `<div style="text-align:center;margin-top:10px"><a class="fx-yt" href="${highlightsUrl(f)}" target="_blank" rel="noopener">&#9654; Highlights on Sky Sports Football</a></div>` : '';
   const body = `<h3 style="margin-top:10px">${esc(f.home)}</h3>${side(f.home)}
     <h3 style="margin-top:10px">${esc(f.away)}</h3>${side(f.away)}${yt}`;
   return { score, status, body, ownedBy };
