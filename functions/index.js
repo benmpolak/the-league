@@ -2141,3 +2141,161 @@ exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', re
   }
   if (errs.length) throw new Error('waiverTick failures — ' + errs.join(' | ')); // real errors must reach the Scheduler's retry
 });
+
+/* ---------------- live-match fast lane (Ben, GW1 night) ----------------
+ * GitHub's scheduled workflow fired every 25-35 minutes on GW1 night, so the
+ * lads watched a match with no scores. Cloud Scheduler has been punctual for
+ * waiverTick since launch, so `liveTick` (every minute) becomes the primary
+ * writer of public/liveStats; live.yml stays running as an independent
+ * fallback (different infrastructure, different failure mode) and both
+ * writers are idempotent last-write-wins over the same node. `liveRefresh`
+ * lets a signed-in client that sees a stale overlay during a live match
+ * request one immediate fetch-and-write, rate-limited per-uid AND globally.
+ *
+ * DISPLAY-ONLY — the safety property sol has cleared twice: nothing here (or
+ * anywhere server-side) READS liveStats. Settlement, waivers, H2H and the
+ * engine consume only the canonical Pages feed. This block may write exactly
+ * one node, v2/leagues/the-league-2627/public/liveStats, and nothing else. */
+const FPL_BASE = process.env.FPL_API_URL || 'https://fantasy.premierleague.com/api';
+const LIVE_LEAGUE = 'the-league-2627'; // the sandbox fakes its own matchdays (the Chamber)
+const liveRef = () => db().ref(`${leagueBase(LIVE_LEAGUE)}/public/liveStats`);
+const LIVE_OPENS_EARLY_MS = 2 * 60e3;      // window opens 2 min before kickoff
+const LIVE_WINDOW_MS = 3.5 * 3600e3;       // and is capped 3.5h after it
+
+async function fetchFplJson(rel, label, maxBytes) {
+  const r = await fetch(`${FPL_BASE}/${rel}`, { headers: { 'User-Agent': 'the-league/1.0' } });
+  if (!r.ok) throw new Error(`${label} ${r.status}`);
+  return Feed.parseJson(await r.text(), label, maxBytes); // size-capped, parsed as data only
+}
+
+/* Site fixtures give kickoff times, so the every-minute tick can answer "could
+ * anything be live right now?" without touching the network on the quiet path.
+ * The cache self-refreshes only when it can no longer answer that question. */
+let _fxCache = null; // { at, fixtures }
+const kickWindow = (f, now) => f && f.date && !f.finished
+  && now >= Date.parse(f.date) - LIVE_OPENS_EARLY_MS
+  && now <= Date.parse(f.date) + LIVE_WINDOW_MS;
+async function liveFixtures(now) {
+  const c = _fxCache;
+  if (c && now - c.at < 6 * 3600e3) {
+    if (c.fixtures.some(f => kickWindow(f, now))) return c.fixtures;
+    // quiet, and the cache says the next kickoff hasn't arrived yet — trust it
+    const opens = c.fixtures
+      .filter(f => f && f.date && !f.finished)
+      .map(f => Date.parse(f.date) - LIVE_OPENS_EARLY_MS)
+      .filter(t => t > c.at);
+    if (opens.length && now < Math.min(...opens)) return c.fixtures;
+  }
+  const raw = await fetchJson('data/fixtures.json', 'fixtures.json', Feed.LIMITS.dataBytes);
+  const fixtures = Feed.validateFixtures(raw);
+  _fxCache = { at: now, fixtures };
+  return fixtures;
+}
+
+// FPL identifier -> our short key (same table as scripts/fetch_fpl.py — the
+// two writers must produce byte-compatible rows or the overlay would flicker)
+const LIVE_EXPLAIN_MAP = {
+  minutes: 'min', goals_scored: 'g', assists: 'a',
+  clean_sheets: 'cs', goals_conceded: 'gc', own_goals: 'og',
+  penalties_saved: 'ps', penalties_missed: 'pm',
+  yellow_cards: 'yc', red_cards: 'rc', saves: 'sv',
+};
+function liveRows(elements) {
+  const out = {};
+  for (const el of toArr(elements)) {
+    if (!el || !Number.isInteger(el.id)) continue;
+    const s = el.stats || {};
+    const num = k => Number.isFinite(s[k]) ? s[k] : 0;
+    const min = num('minutes');
+    if (min === 0 && !num('yellow_cards') && !num('red_cards')) continue;
+    const started = Number.isFinite(s.starts) ? s.starts : (min >= 60 ? 1 : 0);
+    const row = {
+      min, st: Math.trunc(started), sub: (min > 0 && !started) ? 1 : 0,
+      g: num('goals_scored'), a: num('assists'), cs: num('clean_sheets'),
+      gc: num('goals_conceded'), og: num('own_goals'), ps: num('penalties_saved'),
+      pm: num('penalties_missed'), yc: num('yellow_cards'), rc: num('red_cards'),
+      sv: num('saves'),
+    };
+    // double gameweek: store per-fixture rows so the client scores match-by-match
+    const explain = Array.isArray(el.explain) ? el.explain : [];
+    if (explain.length >= 2) {
+      row.fx = explain.slice(0, Feed.LIMITS.fixturesPerPlayer).map(ex => {
+        const fs = { min: 0, g: 0, a: 0, cs: 0, gc: 0, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 };
+        for (const st of toArr(ex && ex.stats)) {
+          const k = LIVE_EXPLAIN_MAP[st && st.identifier];
+          if (k && Number.isFinite(st.value)) fs[k] = st.value;
+        }
+        return fs;
+      });
+    }
+    out[el.id] = row;
+    if (Object.keys(out).length > Feed.LIMITS.statPlayersPerGw) throw new Error('fpl live: too many players');
+  }
+  return out;
+}
+
+// clear a leftover overlay exactly once per quiet spell — the flag only skips
+// the read while this instance KNOWS the node is empty; a cold start re-checks
+let _overlayMaybeSet = true;
+async function clearLiveOverlay() {
+  if (!_overlayMaybeSet) return false;
+  const had = (await liveRef().get()).val() != null;
+  if (had) await liveRef().set(null);
+  _overlayMaybeSet = false;
+  return had;
+}
+
+/* One idempotent fetch-and-write pass, shared by the scheduler tick and the
+ * client-triggered refresh. Milliseconds on the quiet path: outside a kickoff
+ * window it does at most one cached-fixtures check and stands down. */
+async function pushLiveOnce() {
+  const now = Date.now();
+  const fixtures = await liveFixtures(now);
+  const win = fixtures.filter(f => kickWindow(f, now));
+  if (!win.length) return { live: false, cleared: await clearLiveOverlay() };
+  // inside a window, FPL's own fixture flags decide what is ACTUALLY live
+  let liveGw = null;
+  for (const gwN of [...new Set(win.map(f => f.gw).filter(Number.isInteger))]) {
+    const fpl = await fetchFplJson(`fixtures/?event=${gwN}`, 'fpl fixtures', 2 * 1024 * 1024);
+    if (toArr(fpl).some(f => f && f.started && !(f.finished || f.finished_provisional))) { liveGw = gwN; break; }
+  }
+  if (liveGw == null) return { live: false, cleared: await clearLiveOverlay() };
+  const live = await fetchFplJson(`event/${liveGw}/live/`, 'fpl live', Feed.LIMITS.statsBytes);
+  const playerStats = liveRows(live && live.elements);
+  const t = Date.now();
+  await liveRef().set({ n: liveGw, t, playerStats });
+  _overlayMaybeSet = true;
+  return { live: true, n: liveGw, t, players: Object.keys(playerStats).length };
+}
+
+// Layer 1 — primary. Every minute; Cloud Scheduler has been punctual where
+// GitHub's cron was not. Errors are thrown so they reach the Scheduler's logs;
+// the next minute's tick is the retry.
+exports.liveTick = onSchedule({ schedule: '* * * * *', timeZone: 'Etc/UTC' }, async () => {
+  const res = await pushLiveOnce();
+  if (res.live) console.log(`liveTick: GW${res.n}, ${res.players} players`);
+  else if (res.cleared) console.log('liveTick: cleared stale overlay');
+});
+
+// Layer 3 — self-healing. A signed-in manager whose client sees a live match
+// with a stale overlay asks for one immediate pass. Limited per-uid AND
+// globally (mailGuard sliding buckets): one healed write serves all twelve
+// phones, so the caps are deliberately tight — a limited caller just waits.
+exports.liveRefresh = onCall(async req => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'sign in first');
+  await actor(req, LIVE_LEAGUE); // membership is the only authority
+  if (await overLimit('lrUid', sha256(req.auth.uid), [{ ms: 10 * 60e3, max: 3 }])) return { ok: false, limited: true };
+  if (await overLimit('lrAll', sha256('live-global'), [{ ms: 60e3, max: 2 }, { ms: 15 * 60e3, max: 8 }])) return { ok: false, limited: true };
+  const res = await pushLiveOnce();
+  return { ok: true, live: !!res.live, t: res.t || null, players: res.players || 0 };
+});
+
+/* emulator-only test hooks: the suites reset per-instance caches so one test
+ * process can walk through window/no-window scenarios. Inert in production —
+ * the DB-emulator gate covers the suites that require this module in-process. */
+if (EMULATED || process.env.FIREBASE_DATABASE_EMULATOR_HOST) {
+  exports._liveTest = {
+    reset() { _fxCache = null; _overlayMaybeSet = true; },
+    pushLiveOnce,
+  };
+}
