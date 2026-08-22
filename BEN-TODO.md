@@ -595,16 +595,34 @@ top and tail suppressed, so there is no second copy of the copy to drift.
 ### 5e. Pods — what is actually left (18 Aug)
 
 Both pilots are finished: 46 of 46 lines carry a real voice, nothing
-outstanding, all of it merged and live. Three things remain, none urgent:
+outstanding, all of it merged and live. Three things remain:
 
-1. **Press Run workflow once, as a rehearsal.** `render-pods.yml` has never
-   run — zero runs. With everything already rendered it will cost nothing and
-   commit nothing, but it proves the secret is set and the path works. Do it
-   while it does not matter, rather than discovering it on draft night, which
-   is the one episode a timer cannot catch (see 5d).
-2. **`PODS_AUTORENDER = on`** if you want the Tuesday/Friday renders to happen
-   without you. Until that repository variable exists the scheduled runs fire
-   and immediately skip.
+> **UPDATE 22 Aug — item 2 is now wanted, not optional.** Marc: "why have the
+> voices for todays scheduled podcasts not autorendered?" Because the gate is
+> doing exactly its job. `render-pods.yml` has now fired **four** times on
+> schedule (18 Aug x2, 21 Aug x2) and skipped every one. The 21 Aug 10:20 run
+> ([32472164891](https://github.com/benmpolak/the-league/actions/runs/32472164891))
+> reported success and finished in **eight seconds**, every step after the gate
+> marked `skipped`. Its log:
+>
+>     if [ "schedule" = "schedule" ] && [ "" != "on" ]; then
+>     PODS_AUTORENDER is not set to 'on' — scheduled render skipped.
+>
+> The empty string is the missing variable. Nothing is broken.
+
+1. **Press Run workflow once, as a rehearsal.** Still the right first move —
+   and note the gate does NOT apply to a manual run, only to `schedule`, so you
+   can prove the path today without setting anything. With everything already
+   rendered it costs nothing and commits nothing. **`ELEVENLABS_API_KEY` has
+   never actually been exercised**: no run has reached the Render step, so a
+   missing or wrong key would not have shown up anywhere yet. Do it while it
+   does not matter, rather than discovering it on draft night, which is the one
+   episode a timer cannot catch (see 5d).
+2. **`PODS_AUTORENDER = on`** — Settings → Secrets and variables → Actions →
+   **Variables** → New repository variable. Marc wants the Tuesday/Friday
+   renders happening without you. Do it *after* the rehearsal above, so the
+   first billed render is one you are watching rather than one that fires at
+   10:00 while you are asleep.
 3. **`audio/buffer-out.mp3`** — a loose 97KB file on `main`, outside
    `audio/pod/`, from the ring-announcer experiment. Nothing plays it, but it
    ships to everyone who loads the site. Delete it unless it is headed
