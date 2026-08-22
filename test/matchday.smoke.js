@@ -47,13 +47,15 @@ const SEED_SEASON = `(() => {
 
 /* put GW1 into a controlled LIVE state.
    scores: {mid: goalsPerXIPlayer}; clubStates: fn(club) -> 'done'|'live'|'pre'|'blank'|'double' */
-const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
+const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
   const gwN = GAMEWEEKS[0].n;
   // clock inside GW1's window
   const mid1 = new Date(GAMEWEEKS[0].from).getTime() + 3600000;
   Date.now = () => mid1;
   GAMEWEEKS[0].finished = false;
-  const pair = pairingsFor(0)[0];
+  // craft for the caller's pair when given (N2 hunts across pairings for a
+  // unique-club player); the first pairing stays the default for everyone else
+  const pair = forcedPair || pairingsFor(0)[0];
   const xiClubs = new Set();
   for (const m of pair) for (const pid of effectiveXI(m, 0).xi) xiClubs.add(PLAYER_BY_ID[pid].team);
   // stats: every XI player started; goals per the spec
@@ -139,18 +141,27 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
 
   /* ── N2: behind with exactly ONE player remaining ── */
   const n2 = await p.evaluate(`(() => {
-    const pair = pairingsFor(0)[0];
-    // find an XI player of pair[0] whose club appears exactly once across both XIs
-    const xiA = effectiveXI(pair[0], 0).xi.map(id => PLAYER_BY_ID[id]);
-    const xiB = effectiveXI(pair[1], 0).xi.map(id => PLAYER_BY_ID[id]);
-    const clubCount = {};
-    for (const pl of [...xiA, ...xiB]) clubCount[pl.team] = (clubCount[pl.team] || 0) + 1;
-    const lastMan = xiA.find(pl => clubCount[pl.team] === 1);
-    if (!lastMan) return { fail: 'no unique-club player' };
+    // find ANY pairing/orientation holding an XI player whose club appears
+    // exactly once across both XIs — the first pairing alone stopped offering
+    // one when the 22 Aug data refresh reshuffled the seeded draft, and the
+    // scenario only needs SOME trailing side with a single man left
+    let pair = null, lastMan = null;
+    for (const pr of pairingsFor(0)) {
+      for (const [a, b] of [[pr[0], pr[1]], [pr[1], pr[0]]]) {
+        const xa = effectiveXI(a, 0).xi.map(id => PLAYER_BY_ID[id]);
+        const xb = effectiveXI(b, 0).xi.map(id => PLAYER_BY_ID[id]);
+        const clubCount = {};
+        for (const pl of [...xa, ...xb]) clubCount[pl.team] = (clubCount[pl.team] || 0) + 1;
+        const cand = xa.find(pl => clubCount[pl.team] === 1);
+        if (cand) { pair = [a, b]; lastMan = cand; break; }
+      }
+      if (pair) break;
+    }
+    if (!lastMan) return { fail: 'no unique-club player in any pairing' };
     const plan = {};
     for (const pl of PLAYERS) plan[pl.team] = 'done';
     plan[lastMan.team] = 'pre';
-    ${CRAFT_LIVE}({ [pair[1]]: 1 }, plan);
+    ${CRAFT_LIVE}({ [pair[1]]: 1 }, plan, pair);
     const m = matchNeeds(pair[0], pair[1], 0, pair[0]);
     const curA = gwManagerPoints(pair[0], 0), curB = gwManagerPoints(pair[1], 0);
     return { lastMan: lastMan.name, m: { state: m.state, lines: m.lines, remL: m.left.remainingPlayers.map(x => x.name), remR: m.right.remainingPlayers.length }, need: curB - curA + 1, tie: curB - curA };
@@ -163,17 +174,26 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
 
   /* ── N5: leader's view — ahead, opponent still armed / N15: both seats ── */
   const n5 = await p.evaluate(`(() => {
-    const pair = pairingsFor(0)[0];
-    const xiB = effectiveXI(pair[1], 0).xi.map(id => PLAYER_BY_ID[id]);
-    const xiA = effectiveXI(pair[0], 0).xi.map(id => PLAYER_BY_ID[id]);
-    const clubCount = {};
-    for (const pl of [...xiA, ...xiB]) clubCount[pl.team] = (clubCount[pl.team] || 0) + 1;
-    const threat = xiB.find(pl => clubCount[pl.team] === 1);
-    if (!threat) return { fail: 'no unique-club B player' };
+    // same hunt as N2, mirrored: the THREAT must sit on side B (22 Aug: the
+    // data refresh reshuffled the seeded draft and the first pairing stopped
+    // offering a unique-club player)
+    let pair = null, threat = null;
+    for (const pr of pairingsFor(0)) {
+      for (const [a, b] of [[pr[0], pr[1]], [pr[1], pr[0]]]) {
+        const xa = effectiveXI(a, 0).xi.map(id => PLAYER_BY_ID[id]);
+        const xb = effectiveXI(b, 0).xi.map(id => PLAYER_BY_ID[id]);
+        const clubCount = {};
+        for (const pl of [...xa, ...xb]) clubCount[pl.team] = (clubCount[pl.team] || 0) + 1;
+        const cand = xb.find(pl => clubCount[pl.team] === 1);
+        if (cand) { pair = [a, b]; threat = cand; break; }
+      }
+      if (pair) break;
+    }
+    if (!threat) return { fail: 'no unique-club B player in any pairing' };
     const plan = {};
     for (const pl of PLAYERS) plan[pl.team] = 'done';
     plan[threat.team] = 'live';
-    ${CRAFT_LIVE}({ [pair[0]]: 1 }, plan); // pair[0] leads now
+    ${CRAFT_LIVE}({ [pair[0]]: 1 }, plan, pair); // pair[0] leads now
     const lead = matchNeeds(pair[0], pair[1], 0, pair[0]);
     const trail = matchNeeds(pair[0], pair[1], 0, pair[1]);
     return { threat: threat.name,
@@ -614,6 +634,17 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan) => {
       treatmentBand({ status: 'i', chance: 0, news: 'Unknown return date' }),
       treatmentBand({ status: 's', chance: 0, news: 'Suspended until 29 Aug' }),
     ];
+    // craft one settled gameweek so the awards card exists to measure — a
+    // fresh demo has no finished gameweeks until the real calendar does, so
+    // this check only ever passed via state leaked from the previous page's
+    // localStorage (caught 22 Aug when the leak changed shape). Alternating
+    // scores make real results, so every award has a winner to render.
+    state.matchStats = state.matchStats || {};
+    const ps = {};
+    state.managers.forEach((m, k) => {
+      for (const pid of effectiveXI(m.id, 0).xi) ps[pid] = { min: 90, st: 1, g: k % 2 };
+    });
+    state.matchStats['gw' + GAMEWEEKS[0].n] = { gw: 0, label: GAMEWEEKS[0].label, final: true, playerStats: ps };
     state.view = 'data'; trmShowAll = true; render(); // awards + treatment desk live in the Data Room now
     const awards = [...document.querySelectorAll('.award-row')];
     const treatments = [...document.querySelectorAll('.treatment-row')];

@@ -622,18 +622,26 @@ const chk = (name, ok, detail = '') => {
   // P11b: trough pool at 320 — flag leads the name and clears the sticky action column
   const p11b = await page.evaluate(() => {
     transfersView = { ...transfersView, tab: 'trough', scope: 'free' };
-    state.view = 'transfers'; render();
-    const flag = document.querySelector('.pool-table .nat-flag');
     // "Free agents" means signable RIGHT NOW, so once a gameweek is underway
     // and the Trough has shut, this pool is legitimately empty and there is
-    // no row to measure. That is the app being correct, not a layout fault
-    // (GW1 night, 21 Aug — the check used to fail the moment the season
-    // started). Say so rather than reporting a false negative.
-    if (!flag) return { flag: true, clear: true, first: true, w: 0, skipped: 'no signable rows — the Trough is shut' };
-    const fr = flag.getBoundingClientRect();
-    const act = flag.closest('tr').querySelector('td.act').getBoundingClientRect();
-    const txt = flag.closest('.pname').querySelector('.pn-txt');
-    return { flag: true, clear: fr.right < act.left, first: fr.left <= txt.getBoundingClientRect().left, w: fr.width };
+    // no row to measure — the app being correct starved the check (GW1 night
+    // 21 Aug, and again on GW1 morning when the skip's own w:0 failed the
+    // w>10 assertion). Force the Trough open for the probe instead: the
+    // LAYOUT is what's under test, and it must be measurable year-round.
+    const keepCtl = state.waiverMeta?.control;
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: 'open' };
+    state.view = 'transfers'; render();
+    const flag = document.querySelector('.pool-table .nat-flag');
+    const out = (() => {
+      if (!flag) return { flag: false, skipped: 'no rows even with the Trough forced open' };
+      const fr = flag.getBoundingClientRect();
+      const act = flag.closest('tr').querySelector('td.act').getBoundingClientRect();
+      const txt = flag.closest('.pname').querySelector('.pn-txt');
+      return { flag: true, clear: fr.right < act.left, first: fr.left <= txt.getBoundingClientRect().left, w: fr.width };
+    })();
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: keepCtl };
+    render();
+    return out;
   });
   chk('P11b trough flags lead the name and clear the sticky Sign column at 320px',
     p11b.flag && p11b.clear && p11b.first && p11b.w > 10, JSON.stringify(p11b));

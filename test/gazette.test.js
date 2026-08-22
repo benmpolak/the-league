@@ -14,6 +14,19 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   await page.setViewport({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/?demo`, { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof state !== 'undefined' && typeof Gazette !== 'undefined' && state.managers?.length);
+  // craft one SETTLED gameweek before anything else. A fresh demo has no
+  // finished gameweeks until the real calendar does, so from GW1 morning
+  // (22 Aug) the paper led on the matchday preview — which has no headline by
+  // design — and the record book had no records: two pins failing because the
+  // scenario they assume ("a review edition exists") had expired, not because
+  // the writing engine broke. Three score tiers keep results non-degenerate.
+  await page.evaluate(() => {
+    const ps = {};
+    state.managers.forEach((m, k) => {
+      for (const pid of effectiveXI(m.id, 0).xi) ps[pid] = { min: 90, st: 1, g: k % 3 };
+    });
+    state.matchStats['gw' + GAMEWEEKS[0].n] = { gw: 0, label: GAMEWEEKS[0].label, final: true, playerStats: ps };
+  });
 
   /* archetype selection on crafted facts */
   const arch = await page.evaluate(() => {

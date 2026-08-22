@@ -93,9 +93,13 @@ const chk = (name, ok, detail = '') => {
     return { diffs, statDiffs, statChecked, xiDiffs };
   });
   chk('season: roster/lineup/scoring parity', season.diffs.length === 0, season.diffs.slice(0, 5).join(', '));
-  // floor = 12 squads x 14 players (the leanest pre-season fictional GW) plus
-  // the 40 crafted shape rows — a real mid-season feed pushes it into thousands
-  chk(`season: statPoints parity over ${season.statChecked} stat lines`, season.statDiffs === 0 && season.statChecked >= 200, `${season.statDiffs} diffs`);
+  // floor = the 40 crafted shape rows, which guarantee every scoring shape is
+  // compared whatever the feed holds. The old >=200 floor assumed a full
+  // fictional feed and expired mid-GW1 (22 Aug: one real fixture played = 31
+  // feed lines) — the calendar-bound class HANDOFF-GW1 warns about. Feed
+  // lines still join the comparison whenever they exist; the floor just no
+  // longer pretends to know how many there are.
+  chk(`season: statPoints parity over ${season.statChecked} stat lines`, season.statDiffs === 0 && season.statChecked >= 40, `${season.statDiffs} diffs`);
   chk('season: xiValid parity', season.xiDiffs === 0);
 
   // ---- waiver resolution parity: engine resolveWaivers vs client processWaivers ----

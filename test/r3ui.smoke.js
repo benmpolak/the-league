@@ -261,15 +261,29 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       unknownNat: natFlag({ nat: 99999 }),
       knownNat: natFlag({ nat: 200 }),
     };
-    // DOM: null out the top shown free agent's nationality and re-render
-    const owned = ownedIdsAt(0);
-    const top = [...PLAYERS].filter(x => !owned.has(x.id)).sort((a, b) => b.pts - a.pts)[0];
-    const keep = top.nat;
-    top.nat = null;
+    // DOM: null out a RENDERED free agent's nationality and re-render. The
+    // Trough is forced open for the probe — mid-gameweek the shutter is down
+    // and the table empties, which is the app being right, not the flag code
+    // (this check went red the morning GW1 kicked off, 22 Aug).
+    const keepCtl = state.waiverMeta?.control;
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: 'open' };
     render();
-    const cell = [...document.querySelectorAll('#trResults .pname')].find(el => el.textContent.includes(top.name));
-    const domFlag = cell ? !!cell.querySelector('.nat-flag') : null;
-    top.nat = keep;
+    let top = null, cell = null;
+    for (const el of document.querySelectorAll('#trResults .pname')) {
+      const pl = PLAYERS.find(x => x.name && el.textContent.includes(x.name));
+      if (pl) { top = pl; cell = el; break; }
+    }
+    let domFlag = null;
+    if (top) {
+      const keep = top.nat;
+      top.nat = null;
+      render();
+      cell = [...document.querySelectorAll('#trResults .pname')].find(el => el.textContent.includes(top.name));
+      domFlag = cell ? !!cell.querySelector('.nat-flag') : null;
+      top.nat = keep;
+    }
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: keepCtl };
+    render();
     return { ...fn, domFlag, found: !!cell };
   });
   chk('natFlag: null and unknown ids render nothing, known id renders a flag',

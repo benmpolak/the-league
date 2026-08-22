@@ -390,10 +390,17 @@ const SEED_SEASON = `(() => {
     state.view = 'directory'; render();
     const mids = [...document.querySelectorAll('[data-dirmid]')].map(b => +b.dataset.dirmid);
     const table = h2hStandings(false);
-    return { mids, tableIds: table.map(r => r.id), anyPlayed: table.some(r => r.p > 0) };
+    return { mids, tableIds: table.map(r => r.id), constIds: state.managers.map(m => m.id), anyPlayed: table.some(r => r.p > 0) };
   });
-  chk('D2: with results (precondition: games played) cards follow league position',
-    d2b.anyPlayed && JSON.stringify(d2b.mids) === JSON.stringify(d2b.tableIds), JSON.stringify(d2b.mids));
+  // The demo only fakes results for calendar-FINISHED gameweeks, so early
+  // season it legitimately has none (went red the morning GW1 kicked off,
+  // 22 Aug — the time-bound class HANDOFF-GW1 warns about). Ask the app what
+  // it believes: with results, cards follow the table; without, the
+  // constitutional order — both orders are asserted, whichever applies.
+  chk(d2b.anyPlayed
+    ? 'D2: with results, cards follow league position'
+    : 'D2: no results yet — cards hold constitutional order',
+  JSON.stringify(d2b.mids) === JSON.stringify(d2b.anyPlayed ? d2b.tableIds : d2b.constIds), JSON.stringify(d2b));
   await demoP.close();
 
   /* D10 — 320px: one column, no overflow */

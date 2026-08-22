@@ -26,6 +26,9 @@ const chk = (name, ok, detail = '') => {
   await fresh();
   const receipt = await page.evaluate(async () => {
     window.__autoConfirm = true;
+    // mid-gameweek the Trough is shut and nobody is signable — force it open,
+    // the receipt flow is what's under test (22 Aug: inP came back undefined)
+    state.waiverMeta = { ...(state.waiverMeta || {}), control: 'open' };
     const mid = state.managers[0].id, tgw = transferGw();
     state.lineups[mid] = state.lineups[mid] || {};
     state.lineups[mid][tgw] = [...lineupFor(mid, tgw)];
@@ -91,6 +94,9 @@ const chk = (name, ok, detail = '') => {
       { managerId: mid, outId: p1.id, inId: p2.id, gw: 0, t: 1, trade: 'swap' },
       { managerId: m2, outId: p2.id, inId: p1.id, gw: 0, t: 1, trade: 'swap' },
     ];
+    // records only exist once a gameweek is settled, and a fresh demo has
+    // none until the real calendar does (22 Aug) — settle GW1 for the probe
+    state.matchStats['gw' + GAMEWEEKS[0].n] = { gw: 0, label: GAMEWEEKS[0].label, final: true, playerStats: { [p1.id]: { min: 90, st: 1 } } };
     const shuttle = seasonRecordsNow(0).find(r => r.key === 'shuttle');
     return { bottle, batch, shuttle: shuttle && { value: shuttle.value, holders: shuttle.holders.map(h => h.pid) } };
   });
