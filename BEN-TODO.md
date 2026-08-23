@@ -88,6 +88,23 @@ The last is the one I would fix first: it does not fail, it just quietly stops
 testing. All four want a seeded pre-kickoff state rather than the live calendar.
 `podcast.smoke` P17 is also red, but it was red before kickoff.
 
+**Re-measured 24 Aug, on `main` at `0da787e`.** Three of the four have healed
+themselves as the calendar moved on — `prep.smoke` 38/0, `product.smoke` 9/0,
+`feature-fixes.review` 16/0. `engine.parity` is still quietly running 6 checks
+instead of 8, so the waiver assertions have not been exercised since 21 Aug.
+
+A new one has gone red in their place, the same way and for the same reason:
+
+- `matchday.smoke` **N1** ("seeded projections genuinely differ") — fails with
+  `0 v 0`. Both seeded projections are now zero, so the orientation checks it
+  guards are vacuous. Confirmed pre-existing: it fails identically on a clean
+  `main` with no working-tree changes, so it is the data refresh, not a commit.
+
+That is three separate tests broken by the live calendar in four days. The
+pattern is the point — each one pins live data instead of a seeded fixture, so
+the suite decays a little with every FPL refresh. Worth one pass to seed them
+rather than chasing them individually.
+
 ---
 
 ## 02. CEREMONY vs FIRST PICK — the race Toby's test draft exposed (18 Aug, PRE-THURSDAY)
