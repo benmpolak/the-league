@@ -1027,6 +1027,13 @@ tr.st-red .pname { color: #ff9c9c; }
 .sub-arrow { font-size: 10px; font-weight: 800; }
 .sub-arrow.in { color: #3fb96d; }
 .sub-arrow.out { color: #e05555; }
+/* a sub that is certain but not yet awarded — dimmed and blinking, because it
+   hasn't happened on the ledger yet (Marc, 23 Aug 2026) */
+.sub-arrow.pend { opacity: .7; animation: pendPulse 1.8s ease-in-out infinite; }
+@keyframes pendPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+/* the points those subs will add, sat next to the settled score */
+.pend-pts { font-size: .72em; font-weight: 700; color: #3fb96d; opacity: .85; vertical-align: super; }
+@media (prefers-reduced-motion: reduce) { .sub-arrow.pend { animation: none; } }
 
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {

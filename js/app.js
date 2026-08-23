@@ -1078,7 +1078,9 @@ function playerFixtureState(p, gwN) {
 function teamOutlook(mid, i) {
   const gwN = GAMEWEEKS[i].n;
   let exp = 0, varsum = 0, toPlay = 0;
-  for (const pid of effectiveXI(mid, i).xi) {
+  // liveXI, not effectiveXI: a sub that's already certain belongs in the
+  // projection now, not at the final whistle (Marc, 23 Aug 2026)
+  for (const pid of liveXI(mid, i).xi) {
     const p = PLAYER_BY_ID[pid];
     const cur = gwPlayerPoints(pid, i);
     const fs = playerFixtureState(p, gwN);
@@ -1112,11 +1114,13 @@ function matchNeeds(a, b, i, pov = null) {
   const A = teamOutlook(a, i), B = teamOutlook(b, i);
   const st = gwStatus(i) === 'final' ? 'final' : gwUnderway(i) ? 'live' : 'pre';
   const gwN = GAMEWEEKS[i].n;
-  const remaining = mid => effectiveXI(mid, i).xi
+  const remaining = mid => liveXI(mid, i).xi
     .map(pid => PLAYER_BY_ID[pid])
     .filter(p => p && playerFixtureState(p, gwN).frac > 0);
-  const left = { mid: a, current: gwManagerPoints(a, i), projected: Math.round(A.exp), remainingPlayers: remaining(a), toPlay: A.toPlay };
-  const right = { mid: b, current: gwManagerPoints(b, i), projected: Math.round(B.exp), remainingPlayers: remaining(b), toPlay: B.toPlay };
+  // `current` stays the settlement number so it matches the scoreline above it;
+  // `pending` is what the certain auto-subs will add at the final whistle
+  const left = { mid: a, current: gwManagerPoints(a, i), pending: pendingSubPoints(a, i), projected: Math.round(A.exp), remainingPlayers: remaining(a), toPlay: A.toPlay };
+  const right = { mid: b, current: gwManagerPoints(b, i), pending: pendingSubPoints(b, i), projected: Math.round(B.exp), remainingPlayers: remaining(b), toPlay: B.toPlay };
   // speak to the pov manager if they're in this tie, about-them otherwise
   const P = pov === b ? right : pov === a ? left : left;
   const O = P === left ? right : left;
@@ -1159,6 +1163,12 @@ function matchNeeds(a, b, i, pov = null) {
         lines.push(`${you} lead by ${margin}, but ${esc(teamName(O.mid))} ${oLeft.length === 1 ? 'has' : 'have'} ${nameFew(oLeft)} remaining${pLeft.length ? '' : ' — and ' + (neutral ? `${esc(teamName(P.mid))} are` : 'you are') + ' done'}.`);
       }
     }
+    // points already earned but not yet awarded: the auto-subs are certain,
+    // the whistle just hasn't gone (Marc, 23 Aug 2026)
+    const owed = [];
+    if (P.pending) owed.push(`${neutral ? esc(teamName(P.mid)) : 'you'} ${P.pending > 0 ? '+' : ''}${P.pending}`);
+    if (O.pending) owed.push(`${esc(teamName(O.mid))} ${O.pending > 0 ? '+' : ''}${O.pending}`);
+    if (owed.length) lines.push(`Auto-subs still to be awarded — ${owed.join(', ')} at the final whistle.`);
   }
   return { state: st, left, right, leader, margin, tieRequirement: margin < 0 ? -margin : 0, leadRequirement: margin < 0 ? -margin + 1 : 0, lines };
 }
@@ -2831,6 +2841,83 @@ function effectiveXI(mid, gwIdx) {
     }
   }
   return { xi, subs };
+}
+/* ----- auto-subs the maths can already be sure of -----
+   Settlement waits for the final whistle of the last game and that stays put
+   (effectiveXI / gwManagerPoints — Ben, UAT night). But the PROJECTION has no
+   business waiting: once a starter's club is finished for the week and he
+   never got on, and a bench man who HAS played can legally take his shirt,
+   that sub is a certainty. The win bar was banking the dead starter's nought
+   and ignoring the bench points sat right next to it.
+   (Marc, 23 Aug 2026: "i know mateta will come on for sarr already meaning
+   that i will get 2 more points ... the projection is slightly off")
+   Built on effectiveXI's output, so once the round IS done this finds nothing
+   left to do and the numbers can't be counted twice. */
+function pendingSubs(mid, gwIdx, base) {
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return [];
+  const ev = gwEvent(gwIdx);
+  if (!ev || !Object.keys(ev.playerStats || {}).length) return [];
+  // `base` is an effectiveXI the caller already has — this runs on every live
+  // render, twice per matchup row, so don't compute it twice for nothing
+  const xi = [...(base || effectiveXI(mid, gwIdx).xi)];
+  // certainly out: every fixture his club had this week whistled, no minutes.
+  // A blank gameweek (no fixture at all) proves nothing — he can't be replaced
+  // on the evidence of a match that was never played.
+  const clubDone = pid => {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) return false;
+    const fx = teamFixturesInGw(p.team, gwN);
+    return fx.length > 0 && fx.every(fxOver);
+  };
+  // certainly in: he is already on the pitch, or has been
+  const bench = benchFor(mid, gwIdx).filter(p => appearedInGw(p.id, gwIdx));
+  const subs = [];
+  for (const pid of [...xi]) {
+    if (appearedInGw(pid, gwIdx) || !clubDone(pid)) continue;
+    const idx = xi.indexOf(pid);
+    for (const cand of bench) {
+      if (xi.includes(cand.id)) continue;
+      const trial = [...xi];
+      trial[idx] = cand.id;
+      const c = xiCounts(trial);
+      const shapeOk = ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1]);
+      if (shapeOk) {
+        xi[idx] = cand.id;
+        subs.push({ out: pid, in: cand.id });
+        break;
+      }
+    }
+  }
+  // a starter whose own club is still to play could yet fail to appear and
+  // take a bench man ahead of these — so the final pairings can differ from
+  // these, even though the count and the points rarely do
+  return subs;
+}
+// the eleven the projection should believe in: settled subs plus certain ones.
+// Display and settlement stay separate — this never feeds gwManagerPoints.
+function liveXI(mid, gwIdx) {
+  const eff = effectiveXI(mid, gwIdx);
+  const xi = [...eff.xi];
+  const subs = pendingSubs(mid, gwIdx, eff.xi);
+  for (const s of subs) {
+    const k = xi.indexOf(s.out);
+    if (k >= 0) xi[k] = s.in;
+  }
+  return { xi, subs };
+}
+// what those certain subs will add to the score at the final whistle
+function pendingSubPoints(mid, gwIdx) {
+  return pendingSubs(mid, gwIdx)
+    .reduce((t, s) => t + gwPlayerPoints(s.in, gwIdx) - gwPlayerPoints(s.out, gwIdx), 0);
+}
+// a live score with the certain-but-unawarded auto-subs alongside it. The bold
+// number is always the settlement number — the tail is what's coming.
+function liveScoreHtml(mid, gwIdx) {
+  const n = gwManagerPoints(mid, gwIdx);
+  const add = pendingSubPoints(mid, gwIdx);
+  if (!add) return `${n}`;
+  return `${n} <span class="pend-pts" title="Auto-subs already certain — awarded at the final whistle of the last game">${add > 0 ? '+' : '&minus;'}${Math.abs(add)}</span>`;
 }
 function gwManagerPoints(mid, gwIdx) {
   const xi = effectiveXI(mid, gwIdx).xi;
@@ -6203,7 +6290,7 @@ function viewTeam() {
     <select id="teamMgr" aria-label="Manager">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
     <select id="teamGw" aria-label="Gameweek">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
     <span class="tag">${locked ? (gwIsOver(gw) ? 'Gameweek finished — locked' : 'Deadline passed — locked') : `Lineup open — locks ${new Date(gwFrom(gw)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
-    <span class="tag">GW points: <b class="gold">&nbsp;${gwManagerPoints(mid, gw)}</b></span>
+    <span class="tag">GW points: <b class="gold">&nbsp;${liveScoreHtml(mid, gw)}</b></span>
     <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
     <button class="tag" id="stadiumBtn" style="cursor:pointer" title="Rename your stadium">&#127967; ${esc(stadium(mid))}</button>
     <button class="tag" id="clubBtn" style="cursor:pointer" title="Name, kit, sponsor, gaffer, rival — the club office">${kitSvg(mid, 14)} Club office</button>
@@ -6227,7 +6314,7 @@ function viewTeam() {
       const oppMid = pair[0] === mid ? pair[1] : pair[0];
       const oxi = lineupFor(oppMid, gw);
       return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side">
-        <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
+        <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwUnderway(gw) ? liveScoreHtml(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         ${adStrip(oppMid * 37 + gw, 3, oppMid)}
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
           <div class="pitch-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
@@ -6246,7 +6333,7 @@ function viewTeam() {
             </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
       </div><div class="duel-side">
-        <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? gwManagerPoints(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
+        <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? liveScoreHtml(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
     ${(() => {
       // browsing someone else's team: every chip opens the player card.
@@ -7552,7 +7639,7 @@ function viewDash() {
       ${pair ? `
       <div class="h2h-fx fx-hero" data-mu="${pair[0]}:${pair[1]}:${cur}" style="cursor:pointer;font-size:15px">
         <span class="fx-side">${kitSvg(pair[0], 28)}<b>${esc(teamName(pair[0]))}</b></span>
-        <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? gwManagerPoints(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
+        <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? liveScoreHtml(pair[0], cur) : projectedGwScore(pair[0], cur)} &ndash; ${started ? liveScoreHtml(pair[1], cur) : projectedGwScore(pair[1], cur)}</span>
         <span class="fx-side">${kitSvg(pair[1], 28)}<b>${esc(teamName(pair[1]))}</b></span>
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
@@ -9611,14 +9698,23 @@ function showMatchup(a, b, i) {
   $('#muOverlay')?.remove();
   const started = gwStatus(i) !== 'upcoming';
   const effInfo = {};
-  for (const mid of [a, b]) effInfo[mid] = started ? effectiveXI(mid, i) : { xi: lineupFor(mid, i), subs: [] };
+  // pending: the sub hasn't been awarded yet, but his club is finished and the
+  // bench man has played, so it's coming (Marc, 23 Aug 2026). Shirts don't move
+  // until the final whistle — only the marker and the +N say what's due.
+  const pendInfo = {};
+  for (const mid of [a, b]) {
+    effInfo[mid] = started ? effectiveXI(mid, i) : { xi: lineupFor(mid, i), subs: [] };
+    pendInfo[mid] = started ? pendingSubs(mid, i) : [];
+  }
   const xiOf = mid => effInfo[mid].xi;
   const chip = (pid, mid) => {
     const p = PLAYER_BY_ID[pid];
     const pts = started ? gwPlayerPoints(pid, i) : null;
     const cameOn = effInfo[mid].subs.some(s => s.in === pid);
+    const goingOff = pendInfo[mid].some(s => s.out === pid);
     return `<div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}">
       ${cameOn ? '<span class="sub-arrow in" title="Auto-sub — came on">&#9650;</span>' : ''}
+      ${goingOff ? '<span class="sub-arrow out pend" title="Never got on — an auto-sub replaces him at the final whistle">&#9660;</span>' : ''}
       ${kitImg(p.team, p.pos === 'GK')}
       <span class="pitch-name">${esc(p.name)}</span>
       ${pts != null ? `<span class="mu-pts">${pts}</span>` : `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[i].n)}</span>`}
@@ -9632,12 +9728,14 @@ function showMatchup(a, b, i) {
   };
   const sideBench = mid => {
     const outs = new Set(effInfo[mid].subs.map(s => s.out));
+    const ins = new Set(pendInfo[mid].map(s => s.in));
     const bench = benchOf(mid);
     if (!bench.length) return '';
     return `<div class="bench-strip mu-bench">
       <span class="muted" style="font-size:10px;font-weight:700;align-self:center">BENCH</span>
       ${bench.map(p => `<div class="pitch-chip mu-chip benched ${statusClass(p)}" data-pcard="${p.id}">
         ${outs.has(p.id) ? '<span class="sub-arrow out" title="Auto-subbed out — did not play">&#9660;</span>' : ''}
+        ${ins.has(p.id) ? '<span class="sub-arrow in pend" title="Auto-sub due — his points are added at the final whistle">&#9650;</span>' : ''}
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
         ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, i)}</span>` : ''}
@@ -9653,7 +9751,7 @@ function showMatchup(a, b, i) {
     .map(p => `<div class="lrow" style="font-size:12px"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="sp-pts ${started && gwPlayerPoints(p.id, i) > 0 ? 'gold' : 'muted'}" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : playerXp(p).toFixed(1)}</span></div>`).join('')}
     ${benchOf(mid).map(p => `<div class="lrow" style="font-size:11.5px;opacity:.65"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${pname(p)}<span class="xi-chip">bench</span><span class="sp-pts muted" style="margin-left:auto">${started ? gwPlayerPoints(p.id, i) : ''}</span></div>`).join('')}</div>`;
   const side = mid => `<div class="mu-side">
-    <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? gwManagerPoints(mid, i) : projectedGwScore(mid, i)}</b></h3>
+    <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${started ? liveScoreHtml(mid, i) : projectedGwScore(mid, i)}</b></h3>
     ${gafferFor(mid) ? `<p class="muted" style="text-align:center;font-size:10.5px;margin:-4px 0 4px">${gafferChip(mid)}</p>` : ''}
     <p style="text-align:center;font-size:10.5px;margin:-2px 0 4px">${lineupStamp(mid, i)}</p>
     ${muView === 'pitch' ? sidePitch(mid) : sideTable(mid)}
@@ -9672,7 +9770,7 @@ function showMatchup(a, b, i) {
     </div>
     <div class="h2h-fx mu-scoreline fx-hero">
       <span class="fx-side">${kitSvg(a, 28)}<b>${esc(teamName(a))}</b></span>
-      <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? gwManagerPoints(a, i) : projectedGwScore(a, i)} &ndash; ${started ? gwManagerPoints(b, i) : projectedGwScore(b, i)}</span>
+      <span class="fx-score${started ? '' : ' projected'}">${started ? '' : '<span class="proj-tag">proj</span> '}${started ? liveScoreHtml(a, i) : projectedGwScore(a, i)} &ndash; ${started ? liveScoreHtml(b, i) : projectedGwScore(b, i)}</span>
       <span class="fx-side">${kitSvg(b, 28)}<b>${esc(teamName(b))}</b></span>
     </div>
     ${winProbBar(a, b, i, (whoami === a || whoami === b) ? whoami : null)}
@@ -9891,10 +9989,14 @@ function viewH2H() {
         const pa = st === 'upcoming' ? '–' : gwManagerPoints(a, i);
         const pb = st === 'upcoming' ? '–' : gwManagerPoints(b, i);
         const aWin = st === 'final' && pa > pb, bWin = st === 'final' && pb > pa;
+        // the scoreline carries the settled number plus whatever the certain
+        // auto-subs owe (Marc, 23 Aug 2026); the win/loss test stays on settled
+        const sa = st === 'upcoming' ? '–' : liveScoreHtml(a, i);
+        const sb = st === 'upcoming' ? '–' : liveScoreHtml(b, i);
         return `<div class="h2h-fx fx-row" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
           <span class="fx-name fx-l ${aWin ? 'h2h-win' : ''}">${esc(teamName(a))}</span>
           <span class="fx-chip">${kitSvg(a)}<small class="muted">(H)</small></span>
-          <span class="fx-score">${pa} &ndash; ${pb}</span>
+          <span class="fx-score">${sa} &ndash; ${sb}</span>
           <span class="fx-chip">${kitSvg(b)}</span>
           <span class="fx-name ${bWin ? 'h2h-win' : ''}">${esc(teamName(b))}</span>
         </div>
