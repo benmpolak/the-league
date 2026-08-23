@@ -1024,7 +1024,10 @@ tr.st-red .pname { color: #ff9c9c; }
 .squad-row.st-red { box-shadow: inset 3px 0 0 #e05555; background: rgba(224, 85, 85, .06); }
 .squad-row.st-amber { box-shadow: inset 3px 0 0 #e0a83c; background: rgba(224, 168, 60, .05); }
 .mu-bench { margin-top: 4px; padding-top: 6px; border-top: 1px dashed rgba(38,50,80,.7); }
-.sub-arrow { font-size: 10px; font-weight: 800; }
+/* the arrow carries the partner's name — a tooltip is no use on a phone, and
+   "coming on" means nothing without "for whom" (Marc, 24 Aug 2026) */
+.sub-arrow { font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; width: 100%; line-height: 1.1; }
+.sub-for { font-size: 8.5px; font-weight: 700; opacity: .8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub-arrow.in { color: #3fb96d; }
 .sub-arrow.out { color: #e05555; }
 /* a sub that is certain but not yet awarded — dimmed and blinking, because it

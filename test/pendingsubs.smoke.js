@@ -198,6 +198,39 @@ const chk = (name, ok, detail = '') => {
         liveScoreHtml(mid, GW) === String(gwManagerPoints(mid, GW)), liveScoreHtml(mid, GW));
     })();
 
+    /* ----- the arrows name the partner, at BOTH ends ----- */
+    const A = scene();
+    const am = subMarks(A.mid, GW);
+    t('the man coming off is marked, and the mark names who replaces him',
+      /sub-arrow out pend/.test(am[A.dead.id] || '') && (am[A.dead.id] || '').includes(A.sub.name),
+      am[A.dead.id]);
+    t('the man coming on is marked, and the mark names who he comes on for',
+      /sub-arrow in pend/.test(am[A.sub.id] || '') && (am[A.sub.id] || '').includes(A.dead.name),
+      am[A.sub.id]);
+    t('nobody else on the pitch is marked',
+      Object.keys(am).length === 2, JSON.stringify(Object.keys(am)));
+
+    // once it is settled the marks stay, at both ends, minus the pulse
+    state.fixtures.forEach(f => { f.finished = true; f.minutes = 90; });
+    const sm = subMarks(A.mid, GW);
+    t('at full time both ends are still marked, and no longer pending',
+      (sm[A.sub.id] || '').includes('sub-arrow in') && !/pend/.test(sm[A.sub.id] || '') &&
+      (sm[A.dead.id] || '').includes('sub-arrow out') && !/pend/.test(sm[A.dead.id] || ''),
+      JSON.stringify([sm[A.dead.id], sm[A.sub.id]]));
+    t('the settled marks still name the partner at both ends',
+      (sm[A.dead.id] || '').includes(A.sub.name) && (sm[A.sub.id] || '').includes(A.dead.name));
+
+    // a squad that all turned up carries no marks at all
+    (() => {
+      const ev = baseline();
+      const mid = state.managers[0].id;
+      const xi = autoXI(squadAt(mid, GW));
+      state.lineups[mid] = { [GW]: xi };
+      for (const id of xi) ev.playerStats[id] = played();
+      state.fixtures.forEach(f => { f.finished = true; f.minutes = 90; });
+      t('an XI that all turned up carries no arrows', Object.keys(subMarks(mid, GW)).length === 0);
+    })();
+
     // and the markup when something IS owed
     const M = scene();
     t('liveScoreHtml shows the settled score with the owed points beside it',
