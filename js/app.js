@@ -2185,11 +2185,15 @@ function applyLiveStats() {
   // every minute, so by the time the Pages feed arrived, syncNow's diff — the
   // only place the Vidiprinter listened — had nothing left to say. Diff each
   // NEW overlay stamp against what was showing before it lands.
+  const prevPS = ev?.playerStats || null;
+  state.matchStats[key] = { gw: lv.n - 1, label: ev?.label || `GW${lv.n}`, date: ev?.date, final: false, playerStats: lv.playerStats };
+  // diff AFTER the stats land, like syncNow does — the tape's tie scores come
+  // from gwManagerPoints, which reads state (Ben, 23 Aug: "some of the scores
+  // looked wrong" — the tape was scoring ties off stale stats and a raw XI)
   if (lv.t !== vidiLiveT && state.phase === 'season') {
-    try { vidiDiff(lv.n - 1, ev?.playerStats || null, lv.playerStats); } catch (e) { console.warn('[vidi]', e); }
+    try { vidiDiff(lv.n - 1, prevPS, lv.playerStats); } catch (e) { console.warn('[vidi]', e); }
     vidiLiveT = lv.t;
   }
-  state.matchStats[key] = { gw: lv.n - 1, label: ev?.label || `GW${lv.n}`, date: ev?.date, final: false, playerStats: lv.playerStats };
 }
 let vidiLiveT = 0; // last overlay stamp the tape has diffed — one report per write
 /* Layer 4 of the live fast lane (GW1 night: the overlay went quiet and the
@@ -3205,8 +3209,12 @@ function vidiDiff(gwIdx, oldPS, newPS) {
         const pr = pairingsFor(gwIdx).find(x => x.includes(mid));
         if (pr) {
           const op = pr[0] === mid ? pr[1] : pr[0];
-          const sumFor = m2 => lineupFor(m2, gwIdx).reduce((t, id2) => t + (newPS[id2] ? statPoints(PLAYER_BY_ID[id2], newPS[id2]) : 0), 0);
-          const a2 = sumFor(mid), b2 = sumFor(op);
+          // the SAME scorer as the dashboard and the matchup — auto-subs,
+          // Chairman's corrections and the Lobus bonus included. The hand-
+          // rolled raw-lineup sum drifted from every other scoreboard the
+          // moment any of those applied (Ben, 23 Aug: "scores looked wrong").
+          // Every caller now lands newPS in state.matchStats before diffing.
+          const a2 = gwManagerPoints(mid, gwIdx), b2 = gwManagerPoints(op, gwIdx);
           score += a2 === b2 ? ` · ${teamName(mid)} level with ${teamName(op)} at ${a2}`
             : a2 > b2 ? ` · ${teamName(mid)} lead ${teamName(op)} ${a2}–${b2}`
             : ` · ${teamName(mid)} still trail ${teamName(op)} ${a2}–${b2}`;
@@ -3403,13 +3411,16 @@ function applyMock() {
   if (memo === mockMemo && state.matchStats[gwKey]?.label?.includes('simulation')) return false;
   mockMemo = memo;
   const ps = mockGwStats(mk.gw, +mk.seed || 1, frac);
-  if (mockPrevPS && state.phase === 'season') { try { vidiDiff(mk.gw, mockPrevPS, ps); } catch { /* the tape can miss a beat */ } }
+  const prevMockPS = mockPrevPS;
   mockPrevPS = ps;
   // a REAL event for this gameweek that synced in while the chamber runs is
   // feed truth — stash it so switch-off restores it instead of deleting
   const existing = state.matchStats[gwKey];
   if (existing && !String(existing.label || '').includes('simulation')) mockEvSaved[gwKey] = existing;
   state.matchStats[gwKey] = { gw: mk.gw, label: `GW${GAMEWEEKS[mk.gw].n} — simulation`, date: GAMEWEEKS[mk.gw].from, final, playerStats: ps };
+  // tape diff AFTER the stats land — vidiDiff scores ties via gwManagerPoints,
+  // which reads state (Ben, 23 Aug)
+  if (prevMockPS && state.phase === 'season') { try { vidiDiff(mk.gw, prevMockPS, ps); } catch { /* the tape can miss a beat */ } }
   mockGwKeyApplied = gwKey;
   return true;
 }

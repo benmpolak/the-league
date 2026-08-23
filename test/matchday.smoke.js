@@ -109,6 +109,16 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
 
   /* ── N1: before kickoff — projected line, no requirements ── */
   const n1 = await p.evaluate(() => {
+    // craft a genuinely pre-kickoff GW1 instead of trusting the real feed:
+    // once the actual season played GW1, its fixtures all read finished, every
+    // projection fraction hit zero and both sides projected 0 — the check
+    // failed on the data, not the code (broke with the 23 Aug data refresh)
+    const gwN = GAMEWEEKS[0].n;
+    Date.now = () => new Date(GAMEWEEKS[0].from).getTime() - 3600000;
+    GAMEWEEKS[0].finished = false;
+    delete state.matchStats['gw' + gwN];
+    const clubs = [...new Set(PLAYERS.map(p => p.team))];
+    state.fixtures = clubs.map(c => ({ gw: gwN, home: c, away: 'Phantom ' + c, started: false, finished: false, minutes: 0 }));
     const pair = pairingsFor(0)[0];
     const m = matchNeeds(pair[0], pair[1], 0, pair[0]);
     return { state: m.state, lines: m.lines, projL: m.left.projected, projR: m.right.projected };
