@@ -3132,11 +3132,23 @@ let liveTimer = null;
 const fxOver = f => !!(f.finished || f.fp);
 // the Highlights href: the EXACT Sky video when the curated map has this
 // fixture (Ben, GW1 night — "e.g. youtube.com/watch?v=..."), else a search
-// deep-link the YouTube app handles (the channel-page URL form does not)
+// deep-link the YouTube app handles (the channel-page URL form does not).
+// The search asks for clubs by the names Sky actually title videos with:
+// four of ours are FPL abbreviations that appear in no video title anywhere,
+// so "Hull City 2-0 Man Utd" found nothing (Marc, 22 Aug). Only the
+// abbreviations are mapped — "Ipswich Town" for Sky's "Ipswich" is a
+// superset and searches fine, a wrong short name does not.
+const SKY_NAME = {
+  'Man Utd': 'Manchester United',
+  'Man City': 'Manchester City',
+  'Spurs': 'Tottenham',
+  "Nott'm Forest": 'Nottingham Forest',
+};
+const skyName = t => SKY_NAME[t] || t;
 function fxYtHref(f) {
   const vid = state.highlights?.[String(f.id)];
   if (vid && /^[\w-]{6,20}$/.test(vid)) return `https://www.youtube.com/watch?v=${vid}`;
-  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`sky sports ${f.home} ${f.hs ?? ''}-${f.as ?? ''} ${f.away} highlights`)}`;
+  return `https://www.youtube.com/results?search_query=${encodeURIComponent(`sky sports ${skyName(f.home)} ${f.hs ?? ''}-${f.as ?? ''} ${skyName(f.away)} highlights`)}`;
 }
 function anyMatchLive() { return state.fixtures.some(f => f.started && !fxOver(f)); }
 
