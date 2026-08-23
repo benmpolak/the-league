@@ -1547,6 +1547,12 @@ details[open] > .n6-summary::after { content: ' ▴'; }
   letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; flex: none; }
 .gz-nudge-copy { font-size: 12.5px; line-height: 1.3; min-width: 0; }
 .gz-nudge-go { margin-left: auto; color: var(--accent); flex: none; }
+/* trade offers flash up in "Needs your attention" — gold, blinking, straight
+   to the desk (Ben, 23 Aug) */
+.offer-nudge { border-color: var(--gold); }
+.offer-nudge:hover { background: rgba(233, 196, 106, .10); }
+.offer-nudge .gz-nudge-tag { background: var(--gold); color: #2a2008; animation: rec-blink 1.2s infinite; }
+.offer-nudge .gz-nudge-go { color: var(--gold); }
 /* the holding pen, one man per chip so the Chairman can admit a late feed
    entry without opening the whole window (Marc, 21 Aug) */
 .pen-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

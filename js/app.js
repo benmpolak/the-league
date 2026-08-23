@@ -3105,10 +3105,16 @@ function h2hStandings(includeLive = false, uptoGw = REGULAR_GWS) {
       else { rows[a].d++; rows[b].d++; rows[a].pts++; rows[b].pts++; }
     }
   }
-  // tiebreak on regular-season overall points (pf = points scored across the
-  // GWs counted above) — managerPoints() spans all 38 GWs, so playoff scoring
-  // could reshuffle a settled regular-season table
-  return Object.values(rows).sort((x, y) => y.pts - x.pts || y.pf - x.pf);
+  // tiebreak on overall cumulative points — the Ovr number the table shows,
+  // in-play GWs included, so a side on 50 sits above a side on 35 when both
+  // hold 3 Points (Ben, 23 Aug). Capped at the regular season: managerPoints()
+  // spans all 38 GWs, so playoff scoring could reshuffle a settled table.
+  for (const m of state.managers) {
+    let t = 0;
+    for (let i = 0; i < Math.min(uptoGw, REGULAR_GWS); i++) t += gwManagerPoints(m.id, i);
+    rows[m.id].ovr = t;
+  }
+  return Object.values(rows).sort((x, y) => y.pts - x.pts || y.ovr - x.ovr || y.pf - x.pf);
 }
 
 /* ---------------- FPL sync ---------------- */
@@ -7691,6 +7697,13 @@ function viewDash() {
     <div class="dash-side-stack">
     <div class="card dash-attention">
       <h2>Needs your attention</h2>
+      ${offersIn.length ? `<button type="button" class="gz-nudge offer-nudge" id="offerNudge">
+        <span class="gz-nudge-tag">OFFER IN</span>
+        <span class="gz-nudge-copy">${offersIn.length === 1
+          ? `<b>${esc(managerName(offersIn[0].from))}</b> is after <b>${esc(tradeNames(tGet(offersIn[0])))}</b> &mdash; ${esc(tradeNames(tGive(offersIn[0])))} on the table`
+          : `<b>${offersIn.length} offers</b> on your desk &mdash; your players are wanted men`}</span>
+        <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+      </button>` : ''}
       ${gazetteUnread() ? `<button type="button" class="gz-nudge" id="gzNudge">
         <span class="gz-nudge-tag">NEW</span>
         <span class="gz-nudge-copy"><b>${esc(String(progTodays()?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${(() => {
@@ -7703,7 +7716,6 @@ function viewDash() {
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
-      ${offersIn.length ? `<h3 style="margin-top:12px">Trade offers in</h3>${offersIn.map(t => `<div class="lrow" style="font-size:12.5px"><b>${esc(managerName(t.from))}</b> offers <b>${esc(tradeNames(tGive(t)))}</b> for ${esc(tradeNames(tGet(t)))}</div>`).join('')}<button class="btn small" data-goto="transfers" style="margin-top:6px">Respond</button>` : ''}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} <span id="wvClock">${waiverClockLine()}</span></p>
       ${(() => {
@@ -9614,6 +9626,8 @@ function bindDash() {
   if (pr) pr.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
   const gzn = $('#gzNudge');
   if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const ofn = $('#offerNudge');
+  if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
   const psh = $('#progShare');
   if (psh) psh.onclick = () => {
     const txt = gazetteShareText();
@@ -10396,7 +10410,7 @@ function viewTable() {
               : `<td class="num">${m.p}</td><td class="num">${m.w}</td><td class="num">${m.d}</td><td class="num">${m.l}</td>
                  <td class="num muted">${m.pf}</td><td class="num muted">${m.pa}</td>
                  <td class="num gold act"><b>${m.pts}</b></td>
-                 <td class="num muted">${managerPoints(m.id)}</td>`}
+                 <td class="num muted">${m.ovr ?? managerPoints(m.id)}</td>`}
           </tr>
           <tr class="bd-tr" id="bd-${m.id}" style="display:none"><td colspan="${nCols}">
             ${(() => { const md = supportersMood(m.id); return `<p style="font-size:12.5px;margin-bottom:2px">&#128227; <b>${esc(md.t)}</b> <span class="muted" style="font-size:11.5px">${esc(md.line)}</span></p>`; })()}
