@@ -6750,6 +6750,7 @@ function assistantCard(mid, gw) {
    no planning state, no hypotheticals, no crystal ball. Reads the calendar
    through teamFixturesInGw like everything else. ----- */
 const NEXT6_KEY = `${LS_NS}-next6-open`;
+const DASHMU_KEY = `${LS_NS}-dashmu-open`; // the dashboard's two lineup shots
 function nextSixCard(mid) {
   const cur = currentGwIndex();
   const gws = GAMEWEEKS.slice(cur, cur + 6);
@@ -7881,12 +7882,23 @@ function viewDash() {
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
-      <div class="mu-grid dash-mu" style="margin-top:10px">
+      ${(() => {
+        // the two lineup shots collapse behind a summary on phones — Ian,
+        // 24 Aug: "your team takes over" the dashboard. Same pattern as
+        // Next Six: closed by default under 700px, open on desktop, and the
+        // reader's choice is remembered.
+        const savedMu = localStorage.getItem(DASHMU_KEY);
+        const muOpen = savedMu != null ? savedMu === '1' : !window.matchMedia('(max-width: 700px)').matches;
+        return `<details id="dashMu"${muOpen ? ' open' : ''} style="margin-top:10px">
+        <summary class="n6-summary muted" style="font-size:12px">Both line-ups</summary>
+        <div class="mu-grid dash-mu" style="margin-top:8px">
         ${pair.map(pmid => `<div>
           <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
           ${dashMiniPitch(pmid, cur)}
         </div>`).join('')}
-      </div>` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
+        </div>
+      </details>`;
+      })()}` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
         <button class="btn small" data-goto="team">Set my lineup</button>
@@ -9828,6 +9840,8 @@ function bindDash() {
   if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
   const ofn = $('#offerNudge');
   if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
+  const dmu = $('#dashMu');
+  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const psh = $('#progShare');
   if (psh) psh.onclick = () => {
     const txt = gazetteShareText();
