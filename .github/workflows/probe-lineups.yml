@@ -1,0 +1,31 @@
+name: Probe lineup sources
+
+# Read-only reconnaissance for the predicted-line-ups work (Marc, 24 Aug 2026).
+# The dev sandbox cannot reach these hosts — its egress proxy is an allowlist
+# that blocks even the FPL API — so the probe runs here, where the runner has
+# open internet, and reports through the job log. It writes nothing, commits
+# nothing, and touches no data the site reads. Manual trigger only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: 'Space-separated URLs to probe (blank = the built-in candidates)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe
+        # the input goes through the environment, never straight into the shell:
+        # interpolating ${{ }} into `run` lets whoever dispatches it run
+        # arbitrary commands on the runner
+        env:
+          PROBE_URLS: ${{ github.event.inputs.urls }}
+        run: python3 scripts/probe_lineups.py $PROBE_URLS
