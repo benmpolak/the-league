@@ -79,8 +79,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const row = document.querySelector('.prob-wrap .prob-row');
     const projs = sub ? [num(sub.children[0].textContent), num(sub.children[2].textContent)] : [];
     const pcts = row ? [...row.querySelectorAll('b')].map(b => num(b.textContent)) : [];
+    // the draw is a third outcome since 24 Aug 2026 and carries its own label
+    const drawEl = row ? row.querySelector('.prob-draw-pct') : null;
+    const draw = drawEl ? num(drawEl.textContent) : 0;
     const width = document.querySelector('.prob-bar span')?.style.width || '';
-    return { heads, projs, pcts, width };
+    return { heads, projs, pcts, draw, width };
   });
 
   /* 1 — manager who is pair[0]: duel columns and bar agree left/right */
@@ -97,7 +100,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     d.heads[0] === d.projs[0], `heading ${d.heads[0]} vs bar ${d.projs[0]}`);
   chk('pair[0] manager: RIGHT duel heading proj equals RIGHT bar proj',
     d.heads[1] === d.projs[1], `heading ${d.heads[1]} vs bar ${d.projs[1]}`);
-  chk('percentages sum to 100', d.pcts[0] + d.pcts[1] === 100, JSON.stringify(d.pcts));
+  // win + draw + loss, not win + loss: a level finish is its own result
+  chk('percentages sum to 100', d.pcts[0] + d.draw + d.pcts[1] === 100,
+    JSON.stringify({ win: d.pcts[0], draw: d.draw, loss: d.pcts[1] }));
   chk('bar width equals the left percentage', d.width === `${d.pcts[0]}%`, `${d.width} vs ${d.pcts[0]}%`);
 
   /* 2 — manager who is pair[1]: same agreement */
@@ -197,7 +202,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       exp1: Math.round(teamOutlook(pair[1], 0).exp),
       proj0: projectedGwScore(pair[0], 0),
       proj1: projectedGwScore(pair[1], 0),
-      pct0: Math.round(liveWinProb(pair[0], pair[1], 0) * 100),
+      // the bar's green segment is the WIN chance alone — the draw has its own
+      // segment beside it, so liveWinProb (which splits the draw) is not it
+      pct0: Math.round(matchOdds(pair[0], pair[1], 0).win * 100),
+      drawPct: Math.round(matchOdds(pair[0], pair[1], 0).draw * 100),
+      drawFill: wrap.querySelectorAll('.prob-bar span')[1]?.style.width || '',
       name0: teamName(pair[0]),
       name1: teamName(pair[1]),
     };
@@ -215,6 +224,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     JSON.stringify(muChk));
   chk('matchup modal: bar fill width equals the LEFT side\'s win chance',
     muChk.fill === `${muChk.pct0}%`, `${muChk.fill} vs ${muChk.pct0}%`);
+  chk('matchup modal: the draw has its own segment, sized to its own odds',
+    muChk.drawPct === 0 ? muChk.drawFill === '' : muChk.drawFill === `${muChk.drawPct}%`,
+    `${muChk.drawFill} vs ${muChk.drawPct}%`);
 
   /* 4c — player card starts on the CURRENT photo library with the fallback
    * chain armed (sol r4 P2: it hardcoded the legacy URL with no data-code,

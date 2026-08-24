@@ -1167,20 +1167,49 @@ function teamOutlook(mid, i) {
   }
   return { exp, varsum, toPlay };
 }
-function liveWinProb(a, b, i) {
+// Φ(z), Abramowitz–Stegun
+function normCdf(z) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp(-z * z / 2);
+  const p = d * t * (0.3194815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+}
+/* ----- win, DRAW and loss -----
+   A fantasy score is a whole number, so two sides finishing dead level is a
+   real result with real odds — and worth a table point (Marc, 24 Aug 2026:
+   "is the draw factored into the projections... it probably should be").
+   The bar used to read the difference off a continuous curve, which quietly
+   says a tie cannot happen and folds its odds into the two teams beside it.
+   A level tie with a couple of men left is nearer 13% drawn than 0%.
+
+   So: a continuity correction, and three numbers off the same curve —
+   a wins by 1 or more, they finish level, b wins by 1 or more. */
+function matchOdds(a, b, i) {
   const A = teamOutlook(a, i), B = teamOutlook(b, i);
   const diff = A.exp - B.exp;
   const sigma = Math.sqrt(A.varsum + B.varsum);
-  if (sigma < 0.5) return diff > 0 ? 1 : diff < 0 ? 0 : 0.5;
-  const z = diff / sigma;
-  // Φ(z), Abramowitz–Stegun
-  const t = 1 / (1 + 0.2316419 * Math.abs(z));
-  const d = 0.3989423 * Math.exp(-z * z / 2);
-  let p = d * t * (0.3194815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-  p = z > 0 ? 1 - p : p;
+  const live = A.toPlay + B.toPlay > 0;
+  if (sigma < 0.5) {
+    // nobody left to play: the result is arithmetic, not chance
+    if (Math.abs(diff) < 0.5) return { win: 0, draw: 1, loss: 0 };
+    return diff > 0 ? { win: 1, draw: 0, loss: 0 } : { win: 0, draw: 0, loss: 1 };
+  }
+  let win = 1 - normCdf((0.5 - diff) / sigma);
+  let loss = normCdf((-0.5 - diff) / sigma);
   // never claim certainty while either side still has football to play
-  if (A.toPlay + B.toPlay > 0) p = Math.min(0.99, Math.max(0.01, p));
-  return p;
+  if (live) {
+    win = Math.min(0.99, Math.max(0.005, win));
+    loss = Math.min(0.99, Math.max(0.005, loss));
+  }
+  const draw = Math.max(0, 1 - win - loss);
+  const total = win + draw + loss;
+  return { win: win / total, draw: draw / total, loss: loss / total };
+}
+// the old two-way reading, kept for the surfaces that only want "are we ahead":
+// the draw is split between the sides so it still totals one
+function liveWinProb(a, b, i) {
+  const o = matchOdds(a, b, i);
+  return o.win + o.draw / 2;
 }
 /* ----- "what do I need?" — the Opta desk's requirement sheet -----
    One pure calculation for every matchup surface. Sides are (a=left, b=right)
@@ -1247,7 +1276,22 @@ function matchNeeds(a, b, i, pov = null) {
     if (O.pending) owed.push(`${esc(teamName(O.mid))} ${O.pending > 0 ? '+' : ''}${O.pending}`);
     if (owed.length) lines.push(`Auto-subs still to be awarded — ${owed.join(', ')} at the final whistle.`);
   }
-  return { state: st, left, right, leader, margin, tieRequirement: margin < 0 ? -margin : 0, leadRequirement: margin < 0 ? -margin + 1 : 0, lines };
+  // the third result. A point apiece is worth saying out loud once it is a real
+  // possibility rather than a rounding error (Marc, 24 Aug 2026: "if a draw is
+  // above 0.5% probability it should be called out as its own thing")
+  // ...but only once it is under way. Before kickoff the sheet is deliberately
+  // a single projection line and no requirements (matchday N1), and a 2% draw
+  // before a ball is kicked is noise — the bar carries its own segment for it.
+  const odds = matchOdds(a, b, i);
+  if (st === 'live' && odds.draw > 0.005) {
+    const pc = Math.round(odds.draw * 100);
+    lines.push(pc >= 1
+      ? `A point apiece is live at ${pc}%.`
+      : 'A point apiece is a live outcome, if an unlikely one.');
+  } else if (st === 'final' && margin === 0) {
+    lines.push('A point apiece.');
+  }
+  return { state: st, left, right, leader, margin, drawChance: odds.draw, tieRequirement: margin < 0 ? -margin : 0, leadRequirement: margin < 0 ? -margin + 1 : 0, lines };
 }
 
 /* the Opta bar (Conway's ask, Lee-approved): live win chance + projected
@@ -1258,11 +1302,17 @@ function winProbBar(a, b, i, pov = null) {
   const m = matchNeeds(a, b, i, pov);
   const needLine = m.lines.length ? `<div class="need-line">${m.lines.join(' ')}</div>` : '';
   if (m.state === 'final') return needLine ? `<div class="prob-wrap prob-final">${needLine}</div>` : '';
-  const w = Math.round(liveWinProb(a, b, i) * 100);
+  // three-way, because a level finish is a real result worth a table point.
+  // The percentages are rounded to total exactly 100 — a bar that reads
+  // 87 / 4 / 10 invites an argument nobody can win.
+  const o = matchOdds(a, b, i);
+  let w = Math.round(o.win * 100), d = Math.round(o.draw * 100);
+  let l = 100 - w - d;
+  if (l < 0) { d += l; l = 0; }
   const live = m.state === 'live';
-  return `<div class="prob-wrap" title="Win chance from each XI's expected points, ${live ? 'updating as the gameweek plays out' : 'squad vs squad before kickoff'}">
-    <div class="prob-row"><span><b>${w}%</b> ${kitSvg(a)}</span><span class="prob-mid">${live ? '<span class="rec"></span> LIVE WIN CHANCE' : 'WIN CHANCE'}</span><span>${kitSvg(b)} <b>${100 - w}%</b></span></div>
-    <div class="prob-bar"><span style="width:${w}%"></span></div>
+  return `<div class="prob-wrap" title="Win, draw and loss chance from each XI's expected points, ${live ? 'updating as the gameweek plays out' : 'squad vs squad before kickoff'}">
+    <div class="prob-row"><span><b>${w}%</b> ${kitSvg(a)}</span><span class="prob-mid">${live ? '<span class="rec"></span> LIVE WIN CHANCE' : 'WIN CHANCE'}${d ? ` &middot; <span class="prob-draw-pct">draw ${d}%</span>` : ''}</span><span>${kitSvg(b)} <b>${l}%</b></span></div>
+    <div class="prob-bar"><span style="width:${w}%"></span>${d ? `<span class="prob-draw" style="width:${d}%"></span>` : ''}</div>
     <div class="prob-row prob-sub"><span>${live ? `<b>${m.left.current}</b> &middot; proj ${m.left.projected}` : `proj ${m.left.projected}`}</span><span class="prob-mid">${live ? `${m.left.toPlay} v ${m.right.toPlay} still to play` : 'projected points'}</span><span>${live ? `<b>${m.right.current}</b> &middot; proj ${m.right.projected}` : `proj ${m.right.projected}`}</span></div>
     ${needLine}
   </div>`;
@@ -10140,9 +10190,12 @@ function viewH2H() {
           <span class="fx-name ${bWin ? 'h2h-win' : ''}">${esc(teamName(b))}</span>
         </div>
         <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
-          const w = Math.round(liveWinProb(a, b, i) * 100);
+          // three-way, to agree with the bar on the matchup card this row opens
+          const o = matchOdds(a, b, i);
+          const w = Math.round(o.win * 100), dr = Math.round(o.draw * 100);
           const ta = teamOutlook(a, i), tb = teamOutlook(b, i);
-          return ` &middot; win chance ${w}% – ${100 - w}% &middot; ${ta.toPlay} v ${tb.toPlay} still to play`;
+          return ` &middot; win chance ${w}%${dr ? ` – ${dr}% draw` : ''} – ${100 - w - dr}%` +
+            ` &middot; ${ta.toPlay} v ${tb.toPlay} still to play`;
         })() : ''}</div>`;
       }).join('')}
       <h3 style="margin-top:14px">GW${g.n} — the real fixtures</h3>

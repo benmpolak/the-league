@@ -1167,8 +1167,14 @@ tr.st-red .pname { color: #ff9c9c; }
 .prob-mid .rec { display: inline-block; }
 .prob-sub { font-size: 11px; color: var(--muted); }
 .prob-sub .prob-mid { font-weight: 400; letter-spacing: 0; text-transform: none; }
-.prob-bar { height: 9px; border-radius: 5px; background: #5a2530; overflow: hidden; margin: 5px 0 3px; border: 1px solid rgba(255,255,255,.08); }
-.prob-bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); transition: width .8s ease; }
+/* three-way since 24 Aug 2026 (Marc): win, then the draw, then whatever red is
+   left showing through is the loss. Flex so the segments sit side by side. */
+.prob-bar { display: flex; height: 9px; border-radius: 5px; background: #5a2530; overflow: hidden; margin: 5px 0 3px; border: 1px solid rgba(255,255,255,.08); }
+.prob-bar > span { display: block; flex: 0 0 auto; height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); transition: width .8s ease; }
+/* the draw is neither side's colour, deliberately — it reads as the no-man's
+   land between them rather than as a near-win or a near-loss */
+.prob-bar > span.prob-draw { background: linear-gradient(90deg, #6c7689, #98a2b6); }
+.prob-draw-pct { color: #98a2b6; font-weight: 700; }
 
 /* Show Opponent: two pitches side by side at the SAME scale (Lee) —
    stacks on narrow screens, never a mini pitch in a corner */
