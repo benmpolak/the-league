@@ -357,6 +357,28 @@ async function harvest() {
   }
   await page.goto(SITE + '/?sandbox&nosync', { waitUntil: 'networkidle2' });
   await page.waitForFunction(() => typeof Podcast !== 'undefined');
+  // A seeded snapshot is the league's PUBLIC state, which carries neither a
+  // fixture list nor matchStats — both are built client-side from the feed
+  // during a sync, and under nosync no sync ever runs. But the podcast
+  // schedule is built FROM fixtures (previews before first kick-off, reviews
+  // at settlement) and the review scripts FROM matchStats, so without them
+  // no episode would publish and the render would silently cut nothing.
+  // Feed the page its own static files, the same way the app's sync does.
+  await page.evaluate(async () => {
+    if (!Array.isArray(state.fixtures) || !state.fixtures.length) {
+      const [fx, stats] = await Promise.all([
+        fetch('data/fixtures.json').then(r => r.json()),
+        fetch('data/stats.json').then(r => r.json()),
+      ]);
+      state.fixtures = fx.filter(f => f.date).sort((a, b) => a.date.localeCompare(b.date));
+      state.matchStats = state.matchStats || {};
+      for (const [gwN, gw] of Object.entries(stats.gws || {})) {
+        const i = +gwN - 1;
+        if (!GAMEWEEKS[i]) continue;
+        state.matchStats[`gw${gwN}`] = { gw: i, label: GAMEWEEKS[i].label, date: GAMEWEEKS[i].from, final: !!gw.finished, playerStats: gw.stats || {} };
+      }
+    }
+  });
   const eps = await page.evaluate(() => Podcast.published().map(p => {
     const e = Podcast.episode(p.show, p.kind, p.gw);
     // `say` is what the voice is given, `text` is what the reader sees — they

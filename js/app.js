@@ -2164,7 +2164,9 @@ function shirtNum(mid, pid) {
    Mirrors js/engine.js. */
 
 const gwKicks = g => {
-  const ts = state.fixtures.filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
+  // fixtures may not have arrived yet (a freshly seeded state before its
+  // first feed sync — the pods render harness boots exactly this way)
+  const ts = (state.fixtures || []).filter(f => f && f.gw === g + 1 && f.date).map(f => new Date(f.date).getTime());
   return ts.length ? { first: Math.min(...ts), last: Math.max(...ts) } : null;
 };
 function londonOffsetMin(ms) {
@@ -3252,7 +3254,7 @@ const SETTLE_GRACE_MS = 150 * 60000; // last kickoff + ~115min to FT + 30min gra
 function roundBlown(i) {
   const gwN = GAMEWEEKS[i]?.n;
   if (!gwN) return false;
-  const gwFx = state.fixtures.filter(f => f.gw === gwN);
+  const gwFx = (state.fixtures || []).filter(f => f.gw === gwN);
   const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === TEAMS.length;
   if (!fullRound || !gwFx.every(f => f.finished || f.fp)) return false;
   const ts = gwFx.filter(f => f.date).map(f => new Date(f.date).getTime());
