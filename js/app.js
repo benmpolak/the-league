@@ -3241,22 +3241,22 @@ function toggleBlock(mid, pid) {
 
 /* ---------------- head-to-head ---------------- */
 // The whistle test — mirrors js/engine.js roundBlown: whole round present,
-// every game blown full time (feed `fp`, set at the whistle). Safe to settle
-// on because the league pays no bonus; FPL's own event flag can sit unflipped
-// well past a Monday night (Committee, 24 Aug). Postponements break fullRound
-// so a part-played round never settles early.
+// every game blown full time (feed `fp`, set at the whistle), plus half an
+// hour's grace after the last game could have finished. Safe to settle on
+// because the league pays no bonus; FPL's own event flag can sit unflipped
+// well past a Monday night (Committee, 24 Aug; Ben: "wait 30 mins and then
+// bang" — no provisional messaging, a rare late correction just flows
+// through the next refresh). Postponements break fullRound so a part-played
+// round never settles early.
+const SETTLE_GRACE_MS = 150 * 60000; // last kickoff + ~115min to FT + 30min grace
 function roundBlown(i) {
   const gwN = GAMEWEEKS[i]?.n;
   if (!gwN) return false;
   const gwFx = state.fixtures.filter(f => f.gw === gwN);
   const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === TEAMS.length;
-  return fullRound && gwFx.every(f => f.finished || f.fp);
-}
-// ratified = FPL's own flag has landed; a settled-but-unratified table is
-// shown as provisional (the Committee awaits the Federation's paperwork)
-function gwRatified(i) {
-  const ev = gwEvent(i);
-  return !!(ev && (ev.final || gwIsOver(i)));
+  if (!fullRound || !gwFx.every(f => f.finished || f.fp)) return false;
+  const ts = gwFx.filter(f => f.date).map(f => new Date(f.date).getTime());
+  return ts.length > 0 && Date.now() > Math.max(...ts) + SETTLE_GRACE_MS;
 }
 function gwStatus(i) {
   const ev = gwEvent(i);
@@ -10621,20 +10621,11 @@ function viewTable() {
       : '<span class="form-move flat" title="vs overall position">&ndash;</span>';
   };
   const nCols = form ? 4 : 10; // QF column retired — the bracket below carries it now
-  // settled at the whistle but the Federation's paperwork hasn't landed —
-  // say so, rather than sit there looking "live" all Sunday night (Toby's
-  // "when does it all update? midnight?", 24 Aug)
-  const pendingRatify = [];
-  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final' && !gwRatified(i)) pendingRatify.push(GAMEWEEKS[i].n);
-  const ratifyNote = pendingRatify.length
-    ? `<p class="muted" style="font-size:11.5px;margin-bottom:8px">Full time everywhere in GW${pendingRatify.join(' &amp; GW')} — the table has settled and stands provisional pending formal ratification by the Federation. The Committee does not anticipate surprises.</p>`
-    : '';
   return `
     <div class="card" style="margin-bottom:14px">
       <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'settled gameweeks only &middot; win 3 &middot; draw 1 &middot; tiebreak: overall points'}</span></h2>
       ${toggles}
       ${formNote}
-      ${ratifyNote}
       <div style="overflow-x:auto">
       <table class="pool-table">
         <thead>${form

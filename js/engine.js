@@ -108,28 +108,27 @@
       return Math.min(g, GAMEWEEKS.length - 1);
     };
     const gwEvent = (state, i) => GAMEWEEKS[i] ? state.matchStats[`gw${GAMEWEEKS[i].n}`] : null;
-    // The whistle test: the WHOLE round is present (every club accounted for)
-    // and every game has blown full time — the feed's `fp` flag flips at the
-    // whistle, hours before FPL "confirms" the fixture. Settling on this is
-    // safe HERE because the league pays no bonus: the hours FPL spends
-    // checking a gameweek are bonus/BPS work we ignore (Committee, 24 Aug —
-    // a Monday-night finish was going to leave Tuesday's waiver order on the
-    // pre-gameweek table). A postponement breaks fullRound, so a part-played
-    // round can never settle early.
+    // The whistle test: the WHOLE round is present (every club accounted
+    // for), every game has blown full time (the feed's `fp` flag flips at
+    // the whistle, hours before FPL "confirms" the fixture), and half an
+    // hour has passed since the last game could have finished. Settling on
+    // this is safe HERE because the league pays no bonus: the hours FPL
+    // spends checking a gameweek are bonus/BPS work we ignore (Committee,
+    // 24 Aug — a Monday-night finish was going to leave Tuesday's waiver
+    // order on the pre-gameweek table; Ben: "wait 30 mins and then bang",
+    // no provisional messaging — the rare late correction just flows
+    // through the next refresh). A postponement breaks fullRound, so a
+    // part-played round can never settle early.
+    const SETTLE_GRACE_MS = 150 * 60000; // last kickoff + ~115min to FT + 30min grace
     function roundBlown(state, i) {
       const gwN = GAMEWEEKS[i] && GAMEWEEKS[i].n;
       if (!gwN) return false;
       const gwFx = FIXTURES.filter(f => f.gw === gwN);
       const clubCount = new Set(PLAYERS.map(p => p.team)).size;
       const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === clubCount;
-      return fullRound && gwFx.every(f => f.finished || f.fp);
-    }
-    // ratified = FPL's own event flag has landed; until then a settled table
-    // is provisional (a stat correction can still arrive — rare, and the
-    // refresh recomputes points when it does)
-    function gwRatified(state, i) {
-      const ev = gwEvent(state, i);
-      return !!(ev && (ev.final || gwIsOver(i)));
+      if (!fullRound || !gwFx.every(f => f.finished || f.fp)) return false;
+      const k = gwKicks(i);
+      return !!k && now() > k.last + SETTLE_GRACE_MS;
     }
     function gwStatus(state, i) {
       const ev = gwEvent(state, i);
@@ -726,7 +725,7 @@
     return {
       XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING, FPL_WIPED,
       toArr, rating, lastSeasonOf,
-      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, gwRatified, roundBlown, gwFrom, pairingsFor,
+      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, roundBlown, gwFrom, pairingsFor,
       squadAt, ownedIdsAt, squadShapeOk, ownedIdsGiven, squadIdsGiven,
       isArrival, arrivalLocked,
       totalPicks, pickNo, currentManagerId, canPick, autoPickChoice, hasLeft,

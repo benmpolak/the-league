@@ -182,10 +182,10 @@ const chk = (name, ok, detail = '') => {
   chk('P4 the sheet prints no transcript, and captions show hostile names as text',
     p4.carries && p4.noTranscript && p4.escaped && p4.shownAsText, JSON.stringify(p4));
 
-  /* ---- P5: the schedule. Marc, 18 Aug: fixed Tuesday and Friday middays.
-     Fixed TIMES, but bound to the gameweek rather than the calendar — five
-     rounds this season start on a Wednesday, and a naive weekly calendar
-     would preview those six days early and review them six days late ---- */
+  /* ---- P5: the schedule. Previews keep Marc's fixed Tuesday/Friday middays
+     (18 Aug), bound to the gameweek rather than the calendar. Reviews publish
+     at SETTLEMENT — last kick-off + 150 minutes, the same instant the table
+     stamps (Ben, 24 Aug: "when the league updates") ---- */
   const p5 = await page.evaluate(() => {
     const londonDay = ms => new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'short' });
     const londonHM = ms => new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -195,11 +195,11 @@ const chk = (name, ok, detail = '') => {
       const k = gwKicks(i); if (!k) continue;
       const pv = Podcast._previewAt(i), rv = Podcast._reviewAt(i);
       if (pv == null || rv == null) { bad.push(`GW${i + 1} has no slot`); continue; }
-      // every slot is a Tuesday or a Friday, at midday London, all year
-      for (const [name, at] of [['preview', pv], ['review', rv]]) {
-        if (!['Tue', 'Fri'].includes(londonDay(at))) bad.push(`GW${i + 1} ${name} on a ${londonDay(at)}`);
-        if (londonHM(at) !== '12:00') bad.push(`GW${i + 1} ${name} at ${londonHM(at)}`);
-      }
+      // previews: Tuesday or Friday, midday London, all year
+      if (!['Tue', 'Fri'].includes(londonDay(pv))) bad.push(`GW${i + 1} preview on a ${londonDay(pv)}`);
+      if (londonHM(pv) !== '12:00') bad.push(`GW${i + 1} preview at ${londonHM(pv)}`);
+      // reviews: the settlement moment, in step with the engine's grace
+      if (rv !== k.last + 150 * 60000) bad.push(`GW${i + 1} review not at settlement`);
       // ...and it still has to make sense as broadcasting
       if (!(pv < k.first)) bad.push(`GW${i + 1} preview lands after kick-off`);
       if (!(rv > k.last)) bad.push(`GW${i + 1} review lands before full time`);
@@ -209,7 +209,7 @@ const chk = (name, ok, detail = '') => {
     }
     return { bad, midweek };
   });
-  chk('P5 every show lands on a Tuesday or Friday midday, and still bounds its own gameweek',
+  chk('P5 previews hold Tue/Fri midday, reviews drop at settlement, each bounds its own gameweek',
     p5.bad.length === 0 && p5.midweek > 0, JSON.stringify(p5).slice(0, 300));
 
   /* ---- P5b: the double bill. Marc, 18 Aug: "when there is a midweek gameweek

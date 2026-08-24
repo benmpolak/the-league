@@ -205,9 +205,17 @@ window.Podcast = (() => {
   // loud, which was true until midweek rounds moved previews to a Tuesday
   const dayName = ms => ms == null ? 'today'
     : new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/London', weekday: 'long' });
-  // the last match has to have finished, not merely started: a 20:00 kick-off
-  // is done by 22:00, and the slot is hours later in any case
-  const reviewAt = i => { const k = gwKicks(i); return k ? slotAfter(k.last + 2 * 3600e3) : null; };
+  // Reviews no longer wait for a slot (Ben, 24 Aug: the pods should go up
+  // "when the league updates"): the episode publishes the moment the round
+  // settles — half an hour after the last game could have finished, the
+  // same instant the table stamps (engine SETTLE_GRACE_MS, kept in step by
+  // the smoke test). published() still requires gwStatus 'final', so this
+  // timestamp never runs ahead of the actual settlement. Previews keep
+  // Marc's fixed Tue/Fri midday slots — predictability matters BEFORE a
+  // round; afterwards everyone just wants the verdict. A side effect: a
+  // review can never share a slot with a preview any more, so the double
+  // bill has quietly left the schedules (bothBody stays for the archive).
+  const reviewAt = i => { const k = gwKicks(i); return k ? k.last + 150 * 60000 : null; };
 
   /* Every episode currently published, newest first. Time enters HERE and
      nowhere else. */

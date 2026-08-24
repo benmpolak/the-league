@@ -20,11 +20,16 @@
 #      Without that variable the scheduled runs exit immediately, so merging
 #      this file changes nothing until you decide otherwise.
 #
-# The schedule follows the shows: Tuesday and Friday, the same two days as the
-# waiver clock (Marc, 18 Aug). Episodes publish at midday London, so the render
-# runs at 10:00 UTC — 10:00 or 11:00 London depending on the season, and safely
-# before the slot either way. A second pass at 15:00 UTC picks up anything whose
-# results settled late; it costs nothing when there is nothing outstanding.
+# The schedule follows the shows. Previews publish Tuesday and Friday midday
+# London (Marc, 18 Aug), so a render runs at 10:00 UTC — 10:00 or 11:00 London
+# depending on the season, safely before the slot either way — with a second
+# pass at 15:00 UTC for anything that settled late. Reviews publish the moment
+# the round settles (Ben, 24 Aug — half an hour after the last whistle, when
+# the table stamps), which is an evening whenever the fixtures say so: the
+# nightly passes at 19:15 and 23:15 UTC cover afternoon and night finishes in
+# both halves of the year. Extra passes cost nothing — the render only ever
+# cuts what is outstanding, and until it runs the site speaks unrendered
+# lines in the browser's own voice.
 #
 # It never touches main by itself — it commits to the branch it was run on.
 
@@ -47,10 +52,15 @@ on:
         required: false
         default: false
   schedule:
-    # before the midday London slot, year-round
+    # before the midday London preview slot, year-round
     - cron: '0 10 * * 2,5'
     # catch-up for anything that went final after the first pass
     - cron: '0 15 * * 2,5'
+    # the review beat: rounds settle in the evening, whichever day the
+    # fixtures finish — afternoon finishes land in the first pass, Sunday
+    # and Monday night games in the second
+    - cron: '15 19 * * *'
+    - cron: '15 23 * * *'
 
 # One render at a time. Two runs committing audio to the same branch would
 # conflict on the manifest, and the loser's spend would be wasted.
