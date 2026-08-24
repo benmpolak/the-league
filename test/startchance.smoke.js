@@ -264,6 +264,15 @@ let pass = 0, fail = 0;
       t('an XI last touched before the previous round is ignored, not obeyed',
         near(stale, 0.5), `${stale} (stamp ${older}, round opened ${opened})`);
 
+      // THE boundary that went live wrong: their stamp is a date with no time,
+      // so one written the morning of the deadline is indistinguishable from
+      // one written after it. Same day as the previous deadline = last round's
+      // team sheet, and it fed GW1's XIs into GW2 before this was tightened.
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2], updatedOn: opened } } };
+      const sameDay = startChance(q, LATER);
+      t('an XI stamped ON the previous deadline\'s date is stale too',
+        near(sameDay, 0.5), `${sameDay} (stamp ${opened} = deadline date ${opened})`);
+
       // the same XI, stamped after that round opened, IS obeyed — otherwise
       // the check above would pass for the wrong reason
       state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2], updatedOn: newer } } };

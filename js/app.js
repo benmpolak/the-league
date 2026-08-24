@@ -1142,8 +1142,13 @@ function scoutXI(p, gwIdx) {
   if (!club || !Array.isArray(club.xi) || !club.xi.length) return null;
   // stale is worse than silent: an XI last touched before the previous round
   // finished is not a prediction for this one
+  // ON the previous deadline's date counts as stale, not fresh. Their stamp is
+  // a date with no time, so "Fri 21st Aug" against a deadline of 21 Aug 17:30
+  // cannot be told apart from the morning of the same day — and that morning's
+  // XI is last round's team sheet. It went live reading exactly that way and
+  // fed GW1's predictions into GW2 (Marc, 24 Aug 2026).
   const since = gwIdx > 0 ? gwFrom(gwIdx - 1) : null;
-  if (since && club.updatedOn && club.updatedOn < String(since).slice(0, 10)) return null;
+  if (since && club.updatedOn && club.updatedOn <= String(since).slice(0, 10)) return null;
   if (!club.updatedOn) return null;
   return club.xi.includes(p.id) ? SCOUT_PICKED : SCOUT_OMITTED;
 }
