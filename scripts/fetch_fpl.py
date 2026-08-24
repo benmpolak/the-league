@@ -32,6 +32,72 @@ def get(url, retries=3):
             time.sleep(2 * (i + 1))
 
 
+def snapshot_team_news(players, gameweeks, now=None):
+    """Preserve the team news as it stood going into each deadline.
+
+    `chance_of_playing_next_round` means exactly that — NEXT round. Every
+    refresh overwrites it, so once a deadline passes there is no record
+    anywhere that a man was ever doubtful before it. That makes it the one
+    input to the projection that cannot be reconstructed after the fact, and
+    without it there is no honest way to ask later how good the projection was
+    (Marc, 24 Aug 2026 — the calibration ledger).
+
+    So: rewrite the open round's row on every run, and freeze it the moment the
+    deadline passes. The last write before lock-out is the real final team
+    news. Rounds already closed are never touched again.
+
+    Only men carrying something worth remembering are stored — a flag, a
+    percentage, or a news line. Everyone else is available and unremarkable,
+    which the absence of a row already says.
+    """
+    import datetime as dt
+    now = now or dt.datetime.now(dt.timezone.utc)
+    path = ROOT / 'data' / 'teamnews.json'
+    try:
+        book = json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        book = {}          # first run, or a file we cannot read: start clean
+    rounds = book.setdefault('rounds', {})
+
+    # the open round: the first whose deadline is still ahead of us
+    nxt = None
+    for g in gameweeks:
+        try:
+            when = dt.datetime.fromisoformat(g['deadline'].replace('Z', '+00:00'))
+        except Exception:
+            continue
+        if when > now:
+            nxt = (str(g['n']), when)
+            break
+
+    if nxt:
+        key, when = nxt
+        row = {}
+        for p in players:
+            status = p.get('status') or 'a'
+            chance = p.get('chance')
+            news = p.get('news') or ''
+            if status == 'a' and chance is None and not news:
+                continue
+            entry = {'s': status}
+            if chance is not None:
+                entry['c'] = chance
+            if news:
+                entry['n'] = news[:120]
+            row[str(p['id'])] = entry
+        rounds[key] = {
+            'deadline': when.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'taken': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'flagged': row,
+        }
+
+    book['note'] = ('Team news as it stood going into each deadline. Written by '
+                    'scripts/fetch_fpl.py; the open round is refreshed until its '
+                    'deadline passes and frozen after. Do not edit by hand.')
+    path.write_text(json.dumps(book, ensure_ascii=False, sort_keys=True), encoding='utf-8')
+    return len(rounds)
+
+
 def main():
     boot = get(f'{BASE}/bootstrap-static/')
 
@@ -215,8 +281,11 @@ def main():
         'gws': gws,
     }, ensure_ascii=False), encoding='utf-8')
 
+    news_rows = snapshot_team_news(players, gameweeks)
+
     print(f'ok: {len(players)} players, {len(teams)} teams, '
-          f'{len(gws)} gameweeks with stats, {len(fixtures)} fixtures')
+          f'{len(gws)} gameweeks with stats, {len(fixtures)} fixtures, '
+          f'{news_rows} team-news rounds on file')
 
 
 if __name__ == '__main__':

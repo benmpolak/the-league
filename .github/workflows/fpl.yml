@@ -26,7 +26,10 @@ jobs:
         run: |
           git config user.name 'fpl-bot'
           git config user.email 'actions@github.com'
-          git add js/data.js data/data.json data/stats.json data/fixtures.json
+          # teamnews.json is the perishable one — the round's team news is gone
+          # the moment the deadline passes, so if it is not committed here it is
+          # written on the runner and thrown away (Marc, 24 Aug 2026)
+          git add js/data.js data/data.json data/stats.json data/fixtures.json data/teamnews.json
           if ! git diff --cached --quiet; then
             git commit -m 'data: FPL refresh'
             git push
