@@ -283,6 +283,37 @@ const chk = (name, ok, detail = '') => {
     m320.tools && m320.desk && m320.card && m320.compareCards === 2 && m320.viewport === 320 && m320.scrollW <= 320,
     JSON.stringify(m320));
 
+  /* SC11 — a column that is the sum of two others must agree with them.
+     Bobby Thomas read xG 0.02, xA 0.01, xGI 0.0, because xGI alone printed to
+     one decimal place while its own inputs printed to two (Marc, 24 Aug 2026). */
+  const sums = await page.evaluate(() => {
+    const cols = ALL_STAT_COLS(true);
+    const col = k => cols.find(c => c.k === k);
+    const bad = [];
+    let checked = 0;
+    for (const p of PLAYERS) {
+      const m = metricsFor(p);
+      if (!(m.xg > 0 || m.xa > 0)) continue;      // nothing to contradict
+      checked++;
+      const xg = +col('xg').v(m), xa = +col('xa').v(m), xgi = +col('xgi').v(m);
+      if (Math.abs(xg + xa - xgi) > 0.005) bad.push(`${p.name} ${xg}+${xa}!=${xgi}`);
+    }
+    const t = PLAYERS.find(x => x.full === 'Bobby Thomas');
+    const tm = t ? metricsFor(t) : null;
+    return {
+      checked, bad: bad.slice(0, 6), badCount: bad.length,
+      thomas: tm ? { xg: col('xg').v(tm), xa: col('xa').v(tm), xgi: col('xgi').v(tm) } : null,
+    };
+  });
+  chk('SC11: the test has players with expected numbers to check (not vacuous)',
+    sums.checked > 20, `${sums.checked} players`);
+  chk('SC11: printed xGI equals printed xG + printed xA for every one of them',
+    sums.badCount === 0, `${sums.badCount} disagree: ${sums.bad.join(', ')}`);
+  if (sums.thomas) {
+    chk('SC11: Bobby Thomas reads 0.02 + 0.01 = 0.03, not 0.0',
+      sums.thomas.xgi === '0.03', JSON.stringify(sums.thomas));
+  }
+
   chk('SC10: no uncaught browser errors', errors.length === 0, errors.join(' | '));
   await browser.close();
   console.log(`\n[scouting] ${pass} passed, ${fail} failed`);

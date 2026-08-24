@@ -5564,15 +5564,15 @@ function metricsFor(p) {
     for (const ev of evs) min += ev.playerStats[p.id]?.min || 0;
     const last5 = evs.slice(-5);
     const f5 = last5.length ? last5.reduce((t, ev) => t + (ev.playerStats[p.id] ? statPoints(p, ev.playerStats[p.id]) : 0), 0) / last5.length : 0;
-    m = { pts, apps: agg.app, min, f5, gw: gwPlayerPoints(p.id, currentGwIndex()), g: agg.g, a: agg.a, cs: agg.cs, ppg: agg.app ? pts / agg.app : 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
+    m = { pts, apps: agg.app, min, f5, gw: gwPlayerPoints(p.id, currentGwIndex()), g: agg.g, a: agg.a, cs: agg.cs, ppg: agg.app ? pts / agg.app : 0, price: p.price };
   } else {
     // pre-season: FPL's own aggregates until the July wipe, the archive after
     const ls = FPL_WIPED ? lastSeasonOf(p) : null;
     m = ls
-      ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, f5: 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ppg: ls.ppg || 0, xgi: ls.xgi || 0, price: p.price }
+      ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, f5: 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ppg: ls.ppg || 0, price: p.price }
       // Keep Pts as the official FPL total. Rate is the separate League/FPL
       // blend; using Rate here made the two columns identical (Ben, 5 Aug).
-      : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, xgi: (p.xg || 0) + (p.xa || 0), price: p.price };
+      : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, price: p.price };
   }
   m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
   // the xG family comes straight off the player record — FPL's season-to-date
@@ -5580,6 +5580,10 @@ function metricsFor(p) {
   // above (Marc, 10 Aug). After the July wipe these read 0 until the new
   // season produces some, which is honest rather than borrowed from last year.
   m.xg = p.xg || 0; m.xa = p.xa || 0; m.xgc = p.xgc || 0;
+  // xGI belongs to that family and now follows the same rule. It used to be
+  // set per-branch, and the archive branch took LAST season's — so a row read
+  // xG 0.64, xA 0.08, xGI 14.7: three columns, two seasons (Marc, 24 Aug 2026)
+  m.xgi = m.xg + m.xa;
   m.xg90 = p.xg90 || 0; m.xa90 = p.xa90 || 0; m.xgi90 = p.xgi90 || 0; m.xgc90 = p.xgc90 || 0;
   _metricsCache.set(p.id, m);
   return m;
@@ -5624,7 +5628,10 @@ const ALL_STAT_COLS = live => [
   { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
   { k: 'xg', h: 'xG', t: 'Expected goals', v: m => m.xg.toFixed(2), cls: ' muted' },
   { k: 'xa', h: 'xA', t: 'Expected assists', v: m => m.xa.toFixed(2), cls: ' muted' },
-  { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(1), cls: ' muted' },
+  // two places, like the xG and xA it is the sum of. At one place Bobby Thomas
+  // read xG 0.02, xA 0.01, xGI 0.0 — the column contradicting its own inputs
+  // (Marc, 24 Aug 2026)
+  { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(2), cls: ' muted' },
   { k: 'xgc', h: 'xGC', t: 'Expected goals conceded while on the pitch — the defensive read', v: m => m.xgc.toFixed(1), cls: ' muted' },
   // per 90: the only fair way to compare a squad player to a nailed starter
   { k: 'xg90', h: 'xG90', t: 'Expected goals per 90 minutes', v: m => m.xg90.toFixed(2), cls: ' muted' },
