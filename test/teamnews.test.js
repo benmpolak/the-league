@@ -40,7 +40,7 @@ import fetch_fpl
 fetch_fpl.ROOT = __import__('pathlib').Path(${JSON.stringify(work)})
 players = json.loads(${JSON.stringify(JSON.stringify(players))})
 gws = json.loads(${JSON.stringify(JSON.stringify(gameweeks))})
-now = dt.datetime.fromisoformat(${JSON.stringify(nowIso)}).replace(tzinfo=dt.timezone.utc)
+now = dt.datetime.fromisoformat(${JSON.stringify(nowIso.replace('Z', '+00:00'))}).replace(tzinfo=dt.timezone.utc)
 print(fetch_fpl.snapshot_team_news(players, gws, now=now))
 `;
   execFileSync('python3', ['-c', py], { encoding: 'utf-8' });
