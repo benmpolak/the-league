@@ -92,6 +92,14 @@ def keys_for(player):
     # only there to keep particles like "van" and "de" out of the index.
     if web:
         keys.add(web)
+    # nobody agrees where the spaces go in a name carrying a particle. The feed
+    # holds Jay Dasilva; Scout prints Jay da Silva. Same for Van den Berg,
+    # De Bruyne, Mac Allister. Indexing a spaceless form settles the whole
+    # family at once, and an ambiguous squash is struck out like any other.
+    for k in list(keys):
+        squashed = k.replace(' ', '')
+        if len(squashed) >= 5:
+            keys.add(squashed)
     return keys
 
 
@@ -152,6 +160,10 @@ def match(name, club, index):
         return None
     if n in club_keys:
         return club_keys[n]
+    # their spacing need not be ours — "jay da silva" reaching "jaydasilva"
+    squashed = n.replace(' ', '')
+    if squashed in club_keys:
+        return club_keys[squashed]
     # their string may carry more than our key does ("Bruno Fernandes (c)"),
     # so fall back to the longest key their string contains as whole words
     best, best_len = None, 0

@@ -53,6 +53,8 @@ const HITS = [
   ['Fabio Vieira', 'ARS', 23, 'accents dropped on their side'],
   ['Mamardashvili', 'LIV', 351, 'plain surname'],
   ['Eze', 'ARS', 14, 'a three-letter short name is exactly what a line-up prints'],
+  ['Jay da Silva', 'COV', 176, 'they space the particle, our feed writes Dasilva — the live miss'],
+  ['Vandenberg', 'BRE', 85, 'and the same disagreement in the other direction'],
   ['Dominic Calvert-Lewin', 'LEE', 346, 'full name still lands'],
   ['Bruno Fernandes (c)', 'MUN', 426, 'captain marker trailing the name'],
 ];
