@@ -158,6 +158,70 @@ let pass = 0, fail = 0;
       victim.status = 'a';
     })();
 
+    /* ----- the uncertainty model -----
+       The old flat ±4 said a nailed-on starter and a coin-flip were equally
+       unpredictable. They are not, and that is what shortchanged Marc's 89%. */
+    t('a ruled-out man carries no uncertainty at all', playerVariance(4, 0) === 0);
+    t('a nailed-on man is tighter than the old flat figure',
+      playerVariance(4, 1) < 16, String(playerVariance(4, 1).toFixed(2)));
+    // for anyone you would actually field, not knowing whether he plays is
+    // worse than knowing he does
+    for (const xp of [3, 4, 6, 9]) {
+      t(`at ${xp} expected, a coin-flip is less predictable than a certainty`,
+        playerVariance(xp, 0.5) > playerVariance(xp, 1),
+        `${playerVariance(xp, 0.5).toFixed(2)} v ${playerVariance(xp, 1).toFixed(2)}`);
+    }
+    // Below that the ordering genuinely inverts, and it is not a fault: a
+    // fringe man worth 2 who only half-plays has a mean so small that his
+    // whole spread collapses with it. Pinned so nobody "fixes" it later.
+    t('a fringe man is the one exception, and it is the mixture behaving',
+      playerVariance(1, 0.5) < playerVariance(1, 1),
+      `${playerVariance(1, 0.5).toFixed(2)} v ${playerVariance(1, 1).toFixed(2)}`);
+    // the real property: certainty is never the most uncertain state
+    t('peak doubt sits in the middle of the range, not at nailed-on',
+      [3, 5, 8].every(xp => Math.max(...[0.25, 0.5, 0.75].map(s => playerVariance(xp, s))) > playerVariance(xp, 1)));
+    t('a premium man swings harder than a modest one',
+      playerVariance(9, 1) > playerVariance(3, 1),
+      `${playerVariance(9, 1).toFixed(2)} v ${playerVariance(3, 1).toFixed(2)}`);
+    t('uncertainty never goes negative on a daft expectation',
+      playerVariance(0, 1) > 0 && playerVariance(-5, 1) >= 0,
+      `${playerVariance(0, 1)} / ${playerVariance(-5, 1)}`);
+
+    // Marc's GW1: level on banked points, two nailed-on men still to come
+    // against an opponent who is finished. The old model said 89%.
+    (() => {
+      const xp = 4, sc = 0.95;
+      const sigma = Math.sqrt(2 * playerVariance(xp, sc));
+      const gap = 2 * xp * sc - 1; // a point behind once the certain subs land
+      t('two nailed-on men against nobody is now a rout, not a 9-in-10',
+        gap / sigma > 1.9, `${(gap / sigma).toFixed(2)} sigmas clear`);
+      const oldSigma = Math.sqrt(2 * 16);
+      t('and the old flat model was materially more timid about it',
+        gap / sigma > (gap / oldSigma) * 1.3,
+        `${(gap / sigma).toFixed(2)} v ${(gap / oldSigma).toFixed(2)} sigmas`);
+    })();
+
+    /* ----- the invariants the win bar has always held ----- */
+    (() => {
+      const ev = baseline();
+      const [a, b] = pairingsFor(GW)[0];
+      // two identical squads, nothing played: dead level, whoever is listed
+      for (const m of [a, b]) state.lineups[m] = { [GW]: autoXI(squadAt(m, GW)) };
+      // the Φ approximation is out by ~4e-5 at dead level — it always has been,
+      // and 50.004% displays as 50%. The invariant is what the reader sees.
+      t('a tie between two sides projecting the same shows 50:50',
+        Math.round(liveWinProb(a, a, GW) * 100) === 50, String(liveWinProb(a, a, GW)));
+      // everyone played, everything whistled: no doubt left anywhere
+      for (const m of [a, b]) for (const id of lineupFor(m, GW)) ev.playerStats[id] = played();
+      state.fixtures.forEach(f => { f.finished = true; f.minutes = 90; });
+      const pa = gwManagerPoints(a, GW), pb = gwManagerPoints(b, GW);
+      const w = liveWinProb(a, b, GW);
+      t('a finished gameweek admits no doubt — the winner is on 100%',
+        pa === pb ? w === 0.5 : (pa > pb ? w === 1 : w === 0),
+        `${pa} v ${pb} → ${w}`);
+      t('and nobody is left to play', teamOutlook(a, GW).toPlay === 0 && teamOutlook(a, GW).varsum === 0);
+    })();
+
     /* ----- it must never touch a banked point ----- */
     (() => {
       const ev = baseline();

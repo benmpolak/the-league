@@ -1056,7 +1056,31 @@ const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
    Each player still to play contributes expected points plus uncertainty;
    as fixtures run, uncertainty drains and banked points take over.
    Even teams before kickoff = exactly 50:50; final whistle = 100:0. */
-const PLAYER_SD = 4; // one player's gameweek points spread
+/* ----- how uncertain is one man, really? -----
+   The flat ±4 this replaces (PLAYER_SD, retired here) conflated two completely
+   different doubts: whether he plays at all, and how he does once he is on.
+   Separating them is what fixes the win
+   bar (Marc, 24 Aug 2026: "i feel like it should be higher in my favour" — 27
+   all, two Chelsea men to come against nobody, and the bar said 89%).
+
+   Once a man is on the pitch he BANKS his appearance points. He cannot go
+   backwards short of a card, so his remaining spread is the return above that
+   floor — lumpy, because goals are lumpy, but nothing like ±4. The old figure
+   priced in a downside that the scoring table does not allow.
+
+   So: with probability sc he plays and scores around xp with spread SURPLUS_SD;
+   with probability 1-sc he does not play at all and scores nothing. The
+   variance of that mixture is sc·SD² + sc(1-sc)·xp², which lands a nailed-on
+   starter far tighter than before and an actual coin-flip wider — which is the
+   whole point. A premium man's surplus swings harder than a defender's, so the
+   spread scales with his expectation rather than sitting flat. */
+const SURPLUS_FLOOR_SD = 1.5;  // even a nailed-on man can bring a card home
+const SURPLUS_SD_SHARE = 0.55; // the better he is, the lumpier his afternoon
+function playerVariance(xp, sc) {
+  if (sc <= 0) return 0;
+  const sd = Math.max(SURPLUS_FLOOR_SD, SURPLUS_SD_SHARE * Math.max(0, xp));
+  return sc * sd * sd + sc * (1 - sc) * xp * xp;
+}
 // every fixture a club has in a gameweek — blanks return [], doubles both.
 // The one fixture-parsing helper: the win bar, "what do I need" and Next Six
 // all read the calendar through here.
@@ -1135,8 +1159,10 @@ function teamOutlook(mid, i) {
     const fs = playerFixtureState(p, gwN);
     // what is still to come is worth his expected return TIMES his chance of
     // being picked at all — a flagged man no longer projects a full afternoon
-    exp += cur + playerXp(p) * fs.frac * startChance(p, i);
-    varsum += PLAYER_SD * PLAYER_SD * fs.frac;
+    const sc = startChance(p, i);
+    const xp = playerXp(p);
+    exp += cur + xp * fs.frac * sc;
+    varsum += fs.frac * playerVariance(xp, sc);
     if (fs.frac > 0) toPlay++;
   }
   return { exp, varsum, toPlay };
