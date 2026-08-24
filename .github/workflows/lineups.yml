@@ -1,0 +1,52 @@
+name: Fetch predicted line-ups
+
+# Fantasy Football Scout's predicted XIs, into data/lineups.json (Marc,
+# 24 Aug 2026). Their robots.txt allows it (`Disallow:` — everything), the page
+# is server-rendered, and scripts/scout_lineups.py refuses to write anything it
+# cannot read cleanly.
+#
+# Marc's cadence: the morning after a round, Thursday, Friday, and again before
+# the Saturday deadline. Expressed as HOURS BEFORE THE DEADLINE rather than
+# days of the week, because the Premier League does not cooperate — GW13 is a
+# Wednesday, several rounds are midweek, and a Friday-night kickoff moves the
+# lot. The script decides whether this hour is one of the four; the cron only
+# has to knock often enough to catch them.
+#
+# Their page updates in bursts around deadlines, so this is roughly four
+# fetches a week, not a poll.
+
+on:
+  schedule:
+    - cron: '25 * * * *'      # hourly; the script decides whether to fetch
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Fetch regardless of the schedule'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lineups
+  cancel-in-progress: false
+
+jobs:
+  lineups:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch predicted line-ups
+        env:
+          FORCE: ${{ github.event.inputs.force }}
+        run: python3 scripts/scout_lineups.py ${FORCE:+--force}
+      - name: Commit if changed
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          git add data/lineups.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'data: predicted line-ups'
+            git push
+          fi

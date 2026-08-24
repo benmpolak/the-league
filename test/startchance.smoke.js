@@ -222,6 +222,94 @@ let pass = 0, fail = 0;
       t('and nobody is left to play', teamOutlook(a, GW).toPlay === 0 && teamOutlook(a, GW).varsum === 0);
     })();
 
+    /* ----- somebody else's predicted XI (Marc, 24 Aug 2026) -----
+       Scout's judgement outranks our arithmetic where it is FRESH, and counts
+       for nothing where it is not. Stale is worse than silent: last week's
+       team sheet says nothing about this week's. */
+    const withScout = (clubs) => {
+      const ev = baseline();
+      const q = subject();
+      state.lineupsFeed = { clubs };
+      return { ev, q };
+    };
+    const yday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+    (() => {
+      const { q } = withScout({});
+      t('no predicted XI at all leaves the old model untouched',
+        near(startChance(q, GW), 0.5), String(startChance(q, GW)));
+
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [q.id], updatedOn: yday } } };
+      t('named in a fresh XI, he is all but nailed on',
+        startChance(q, GW) > 0.85, String(startChance(q, GW)));
+
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2, -3], updatedOn: yday } } };
+      t('left out of a fresh XI, he drops well below his own record',
+        startChance(q, GW) < 0.3 && startChance(q, GW) > 0, String(startChance(q, GW)));
+    })();
+
+    // THE rule: an XI last touched before the previous round is not a
+    // prediction for this one, and must not be read as one
+    (() => {
+      // GW2, so there IS a previous round for a stamp to predate. Testing this
+      // at GW1 quietly passes without exercising the rule at all.
+      const LATER = 1;
+      baseline();
+      const q = subject();
+      const opened = String(gwFrom(LATER - 1)).slice(0, 10);
+      const older = new Date(Date.parse(opened) - 7 * 864e5).toISOString().slice(0, 10);
+      const newer = new Date(Date.parse(opened) + 864e5).toISOString().slice(0, 10);
+
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2], updatedOn: older } } };
+      const stale = startChance(q, LATER);
+      t('an XI last touched before the previous round is ignored, not obeyed',
+        near(stale, 0.5), `${stale} (stamp ${older}, round opened ${opened})`);
+
+      // the same XI, stamped after that round opened, IS obeyed — otherwise
+      // the check above would pass for the wrong reason
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2], updatedOn: newer } } };
+      const fresh = startChance(q, LATER);
+      t('the same XI stamped a day later is obeyed',
+        fresh < 0.3, `${fresh} (stamp ${newer})`);
+      t('so the staleness rule is the thing making the difference, not the XI',
+        Math.abs(stale - fresh) > 0.2, `${stale} stale vs ${fresh} fresh`);
+
+      // ...and one with no readable date at all is likewise not trusted
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1, -2], updatedOn: null } } };
+      t('an XI whose date would not parse is not trusted either',
+        near(startChance(q, LATER), 0.5), String(startChance(q, LATER)));
+    })();
+
+    // availability still outranks anybody's opinion
+    (() => {
+      const { q } = withScout({});
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [q.id], updatedOn: yday } } };
+      q.status = 'i';
+      t('a predicted starter who is injured is still a nought',
+        startChance(q, GW) === 0, String(startChance(q, GW)));
+      q.status = 'd'; q.chance = 25;
+      t('and a 25% doubt still caps him, however confident they are',
+        near(startChance(q, GW), 0.92 * 0.25, 0.02), String(startChance(q, GW)));
+      q.status = 'a'; q.chance = null;
+      // a man already on the pitch is past predicting
+      const ev2 = state.matchStats['gw' + GAMEWEEKS[GW].n];
+      ev2.playerStats[q.id] = played();
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [-1], updatedOn: yday } } };
+      t('a man already playing beats any prediction that left him out',
+        startChance(q, GW) === 1, String(startChance(q, GW)));
+      delete ev2.playerStats[q.id];
+    })();
+
+    (() => {
+      // a club they do not cover falls back cleanly rather than to nothing
+      const { q } = withScout({ ZZZ: { xi: [1, 2, 3], updatedOn: yday } });
+      t('a club absent from their page falls back to our own model',
+        near(startChance(q, GW), 0.5), String(startChance(q, GW)));
+      state.lineupsFeed = { clubs: { [q.club]: { xi: [], updatedOn: yday } } };
+      t('an empty XI is treated as no opinion, not as leaving everyone out',
+        near(startChance(q, GW), 0.5), String(startChance(q, GW)));
+      state.lineupsFeed = null;
+    })();
+
     /* ----- it must never touch a banked point ----- */
     (() => {
       const ev = baseline();

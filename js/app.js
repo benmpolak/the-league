@@ -1121,6 +1121,32 @@ function playerFixtureState(p, gwN) {
    100% whether he is first choice or cup-tied. Our start history catches that
    after the fact rather than before it, which is the honest trade for not
    lifting somebody's paywalled copy. */
+/* ----- somebody else's predicted XI -----
+   Fantasy Football Scout publish a predicted eleven per club, updated the
+   morning after a round and again as the pressers land. Their judgement is
+   sharp exactly where our arithmetic is blind: rotation, a new signing, a man
+   back from injury. scripts/scout_lineups.py reads it into data/lineups.json.
+
+   It is never gospel. A club's entry counts only while it is FRESH — their own
+   per-club stamp has to fall after the last round's deadline, or it is last
+   week's team sheet and says nothing about this one. That test is the whole
+   reason the stamp is parsed at all.
+
+   These weights are estimates. Nobody knows yet whether Scout's XIs beat our
+   own start history, and the calibration ledger is what will settle it. */
+const SCOUT_PICKED = 0.92;    // they name him: strong, not certain — they are guessing too
+const SCOUT_OMITTED = 0.2;    // named XI without him: he can still come on, or they can be wrong
+function scoutXI(p, gwIdx) {
+  const book = state.lineupsFeed?.clubs;
+  const club = book && p && p.club && book[String(p.club).toUpperCase()];
+  if (!club || !Array.isArray(club.xi) || !club.xi.length) return null;
+  // stale is worse than silent: an XI last touched before the previous round
+  // finished is not a prediction for this one
+  const since = gwIdx > 0 ? gwFrom(gwIdx - 1) : null;
+  if (since && club.updatedOn && club.updatedOn < String(since).slice(0, 10)) return null;
+  if (!club.updatedOn) return null;
+  return club.xi.includes(p.id) ? SCOUT_PICKED : SCOUT_OMITTED;
+}
 function startChance(p, gwIdx) {
   if (!p) return 0;
   // already on the pitch this week: no longer a question of selection
@@ -1145,7 +1171,13 @@ function startChance(p, gwIdx) {
   const ls = lastSeasonOf(p);
   const prior = ls && ls.mp ? Math.min(1, ls.mp / (38 * 90)) : 0.5;
   const w = Math.min(1, played / 5); // trust this season more with every round
-  const rate = played ? (started / played) * w + prior * (1 - w) : prior;
+  let rate = played ? (started / played) * w + prior * (1 - w) : prior;
+  // a fresh predicted XI outranks our own back-catalogue — it is the only
+  // signal here that knows about tomorrow rather than last month. It still
+  // cannot lift a man past his availability: the cap below has the last word,
+  // and an injury or a ban has already returned zero above.
+  const scout = scoutXI(p, gwIdx);
+  if (scout != null) rate = scout;
   return Math.max(0, Math.min(1, rate * cap));
 }
 function teamOutlook(mid, i) {
@@ -3611,16 +3643,21 @@ async function syncNow(manual = false) {
   if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
-    const [statsRes, fxRes, hlRes] = await Promise.all([
+    const [statsRes, fxRes, hlRes, luRes] = await Promise.all([
       fetch(`data/stats.json${bust}`),
       fetch(`data/fixtures.json${bust}`),
       fetch(`data/highlights.json${bust}`).catch(() => null), // optional, hand-curated
+      fetch(`data/lineups.json${bust}`).catch(() => null),    // optional, predicted XIs
     ]);
     const stats = await statsRes.json();
     const fixtures = await fxRes.json();
     // exact Sky highlights videos by fixture id (Ben, GW1 night) — absence
     // of the file, or of any given match, just means the search fallback
     if (hlRes?.ok) { try { state.highlights = await hlRes.json(); } catch { /* keep the old map */ } }
+    // predicted line-ups (Marc, 24 Aug 2026). Optional in exactly the same way
+    // the highlights map is: no file, or a file that will not parse, and the
+    // projection carries on with the signals it already had.
+    if (luRes?.ok) { try { state.lineupsFeed = await luRes.json(); } catch { /* keep the old book */ } }
     state.feedGenerated = stats.generated || null; // for the stale-feed warning
     state.fixtures = fixtures
       .filter(f => f.date)

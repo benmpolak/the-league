@@ -156,6 +156,43 @@ def parse(html):
     return p.clubs
 
 
+MONTHS = {m: i + 1 for i, m in enumerate(
+    ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'])}
+
+
+def stamp_to_date(text, now=None):
+    """"Fri 21st Aug" -> "2026-08-21". None if it will not read.
+
+    Their stamp carries no year, so take whichever year puts the date nearest
+    today — that is the only reading that survives the turn of the year, when
+    "Sat 2nd Jan" is written a week after "Tue 29th Dec".
+
+    The date is the whole point of the stamp: an XI last touched before the
+    previous round finished is not a prediction for this one, and the model has
+    to be able to tell the difference.
+    """
+    import datetime as dt
+    if not text:
+        return None
+    now = now or dt.datetime.now(dt.timezone.utc)
+    m = re.search(r'(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]{3})', text)
+    if not m:
+        return None
+    day, mon = int(m.group(1)), MONTHS.get(m.group(2)[:3].lower())
+    if not mon:
+        return None
+    best = None
+    for year in (now.year - 1, now.year, now.year + 1):
+        try:
+            cand = dt.date(year, mon, day)
+        except ValueError:
+            continue
+        gap = abs((cand - now.date()).days)
+        if best is None or gap < best[0]:
+            best = (gap, cand)
+    return best[1].isoformat() if best else None
+
+
 def to_ids(raw, players):
     """Their names -> our ids, per club. Unmatched names are reported, never guessed."""
     index = lineups.build_index(players)
@@ -182,6 +219,7 @@ def to_ids(raw, players):
             'xi': ids,
             'formation': block.get('formation'),
             'updated': block.get('updated'),
+            'updatedOn': stamp_to_date(block.get('updated')),
             'named': len(block['xi']),
             'unmatched': misses,
         }
@@ -208,9 +246,61 @@ def build(html, players):
     }, {'unknown_clubs': unknown_clubs, 'unmatched': unmatched, 'thin': thin, 'ok': ok}
 
 
+# Marc's cadence, as hours before the deadline rather than days of the week:
+# the morning after the last round, Thursday, Friday, and again before kickoff.
+# Days of the week would misfire on every midweek round, and there are several.
+WINDOWS = [96, 72, 48, 24, 3]
+
+
+def window_now(gameweeks, now=None):
+    """Which fetch window are we in? -> (gw number, window hours, hours out).
+
+    Not "is the clock within an hour of T-24", because GitHub's scheduler runs
+    20 to 70 minutes behind its cron and a narrow band would simply be missed.
+    Instead: the tightest window we have ENTERED. Pair that with the round and
+    it names a slot — (GW2, T-24h) — and the fetcher takes each slot once,
+    whenever the runner actually turns up.
+    """
+    import datetime as dt
+    now = now or dt.datetime.now(dt.timezone.utc)
+    nxt = None
+    for g in gameweeks:
+        try:
+            when = dt.datetime.fromisoformat(g['deadline'].replace('Z', '+00:00'))
+        except Exception:
+            continue
+        if when > now and (nxt is None or when < nxt[1]):
+            nxt = (g.get('n'), when)
+    if not nxt:
+        return None, None, None
+    hrs = (nxt[1] - now).total_seconds() / 3600
+    entered = [w for w in WINDOWS if hrs <= w]
+    if not entered:
+        return nxt[0], None, hrs      # still too early in the week
+    return nxt[0], min(entered), hrs
+
+
 def main():
     dry = '--dry' in sys.argv
+    force = '--force' in sys.argv
     players = lineups.load_players()
+    slot = None
+    if not dry and not force:
+        gws = json.loads((ROOT / 'data' / 'data.json').read_text(encoding='utf-8'))['gameweeks']
+        gw, win, hrs = window_now(gws)
+        if win is None:
+            print(f'too early in the week ({hrs:.0f}h to the deadline)' if hrs is not None
+                  else 'no deadline ahead — nothing to fetch for')
+            return 0
+        slot = f'gw{gw}-T{win}h'
+        try:
+            done = json.loads((ROOT / 'data' / 'lineups.json').read_text(encoding='utf-8')).get('slot')
+        except Exception:
+            done = None
+        if done == slot:
+            print(f'{slot} already fetched ({hrs:.0f}h to the deadline)')
+            return 0
+        print(f'fetch window {slot} ({hrs:.0f}h to the deadline)')
     html = fetch()
     print(f'fetched {len(html):,} bytes from {SOURCE}')
     book, report = build(html, players)
@@ -232,6 +322,8 @@ def main():
     if dry:
         print('\ndry run — nothing written.')
         return 0
+    if slot:
+        book['slot'] = slot
     (ROOT / 'data' / 'lineups.json').write_text(
         json.dumps(book, ensure_ascii=False, sort_keys=True), encoding='utf-8')
     print(f"wrote data/lineups.json ({len(clubs)} clubs)")

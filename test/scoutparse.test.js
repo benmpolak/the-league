@@ -188,5 +188,47 @@ chk('the Last Updated stamp survives the sloppy markup too',
 chk('and the prose still stays out',
   !messy.raw.ars.xi.includes('Kepa') && !messy.raw.liv.xi.includes('Chiesa'));
 
+/* ----- when to fetch -----
+   Marc's cadence: the morning after a round, then Thursday, Friday, and again
+   before the deadline. Anchored to the deadline rather than the day of the
+   week, because the Premier League runs midweek rounds and a Friday kickoff
+   moves everything. And taken as a SLOT rather than a moment, because GitHub's
+   scheduler runs 20-70 minutes behind its cron and would miss a narrow band. */
+const sched = JSON.parse(execFileSync('python3', ['-c', `
+import sys, json, datetime as dt
+sys.path.insert(0, ${JSON.stringify(path.join(ROOT, 'scripts'))})
+from scout_lineups import window_now, WINDOWS
+gws = json.loads(open(${JSON.stringify(path.join(ROOT, 'data', 'data.json'))}).read())['gameweeks']
+def walk(n, step=1):
+    dl = [g['deadline'] for g in gws if g['n'] == n][0]
+    when = dt.datetime.fromisoformat(dl.replace('Z', '+00:00'))
+    now, seen, order = when - dt.timedelta(hours=130), {}, []
+    while now < when:
+        gw, w, h = window_now(gws, now)
+        if w is not None:
+            slot = f'gw{gw}-T{w}h'
+            if slot not in seen:
+                seen[slot] = now.isoformat(); order.append(slot)
+        now += dt.timedelta(hours=step)
+    return order
+early = window_now(gws, dt.datetime.fromisoformat([g['deadline'] for g in gws if g['n']==2][0].replace('Z','+00:00')) - dt.timedelta(hours=120))
+late  = window_now(gws, dt.datetime.fromisoformat([g['deadline'] for g in gws if g['n']==2][0].replace('Z','+00:00')) - dt.timedelta(hours=50))
+print(json.dumps({'windows': WINDOWS, 'friday': walk(2), 'midweek': walk(13),
+                  'flaky': walk(2, 3), 'early': early[1], 'late': late[1]}))
+`], { encoding: 'utf-8' }));
+
+chk('a Friday round takes each window exactly once',
+  sched.friday.join() === 'gw2-T96h,gw2-T72h,gw2-T48h,gw2-T24h,gw2-T3h',
+  JSON.stringify(sched.friday));
+chk('five fetches a round, not fifteen', sched.friday.length === sched.windows.length,
+  `${sched.friday.length} slots for ${sched.windows.length} windows`);
+chk('a midweek round works itself out — no day-of-week rule could',
+  sched.midweek.filter(s => s.startsWith('gw13')).join() === 'gw13-T96h,gw13-T72h,gw13-T48h,gw13-T24h,gw13-T3h',
+  JSON.stringify(sched.midweek));
+chk('a scheduler running hours late still takes every slot',
+  sched.flaky.join() === sched.friday.join(), JSON.stringify(sched.flaky));
+chk('too early in the week is not a window at all', sched.early === null, String(sched.early));
+chk('and 50 hours out sits in the 72-hour slot, not the 48', sched.late === 72, String(sched.late));
+
 console.log(`\n[scout-parse] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
