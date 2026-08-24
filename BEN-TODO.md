@@ -93,17 +93,25 @@ themselves as the calendar moved on — `prep.smoke` 38/0, `product.smoke` 9/0,
 `feature-fixes.review` 16/0. `engine.parity` is still quietly running 6 checks
 instead of 8, so the waiver assertions have not been exercised since 21 Aug.
 
-A new one has gone red in their place, the same way and for the same reason:
+A new one had gone red in their place, the same way and for the same reason:
 
-- `matchday.smoke` **N1** ("seeded projections genuinely differ") — fails with
-  `0 v 0`. Both seeded projections are now zero, so the orientation checks it
-  guards are vacuous. Confirmed pre-existing: it fails identically on a clean
-  `main` with no working-tree changes, so it is the data refresh, not a commit.
+- `matchday.smoke` **N1** ("seeded projections genuinely differ") — failed with
+  `0 v 0`. Both seeded projections had collapsed to zero, so the orientation
+  checks it guards were vacuous.
 
-That is three separate tests broken by the live calendar in four days. The
-pattern is the point — each one pins live data instead of a seeded fixture, so
-the suite decays a little with every FPL refresh. Worth one pass to seed them
-rather than chasing them individually.
+**~~Fixed by Ben~~ before I finished writing this up** (`9f27edb`, 23 Aug 20:45
+— "matchday N1 stops trusting the real calendar"). N1 now builds its own
+pre-kickoff world: phantom fixtures, no stats, clock before kickoff. Verified
+green here on 24 Aug — `matchday.smoke` 49/0. Ben also confirmed independently
+that the auto-subs work was not the cause, which matches what I measured by
+stashing and re-running.
+
+So the outstanding item in this section is now just one:
+
+- `engine.parity` still quietly runs **6 checks instead of 8**, skipping the
+  three waiver assertions. It does not fail; it stops testing. It is the one I
+  would still fix, and it is the same root cause — pinning live data rather
+  than a seeded fixture. Ben's N1 fix is the pattern to copy.
 
 ---
 
