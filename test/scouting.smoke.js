@@ -307,6 +307,31 @@ const chk = (name, ok, detail = '') => {
   });
   chk('SC11: the test has players with expected numbers to check (not vacuous)',
     sums.checked > 20, `${sums.checked} players`);
+  /* SC12 — both seasons, in two columns rather than one that changes meaning.
+     Marc, 24 Aug 2026: "it needs both for now and eventually we remove last
+     seasons numbers." */
+  const seasons = await page.evaluate(() => {
+    const cols = ALL_STAT_COLS(true);
+    const col = k => cols.find(c => c.k === k);
+    const saka = PLAYERS.find(x => x.full === 'Bukayo Saka');
+    const m = saka ? metricsFor(saka) : null;
+    const ls = saka ? lastSeasonOf(saka) : null;
+    return {
+      header: col('xgiLs') ? col('xgiLs').h : null,
+      sortable: SCOUT_SORTS.has('xgiLs'),
+      onPreset: SCOUT_PRESETS.find(v => v.id === 'output').cols.includes('xgiLs'),
+      thisSeason: m ? col('xgi').v(m) : null,
+      lastSeason: m ? col('xgiLs').v(m) : null,
+      archive: ls ? ls.xgi : null,
+    };
+  });
+  chk('SC12: last season\'s xGI is its own column, named for its season',
+    /^xGI \d\d\/\d\d$/.test(seasons.header || ''), String(seasons.header));
+  chk('SC12: it carries the archive figure, not this season\'s',
+    +seasons.lastSeason === seasons.archive && +seasons.lastSeason !== +seasons.thisSeason,
+    JSON.stringify(seasons));
+  chk('SC12: sortable, and on the goals-and-assists view so both are visible at once',
+    seasons.sortable && seasons.onPreset, JSON.stringify({ s: seasons.sortable, p: seasons.onPreset }));
   chk('SC11: printed xGI equals printed xG + printed xA for every one of them',
     sums.badCount === 0, `${sums.badCount} disagree: ${sums.bad.join(', ')}`);
   if (sums.thomas) {

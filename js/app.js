@@ -5584,6 +5584,11 @@ function metricsFor(p) {
   // set per-branch, and the archive branch took LAST season's — so a row read
   // xG 0.64, xA 0.08, xGI 14.7: three columns, two seasons (Marc, 24 Aug 2026)
   m.xgi = m.xg + m.xa;
+  // ...and last season's alongside it, as its own column rather than the same
+  // one quietly changing meaning. Marc, 24 Aug 2026: "it needs both for now and
+  // eventually we remove last seasons numbers". The archive holds a combined
+  // xGI only — there is no separate xG or xA to pair with it.
+  m.xgiLs = lastSeasonOf(p)?.xgi || 0;
   m.xg90 = p.xg90 || 0; m.xa90 = p.xa90 || 0; m.xgi90 = p.xgi90 || 0; m.xgc90 = p.xgc90 || 0;
   _metricsCache.set(p.id, m);
   return m;
@@ -5632,6 +5637,7 @@ const ALL_STAT_COLS = live => [
   // read xG 0.02, xA 0.01, xGI 0.0 — the column contradicting its own inputs
   // (Marc, 24 Aug 2026)
   { k: 'xgi', h: 'xGI', t: 'Expected goals + assists', v: m => m.xgi.toFixed(2), cls: ' muted' },
+  { k: 'xgiLs', h: `xGI ${LS_SEASON.replace(/^20/, '').replace('/20', '/')}`, t: `Expected goals + assists — ${LS_SEASON}, the season before this one`, v: m => m.xgiLs.toFixed(2), cls: ' muted' },
   { k: 'xgc', h: 'xGC', t: 'Expected goals conceded while on the pitch — the defensive read', v: m => m.xgc.toFixed(1), cls: ' muted' },
   // per 90: the only fair way to compare a squad player to a nailed starter
   { k: 'xg90', h: 'xG90', t: 'Expected goals per 90 minutes', v: m => m.xg90.toFixed(2), cls: ' muted' },
@@ -5767,9 +5773,9 @@ const metricSort = s => (a, b) => s === 'name' ? a.name.localeCompare(b.name)
 const SCOUT_PRESETS = [
   { id: 'form', name: 'Form watch', cols: ['vs', 'f5', 'gw', 'ppg', 'pts'], sort: 'f5' },
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
-  { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'ppg', 'pts'], sort: 'pts' },
+  { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'xgiLs', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgiLs', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Data Room's own filter state (Marc, 9 Aug: the Data Room is where you go
