@@ -1039,8 +1039,13 @@ const playerXp = p => {
   }
   return arch > 0 ? arch : (p.ppg > 0 ? p.ppg * 0.75 : p.price / 4);
 };
+// the pre-kickoff projection, weighted the same way as the live one: a man
+// carrying a doubt is not worth a full afternoon (Marc, 24 Aug 2026)
 const projectedGwScore = (mid, gwIdx) =>
-  Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => t + playerXp(PLAYER_BY_ID[pid]), 0));
+  Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => {
+    const p = PLAYER_BY_ID[pid];
+    return t + playerXp(p) * startChance(p, gwIdx);
+  }, 0));
 // waiver/deadline times shown in the reader's OWN timezone — a UK league does
 // the BST maths wrong when the app insists on UTC
 const fmtWhen = d => new Date(d).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
@@ -1075,6 +1080,50 @@ function playerFixtureState(p, gwN) {
     : fracs.every(fr => fr === 1) ? 'pre' : 'mixed';
   return { st, frac, fx };
 }
+/* ----- will he even be on the pitch? -----
+   The projection used to hand every listed player his full expected return,
+   nailed-on or flagged 25%. Marc asked (24 Aug 2026) whether we could weight
+   this off Fantasy Football Scout's predicted line-ups; their team news is a
+   paid product and scraping it is out, but we already fetch — and until now
+   ignored — everything needed to do it ourselves:
+
+     status   an injury, a ban or a departure is a hard nought
+     chance   FPL's own availability %, the CEILING. It is their reading of the
+              same press conference Scout writes up (fetch_fpl.py, `chance`)
+     history  how often he has ACTUALLY started for us, from our own gameweek
+              record, blended with last season's minutes while the sample is thin
+
+   The one thing this cannot see is rotation of a fit man — FPL reports him at
+   100% whether he is first choice or cup-tied. Our start history catches that
+   after the fact rather than before it, which is the honest trade for not
+   lifting somebody's paywalled copy. */
+function startChance(p, gwIdx) {
+  if (!p) return 0;
+  // already on the pitch this week: no longer a question of selection
+  if (appearedInGw(p.id, gwIdx)) return 1;
+  if (p.status && p.status !== 'a' && p.status !== 'd') return 0; // injured, banned, gone
+  // NB `chance` is null for everyone the FPL desk has no news about, and
+  // +null is 0 — read carelessly that is a 0% rating for the entire league,
+  // and every projection on the site collapses to nothing
+  const hasChance = p.chance !== null && p.chance !== undefined && p.chance !== '' && Number.isFinite(+p.chance);
+  const cap = hasChance ? Math.max(0, Math.min(100, +p.chance)) / 100 : 1;
+  if (!cap) return 0;
+  // our own record: gameweeks his club actually played, and whether he started
+  let played = 0, started = 0;
+  for (let i = 0; i < GAMEWEEKS.length; i++) {
+    if (gwStatus(i) !== 'final') continue;
+    if (!teamFixturesInGw(p.team, GAMEWEEKS[i].n).length) continue; // blank week proves nothing
+    played++;
+    if (gwEvent(i)?.playerStats?.[p.id]?.st) started++;
+  }
+  // last season's share of the available minutes, as the prior. A new arrival
+  // has no history either way, so he starts from the middle rather than zero.
+  const ls = lastSeasonOf(p);
+  const prior = ls && ls.mp ? Math.min(1, ls.mp / (38 * 90)) : 0.5;
+  const w = Math.min(1, played / 5); // trust this season more with every round
+  const rate = played ? (started / played) * w + prior * (1 - w) : prior;
+  return Math.max(0, Math.min(1, rate * cap));
+}
 function teamOutlook(mid, i) {
   const gwN = GAMEWEEKS[i].n;
   let exp = 0, varsum = 0, toPlay = 0;
@@ -1084,7 +1133,9 @@ function teamOutlook(mid, i) {
     const p = PLAYER_BY_ID[pid];
     const cur = gwPlayerPoints(pid, i);
     const fs = playerFixtureState(p, gwN);
-    exp += cur + playerXp(p) * fs.frac;
+    // what is still to come is worth his expected return TIMES his chance of
+    // being picked at all — a flagged man no longer projects a full afternoon
+    exp += cur + playerXp(p) * fs.frac * startChance(p, i);
     varsum += PLAYER_SD * PLAYER_SD * fs.frac;
     if (fs.frac > 0) toPlay++;
   }
