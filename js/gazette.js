@@ -557,7 +557,10 @@ window.Gazette = (() => {
         <span class="${unused?.pts > 0 ? 'prog-bench-hit' : ''}"><em>BENCHED</em> ${unused ? `${esc(unused.p.name)} ${unused.pts}` : 'Nobody'}${waste ? ` &middot; ${waste} point${waste === 1 ? '' : 's'} left` : ' &middot; nothing left unused'}</span>
       </div>`;
     });
-    out.push(`<div class="prog-sec">The Team-Sheet Audit</div><p class="prog-deck">Who delivered after being selected, who remained unused, and the attainable points each manager left behind.</p><div class="prog-team-sheet">${sheetRows.join('')}</div>`);
+    // Marc, 24 Aug 2026: "what does 4 points left mean?" — fair, since it sits
+    // beside a benched man's score and is deliberately NOT that number. Say so
+    // in the deck rather than leaving twelve managers to work it out.
+    out.push(`<div class="prog-sec">The Team-Sheet Audit</div><p class="prog-deck">STARTED is the best of what each manager picked; BENCHED is the best man who never made the final eleven. The points left are the gap to the finest legal eleven that squad could have fielded &mdash; not the benched man's score, because bringing him in means leaving somebody else out. Nothing is charged for a player an auto-sub rescued: those points were collected.</p><div class="prog-team-sheet">${sheetRows.join('')}</div>`);
 
     // The week's best performers, with the receipt attached: draft round and
     // exact pick, or the route by which the player entered the squad.
