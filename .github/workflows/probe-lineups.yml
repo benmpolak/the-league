@@ -29,3 +29,9 @@ jobs:
         env:
           PROBE_URLS: ${{ github.event.inputs.urls }}
         run: python3 scripts/probe_lineups.py $PROBE_URLS
+      - name: Dry-run the Scout parser against the live page
+        # fetch, parse, print what it extracted — writes nothing, commits
+        # nothing. Run this before the parser is ever wired into a projection:
+        # a silently wrong XI is worse than no XI (Marc, 24 Aug 2026).
+        continue-on-error: true
+        run: python3 scripts/scout_lineups.py --dry
