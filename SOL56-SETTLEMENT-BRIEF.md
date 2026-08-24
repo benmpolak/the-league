@@ -1,4 +1,4 @@
-# Sol brief — settlement at the whistle (24 Aug 2026, commits 577b8b2 + a919e91)
+# Sol brief — settlement at the whistle (24 Aug 2026, commits 577b8b2, a919e91, 9009f8e, c968a8e)
 
 ## What changed and why
 
@@ -39,10 +39,32 @@ follows for free.
 - `test/podcast.smoke.js` P5 — re-pinned: previews Tue/Fri 12:00 London,
   reviews exactly `k.last + 150min`.
 - `.github/workflows/render-pods.yml` — nightly 19:15 + 23:15 UTC render
-  passes added. `PODS_AUTORENDER=on` now set; **ELEVENLABS_API_KEY is still
-  missing** so renders fail until Ben adds it (unrendered lines fall back to
-  browser TTS on the site).
+  passes added. `PODS_AUTORENDER=on` set and `ELEVENLABS_API_KEY` now in
+  repo secrets (piped from Ben's local env file, never displayed).
+- `scripts/render_pods.js` (9009f8e) — the workflow's `--state` path had
+  NEVER worked (every earlier scheduled run skipped on the gate; existing
+  audio was cut locally): a seeded snapshot is the league's PUBLIC state,
+  which carries neither `fixtures` nor `matchStats` — both are built
+  client-side during a feed sync, and under `?sandbox&nosync` no sync runs,
+  so `published()` threw and the render died. The harness now feeds the page
+  its own static `data/fixtures.json` + `data/stats.json` post-boot, the way
+  the app's sync does. `gwKicks` and app `roundBlown` also gained
+  `(state.fixtures || [])` guards.
+- `audio/pod/` (c968a8e) — orphaned recording `tt-draft/94gfcn` deleted
+  (script line changed under it days ago; it blocked the proving step and
+  cost one discarded render pass). `rendered.json`/`index.json` scrubbed.
+  Podcast smoke now 20/20.
 - Functions deployed twice tonight (engine copy at 577b8b2, then a919e91).
+
+## Known, deliberately NOT changed tonight
+
+Table dead-heat tiebreak: app sorts Points → overall points → points-for,
+and a full tie falls to registry order (engine uses explicit `x.id - y.id`;
+the app relies on stable sort — note they'd disagree if pf/ovr ever diverge
+from the engine's `pts` key ordering, worth a look). Marc has proposed
+head-to-head-between-tied as the next key; that is a Committee/format
+decision and waits for a ruling. Flag anything that makes the current
+behaviour worse than cosmetic (e.g. playoff seeding on a dead heat).
 
 ## Questions for sol — attack these
 
@@ -82,8 +104,11 @@ follows for free.
   pins reviewAt's arithmetic; nothing pins the engine's clock directly).
 - No emulator test of the Monday-night waiver-order scenario (q3).
 - The mock-interaction question (q1) is reasoned, not tested.
-- Pre-existing, unrelated: podcast P13 orphan `tt-draft/94gfcn` + one
-  unrendered line — clears on the next successful render.
+- The render harness fix (9009f8e) was proven by a local `--dry` run against
+  the real league snapshot, not by a dedicated test — the workflow is its
+  own test from here.
+- The engine-vs-app standings sort discrepancy noted above (explicit id key
+  vs stable-sort insertion order) predates tonight but deserves a verdict.
 
 ## Verdict wanted
 
