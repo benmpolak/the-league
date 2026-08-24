@@ -108,10 +108,33 @@
       return Math.min(g, GAMEWEEKS.length - 1);
     };
     const gwEvent = (state, i) => GAMEWEEKS[i] ? state.matchStats[`gw${GAMEWEEKS[i].n}`] : null;
+    // The whistle test: the WHOLE round is present (every club accounted for)
+    // and every game has blown full time — the feed's `fp` flag flips at the
+    // whistle, hours before FPL "confirms" the fixture. Settling on this is
+    // safe HERE because the league pays no bonus: the hours FPL spends
+    // checking a gameweek are bonus/BPS work we ignore (Committee, 24 Aug —
+    // a Monday-night finish was going to leave Tuesday's waiver order on the
+    // pre-gameweek table). A postponement breaks fullRound, so a part-played
+    // round can never settle early.
+    function roundBlown(state, i) {
+      const gwN = GAMEWEEKS[i] && GAMEWEEKS[i].n;
+      if (!gwN) return false;
+      const gwFx = FIXTURES.filter(f => f.gw === gwN);
+      const clubCount = new Set(PLAYERS.map(p => p.team)).size;
+      const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === clubCount;
+      return fullRound && gwFx.every(f => f.finished || f.fp);
+    }
+    // ratified = FPL's own event flag has landed; until then a settled table
+    // is provisional (a stat correction can still arrive — rare, and the
+    // refresh recomputes points when it does)
+    function gwRatified(state, i) {
+      const ev = gwEvent(state, i);
+      return !!(ev && (ev.final || gwIsOver(i)));
+    }
     function gwStatus(state, i) {
       const ev = gwEvent(state, i);
       const synced = !!ev && Object.keys(ev.playerStats || {}).length > 0;
-      if (synced && (ev.final || gwIsOver(i))) return 'final';
+      if (synced && (ev.final || gwIsOver(i) || roundBlown(state, i))) return 'final';
       if (synced) return 'live';
       if (gwHasStarted(i)) return 'underway';
       return 'upcoming';
@@ -353,7 +376,7 @@
       // accounted for (sol UAT P2; js/app.js mirrors this)
       const clubCount = new Set(PLAYERS.map(p => p.team)).size;
       const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === clubCount;
-      const roundDone = (ev && ev.final) || gwIsOver(gwIdx) || (fullRound && gwFx.every(f => f.finished));
+      const roundDone = (ev && ev.final) || gwIsOver(gwIdx) || (fullRound && gwFx.every(f => f.finished || f.fp));
       if (!roundDone) return { xi, subs: [] };
       const bench = benchFor(state, mid, gwIdx).filter(p => appearedInGw(state, p.id, gwIdx));
       const subs = [];
@@ -703,7 +726,7 @@
     return {
       XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING, FPL_WIPED,
       toArr, rating, lastSeasonOf,
-      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, gwFrom, pairingsFor,
+      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, gwRatified, roundBlown, gwFrom, pairingsFor,
       squadAt, ownedIdsAt, squadShapeOk, ownedIdsGiven, squadIdsGiven,
       isArrival, arrivalLocked,
       totalPicks, pickNo, currentManagerId, canPick, autoPickChoice, hasLeft,

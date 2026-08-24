@@ -32,6 +32,10 @@ const chk = (name, ok, detail = '') => {
     const eng = Engine.make({
       players: PLAYERS,
       gameweeks: GAMEWEEKS,
+      // both sides must see the same fixture list: the whistle test (fp
+      // flags, 24 Aug) settles rounds from fixtures, so an engine built
+      // without them would disagree with the app about auto-subs
+      fixtures: state.fixtures,
       lastSeasonByCode: (typeof LAST_SEASON !== 'undefined' && LAST_SEASON.byCode) || {},
       // app.js currentGwIndex honours the demo override; give the engine the
       // same view of "now" by freezing it inside the demo GW's window
