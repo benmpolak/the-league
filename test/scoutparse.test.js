@@ -143,5 +143,50 @@ chk('a name we cannot place is reported as unmatched, not dropped in silence',
   odd.book.clubs.ARS.xi.length === 9,
   JSON.stringify(odd.book.clubs.ARS));
 
+/* ----- the live page's markup, which broke the first version -----
+   The real page has bare <img> and unclosed <li>. Counting those as opens
+   made the depth drift, so the first club block never closed and every club
+   on the page was swallowed into it: the dry run reported "clubs with a
+   usable XI: 1" and listed Haaland, Alisson and van Dijk among Arsenal's
+   unmatched names. The fail-closed gate caught it; this makes sure the
+   parser does. */
+const sloppy = (code, name, picks, prose) => `
+<li class="team-news-item" data-team-code="${code}">
+  <div class="story-wrap">
+    <header class="!flex items-center gap-x-2 mb-2">
+      <img loading="lazy" src="https://x/badges/t1.png" alt="${name} badge" class="team-badge" width="24" height="24">
+      <h2 class="!m-0">${name}</h2>
+    </header>
+  <div class="scout-picks scout-picks-pitch formation formation-4-2-3-1">
+    ${picks.map((row, i) => `<div class="row-${i + 1}"><div class="players">${row.map(p => `
+      <div class="flex items-center gap-2">
+        <img class="player-image" src="x.png" alt="${p}">
+        <span class="player-name truncate max-w-full">${p}</span>
+      </div>`).join('')}</div></div>`).join('')}
+  </div>
+  <ul>
+    <li><p>${prose}
+    <li class="headers grey"><em>Last Updated Fri 21st Aug</em>
+  </ul>`;
+
+const messy = run(`<html><body><ul>
+${sloppy('ars', 'Arsenal', [['Raya'], ['Timber', 'Saliba', 'Gabriel', 'Calafiori'], ['Rice', 'Zubimendi'], ['Saka', 'Ødegaard', 'Martinelli'], ['Gyökeres']], 'Kepa is fit again.')}
+${sloppy('liv', 'Liverpool', [['Alisson'], ['Frimpong', 'Van Dijk', 'Gomez', 'Kerkez'], ['Mac Allister', 'Gravenberch'], ['Szoboszlai', 'Wirtz', 'Gakpo'], ['Ekitiké']], 'Chiesa may feature.')}
+${sloppy('mci', 'Man City', [['Donnarumma'], ['Khusanov', 'Gvardiol', 'Aït-Nouri'], ['Rodri', 'Foden'], ['Haaland']], 'x')}
+</ul></body></html>`);
+chk('unclosed <li> and bare <img> no longer swallow the whole page',
+  Object.keys(messy.raw).sort().join() === 'ars,liv,mci', JSON.stringify(Object.keys(messy.raw)));
+chk('each club keeps its own eleven rather than the page\'s',
+  messy.raw.ars.xi.length === 11 && messy.raw.liv.xi.length === 11,
+  `ars ${messy.raw.ars.xi.length}, liv ${messy.raw.liv.xi.length}`);
+chk('Liverpool\'s men do not end up in Arsenal\'s XI',
+  !messy.raw.ars.xi.includes('Alisson') && !messy.raw.ars.xi.includes('Van Dijk'),
+  messy.raw.ars.xi.join(', '));
+chk('the Last Updated stamp survives the sloppy markup too',
+  messy.raw.ars.updated === 'Fri 21st Aug' && messy.raw.liv.updated === 'Fri 21st Aug',
+  `${messy.raw.ars.updated} / ${messy.raw.liv.updated}`);
+chk('and the prose still stays out',
+  !messy.raw.ars.xi.includes('Kepa') && !messy.raw.liv.xi.includes('Chiesa'));
+
 console.log(`\n[scout-parse] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

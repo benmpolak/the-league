@@ -61,56 +61,76 @@ def attr(attrs, want):
     return None
 
 
+# tags that never close. Counting these as opens is what broke the first
+# version against the live page: the depth drifted up, the club block never
+# closed, and every club on the page was swallowed into the first one.
+VOID = {'img', 'br', 'hr', 'input', 'meta', 'link', 'source', 'col', 'area',
+        'base', 'embed', 'param', 'track', 'wbr'}
+
+
 class ScoutParser(HTMLParser):
     """Pull each club's predicted XI out of its own pitch subtree.
 
-    Depth counting rather than regex: the pitch is nested divs, and a regex
-    cannot tell where one club's block ends and the prose begins.
+    A club block is delimited by its data-team-code, NOT by counting its way
+    to a matching close tag: the live page has unclosed <li> and bare <img>,
+    and any depth count over the whole block drifts and never comes home. The
+    next team-news-item closes the previous one, which real markup cannot break.
+
+    Inside a block the pitch still needs depth, because the prose sits beside
+    it and only nesting tells them apart — but that count skips void tags and
+    is bounded by the block, so a stray tag costs one club, never the page.
     """
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
         self.clubs = {}
         self._club = None          # team code of the block we are inside
-        self._club_depth = 0
         self._pitch_depth = 0      # >0 while inside the scout-picks subtree
         self._name_depth = 0       # >0 while inside a player-name element
         self._buf = []
         self._text = []            # every bit of text in the block, for "Last Updated"
 
-    def _new(self, code):
-        return self.clubs.setdefault(code, {'xi': [], 'formation': None, 'updated': None})
+    def _close_club(self):
+        if self._club is None:
+            return
+        blob = ' '.join(self._text)
+        m = re.search(r'Last Updated\s*:?\s*([^<|]{3,40})', blob)
+        if m:
+            self.clubs[self._club]['updated'] = m.group(1).strip()
+        self._club = None
+        self._pitch_depth = 0
+        self._name_depth = 0
+        self._text = []
 
     def handle_starttag(self, tag, attrs):
         cls = classes(attrs)
-        if self._club is None:
-            code = attr(attrs, 'data-team-code')
-            if code and 'team-news-item' in cls:
-                self._club = code.strip().lower()
-                self._club_depth = 1
-                self._new(self._club)
-                self._text = []
-                return
-        else:
-            self._club_depth += 1
-            if self._pitch_depth:
-                self._pitch_depth += 1
-                # the name may sit on a span inside the player cell
-                if any(c == 'player-name' or c.startswith('player-name') for c in cls):
-                    self._name_depth = 1
+        code = attr(attrs, 'data-team-code')
+        if code and 'team-news-item' in cls:
+            self._close_club()                      # the previous block ends here
+            self._club = code.strip().lower()
+            self.clubs.setdefault(self._club, {'xi': [], 'formation': None, 'updated': None})
+            return
+        if self._club is None or tag in VOID:
+            return
+        if self._pitch_depth:
+            self._pitch_depth += 1
+            # the name may sit on a span inside the player cell
+            if any(c == 'player-name' or c.startswith('player-name') for c in cls):
+                if not self._name_depth:
                     self._buf = []
-                elif self._name_depth:
-                    self._name_depth += 1
-            elif 'scout-picks' in cls:
-                # the pitch itself. `scoutpicksweek` is a different feature
-                # (their weekly captain picks) and must not be swept up.
-                self._pitch_depth = 1
-                for c in cls:
-                    if c.startswith('formation-'):
-                        self.clubs[self._club]['formation'] = c[len('formation-'):]
+                self._name_depth += 1
+            elif self._name_depth:
+                self._name_depth += 1
+        elif 'scout-picks' in cls:
+            # the pitch itself. `scoutpicksweek` is a different feature (their
+            # weekly captain picks) and must not be swept up.
+            self._pitch_depth = 1
+            for c in cls:
+                if c.startswith('formation-'):
+                    self.clubs[self._club]['formation'] = c[len('formation-'):]
 
     def handle_endtag(self, tag):
-        if self._club is None:
+        if self._club is None or tag in VOID:
             return
         if self._name_depth:
             self._name_depth -= 1
@@ -120,15 +140,6 @@ class ScoutParser(HTMLParser):
                     self.clubs[self._club]['xi'].append(name)
         if self._pitch_depth:
             self._pitch_depth -= 1
-        self._club_depth -= 1
-        if self._club_depth <= 0:
-            blob = ' '.join(self._text)
-            m = re.search(r'Last Updated\s+([^<]{3,40})', blob)
-            if m:
-                self.clubs[self._club]['updated'] = m.group(1).strip()
-            self._club = None
-            self._pitch_depth = 0
-            self._name_depth = 0
 
     def handle_data(self, data):
         if self._club is None:
@@ -141,6 +152,7 @@ class ScoutParser(HTMLParser):
 def parse(html):
     p = ScoutParser()
     p.feed(html)
+    p._close_club()                                 # the last block on the page
     return p.clubs
 
 
