@@ -254,6 +254,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   box-shadow: inset 1px 0 0 var(--line), -10px 0 10px -8px rgba(0,0,0,.55);
 }
 .pool-table tr:hover td.act { background: var(--card2); }
+/* Compare + Watch RIDE THE SCROLL, only Sign stays pinned (Ian, 25 Aug —
+   "the actual stats you want to see are only visible if you scroll right...
+   not sure how much those buttons will be used"; Ric seconded). The cell
+   sits just left of the sticky action column, so it slides under Sign like
+   any stats column and the freed width goes to points/goals/assists. */
+.pool-table td.act-more { white-space: nowrap; }
+.pool-table td.act-more .row-actions { justify-content: flex-end; }
 .pcell { display: flex; align-items: center; gap: 8px; }
 .pcell > div:last-child { min-width: 0; }
 /* the NAME ellipsizes in its own span; the flag sits outside the clip so it
@@ -283,8 +290,13 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   .draft-pool th.act, .draft-pool td.act { width: 77px; min-width: 77px; padding-left: 4px; padding-right: 4px; }
   .draft-pool .act [data-compare], .draft-pool .act .icon-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; }
   .draft-pool.is-live .act [data-compare] { display: none; }
-  .pool-table .act .cmp-txt { display: none; }
-  .pool-table .act [data-compare]::before { content: '\2942'; font-size: 14px; }
+  .pool-table .act .cmp-txt, .pool-table .act-more .cmp-txt { display: none; }
+  .pool-table .act [data-compare]::before, .pool-table .act-more [data-compare]::before { content: '\2942'; font-size: 14px; }
+  /* phones: the scroll-away pair go icon-sized (the Sign column slims by
+     itself now it holds one button — the whole point of the move, Ian 25 Aug).
+     No act padding override here: it outranked .draft-pool's tighter 4px by
+     file order and broke the 320px draft fit (P11c). */
+  .pool-table .act-more [data-compare], .pool-table .act-more .icon-btn { width: 34px; height: 34px; min-width: 34px; padding: 0; }
   /* the standings must show their tiebreak: W/D/L and for/against fold away
      so P, Pts and Ovr all fit at 390px — Ovr, the official tiebreak, sat
      fully off-screen with no hint it existed (mobile sweep, 25 Aug) */

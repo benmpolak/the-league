@@ -7730,7 +7730,7 @@ function bindTransfers() {
       <table class="pool-table">
         <thead><tr>
           <th data-trsort="name">Player</th><th></th>
-          ${cols.map(c => c.sortable === false ? `<th class="num" data-stat="${c.k}" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-stat="${c.k}" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act"></th>
+          ${cols.map(c => c.sortable === false ? `<th class="num" data-stat="${c.k}" title="${esc(c.t)}">${c.h}</th>` : `<th class="num" data-stat="${c.k}" data-trsort="${c.k}" title="${esc(c.t)}">${c.h} ${s === c.k ? '▾' : ''}</th>`).join('')}<th class="act-more"></th><th class="act"></th>
         </tr></thead>
         <tbody>${shown.map(p => {
           const ownerMid = ownedBy[p.id];
@@ -7751,7 +7751,8 @@ function bindTransfers() {
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers${clearsTxt ? ` · ${esc(clearsTxt)}` : ''}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
-            <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
+            <td class="act-more"><div class="row-actions">${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
+            <td class="act"><div class="row-actions">${action}</div></td>
           </tr>`;
         }).join('')}</tbody>
       </table></div>
