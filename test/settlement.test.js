@@ -126,6 +126,31 @@ const synced = final => ({ gw1: { gw: 0, label: 'Gameweek 1', final, playerStats
     JSON.stringify(e3.waiverOrder({ ...base, transfers: [{ managerId: 3, inId: 1, outId: 2, gw: 0, t: 1 }] })) === '[3,2,1]');
   chk('a take from a PREVIOUS window costs nothing (gw filter)',
     JSON.stringify(e3.waiverOrder({ ...base, transfers: [{ managerId: 3, inId: 1, outId: 2, gw: 5, waiver: true, t: 1 }] })) === '[3,2,1]');
+
+  /* sol's priority-round P1: a winner drops behind only managers on the
+     same take count, never behind everyone. A=0, B=2, C=2 takes → [A,B,C];
+     A lands one → A is on 1, still ahead of the pair on 2. The old
+     rotate-to-the-back produced [B,C,A] and gave C a contested player over
+     a manager with fewer takes. */
+  const baseRev = [1, 2, 3]; // A=1, B=2, C=3 in reverse-table order
+  const banked = [
+    { managerId: 2, inId: 9, outId: 8, gw: 0, waiver: true, t: 1 },
+    { managerId: 2, inId: 8, outId: 9, gw: 0, waiver: true, t: 2 },
+    { managerId: 3, inId: 7, outId: 6, gw: 0, waiver: true, t: 3 },
+    { managerId: 3, inId: 6, outId: 7, gw: 0, waiver: true, t: 4 },
+  ];
+  chk('P1 setup: 0/2/2 takes orders [A,B,C]',
+    JSON.stringify(e3.takesQueue(baseRev, banked, 0)) === '[1,2,3]');
+  chk('P1: after A lands one he sits on 1 take — still ahead of the pair on 2',
+    JSON.stringify(e3.takesQueue(baseRev, [...banked, { managerId: 1, inId: 5, outId: 4, gw: 0, waiver: true, t: 5 }], 0)) === '[1,2,3]');
+  chk('P1: only on EQUAL counts does the base order decide',
+    JSON.stringify(e3.takesQueue(baseRev, [...banked,
+      { managerId: 1, inId: 5, outId: 4, gw: 0, waiver: true, t: 5 },
+      { managerId: 1, inId: 4, outId: 5, gw: 0, waiver: true, t: 6 }], 0)) === '[1,2,3]'
+    && JSON.stringify(e3.takesQueue(baseRev, [...banked,
+      { managerId: 1, inId: 5, outId: 4, gw: 0, waiver: true, t: 5 },
+      { managerId: 1, inId: 4, outId: 5, gw: 0, waiver: true, t: 6 },
+      { managerId: 1, inId: 3, outId: 4, gw: 0, waiver: true, t: 7 }], 0)) === '[2,3,1]');
 }
 
 console.log(`\n[settlement] ${pass} passed, ${fail} failed`);

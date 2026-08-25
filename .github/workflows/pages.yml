@@ -88,3 +88,14 @@ jobs:
       - if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' }}
         id: deployment-retry
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # A busy morning (25 Aug: seven pushes before noon) showed the previous
+      # deployment can still be propagating past the 75s window — the retry
+      # died too and every collision emailed the Chairman. One more tier,
+      # patient enough for any real propagation; only a genuine failure
+      # survives all three.
+      - name: Wait harder
+        if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure' }}
+        run: sleep 150
+      - if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure' }}
+        uses: actions/deploy-pages@v4

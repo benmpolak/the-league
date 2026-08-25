@@ -93,7 +93,10 @@
       return GAMEWEEKS.length - 1;
     }
     const gwIsOver = i => GAMEWEEKS[i].finished || now() > new Date(GAMEWEEKS[i].to).getTime();
-    const gwHasStarted = i => now() > new Date(gwFrom(i)).getTime();
+    // >= : at the exact deadline millisecond the gameweek HAS started, so
+    // transferGw and currentGwIndex agree at the boundary (sol, priority
+    // round P3 — the old > let a deal land in a gw already being played)
+    const gwHasStarted = i => now() >= new Date(gwFrom(i)).getTime();
     // transfers NEVER land in a gameweek already being played (no retroactive
     // rescoring). A Simulation Chamber matchday counts as "being played" too —
     // pass state so a mock GW pushes deals to the next one, like the real thing.
@@ -663,27 +666,30 @@
       }
       return ps;
     }
-    function waiverOrder(state) {
-      // reverse of the CURRENT table — every finished GW counts. Passing the
-      // current GW index here silently dropped the round that just finished
-      // (currentGwIndex doesn't advance until the next one starts).
+    // reverse of the CURRENT table — every finished GW counts. Passing the
+    // current GW index here silently dropped the round that just finished
+    // (currentGwIndex doesn't advance until the next one starts).
+    function waiverBase(state) {
       const { rows, anyFinal } = standingsBefore(state, REGULAR_GWS);
       const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
-      const rev = [...base].reverse();
-      // ...but using your priority costs it (Marc, 25 Aug, after the first
-      // real run: "anyone who didn't take should be at the top in reverse
-      // league position... then it's based on whoever took the fewest and in
-      // what order"). Managers who landed waiver players this window drop
-      // behind those who didn't — fewest takes first, ties in reverse-table
-      // order. Derived from the ledger, not stored: takes are the waiver
-      // transfers landing in the UPCOMING gameweek, so the count naturally
-      // resets when a new round settles and deals start landing in the next.
-      const tgw = transferGw(state);
+      return [...base].reverse();
+    }
+    // ...but using your priority costs it (Marc, 25 Aug, after the first
+    // real run: "anyone who didn't take should be at the top in reverse
+    // league position... then it's based on whoever took the fewest and in
+    // what order"). Fewest waiver takes this window first, ties in
+    // reverse-table order. Derived from the ledger passed in — takes are the
+    // waiver transfers landing in the UPCOMING gameweek, so the count resets
+    // naturally when a round settles and deals start landing in the next.
+    function takesQueue(baseRev, transfers, tgw) {
       const takes = {};
-      for (const t of toArr(state.transfers)) {
+      for (const t of toArr(transfers)) {
         if (t && t.waiver && t.gw === tgw) takes[t.managerId] = (takes[t.managerId] || 0) + 1;
       }
-      return rev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || rev.indexOf(a) - rev.indexOf(b));
+      return baseRev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || baseRev.indexOf(a) - baseRev.indexOf(b));
+    }
+    function waiverOrder(state) {
+      return takesQueue(waiverBase(state), state.transfers, transferGw(state));
     }
     /* Pure waiver resolution. state.claims here is the MERGED view
      * {gwIndex:{mid:[{in,out}]}} (the server assembles it from the private
@@ -703,7 +709,14 @@
         lineups: JSON.parse(JSON.stringify(state.lineups || {})),
       };
       const buckets = Object.keys(state.claims || {}).map(Number).filter(g => g <= cur).sort((a, b) => a - b);
-      const queue = waiverOrder(state);
+      // count-aware queue (sol, priority round P1): a winner drops behind
+      // only managers on the same take count, never behind everyone — the
+      // old rotate-to-the-back let a manager with two banked takes beat a
+      // rival on one. Landed records join work.transfers as they land, so
+      // re-deriving the queue from that ledger after every win keeps one
+      // source of truth for starting counts and in-run wins alike.
+      const baseRev = waiverBase(state);
+      let queue = takesQueue(baseRev, work.transfers, tgw);
       const pending = {};
       for (const mid of queue) { pending[mid] = []; for (const g of buckets) pending[mid].push(...toArr(state.claims[g]?.[mid])); }
       const executed = [];
@@ -736,7 +749,7 @@
               strippedLineups[mid] = work.lineups[mid][tgw];
             }
             executed.push({ mid, in: c.in, out: c.out });
-            queue.splice(qi, 1); queue.push(mid);
+            queue = takesQueue(baseRev, work.transfers, tgw); // his new count decides his slot
             progressed = true;
             break;
           }
@@ -767,7 +780,7 @@
       totalPicks, pickNo, currentManagerId, canPick, autoPickChoice, hasLeft,
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
-      nextWaiverRun, nextProcessableWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, resolveWaivers,
+      nextWaiverRun, nextProcessableWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, waiverBase, takesQueue, resolveWaivers,
       mockScorelines, mockGwStats,
       gwKicks, gwClearAt, nextSlotAt, waiverSlotId, slotAtFromId, waiverSchedule, troughWindow,
       wdActor,

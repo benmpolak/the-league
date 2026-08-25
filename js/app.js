@@ -157,7 +157,9 @@ function currentGwIndex() {
   return GAMEWEEKS.length - 1;
 }
 const gwIsOver = i => GAMEWEEKS[i].finished || Date.now() > new Date(GAMEWEEKS[i].to).getTime();
-const gwHasStarted = i => Date.now() > new Date(gwFrom(i)).getTime();
+// >= so transferGw and currentGwIndex agree at the exact deadline millisecond
+// (sol, priority round P3 — mirrors js/engine.js)
+const gwHasStarted = i => Date.now() >= new Date(gwFrom(i)).getTime();
 // which gameweek a transfer takes effect in: NEVER the one already being
 // played. A Tuesday waiver run happens inside the just-finished GW's window,
 // so its signings must count for the NEXT gameweek, or they'd retroactively
@@ -2135,7 +2137,16 @@ function squadAt(mid, gwIdx) {
   }
   return [...ids].map(id => PLAYER_BY_ID[id]);
 }
-function managerSquad(mid) { return squadAt(mid, currentGwIndex()); }
+function managerSquad(mid) {
+  // "the squad as it stands": rolls past settled rounds so the window's
+  // signings — which land in the UPCOMING gameweek — are in it the moment
+  // they land. Ian, 25 Aug: fresh Trough signings read "not my player" in
+  // the club office, and All Squads showed everyone's pre-waiver fourteen,
+  // because this still read the played round until Friday's deadline.
+  let g = currentGwIndex();
+  while (g < GAMEWEEKS.length - 1 && gwStatus(g) === 'final') g++;
+  return squadAt(mid, g);
+}
 function posCount(mid) {
   const c = { GK: 0, DF: 0, MF: 0, FW: 0 };
   managerSquad(mid).forEach(p => c[p.pos]++);
@@ -2517,7 +2528,11 @@ function processWaivers(manual = false) {
   // sweep EVERY un-run claim bucket up to now (oldest first) so a claim lodged
   // between a Friday run and the Saturday deadline isn't orphaned by the index flip
   const buckets = Object.keys(state.claims || {}).map(Number).filter(g => g <= cur).sort((a, b) => a - b);
-  const queue = waiverOrder(); // reverse standings — weekly reset
+  // count-aware queue (sol, priority round P1 — mirrors js/engine.js
+  // resolveWaivers): re-derived from the ledger after every win, so a winner
+  // drops behind only managers on the same take count, never behind everyone
+  const baseRev = waiverBase();
+  let queue = takesQueue(baseRev, state.transfers, tgw);
   const pending = {};
   for (const mid of queue) { pending[mid] = []; for (const g of buckets) pending[mid].push(...toArr(state.claims[g]?.[mid])); }
   const executed = [];
@@ -2537,7 +2552,7 @@ function processWaivers(manual = false) {
         const lu = state.lineups[mid]?.[tgw];
         if (lu) { state.lineups[mid][tgw] = lu.filter(id => id !== c.out); touchedLineups.add(mid); }
         executed.push({ mid, in: c.in, out: c.out });
-        queue.splice(qi, 1); queue.push(mid); // winner drops to the back
+        queue = takesQueue(baseRev, state.transfers, tgw); // his new count decides his slot
         progressed = true;
         break;
       }
@@ -2615,22 +2630,25 @@ function standingsBefore(gwIdx) {
   rows.sort((x, y) => y.h2h - x.h2h || y.pts - x.pts || x.id - y.id);
   return { rows, anyFinal };
 }
-function waiverOrder() {
+function waiverBase() {
   // reverse of the CURRENT table — every finished GW counts (passing the
   // current GW index dropped the round that just finished)
   const { rows, anyFinal } = standingsBefore(REGULAR_GWS);
   const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
-  const rev = [...base].reverse(); // bottom feeds first
-  // ...but using your priority costs it (Marc, 25 Aug — mirrors js/engine.js
-  // waiverOrder): takers this window drop behind non-takers, fewest takes
-  // first, ties in reverse-table order. Takes = waiver transfers landing in
-  // the UPCOMING gameweek, so the count resets when a new round settles.
-  const tgw = transferGw();
+  return [...base].reverse(); // bottom feeds first
+}
+// using your priority costs it (Marc, 25 Aug — mirrors js/engine.js): fewest
+// waiver takes this window first, ties in reverse-table order; the count
+// resets naturally when a new round settles and deals land in the next gw
+function takesQueue(baseRev, transfers, tgw) {
   const takes = {};
-  for (const t of state.transfers) {
+  for (const t of transfers) {
     if (t && t.waiver && t.gw === tgw) takes[t.managerId] = (takes[t.managerId] || 0) + 1;
   }
-  return rev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || rev.indexOf(a) - rev.indexOf(b));
+  return baseRev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || baseRev.indexOf(a) - baseRev.indexOf(b));
+}
+function waiverOrder() {
+  return takesQueue(waiverBase(), state.transfers, transferGw());
 }
 /* ---------------- trades (Draft Fantasy style: propose, accept, done) ---------------- */
 // trades carry give/get as ARRAYS (equal counts). Old single-id offers still parse.
