@@ -2609,7 +2609,17 @@ function waiverOrder() {
   // current GW index dropped the round that just finished)
   const { rows, anyFinal } = standingsBefore(REGULAR_GWS);
   const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
-  return [...base].reverse(); // bottom feeds first
+  const rev = [...base].reverse(); // bottom feeds first
+  // ...but using your priority costs it (Marc, 25 Aug — mirrors js/engine.js
+  // waiverOrder): takers this window drop behind non-takers, fewest takes
+  // first, ties in reverse-table order. Takes = waiver transfers landing in
+  // the UPCOMING gameweek, so the count resets when a new round settles.
+  const tgw = transferGw();
+  const takes = {};
+  for (const t of state.transfers) {
+    if (t && t.waiver && t.gw === tgw) takes[t.managerId] = (takes[t.managerId] || 0) + 1;
+  }
+  return rev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || rev.indexOf(a) - rev.indexOf(b));
 }
 /* ---------------- trades (Draft Fantasy style: propose, accept, done) ---------------- */
 // trades carry give/get as ARRAYS (equal counts). Old single-id offers still parse.
@@ -3363,6 +3373,14 @@ function vidiEraCheck() {
 function vidiPush(lines) {
   if (!lines.length) return;
   vidiEraCheck();
+  // the same incident must never print twice (Ben, 25 Aug: Castagne "booked"
+  // three times). Two sync lanes diff against different baselines, and FPL's
+  // live stats flicker — a card drops out of one payload and returns in the
+  // next, re-emitting the event. Identity = player + gw + cumulative counts,
+  // so a re-emission is skipped but a genuine second goal still prints.
+  const seen = new Set(vidiFeed.map(l => l.key).filter(Boolean));
+  lines = lines.filter(l => !l.key || !seen.has(l.key));
+  if (!lines.length) return;
   vidiFeed = [...lines, ...vidiFeed].slice(0, 60);
   try { localStorage.setItem(VIDI_KEY, JSON.stringify(vidiFeed)); } catch { /* tape full, carry on */ }
 }
@@ -3422,7 +3440,9 @@ function vidiDiff(gwIdx, oldPS, newPS) {
         }
       }
     }
-    lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `${bits.join(' · ')} — ${p.name} (${p.club}) — ${who}${haul}${score}` });
+    // identity for the dedupe in vidiPush: which counters, at what totals
+    const key = `${GAMEWEEKS[gwIdx].n}:${p.id}:` + VIDI_EVENTS.filter(([k]) => (s[k] || 0) - (o[k] || 0) > 0).map(([k]) => `${k}${s[k] || 0}`).join('|');
+    lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, key, txt: `${bits.join(' · ')} — ${p.name} (${p.club}) — ${who}${haul}${score}` });
     // the Lobus Klaxon: declarations are GONE (Marc, UAT night — "remove the
     // declare my lobus"); the klaxon now fires off the certified registry
     // instead, so the gag needs no admin. Big units only.
@@ -3430,7 +3450,7 @@ function vidiDiff(gwIdx, oldPS, newPS) {
     if (dg > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l))) {
       // Marc, 9 Aug: a lobus belongs to no club. Declarations are long gone, so
       // the klaxon speaks about the man himself — no owner, no "feral" branch.
-      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
+      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, key: `${GAMEWEEKS[gwIdx].n}:${p.id}:lobus${s.g || 0}`, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
       playSound('klaxon');
     }
   }
@@ -7007,15 +7027,18 @@ function viewTransfers() {
   const mid = hubActor();
   const cur = currentGwIndex();
   const ownedNow = ownedIdsAt(cur);
-  const tabs = [['trough', 'The Trough & Waivers'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
+  // the waiver list gets Ian's green box (25 Aug: his list was 30 deep and
+  // shopping meant scrolling past it both ways) — own tab, canon name
+  const tabs = [['trough', 'The Trough & Waivers'], ['claims', 'Waiver list'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
   const tab = transfersView.tab;
   const pendingIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid).length;
+  const nClaims = myClaims(mid).length;
   // ONE lens statement for the whole hub (sol product review #2): every deal
   // on these pages — signings, claims, trades, window picks — lands in the
   // same gameweek, and the pages say so out loud
   const tgwHub = transferGw();
   const head = `<div class="team-controls card">
-    ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}</button>`).join('')}
+    ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}${id === 'claims' && nClaims ? ` <span class="tag">${nClaims}</span>` : ''}</button>`).join('')}
     ${SANDBOX && netOn() && isCommissioner() ? `<label class="tag" style="margin-left:auto">acting as&nbsp;<select id="actAsSel" style="font-size:11.5px">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(managerName(m.id))}${m.id === whoami ? ' (me)' : ''}</option>`).join('')}</select></label>`
       : `<span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>`}
     <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
@@ -7154,34 +7177,20 @@ function viewTransfers() {
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — free agents sign instantly; fresh drops still clear at the next run</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
       : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span> <span class="tag" id="wvClock2">${waiverClockLine()}</span>`;
-    const claimRows = claims.map((c, k) => `
-      <div class="lrow claim-row" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
-        <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
-        <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
-        <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
-          <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
-          <button class="btn ghost small icon-btn" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
-          <button class="btn ghost small icon-btn" data-claimdel="${k}" title="Withdraw" aria-label="Withdraw">&#10005;</button>
-        </span>
-      </div>`).join('');
     return `${head}${myPitchCard}${wdCard}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above, then <b>Sign</b> the one you want — instant if free, a waiver request if he&rsquo;s on waivers.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.</p>
       ${(() => {
-        // ALWAYS show the claims desk (Ben, UAT night: "is there a waiver list
-        // you add to? i can't see it" — it only rendered once you had one; the
-        // rule, learned three times now: never hide a feature, explain it)
-        const claimsBlock = `<h3>${esc(managerName(mid))}'s waiver list</h3>` + (claims.length ? claimRows
-          : `<p class="muted" style="font-size:12px;margin-bottom:8px">Nothing on the list. Sign a player who's <b>on waivers</b> and he joins your waiver list — top of the list gets tried first when waivers process.</p>`);
-        // and the window's completed business, so a multi-move session is
-        // visible as you go ("what if you want to do multiple transfers at
-        // once… you should be able to see what you are doing")
-        const tgw = transferGw();
-        const moves = state.transfers.filter(t => t.managerId === mid && t.gw === tgw);
-        const movesBlock = moves.length ? `<h3 style="margin-top:10px">Done this window</h3>` + moves.map(t => `
-          <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver, went through' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
-          </div>`).join('') : '';
-        return claimsBlock + movesBlock;
+        // the waiver list lives on its own tab now (Ian, 25 Aug: 30 requests
+        // made this page a scroll marathon). Marc wanted it visible at the
+        // top — this chip is both: one line, never grows. The never-hide
+        // rule (learned three times) survives as the chip's empty state.
+        const n = claims.length;
+        return `<div class="lrow" style="font-size:12.5px;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+          ${n ? `<b>${n} waiver request${n === 1 ? '' : 's'} on your list</b> <span class="muted">&middot; processed ${esc(fmtWhen(nextRun))}</span>`
+            : `<span class="muted">No waiver requests on your list — Sign a player who's <b>on waivers</b> and he joins it.</span>`}
+          <button class="btn ghost small" data-trtab="claims" style="margin-left:auto;flex-shrink:0">Waiver list${n ? ` (${n})` : ''}</button>
+        </div>`;
       })()}
       ${ctl === 'closed' ? '<p class="muted" style="font-size:12.5px">The Trough is closed. Complaints to the group chat.</p>' : `
       <select id="trOut" style="width:100%;max-width:420px;margin-bottom:8px;display:block" title="Marc's dropdown — the pitch above does the same job">
@@ -7203,6 +7212,38 @@ function viewTransfers() {
         <button class="btn small" id="runWaivers">&#9889; Process waivers now (demo)</button>
         <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run at 10am every Tuesday and Friday. In the demo you ARE the Chairman: put in a waiver request on anyone marked "waivers", then process the round and watch it resolve.</p>
       </div>` : ''}
+    </div>`;
+  }
+  if (tab === 'claims') {
+    // Ian's green box (25 Aug): the waiver list on its own tab — full desk,
+    // reorder, withdraw, the window's completed business. It can run to 30
+    // requests here without costing anyone a scroll on the shopping page.
+    const claims = myClaims(mid);
+    const nextRun = nextLiveWaiverRun();
+    const claimRows = claims.map((c, k) => `
+      <div class="lrow claim-row" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
+        <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+        <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
+        <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
+          <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
+          <button class="btn ghost small icon-btn" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
+          <button class="btn ghost small icon-btn" data-claimdel="${k}" title="Withdraw" aria-label="Withdraw">&#10005;</button>
+        </span>
+      </div>`).join('');
+    // the window's completed business, so a multi-move session is visible as
+    // you go ("what if you want to do multiple transfers at once… you should
+    // be able to see what you are doing")
+    const tgwCl = transferGw();
+    const moves = state.transfers.filter(t => t.managerId === mid && t.gw === tgwCl);
+    const movesBlock = moves.length ? `<h3 style="margin-top:10px">Done this window</h3>` + moves.map(t => `
+      <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver, went through' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
+      </div>`).join('') : '';
+    return `${head}<div class="card">
+      <h2>${esc(managerName(mid))}'s waiver list</h2>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Top of the list is tried first when waivers are processed — next run ${esc(fmtWhen(nextRun))}. Drag to reorder, &#10005; to withdraw. Lodge new requests from <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>.</p>
+      ${claims.length ? claimRows
+        : `<p class="muted" style="font-size:12px;margin-bottom:8px">Nothing on the list. Sign a player who's <b>on waivers</b> in the Trough and he joins your waiver list.</p>`}
+      ${movesBlock}
     </div>`;
   }
   if (tab === 'trades') {
@@ -7703,12 +7744,12 @@ function bindTransfers() {
             title: 'Lodge this claim?',
             body: dealRows([outP], [inP]),
             yes: 'Lodge claim',
-            note: 'Resolves when waivers run. You can withdraw or reorder it from your claims list until then.',
+            note: 'Resolves when waivers are processed. You can withdraw or reorder it from the Waiver list tab until then.',
           })) return;
           setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Waiver request #${myClaims(mid).length} on your list — processes ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it above until then.` });
+            note: `Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
           return;
         }
         const tgw = transferGw();
@@ -10315,7 +10356,18 @@ function viewH2H() {
   // "the head to head table is what should be in the league table") — this
   // page is Matches: fixtures, preview, playoffs, points grid, crystal ball
   const matchesCard = (() => {
-    if (h2hView.gw == null) h2hView.gw = Math.min(cur, REGULAR_GWS - 1);
+    if (h2hView.gw == null) {
+      // the Matches page turns over when the league's business does (Ben,
+      // 25 Aug: the new gameweek "signifies" at the post-round waiver run,
+      // not at the final whistle) — a settled round stays up as THE result
+      // until the first run after its last fixture has processed, then the
+      // page opens on the new round's fixtures. My Team rolls earlier, at
+      // settlement, deliberately: planning starts before the paperwork.
+      let g = Math.min(cur, REGULAR_GWS - 1);
+      while (g < REGULAR_GWS - 1 && gwStatus(g) === 'final'
+        && gwClearAt(g) != null && lastWaiverRun() >= gwClearAt(g)) g++;
+      h2hView.gw = g;
+    }
     const i = h2hView.gw, g = GAMEWEEKS[i];
     const st = gwStatus(i);
     const tag = st === 'final' ? '<span class="tag">FT</span>'
