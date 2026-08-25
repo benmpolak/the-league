@@ -6005,7 +6005,7 @@ function applyScoutView(v, surface) {
   if (!clean) return false;
   _colPrefs = clean.cols.length ? clean.cols : DEFAULT_COL_KEYS(seasonHasStats());
   localStorage.setItem(COL_PREFS_KEY, JSON.stringify(_colPrefs));
-  // the pool speaks position SETS; the Data Room and transfers still speak a
+  // the pool and the Trough speak position SETS; the Data Room still speaks a
   // single string — a multi-position view honestly degrades to All there
   // rather than silently picking one of the saved positions
   const posOne = clean.pos.length === 1 ? clean.pos[0] : '';
@@ -6014,7 +6014,7 @@ function applyScoutView(v, surface) {
   } else if (surface === 'data') {
     dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
   } else {
-    transfersView = { ...transfersView, club: clean.team, pos: posOne, scope: clean.scope, sort: clean.sort, limit: 20 };
+    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
   return true;
 }
@@ -7071,7 +7071,10 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: '', club: '', scope: 'avail', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, pos: [], club: '', scope: 'avail', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+// position filter is a SET like the draft pool's (Ben, 25 Aug: "midfield and
+// forward... at the same time") — empty means All. Tolerates the old string.
+const trPosOn = () => Array.isArray(transfersView.pos) ? transfersView.pos : (transfersView.pos ? [transfersView.pos] : []);
 // the whole hub acts as ONE manager. Normally that's you; the Chairman may
 // take any chair (the switcher in the hub header) — every action downstream
 // already carries asManager when mid !== whoami, so the server records the
@@ -7685,7 +7688,7 @@ function bindTransfers() {
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
         : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
         : PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !hasLeft(p));
-      if (transfersView.pos) pool = pool.filter(p => p.pos === transfersView.pos);
+      if (trPosOn().length) pool = pool.filter(p => trPosOn().includes(p.pos));
       if (transfersView.club) pool = pool.filter(p => p.team === transfersView.club);
       if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
       const s = transfersView.sort;
@@ -7738,7 +7741,8 @@ function bindTransfers() {
       ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more</button> <button class="btn ghost small" id="trAll">Show all ${total}</button></div>` : ''}`;
       results.innerHTML = hint + scoutViewHtml('transfers') + `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
-        ${['', 'GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${transfersView.pos === pp ? '' : 'ghost'}" data-trpos="${pp}">${pp || 'All'}</button>`).join('')}
+        <button class="btn small ${trPosOn().length ? 'ghost' : ''}" data-trpos="" title="Show every position">All</button>
+        ${['GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${trPosOn().includes(pp) ? '' : 'ghost'}" data-trpos="${pp}" aria-pressed="${trPosOn().includes(pp)}" title="${trPosOn().includes(pp) ? `Stop showing ${pp}` : `Also show ${pp}`}">${pp}</button>`).join('')}
         <select id="trClub" style="padding:6px 8px;font-size:12px">
           <option value="">All clubs</option>
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
@@ -7759,7 +7763,11 @@ function bindTransfers() {
           : '<span class="muted">The Trough is empty. Somehow.</span>');
       const clubSel = results.querySelector('#trClub');
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
-      results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => { transfersView.pos = b.dataset.trpos; transfersView.limit = 20; renderTrResults(); });
+      results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => {
+        const pp = b.dataset.trpos, on = trPosOn();
+        transfersView.pos = pp ? (on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp]) : [];
+        transfersView.limit = 20; renderTrResults();
+      });
       results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => { transfersView.scope = b.dataset.trscope; transfersView.limit = 20; renderTrResults(); });
       results.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => {
         if (!canActFor(mid)) { toast('Sign in to keep a watchlist'); return; }
