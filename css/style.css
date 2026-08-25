@@ -98,6 +98,10 @@ h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spa
   font-weight: 700; font-size: 14px; padding: 10px 18px; cursor: pointer;
   transition: transform .1s, filter .15s;
 }
+/* an <a> styled as a button is inline by default, so its vertical padding
+   paints over the text line above it (the Pre-flight "open" link — mobile
+   sweep, 25 Aug); buttons are inline-block already and are unaffected */
+a.btn { display: inline-block; }
 .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
 .btn:disabled { opacity: .35; cursor: default; transform: none; }
 .btn.ghost { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
@@ -243,7 +247,11 @@ input:focus, select:focus { border-color: var(--accent-dim); }
 .pool-table th.act, .pool-table td.act {
   position: sticky; right: 0; z-index: 1;
   background: var(--card);
-  box-shadow: -10px 0 10px -8px rgba(0,0,0,.55);
+  /* a crisp left edge on top of the soft shadow: half-clipped cells sliding
+     under the column read as a crop, not a rendering bug (mobile sweep,
+     25 Aug). Inset shadow, not border — a real border adds a pixel of width
+     and tips the 320px draft table into overflow (P11c). */
+  box-shadow: inset 1px 0 0 var(--line), -10px 0 10px -8px rgba(0,0,0,.55);
 }
 .pool-table tr:hover td.act { background: var(--card2); }
 .pcell { display: flex; align-items: center; gap: 8px; }
@@ -277,6 +285,10 @@ input:focus, select:focus { border-color: var(--accent-dim); }
   .draft-pool.is-live .act [data-compare] { display: none; }
   .pool-table .act .cmp-txt { display: none; }
   .pool-table .act [data-compare]::before { content: '\2942'; font-size: 14px; }
+  /* the standings must show their tiebreak: W/D/L and for/against fold away
+     so P, Pts and Ovr all fit at 390px — Ovr, the official tiebreak, sat
+     fully off-screen with no hint it existed (mobile sweep, 25 Aug) */
+  .col-wdl { display: none; }
 }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .show-more { text-align: center; padding: 14px; }

@@ -766,10 +766,11 @@ function load() {
     if (s && s.pins) delete s.pins; // PINs retired — real sign-in now
     if (s && !s.covenants) s.covenants = [];
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
-    // saves strip matchStats and older snapshots (the podcast seed) lack the
-    // key entirely — every reader assumes the map exists, and managerSquad
-    // walking gwStatus made gwEvent the first to throw on it (CI, 25 Aug)
+    // saves strip matchStats and fixtures; older snapshots (the podcast seed)
+    // lack the keys entirely — every reader assumes they exist (gwEvent broke
+    // CI on matchStats, anyMatchLive throws the same way on fixtures — 25 Aug)
     if (s && !s.matchStats) s.matchStats = {};
+    if (s && !s.fixtures) s.fixtures = [];
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.draftPool === undefined) s.draftPool = null;
     if (s && s.windowDraft === undefined) s.windowDraft = null;
@@ -6806,8 +6807,12 @@ function viewTeam() {
           if (!rows.length) return '<span class="muted" style="font-size:12.5px">No results yet. All to play for.</span>';
           const strip = rows.slice(-8).map(r => `<span class="form-pill form-${r.res}" title="GW${GAMEWEEKS[r.i].n}">${r.res}</span>`).join('');
           const season = rows.reduce((t, r) => t + r.pm, 0);
-          return `<div style="margin-bottom:10px">${strip}</div>` +
-            rows.slice(-6).reverse().map(r => `<div class="lrow" style="font-size:12.5px;justify-content:space-between"><span><span class="form-pill form-${r.res}">${r.res}</span> GW${GAMEWEEKS[r.i].n} v ${esc(teamName(r.op))}</span><b>${r.pm}&ndash;${r.po}</b></div>`).join('') +
+          // one lone unlabelled pill above a one-line list reads as a glitch —
+          // the strip earns its row from the second result (mobile sweep, 25 Aug).
+          // The rows are display:flex explicitly: bare .lrow has no flex rule,
+          // so justify-content alone was inert and the score jammed the name.
+          return (rows.length >= 2 ? `<div style="margin-bottom:10px">${strip}</div>` : '') +
+            rows.slice(-6).reverse().map(r => `<div class="lrow" style="font-size:12.5px;display:flex;align-items:center;gap:8px;justify-content:space-between;padding:2px 0"><span><span class="form-pill form-${r.res}">${r.res}</span> GW${GAMEWEEKS[r.i].n} v ${esc(teamName(r.op))}</span><b>${r.pm}&ndash;${r.po}</b></div>`).join('') +
             `<p class="muted" style="font-size:11.5px;margin-top:8px">Season points: <b style="color:var(--text)">${managerPoints(mid)}</b> &middot; H2H scoring: ${season}</p>`;
         })()}
       </div>
@@ -7709,8 +7714,11 @@ function bindTransfers() {
         : c);
       pool.sort(metricSort(s));
       const twNow = troughWindow();
+      // the generic "clears when waivers run" said nothing the page banner
+      // doesn't already — repeated 400 times it wrapped every row to four
+      // lines on a phone (mobile sweep, 25 Aug). A real date still prints.
       const clearsTxt = !twNow.open
-        ? (twNow.until ? `clears ${fmtWhen(twNow.until)}` : 'clears when waivers run')
+        ? (twNow.until ? `clears ${fmtWhen(twNow.until)}` : '')
         : `clears ${fmtWhen(nextLiveWaiverRun())}`;
       const total = pool.length;
       const shown = pool.slice(0, transfersView.limit);
@@ -7739,7 +7747,7 @@ function bindTransfers() {
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
-            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
+            <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers${clearsTxt ? ` · ${esc(clearsTxt)}` : ''}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
             ${cols.map(c => `<td class="num${c.cls || ''}" data-stat="${c.k}">${c.v(m, p)}</td>`).join('')}
             <td class="act"><div class="row-actions">${action}${compareButtonHtml(p.id)}${watchBtnHtml(mid, p.id)}</div></td>
@@ -8168,7 +8176,7 @@ function viewDash() {
         </tr>`).join('')}
         </tbody>
       </table></div>
-      <p class="muted" style="font-size:10.5px;margin-top:4px"><button class="btn ghost small" data-goto="table" style="font-size:10.5px;padding:1px 8px">Full table</button></p>
+      <p style="margin-top:8px"><button class="btn ghost small" data-goto="table">Full table</button></p>
     </div>
   </div>
   ${identified ? '' : latestBusinessCard(true)}
@@ -9640,9 +9648,9 @@ function crystalBallCard(standings) {
     <div style="overflow-x:auto">
     <table class="pool-table">
       <thead><tr><th>Team</th>
-        <th class="num" title="Your win-draw-loss record against all eleven managers each finished week">Vs everyone</th>
+        <th class="num" title="Your win-draw-loss record against all eleven managers each finished week">Vs all</th>
         <th class="num" title="H2H points vs what your scores deserved. Positive = riding your luck">Luck</th>
-        <th class="num" title="Points left on the bench vs your best possible XI, season total">Bench waste</th>
+        <th class="num" title="Points left on the bench vs your best possible XI, season total">Waste</th>
         ${odds ? '<th class="num" title="Monte Carlo simulation of the remaining fixtures, 1,000 runs">Playoffs %</th>' : ''}
       </tr></thead>
       <tbody>
@@ -9655,7 +9663,7 @@ function crystalBallCard(standings) {
       </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px"><b>Vs everyone:</b> the record your weekly score would have earned against all 11 managers, not only your fixture. <b>Luck:</b> actual H2H points minus what those scores deserved. ${odds ? '<b>Playoff odds:</b> 1,000 simulated seasons from everyone’s scoring so far.' : 'Playoff odds appear after three finished gameweeks.'}</p>
+    <p class="muted" style="font-size:10.5px;margin-top:6px"><b>Vs all:</b> the record your weekly score would have earned against all 11 managers, not only your fixture. <b>Luck:</b> actual H2H points minus what those scores deserved. <b>Waste:</b> points left on the bench vs your best possible XI. ${odds ? '<b>Playoff odds:</b> 1,000 simulated seasons from everyone’s scoring so far.' : 'Playoff odds appear after three finished gameweeks.'}</p>
   </div>`;
 }
 /* ----- the week's awards, auto-issued ----- */
@@ -10837,7 +10845,7 @@ function viewTable() {
       <table class="pool-table">
         <thead>${form
           ? '<tr><th></th><th>Team</th><th class="num" title="Finished gameweeks counted">GWs</th><th class="num act">Pts</th></tr>'
-          : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num" title="H2H points scored">+</th><th class="num" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th></tr>'}</thead>
+          : '<tr><th></th><th>Team</th><th class="num">P</th><th class="num col-wdl">W</th><th class="num col-wdl">D</th><th class="num col-wdl">L</th><th class="num col-wdl" title="H2H points scored">+</th><th class="num col-wdl" title="H2H points conceded">&minus;</th><th class="num act">Pts</th><th class="num" title="Overall FPL-style points — the tiebreak">Ovr</th></tr>'}</thead>
         <tbody>
         ${rowsData.map((m, i) => {
           // table gag tags all retired (Marc/Ben, 2 Aug: "committee fraud
@@ -10846,11 +10854,11 @@ function viewTable() {
           return `
           <tr data-mgr-row="${m.id}" style="cursor:pointer" class="${!form && i === 7 ? 'playoff-line' : ''}">
             <td class="muted">${i + 1}</td>
-            <td><button class="btn ghost small icon-btn" data-pitchview="${m.id}" title="See this team on the pitch" aria-label="See this team on the pitch">&#9917;</button> ${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span> ${moveTag(m)} ${!form && i === 0 && m.pts > 0 ? '&#127942;' : ''} ${commTag}</td>
+            <td><div style="display:flex;align-items:center;gap:6px"><button class="btn ghost small icon-btn" data-pitchview="${m.id}" title="See this team on the pitch" aria-label="See this team on the pitch">&#9917;</button> ${kitSvg(m.id)}<div style="min-width:0;line-height:1.3"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><b>${esc(m.team || m.name)}</b> ${moveTag(m)}${!form && i === 0 && m.pts > 0 ? ' &#127942;' : ''}${commTag}</div><div class="muted" style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.name)}</div></div></div></td>
             ${form
               ? `<td class="num muted">${form.counted}</td><td class="num gold act"><b>${m.win}</b></td>`
-              : `<td class="num">${m.p}</td><td class="num">${m.w}</td><td class="num">${m.d}</td><td class="num">${m.l}</td>
-                 <td class="num muted">${m.pf}</td><td class="num muted">${m.pa}</td>
+              : `<td class="num">${m.p}</td><td class="num col-wdl">${m.w}</td><td class="num col-wdl">${m.d}</td><td class="num col-wdl">${m.l}</td>
+                 <td class="num muted col-wdl">${m.pf}</td><td class="num muted col-wdl">${m.pa}</td>
                  <td class="num gold act"><b>${m.pts}</b></td>
                  <td class="num muted">${m.ovr ?? managerPoints(m.id)}</td>`}
           </tr>
@@ -10947,7 +10955,7 @@ function fixtureMatrixCard() {
       </select>
     </div>
     <div style="overflow-x:auto"><table class="pool-table" style="font-size:11.5px">
-      <thead><tr><th>Club</th>${gwNs.map(n => `<th class="num">GW${n}</th>`).join('')}<th class="num" title="Total opponent difficulty over the window — lower is kinder">FDR</th></tr></thead>
+      <thead><tr><th>Club</th>${gwNs.map(n => `<th class="num">GW${n}</th>`).join('')}<th class="num act" title="Total opponent difficulty over the window — lower is kinder">FDR</th></tr></thead>
       <tbody>${rows.map(r => `<tr>
         <td style="white-space:nowrap"><b>${esc(short(r.team))}</b> <span class="muted">${esc(r.team)}</span></td>
         ${r.cells.map(c => c.length
@@ -11717,7 +11725,7 @@ function recordBookCards() {
    seven checks, honest reasons. Read-only — every button is a safe link to a
    control that already exists. ----- */
 function preflightCard() {
-  const light = (st, label, why, extra = '') => `<div class="lrow" style="font-size:12.5px;align-items:flex-start">
+  const light = (st, label, why, extra = '') => `<div class="lrow" style="font-size:12.5px;display:flex;gap:8px;align-items:flex-start;padding:3px 0">
     <span style="flex-shrink:0;font-size:13px">${st === 'ok' ? '&#128994;' : st === 'warn' ? '&#128993;' : st === 'bad' ? '&#128308;' : '&#9898;'}</span>
     <div style="min-width:0"><b>${label}</b> <span class="muted">— ${why}</span>${extra}</div></div>`;
   const rows = [];
