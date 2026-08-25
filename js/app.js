@@ -7064,12 +7064,13 @@ function bindTeam() {
     e.stopPropagation();
     if (!actGuard(mid, 'squad numbers')) return;
     const pid = +el.dataset.num;
-    const cur2 = currentGwIndex();
     const v = prompt(`Squad number for ${PLAYER_BY_ID[pid].name} (1–99):`, shirtNum(mid, pid));
     if (v == null) return;
     const n = Math.round(+v);
     if (!n || n < 1 || n > 99) { toast('Numbers 1–99 only'); return; }
-    const clash = squadAt(mid, cur2).find(x => x.id !== pid && +shirtNum(mid, x.id) === n);
+    // clash-check the squad AS IT STANDS, matching the server — the played
+    // round's squad missed fresh signings' numbers (Ian, 25 Aug)
+    const clash = managerSquad(mid).find(x => x.id !== pid && +shirtNum(mid, x.id) === n);
     if (clash) { toast(`${n} is taken by ${clash.name}`); return; }
     if (netOn()) {
       serverAct('shirtNumSet', { pid, num: n, ...(mid !== whoami && { asManager: mid }) })

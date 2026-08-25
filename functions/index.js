@@ -1141,7 +1141,10 @@ ACTIONS.blockToggle = async ({ league, a, data, state, eng }) => {
   // the delist was refused for the very reason it was needed (Toby, sandbox
   // 12 Aug). Taking your own name off a list is always allowed.
   if (listing) {
-    const squad = eng.squadAt(state, mid, eng.currentGwIndex());
+    // the squad AS IT STANDS — a waiver signing lands in the upcoming GW, so
+    // the played round's squad refused him ("not your player" on a man you
+    // just signed — Ian, 25 Aug, same family as the club-office fix)
+    const squad = eng.squadAt(state, mid, eng.transferGw(state));
     if (!squad.some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
   }
   const next = listing ? [...cur, pid] : cur.filter(x => x !== pid);
@@ -1327,7 +1330,9 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
 ACTIONS.shirtNumSet = async ({ league, a, data, state, eng }) => {
   const mid = actingManager(a, data);
   const pid = Number(data.pid), num = data.num == null ? null : Number(data.num);
-  if (!eng.squadAt(state, mid, eng.currentGwIndex()).some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
+  // transferGw, not the played round: fresh waiver signings must be
+  // numberable the moment they land (Ian, 25 Aug)
+  if (!eng.squadAt(state, mid, eng.transferGw(state)).some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'not your player');
   if (num != null && (!Number.isInteger(num) || num < 1 || num > 99)) throw new HttpsError('invalid-argument', 'numbers run 1-99');
   if (num != null && Object.entries(state.shirtNums[mid] || {}).some(([p, n]) => +p !== pid && n === num)) throw new HttpsError('failed-precondition', 'number taken');
   await db().ref(`${leagueBase(league)}/public/shirtNums/${mid}/${pid}`).set(num);
@@ -1337,7 +1342,7 @@ ACTIONS.shirtNumSet = async ({ league, a, data, state, eng }) => {
 ACTIONS.lobusDeclare = async ({ league, a, data, state, eng }) => {
   const mid = actingManager(a, data);
   const pid = Number(data.pid);
-  if (!eng.squadAt(state, mid, eng.currentGwIndex()).some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'the Lobus must be one of your own');
+  if (!eng.squadAt(state, mid, eng.transferGw(state)).some(p => p.id === pid)) throw new HttpsError('failed-precondition', 'the Lobus must be one of your own');
   if (state.lobus[mid] && eng.gwHasStarted(0)) throw new HttpsError('failed-precondition', 'the Lobus is declared for the season');
   await db().ref(`${leagueBase(league)}/public/lobus/${mid}`).set(pid);
   return { ok: true };
