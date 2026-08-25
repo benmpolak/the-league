@@ -394,10 +394,15 @@ const chk = (name, ok, detail = '') => {
 
   // ---- P8f: projected points columns are fixture-count aware and optional
   const p8f = await page.evaluate(() => {
+    // fixtures pinned to the projection's OWN window, not to GW1 — the hard-
+    // coded gw:1 rows went stale the afternoon the feed settled GW1 and
+    // projPts (correctly) started counting from GW2 (CI, 25 Aug)
+    const curI = currentGwIndex();
+    const fromN = GAMEWEEKS[curI].n + (gwIsOver(curI) ? 1 : 0);
     state.fixtures = [
-      { gw: 1, home: 'Liverpool', away: 'Everton', date: '2026-08-21', finished: false },
-      { gw: 2, home: 'Arsenal', away: 'Liverpool', date: '2026-08-28', finished: false },
-      { gw: 3, home: 'Liverpool', away: 'Chelsea', date: '2026-09-04', finished: false },
+      { gw: fromN, home: 'Liverpool', away: 'Everton', date: '2026-08-21', finished: false },
+      { gw: fromN + 1, home: 'Arsenal', away: 'Liverpool', date: '2026-08-28', finished: false },
+      { gw: fromN + 2, home: 'Liverpool', away: 'Chelsea', date: '2026-09-04', finished: false },
     ];
     const p = PLAYERS.find(x => x.team === 'Liverpool' && x.pos === 'MF');
     const m = metricsFor(p);
