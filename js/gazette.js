@@ -711,71 +711,6 @@ window.Gazette = (() => {
     }
   }
 
-  /* ---------- The Transfer Wire — the window's business (Ben, 25 Aug:
-     "the gazette should have waivers and transfers section obv... for
-     friday morning edition"). Publishes once the post-round waiver run has
-     processed (progTodays gates it) and stays the front page until the next
-     deadline, growing as the Friday run and late Trough business land.
-     Everything here reads off the PERMANENT transfer ledger — landed deals
-     only. The Gazette does not print blind bids: losing waiver requests
-     stay between a manager and his conscience. ---------- */
-  function wire(gwIdx) {
-    try {
-      const gwN = GAMEWEEKS[gwIdx] && GAMEWEEKS[gwIdx].n;
-      if (gwN == null) return '';
-      const deals = (state.transfers || []).filter(t => t && t.gw === gwIdx);
-      if (!deals.length) return '';
-      const pIn = t => PLAYER_BY_ID[t.inId]?.name || 'a man the register cannot place';
-      const pOut = t => PLAYER_BY_ID[t.outId]?.name || null;
-      const waiv = deals.filter(t => t.waiver);
-      const trough = deals.filter(t => !t.waiver && !t.trade && !t.windowDraft);
-      const trades = deals.filter(t => t.trade);
-      const wd = deals.filter(t => t.windowDraft);
-      const per = {};
-      for (const t of waiv) (per[t.managerId] = per[t.managerId] || []).push(t);
-      const clubsIn = Object.keys(per).length;
-      const busiest = Object.entries(per).sort((x, y) => y[1].length - x[1].length)[0];
-      const out = [];
-      // the lead
-      const lead = waiv.length
-        ? `The wire hums. ${waiv.length} waiver request${waiv.length === 1 ? ' was' : 's were'} granted when the round processed — business at ${clubsIn} of the twelve clubs — and the Trough looks like a buffet at five to three. Deals count from Gameweek ${gwN}.`
-        : `The waiver round processed and granted precisely nothing, which the Committee notes is also a result. The Trough remains fully stocked and lightly judged.`;
-      out.push(`<div class="prog-story prog-lead-story"><div class="prog-head">THE TRANSFER WIRE</div><p class="prog-lead">${esc(lead)}</p></div>`);
-      // the waiver round, club by club
-      if (waiv.length) {
-        const rows = Object.entries(per)
-          .sort((x, y) => y[1].length - x[1].length || (+x[0]) - (+y[0]))
-          .map(([mid, ts]) => `${teamName(+mid)}: ${ts.map(t => `${pIn(t)} in${pOut(t) ? `, ${pOut(t)} to waivers` : ''}`).join('; ')}`);
-        out.push(`<div class="prog-sec">The Waiver Round</div><p>${esc(rows.join('. ') + '.')}</p>`);
-        if (busiest && busiest[1].length >= 3) {
-          out.push(`<p class="muted" style="font-size:12px">${esc(`${teamName(+busiest[0])} led the window with ${busiest[1].length} arrivals — wheeling, dealing, and a squad the Committee will need a fresh lanyard to learn. Priority spent is priority lost: the queue remembers.`)}</p>`);
-        }
-      }
-      // trough business
-      if (trough.length) {
-        out.push(`<div class="prog-sec">Trough Business</div><p>${esc(trough.map(t => `${teamName(t.managerId)} took ${pIn(t)} for nothing${pOut(t) ? ` (${pOut(t)} makes way)` : ''}`).join('; ') + '. First come, first served, no questions asked and none answered.')}</p>`);
-      }
-      // the trade desk
-      if (trades.length) {
-        out.push(`<div class="prog-sec">The Trade Desk</div><p>${esc(trades.map(t => `${teamName(t.managerId)} land ${pIn(t)}${pOut(t) ? ` with ${pOut(t)} going the other way` : ''}`).join('; ') + '. All trades final; all grudges pending.')}</p>`);
-      }
-      if (wd.length) {
-        out.push(`<div class="prog-sec">Window Draft</div><p>${esc(wd.map(t => `${teamName(t.managerId)}: ${pIn(t)} in`).join('; ') + '.')}</p>`);
-      }
-      // the closing remark, seeded stable per gameweek
-      const closers = [
-        'The Committee reminds all clubs that a signing is not a plan, merely the receipt for one.',
-        'The Gazette congratulates every manager on improving his squad, a thing that cannot be true of all of them simultaneously.',
-        'Dropped men clear waivers at the next run. The Gazette wishes them well, from a distance.',
-        'The wire now falls silent until the next round. Use the time to worry.',
-      ];
-      out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc(closers[gwN % closers.length])}</p>`);
-      return `<div class="prog-art">${out.join('')}</div>`;
-    } catch (e) {
-      return ''; // the paper never takes the site down
-    }
-  }
-
   /* The Season Preview — edition zero, printed before a ball is kicked (Ben,
      16 Aug: "there are rumours of Jason Stein making a comeback, surely that
      should be headline news"). Same furniture as the review edition, fully
@@ -1094,5 +1029,5 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, draftSpecial, wire, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  return { review, preview, draftSpecial, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

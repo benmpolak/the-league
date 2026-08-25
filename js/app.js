@@ -8444,16 +8444,6 @@ function progTodays() {
     if (art) return { edition: 'matchday edition', gwN: GAMEWEEKS[cur].n, article: art };
   }
   const last = lastFinalGw();
-  // The Transfer Wire (Ben, 25 Aug): once the post-round waiver run has
-  // processed and until the next deadline, the window's business IS the
-  // news. leagueGwIndex only advances past a settled round when its run
-  // has cleared, so front === last+1 is exactly that window. No deals, no
-  // edition — wire() returns '' and the review keeps the front step.
-  const front = leagueGwIndex();
-  if (front === last + 1 && !gwDeadlinePassed(front) && typeof Gazette !== 'undefined' && Gazette.wire) {
-    const art = Gazette.wire(front);
-    if (art) return { edition: 'the transfer wire', gwN: GAMEWEEKS[front].n, article: art };
-  }
   if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
   // nothing settled yet: once the board is full the Post-Draft Special is
   // the paper (Ben, draft night); before that the Season Preview is edition
