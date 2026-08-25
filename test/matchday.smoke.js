@@ -552,11 +552,15 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
     if (!n6) return { fail: 'no next6' };
     const rows = [...n6.querySelectorAll('tbody tr')];
     const rowPids = rows.map(r => +r.querySelector('[data-pcard]').dataset.pcard).sort((a, b) => a - b);
-    const squadPids = squadAt(teamView.mid, currentGwIndex()).map(p => p.id).sort((a, b) => a - b);
+    // the runway rolls past settled rounds with My Team (25 Aug) — the
+    // oracle computes the same start the card does
+    let n6cur = currentGwIndex();
+    while (n6cur < GAMEWEEKS.length - 1 && gwStatus(n6cur) === 'final') n6cur++;
+    const squadPids = squadAt(teamView.mid, n6cur).map(p => p.id).sort((a, b) => a - b);
     const gwHeads = [...n6.querySelectorAll('thead th')].slice(1).map(t => t.textContent);
     // H/A truth for the first non-blank cell of row 0
     const p0 = PLAYER_BY_ID[+rows[0].querySelector('[data-pcard]').dataset.pcard];
-    const gws = GAMEWEEKS.slice(currentGwIndex(), currentGwIndex() + 6);
+    const gws = GAMEWEEKS.slice(n6cur, n6cur + 6);
     let haOk = null, checked = null;
     for (let c = 0; c < gws.length; c++) {
       const fx = teamFixturesInGw(p0.team, gws[c].n);
@@ -577,7 +581,9 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
   const x45 = await x.evaluate(() => {
     const n6row = document.querySelector('#next6 tbody tr');
     const p0 = PLAYER_BY_ID[+n6row.querySelector('[data-pcard]').dataset.pcard];
-    const gws = GAMEWEEKS.slice(currentGwIndex(), currentGwIndex() + 6);
+    let n6cur = currentGwIndex();
+    while (n6cur < GAMEWEEKS.length - 1 && gwStatus(n6cur) === 'final') n6cur++;
+    const gws = GAMEWEEKS.slice(n6cur, n6cur + 6);
     const targetGw = gws[1].n;
     const stash = state.fixtures;
     // blank: remove the club's fixtures that GW
