@@ -8286,7 +8286,16 @@ function latestBusinessCard(compact = false) {
     </div>
     <span class="business-gw"><small>COUNTS</small><b>GW${GAMEWEEKS[g.gw]?.n ?? '?'}</b></span>
   </div>`;
-  const rows = visible.map(rowHtml).join('');
+  // a 23-deal waiver round made this card a broadsheet (Ben, 25 Aug: "far
+  // too long") — fold everything past the first few behind one button.
+  // window._bizOpen survives re-renders the way _trSquadOpen does.
+  const FOLD_AT = 4;
+  const bizOpen = !!window._bizOpen;
+  const shownRows = bizOpen ? visible : visible.slice(0, FOLD_AT);
+  const foldedCount = visible.length - shownRows.length;
+  const rows = shownRows.map(rowHtml).join('')
+    + (foldedCount > 0 ? `<button class="btn ghost small" id="bizMore" style="width:100%;margin-top:6px">SHOW ALL ${visible.length} DEALS &#9662;</button>` : '')
+    + (bizOpen && visible.length > FOLD_AT ? `<button class="btn ghost small" id="bizLess" style="width:100%;margin-top:6px">FOLD THE WIRE AWAY &#9652;</button>` : '');
   const waiverNotice = publishedRun ? `<div class="business-run">
     <b>WAIVER RESULTS</b> <span>${waiverResults.length ? `${waiverResults.length} CLAIM${waiverResults.length === 1 ? '' : 'S'} LANDED` : 'NO CLAIMS LANDED'}</span>
     <small>${new Date(publishedRun).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}</small>
@@ -9940,6 +9949,10 @@ function bindDash() {
     if (b.dataset.goto === 'transfers') transfersView.tab = 'history'; // Latest business lands on the full record
     state.view = b.dataset.goto; save(); render();
   });
+  const bizMore = $('#bizMore');
+  if (bizMore) bizMore.onclick = () => { window._bizOpen = true; render(); };
+  const bizLess = $('#bizLess');
+  if (bizLess) bizLess.onclick = () => { window._bizOpen = false; render(); };
   bindAwardsBits(); // awards/treatment live in the Data Room now, but stay bound if ever re-hosted
   document.querySelectorAll('[data-mu]').forEach(el => el.onclick = () => {
     const [a, b, i] = el.dataset.mu.split(':').map(Number);
