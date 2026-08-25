@@ -3388,6 +3388,26 @@ const VIDI_ERA_KEY = `${LS_NS}-vidi-era`;
 const VIDI_WORDS = { 10: 'TEN', 11: 'ELEVEN', 12: 'TWELVE', 13: 'THIRTEEN', 14: 'FOURTEEN', 15: 'FIFTEEN', 16: 'SIXTEEN' };
 let vidiFeed = [];
 try { vidiFeed = JSON.parse(localStorage.getItem(VIDI_KEY)) || []; } catch { vidiFeed = []; }
+// scrub the tape itself, not just new arrivals (Ben, 25 Aug: Castagne is
+// "still x3") — the triplicate was PRINTED before the dedupe existed, so it
+// lives on in localStorage where a filter on incoming lines never touches
+// it. Collapse repeats on the saved tape: same key, or for the old keyless
+// lines the same gameweek + text. The original print survives; keyed lines
+// with different keys (a genuine second goal) both stay.
+(function vidiScrub() {
+  if (!vidiFeed.length) return;
+  const keys = new Set(), legacyTxt = new Set(), keep = [];
+  for (const l of [...vidiFeed].reverse()) { // oldest first — keep the first print
+    const txtSig = `${l.gw}:${l.txt}`;
+    if (l.key ? (keys.has(l.key) || legacyTxt.has(txtSig)) : legacyTxt.has(txtSig)) continue;
+    if (l.key) keys.add(l.key); else legacyTxt.add(txtSig);
+    keep.push(l);
+  }
+  if (keep.length !== vidiFeed.length) {
+    vidiFeed = keep.reverse();
+    try { localStorage.setItem(VIDI_KEY, JSON.stringify(vidiFeed)); } catch { /* fine */ }
+  }
+})();
 // a NEW draft is a new era — the old tape's "GW2" lines from a previous
 // sandbox season confused Marc mid-mock. Stamp the tape with the draft it
 // belongs to and wipe it when the league re-drafts.
@@ -3408,7 +3428,12 @@ function vidiPush(lines) {
   // next, re-emitting the event. Identity = player + gw + cumulative counts,
   // so a re-emission is skipped but a genuine second goal still prints.
   const seen = new Set(vidiFeed.map(l => l.key).filter(Boolean));
-  lines = lines.filter(l => !l.key || !seen.has(l.key));
+  // lines printed before keys existed can't be matched by key — a flicker
+  // re-emitting one of those would print a fresh, keyed copy next to the
+  // old keyless one. Match those on gameweek + text instead (keyless only,
+  // so two keyed lines that read the same — a second assist — both print).
+  const legacyTxt = new Set(vidiFeed.filter(l => !l.key).map(l => `${l.gw}:${l.txt}`));
+  lines = lines.filter(l => !(l.key && seen.has(l.key)) && !legacyTxt.has(`${l.gw}:${l.txt}`));
   if (!lines.length) return;
   vidiFeed = [...lines, ...vidiFeed].slice(0, 60);
   try { localStorage.setItem(VIDI_KEY, JSON.stringify(vidiFeed)); } catch { /* tape full, carry on */ }
@@ -8352,7 +8377,13 @@ function latestBusinessCard(compact = false) {
   const publishedRun = latestRun || Math.max(0, ...state.transfers.filter(t => t.waiver).map(t => +t.t || 0));
   const waiverResults = publishedRun ? allGroups.filter(g => g.kind === 'waiver' && Math.abs((+g.t || 0) - publishedRun) < 1000) : [];
   const pinned = new Set(waiverResults);
-  const visible = [...waiverResults, ...allGroups.filter(g => !pinned.has(g)).slice(0, Math.max(0, 6 - waiverResults.length))];
+  // business done SINCE the run leads the wire (Ben, 25 Aug: "latest
+  // transfers after waivers aren't pulling through") — a 23-claim round was
+  // eating every visible slot, so a Monday trough signing never surfaced.
+  const rest = allGroups.filter(g => !pinned.has(g));
+  const sinceRun = publishedRun ? rest.filter(g => (+g.t || 0) > publishedRun + 1000) : [];
+  const older = rest.filter(g => !sinceRun.includes(g));
+  const visible = [...sinceRun, ...waiverResults, ...older.slice(0, Math.max(0, 6 - waiverResults.length - sinceRun.length))];
   const rowHtml = g => `<div class="business-row">
     <span class="business-mark business-${g.kind}" aria-hidden="true">${marks[g.kind]}</span>
     <div class="business-main">
@@ -8371,19 +8402,23 @@ function latestBusinessCard(compact = false) {
   const bizOpen = !!window._bizOpen;
   const shownRows = bizOpen ? visible : visible.slice(0, FOLD_AT);
   const foldedCount = visible.length - shownRows.length;
-  const rows = shownRows.map(rowHtml).join('')
-    + (foldedCount > 0 ? `<button class="btn ghost small" id="bizMore" style="width:100%;margin-top:6px">SHOW ALL ${visible.length} DEALS &#9662;</button>` : '')
-    + (bizOpen && visible.length > FOLD_AT ? `<button class="btn ghost small" id="bizLess" style="width:100%;margin-top:6px">FOLD THE WIRE AWAY &#9652;</button>` : '');
   const waiverNotice = publishedRun ? `<div class="business-run">
     <b>WAIVER RESULTS</b> <span>${waiverResults.length ? `${waiverResults.length} CLAIM${waiverResults.length === 1 ? '' : 'S'} LANDED` : 'NO CLAIMS LANDED'}</span>
     <small>${new Date(publishedRun).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }).toUpperCase()}</small>
   </div>` : '';
+  // the run banner sits where the run happened: below any business done
+  // since it, above the round's own claims — not stapled to the masthead
+  // where it captioned deals it had nothing to do with.
+  const noticeAt = Math.min(sinceRun.length, shownRows.length);
+  const rows = shownRows.map(rowHtml).map((h, i) => (i === noticeAt ? waiverNotice + h : h)).join('')
+    + (noticeAt >= shownRows.length ? waiverNotice : '')
+    + (foldedCount > 0 ? `<button class="btn ghost small" id="bizMore" style="width:100%;margin-top:6px">SHOW ALL ${visible.length} DEALS &#9662;</button>` : '')
+    + (bizOpen && visible.length > FOLD_AT ? `<button class="btn ghost small" id="bizLess" style="width:100%;margin-top:6px">FOLD THE WIRE AWAY &#9652;</button>` : '');
   return `<div class="card business-card${compact ? ' business-compact' : ''}">
     <div class="business-head">
       <div><span class="business-kicker">THE TRANSFER WIRE</span><h2>LATEST BUSINESS</h2></div>
       <span class="muted">COMPLETED DEALS ONLY</span>
     </div>
-    ${waiverNotice}
     <div class="business-feed">${rows}</div>
     <button class="btn ghost business-history" data-goto="transfers">OPEN TRANSFER HISTORY <span aria-hidden="true">&#8594;</span></button>
   </div>`;
