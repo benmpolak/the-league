@@ -3257,13 +3257,18 @@ function toggleBlock(mid, pid) {
 // round never settles early.
 const SETTLE_GRACE_MS = 150 * 60000; // last kickoff + ~115min to FT + 30min grace
 function roundBlown(i) {
+  // a live Simulation Chamber paints finished=true into state.fixtures as
+  // its clock advances (patchMockFixtures) — the whistle test must not read
+  // those as a settled real round (sol, settlement round). At mock 'final'
+  // the mock stamps ev.final itself, so nothing is lost by sitting out.
+  if (state.mock?.phase === 'live') return false;
   const gwN = GAMEWEEKS[i]?.n;
   if (!gwN) return false;
   const gwFx = (state.fixtures || []).filter(f => f.gw === gwN);
   const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === TEAMS.length;
   if (!fullRound || !gwFx.every(f => f.finished || f.fp)) return false;
   const ts = gwFx.filter(f => f.date).map(f => new Date(f.date).getTime());
-  return ts.length > 0 && Date.now() > Math.max(...ts) + SETTLE_GRACE_MS;
+  return ts.length > 0 && Date.now() >= Math.max(...ts) + SETTLE_GRACE_MS;
 }
 function gwStatus(i) {
   const ev = gwEvent(i);

@@ -128,7 +128,26 @@
       const fullRound = gwFx.length > 0 && new Set(gwFx.flatMap(f => [f.home, f.away])).size === clubCount;
       if (!fullRound || !gwFx.every(f => f.finished || f.fp)) return false;
       const k = gwKicks(i);
-      return !!k && now() > k.last + SETTLE_GRACE_MS;
+      return !!k && now() >= k.last + SETTLE_GRACE_MS;
+    }
+    /* Settlement is derived afresh from the feed's flags every time, so a
+     * feed regression (an fp flipping BACK) can un-settle a round that was
+     * final an hour ago — and a waiver run caught in that window would
+     * compute priority off a table missing the round, or worse, the
+     * reverse-draft fallback (sol, settlement round, P1). This finds any
+     * round that by the clock should long since have settled — stats synced,
+     * every kick-off passed, grace elapsed — but is not final. The waiver
+     * runner refuses to adjudicate while one exists and retries on the next
+     * tick; the next-deadline backstop in gwIsOver bounds the delay. */
+    function unsettledPlayedRound(state) {
+      for (let i = 0; i < REGULAR_GWS; i++) {
+        const ev = gwEvent(state, i);
+        if (!ev || !Object.keys(ev.playerStats || {}).length) continue;
+        const k = gwKicks(i);
+        if (!k || now() < k.last + SETTLE_GRACE_MS) continue;
+        if (gwStatus(state, i) !== 'final') return i;
+      }
+      return null;
     }
     function gwStatus(state, i) {
       const ev = gwEvent(state, i);
@@ -725,7 +744,7 @@
     return {
       XI_RULES, SQUAD_RULES, REGULAR_GWS, DEFAULT_SCORING, FPL_WIPED,
       toArr, rating, lastSeasonOf,
-      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, roundBlown, gwFrom, pairingsFor,
+      currentGwIndex, gwIsOver, gwHasStarted, transferGw, gwEvent, gwStatus, roundBlown, unsettledPlayedRound, gwFrom, pairingsFor,
       squadAt, ownedIdsAt, squadShapeOk, ownedIdsGiven, squadIdsGiven,
       isArrival, arrivalLocked,
       totalPicks, pickNo, currentManagerId, canPick, autoPickChoice, hasLeft,
