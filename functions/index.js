@@ -316,13 +316,21 @@ async function runWaivers(league, runId, trigger, failAt) {
       // A round that by the clock should long since have settled but is not
       // final means the feed has regressed under us — priority computed now
       // would miss that round, or fall all the way back to reverse draft,
-      // and an allocation is irreversible (sol, settlement round, P1). An
-      // error, never a 'done': the hourly tick retries until the feed heals,
-      // FPL's own flag lands, or the next-deadline backstop settles it.
-      // A manual run-now is the Chairman's eyes-open override and passes.
-      if (trigger === 'schedule' && eng.unsettledPlayedRound(state) != null) {
-        throw new HttpsError('failed-precondition',
-          `waivers refuse to run: GW${eng.unsettledPlayedRound(state) + 1} has been played but is not settled (stats feed regression?) — will retry on the next tick.`);
+      // and an allocation is irreversible (sol, settlement round, P1).
+      // DEFER, don't throw: sol's round 2 showed the failed+finishedAt
+      // tombstone from a throw never re-executes. 'deferred' is not 'done'
+      // and holds no lease, so the claim transaction at the top of this
+      // function re-claims it on every hourly tick until the feed heals,
+      // FPL's own flag lands, or the next-deadline backstop settles the
+      // round — and only a REAL run ever stamps lastWaiverRun, so the slot
+      // stays due throughout. A manual run-now is the Chairman's eyes-open
+      // override and passes.
+      if (trigger === 'schedule') {
+        const unsettled = eng.unsettledPlayedRound(state);
+        if (unsettled != null) {
+          await runRef.update({ status: 'deferred', reason: `GW${unsettled + 1} played but not settled (feed regression?)`, deferredAt: Date.now() });
+          return { deferred: `gw${unsettled + 1}` };
+        }
       }
       const runStart = Date.now() - 1;
       const res = eng.resolveWaivers(state, runStart);

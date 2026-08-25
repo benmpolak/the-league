@@ -343,6 +343,29 @@ const SB = 'the-league-sandbox';
   } else chk('{next:true} still selects a failed slot that the scheduler will retry', false, 'test clock produced no due slots');
   await T.mutate(LG, 'waiverSkip', { id: null }, tok1);
 
+  // A 'deferred' run (the settlement guard held it back — sol round 2) must
+  // be RE-CLAIMED and completed by the next tick, never treated as a
+  // tombstone the way a thrown run's failed+finishedAt was. Whatever the
+  // outcome — executed, or skipped as no longer due — the entry must leave
+  // 'deferred' and reach 'done' in one tick.
+  if (lastDue) {
+    const pinned = {
+      transfers: (await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val(),
+      priv: (await db.ref(`v2/leagues/${LG}/private`).get()).val(),
+      lastRun: (await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).get()).val(),
+    };
+    await runRoot.child(`sched-${lastDue.id}`).set({ status: 'deferred', reason: 'test: settlement guard', deferredAt: Date.now() - 3600e3 });
+    await Functions.waiverTick.run({});
+    const after = (await runRoot.child(`sched-${lastDue.id}`).get()).val();
+    chk('a deferred run is re-claimed and completed by the next tick, not entombed',
+      after?.status === 'done' && (after.attempt || 0) >= 1, JSON.stringify(after));
+    // leave the suite exactly as this block found it
+    await db.ref(`v2/leagues/${LG}/public/transfers`).set(pinned.transfers);
+    await db.ref(`v2/leagues/${LG}/private`).set(pinned.priv);
+    await db.ref(`v2/leagues/${LG}/public/waiverMeta/lastRun`).set(pinned.lastRun);
+    await runRoot.child(`sched-${lastDue.id}`).set({ status: 'done', finishedAt: Date.now() });
+  } else chk('a deferred run is re-claimed and completed by the next tick, not entombed', false, 'no due slot');
+
   /* ---------------- trades ---------------- */
   const myMF = (await dropMine(1, 'MF'));
   const theirMF = (await dropMine(2, 'MF'));

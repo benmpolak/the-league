@@ -140,9 +140,12 @@
      * runner refuses to adjudicate while one exists and retries on the next
      * tick; the next-deadline backstop in gwIsOver bounds the delay. */
     function unsettledPlayedRound(state) {
-      for (let i = 0; i < REGULAR_GWS; i++) {
-        const ev = gwEvent(state, i);
-        if (!ev || !Object.keys(ev.playerStats || {}).length) continue;
+      // no stats requirement: a played round whose stats map came back EMPTY
+      // is exactly as dangerous as a regressed flag — the round drops out of
+      // the table either way (sol, settlement round 2). The only questions
+      // are "should this round have settled by now?" and "has it?".
+      const bound = Math.min(REGULAR_GWS, GAMEWEEKS.length);
+      for (let i = 0; i < bound; i++) {
         const k = gwKicks(i);
         if (!k || now() < k.last + SETTLE_GRACE_MS) continue;
         if (gwStatus(state, i) !== 'final') return i;
