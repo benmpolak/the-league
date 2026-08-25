@@ -158,11 +158,14 @@ const check = (label, ok, detail = '') => {
 
       // Tuesday 10:00: the Chairman's clock runs the waivers
       const before = state.transfers.length;
+      // the run resolves by the CURRENT table (the GW that just went final
+      // counts — sol 5.6 finding) AND takes already banked this window drop
+      // a manager back (Marc, 25 Aug) — so read the queue the run itself
+      // will use: post-stats, PRE-run. Reading it after the run was harmless
+      // only while the order ignored the ledger.
+      const q = waiverOrder();
       processWaivers(true);
       if (target) {
-        // the run resolves by the CURRENT table (the GW that just went final
-        // counts — sol 5.6 finding), so recompute the queue post-stats
-        const q = waiverOrder();
         const expWin = q.indexOf(hi) < q.indexOf(lo) ? hi : lo;
         const expLose = expWin === hi ? lo : hi;
         const winner = state.transfers.slice(before).find(t => t.inId === target.id && t.waiver);

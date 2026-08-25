@@ -669,7 +669,21 @@
       // (currentGwIndex doesn't advance until the next one starts).
       const { rows, anyFinal } = standingsBefore(state, REGULAR_GWS);
       const base = anyFinal ? rows.map(r => r.id) : [...state.draft.order];
-      return [...base].reverse();
+      const rev = [...base].reverse();
+      // ...but using your priority costs it (Marc, 25 Aug, after the first
+      // real run: "anyone who didn't take should be at the top in reverse
+      // league position... then it's based on whoever took the fewest and in
+      // what order"). Managers who landed waiver players this window drop
+      // behind those who didn't — fewest takes first, ties in reverse-table
+      // order. Derived from the ledger, not stored: takes are the waiver
+      // transfers landing in the UPCOMING gameweek, so the count naturally
+      // resets when a new round settles and deals start landing in the next.
+      const tgw = transferGw(state);
+      const takes = {};
+      for (const t of toArr(state.transfers)) {
+        if (t && t.waiver && t.gw === tgw) takes[t.managerId] = (takes[t.managerId] || 0) + 1;
+      }
+      return rev.slice().sort((a, b) => (takes[a] || 0) - (takes[b] || 0) || rev.indexOf(a) - rev.indexOf(b));
     }
     /* Pure waiver resolution. state.claims here is the MERGED view
      * {gwIndex:{mid:[{in,out}]}} (the server assembles it from the private

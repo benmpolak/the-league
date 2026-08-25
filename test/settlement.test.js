@@ -97,5 +97,36 @@ const synced = final => ({ gw1: { gw: 0, label: 'Gameweek 1', final, playerStats
       && healthy.gwStatus(s, 0) === 'final');
 }
 
+/* ---- waiver priority: using it costs it (Marc, 25 Aug) ---- */
+{
+  // three clubs, nothing settled: base order = draft order reversed = [3,2,1].
+  // Club 3 lands a waiver player this window; he drops behind the non-takers.
+  const NOW = Date.UTC(2026, 7, 20); // before the GW1 deadline: deals land gw 0
+  const e3 = Engine.make({
+    players: PLAYERS, gameweeks: GAMEWEEKS, fixtures: [],
+    lastSeasonByCode: {}, now: () => NOW,
+  });
+  const base = {
+    phase: 'season',
+    managers: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    draft: { order: [1, 2, 3], picks: [] },
+    matchStats: {},
+  };
+  chk('untouched window: pure reverse order',
+    JSON.stringify(e3.waiverOrder({ ...base, transfers: [] })) === '[3,2,1]');
+  chk('a taker drops behind the non-takers',
+    JSON.stringify(e3.waiverOrder({ ...base, transfers: [{ managerId: 3, inId: 1, outId: 2, gw: 0, waiver: true, t: 1 }] })) === '[2,1,3]');
+  chk('two takes cost more than one; ties keep reverse-table order',
+    JSON.stringify(e3.waiverOrder({ ...base, transfers: [
+      { managerId: 3, inId: 1, outId: 2, gw: 0, waiver: true, t: 1 },
+      { managerId: 2, inId: 2, outId: 1, gw: 0, waiver: true, t: 2 },
+      { managerId: 2, inId: 1, outId: 2, gw: 0, waiver: true, t: 3 },
+    ] })) === '[1,3,2]');
+  chk('a plain Trough signing costs nothing (waiver flag only)',
+    JSON.stringify(e3.waiverOrder({ ...base, transfers: [{ managerId: 3, inId: 1, outId: 2, gw: 0, t: 1 }] })) === '[3,2,1]');
+  chk('a take from a PREVIOUS window costs nothing (gw filter)',
+    JSON.stringify(e3.waiverOrder({ ...base, transfers: [{ managerId: 3, inId: 1, outId: 2, gw: 5, waiver: true, t: 1 }] })) === '[3,2,1]');
+}
+
 console.log(`\n[settlement] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
