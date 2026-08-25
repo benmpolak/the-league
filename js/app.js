@@ -3837,6 +3837,46 @@ function confirmSheet({ title, body = '', yes = 'Confirm', note = '' }) {
     ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   });
 }
+/* Ben (25 Aug, group chat): "I don't like that you can't select a player to
+   take from the trough before you select the player out." So now you can:
+   tapping Sign/Claim with nobody marked out opens this — pick the man who
+   makes way and the deal carries straight on into the usual confirm. The
+   old order (out first, then Sign) still works exactly as before. */
+function chooseOutSheet(mid, inP, waiv) {
+  const tgw = transferGw();
+  const squad = squadAt(mid, tgw);
+  const claimed = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
+  const legalFor = p => squadShapeOk([...squad.filter(x => x.id !== p.id), inP]);
+  if (window.__autoConfirm) { const f = squad.find(p => legalFor(p) && !(waiv && claimed.has(`${inP.id}:${p.id}`))); return Promise.resolve(f ? f.id : null); }
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'overlay';
+    ov.id = 'outPickSheet';
+    const rows = squad.map(p => {
+      const dupe = waiv && claimed.has(`${inP.id}:${p.id}`);
+      const ok = legalFor(p) && !dupe;
+      const why = dupe ? 'That exact claim is already on your list' : 'Breaks the squad position limits';
+      return `<button class="btn ghost small ${ok ? '' : 'dim'}" data-outpick="${p.id}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`} style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin-bottom:6px"><span class="pos-badge pos-${p.pos}">${p.pos}</span> <b>${esc(p.name)}</b> <span class="muted" style="font-size:11px">${esc(p.club)}</span></button>`;
+    }).join('');
+    ov.innerHTML = `<div class="card" style="max-width:420px;width:94%;max-height:80vh;overflow-y:auto">
+      <h2 style="margin-bottom:6px">${waiv ? 'Claim' : 'Sign'} ${esc(inP.name)} &mdash; who makes way?</h2>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">${waiv ? 'Pick the man your claim would let go.' : `Pick the man who goes to waivers when ${esc(inP.name)} comes in.`}</p>
+      ${rows}
+      <button class="btn ghost" id="opCancel" style="width:100%;margin-top:8px">Cancel</button>
+    </div>`;
+    // any external close (back button, overlay sweep) = cancel — never hang
+    const origRemove = ov.remove.bind(ov);
+    ov.remove = () => { origRemove(); resolve(null); };
+    document.body.appendChild(ov);
+    pushOvState();
+    ov.querySelectorAll('[data-outpick]').forEach(btn => btn.onclick = () => {
+      if (btn.dataset.why) { toast(btn.dataset.why); return; }
+      resolve(+btn.dataset.outpick); closeOv(ov);
+    });
+    ov.querySelector('#opCancel').onclick = () => closeOv(ov);
+    ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  });
+}
 const dealLine = p => p ? `<b>${esc(p.name)}</b> <span class="muted">${esc(p.club)} ${p.pos}</span>` : '<b>?</b>';
 const dealRows = (outs, ins) => `<div class="deal">${
   outs.map(p => `<div class="deal-row"><span class="deal-tag out">OUT</span>${dealLine(p)}</div>`).join('')}${
@@ -7400,9 +7440,11 @@ function bindTransfers() {
     if (b.dataset.why) { toast(b.dataset.why); return; } // tap-to-explain (sol #4)
     const actor = wdActor();
     if (!actGuard(actor, 'window draft')) return;
-    const outId = +($('#wdOut')?.value || 0);
-    if (!outId) { toast('Pick who goes out first'); return; }
     const inP = PLAYER_BY_ID[+b.dataset.wdin];
+    let outId = +($('#wdOut')?.value || 0);
+    // no dropdown pick is not a dead end — same either-way-round flow as the
+    // Trough (Ben, 25 Aug): tap the man you want, then choose who makes way
+    if (!outId) { outId = await chooseOutSheet(actor, inP, false); if (outId == null) return; }
     const tgw = transferGw();
     const outWasStarting = lineupFor(actor, tgw).includes(outId);
     if (!squadShapeOk([...squadAt(actor, tgw).filter(x => x.id !== outId), inP])) { toast('Breaks the squad position limits'); return; }
@@ -7575,13 +7617,16 @@ function bindTransfers() {
           const locked = !ownerMid && arrivalLocked(p);
           const waiv = !ownerMid && !locked && onWaivers(p);
           const dupe = outP && claimPairs.has(`${p.id}:${outP.id}`);
+          // no out-man marked is no longer a dead end: the tap opens the
+          // who-makes-way picker instead (Ben, 25 Aug — either order works)
+          const needOut = !ownerMid && !locked && !outP;
           const ok = !ownerMid && !locked && outP && squadShapeOk([...squadAfterOut, p]) && !dupe;
           const why = locked ? 'New arrival — locked until the window shuts, then the Window Draft'
-            : !outP ? 'Pick who goes out first' : dupe ? 'That exact claim is already on your list' : 'Breaks the squad position limits';
+            : !outP ? 'Tap to choose who makes way' : dupe ? 'That exact claim is already on your list' : 'Breaks the squad position limits';
           const m = metricsFor(p);
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
-            : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${ok ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+            : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers · ${esc(clearsTxt)}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
@@ -7645,7 +7690,12 @@ function bindTransfers() {
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = async () => {
         if (b.dataset.why) { toast(b.dataset.why); return; } // tap-to-explain (sol #4)
         if (!actGuard(mid, 'squad')) return;
-        const inId = +b.dataset.trin, outId = transfersView.out;
+        let pickedOut = null;
+        if (b.dataset.needout) {
+          pickedOut = await chooseOutSheet(mid, PLAYER_BY_ID[+b.dataset.trin], b.dataset.waiv === '1');
+          if (pickedOut == null) return;
+        }
+        const inId = +b.dataset.trin, outId = pickedOut ?? transfersView.out;
         const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
         const startingByGw = GAMEWEEKS.map((_, g) => lineupFor(mid, g).includes(outId));
         if (b.dataset.waiv === '1') {

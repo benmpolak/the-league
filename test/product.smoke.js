@@ -22,20 +22,26 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   });
   chk('#2 transfers hub states the landing gameweek', lens.has && new RegExp(`GW${lens.gw}`).test(lens.txt), JSON.stringify(lens));
 
-  /* #4 — dimmed pool action explains itself on tap */
+  /* #4 — Sign with nobody marked out is not a dead end any more: it opens
+     the who-makes-way picker, and cancel walks away clean (Ben, 25 Aug —
+     either order works; supersedes the old tap-to-a-toast pin) */
   const why = await page.evaluate(async () => {
-    transfersView.out = null; render(); // no player-out picked → Sign must explain
+    transfersView.out = null; render(); // no player-out picked → Sign offers the picker
     document.querySelector('#trSearch').dispatchEvent(new Event('input'));
     await new Promise(r => setTimeout(r, 80));
-    const b = [...document.querySelectorAll('[data-trin]')].find(x => x.dataset.why);
-    if (!b) return { fail: 'no dim button found' };
-    const notDisabled = !b.disabled;
-    b.click(); await new Promise(r => setTimeout(r, 80));
-    const toastTxt = document.querySelector('#toast')?.textContent || '';
-    return { notDisabled, toastTxt };
+    const b = [...document.querySelectorAll('[data-trin]')].find(x => x.dataset.needout);
+    if (!b) return { fail: 'no needout button found' };
+    b.click(); await new Promise(r => setTimeout(r, 120));
+    const sheet = document.querySelector('#outPickSheet');
+    const opened = !!sheet;
+    const rows = sheet ? sheet.querySelectorAll('[data-outpick]').length : 0;
+    sheet?.querySelector('#opCancel')?.click();
+    await new Promise(r => setTimeout(r, 120));
+    const closed = !document.querySelector('#outPickSheet');
+    return { opened, rows, closed };
   });
-  chk('#4 dim Sign button taps to a reason instead of dying silently',
-    why.notDisabled === true && /Pick who goes out/i.test(why.toastTxt || ''), JSON.stringify(why));
+  chk('#4 Sign with nobody out opens the who-makes-way picker and cancels clean',
+    why.opened === true && why.rows > 0 && why.closed === true, JSON.stringify(why));
 
   /* #5 — the Gazette archive browses settled editions and comes back */
   const gaz = await page.evaluate(async () => {
