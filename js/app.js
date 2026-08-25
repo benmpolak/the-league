@@ -404,6 +404,10 @@ function applySharedSnapshot(data) {
     for (const mid of Object.keys(data.claims[gw] || {})) data.claims[gw][mid] = toArr(data.claims[gw][mid]);
   }
   data.waiverMeta = data.waiverMeta || { lastRun: null, control: 'auto' };
+  // saves strip matchStats and old snapshots (the podcast seed) lack the key
+  // entirely — every reader assumes the map exists, and managerSquad walking
+  // gwStatus made gwEvent the first to throw on it (CI, 25 Aug)
+  data.matchStats = data.matchStats || {};
   data.adjustments = data.adjustments || {};
   // pre-Aug-2026 flat {pid: pts} season adjustments: retired shape, dropped —
   // the canonical shape is {gwIdx: {pid: delta}} and lands inside GW scoring
@@ -762,6 +766,10 @@ function load() {
     if (s && s.pins) delete s.pins; // PINs retired — real sign-in now
     if (s && !s.covenants) s.covenants = [];
     if (s && !s.waiverMeta) s.waiverMeta = { lastRun: null, control: 'auto' };
+    // saves strip matchStats and older snapshots (the podcast seed) lack the
+    // key entirely — every reader assumes the map exists, and managerSquad
+    // walking gwStatus made gwEvent the first to throw on it (CI, 25 Aug)
+    if (s && !s.matchStats) s.matchStats = {};
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.draftPool === undefined) s.draftPool = null;
     if (s && s.windowDraft === undefined) s.windowDraft = null;
