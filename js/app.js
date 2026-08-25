@@ -2209,6 +2209,17 @@ function nextSlotAt(ms) {
 // the first run that can clear a finished gameweek (kick-offs are never at
 // 10am London, so a slot can't land mid-match)
 const gwClearAt = g => { const k = gwKicks(g); return k ? nextSlotAt(k.last) : null; };
+// the league's FRONT-PAGE gameweek (Ben, 25 Aug: the post-round waiver run
+// "signifies a new gameweek"): a settled round stays current until the first
+// run after its last fixture has processed, then attention turns to the next.
+// Drives the Dashboard hero and the Matches page default. My Team rolls
+// earlier, at settlement — planning starts before the paperwork.
+function leagueGwIndex() {
+  let g = currentGwIndex();
+  while (g < REGULAR_GWS - 1 && gwStatus(g) === 'final'
+    && gwClearAt(g) != null && lastWaiverRun() >= gwClearAt(g)) g++;
+  return g;
+}
 /* Ham Cup selection window: opens 7 days before the tie's first kickoff (or
  * at the draw / Chairman's early-open if later); the Trough freezes at open */
 const HAM_WINDOW_MS = 7 * 24 * 3600e3;
@@ -7969,7 +7980,10 @@ function viewDash() {
   // thought he WAS Ben
   const identified = (whoami && whoami !== -1) || demoMode || !netOn();
   const mid = identified ? (whoami && whoami !== -1 ? whoami : state.managers[0].id) : null;
-  const cur = currentGwIndex();
+  // the hero card shows the FRONT-PAGE gameweek: the settled round until the
+  // post-round waiver run processes, the new one after (Ben, 25 Aug —
+  // "dashboard is still showing gw1 team?" the morning after run one)
+  const cur = leagueGwIndex();
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
   const started = gwUnderway(cur); // display truth — a simulated GW counts
@@ -10356,18 +10370,10 @@ function viewH2H() {
   // "the head to head table is what should be in the league table") — this
   // page is Matches: fixtures, preview, playoffs, points grid, crystal ball
   const matchesCard = (() => {
-    if (h2hView.gw == null) {
-      // the Matches page turns over when the league's business does (Ben,
-      // 25 Aug: the new gameweek "signifies" at the post-round waiver run,
-      // not at the final whistle) — a settled round stays up as THE result
-      // until the first run after its last fixture has processed, then the
-      // page opens on the new round's fixtures. My Team rolls earlier, at
-      // settlement, deliberately: planning starts before the paperwork.
-      let g = Math.min(cur, REGULAR_GWS - 1);
-      while (g < REGULAR_GWS - 1 && gwStatus(g) === 'final'
-        && gwClearAt(g) != null && lastWaiverRun() >= gwClearAt(g)) g++;
-      h2hView.gw = g;
-    }
+    // the Matches page opens on the league's front-page gameweek — the
+    // settled round stays up as THE result until the post-round waiver run
+    // has processed (leagueGwIndex; Ben, 25 Aug)
+    if (h2hView.gw == null) h2hView.gw = Math.min(leagueGwIndex(), REGULAR_GWS - 1);
     const i = h2hView.gw, g = GAMEWEEKS[i];
     const st = gwStatus(i);
     const tag = st === 'final' ? '<span class="tag">FT</span>'
