@@ -36,6 +36,11 @@ const chk = (name, ok, detail = '') => {
     const mid = state.managers[0].id;
     whoami = mid;
     Date.now = () => new Date(GAMEWEEKS[0].from).getTime() - 60 * 60e3;
+    // the staged round must be OPEN: the afternoon the feed marked real GW1
+    // finished, gwIsOver(0) went true on the flag alone — no mocked clock or
+    // synthetic fixture list could reopen it, and mid-round subs "landed"
+    // in a test about them not landing (CI, 25 Aug)
+    GAMEWEEKS[0].finished = false;
 
     // Reproduce the corrupting field state exactly: mock at full time and its
     // waiver run already later than mock.t. Mounted must still win.
