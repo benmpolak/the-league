@@ -6853,7 +6853,12 @@ function assistantCard(mid, gw) {
 const NEXT6_KEY = `${LS_NS}-next6-open`;
 const DASHMU_KEY = `${LS_NS}-dashmu-open`; // the dashboard's two lineup shots
 function nextSixCard(mid) {
-  const cur = currentGwIndex();
+  // the runway is a PLANNING surface on My Team, so it rolls with My Team —
+  // at settlement, past every finished round (Ian, 25 Aug: the table still
+  // opened on played GW1 and showed his pre-waiver squad). squadAt at the
+  // upcoming round also carries the window's signings the moment they land.
+  let cur = currentGwIndex();
+  while (cur < GAMEWEEKS.length - 1 && gwStatus(cur) === 'final') cur++;
   const gws = GAMEWEEKS.slice(cur, cur + 6);
   const squad = squadAt(mid, cur).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
   if (!gws.length || !squad.length || !state.fixtures.length) return '';
