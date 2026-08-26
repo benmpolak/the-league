@@ -2240,6 +2240,17 @@ function leagueGwIndex() {
     && gwClearAt(g) != null && lastWaiverRun() >= gwClearAt(g)) g++;
   return g;
 }
+// the round you are PLANNING for: the first that has not settled. No waiver run
+// in the condition — a fixture-difficulty table or a "next six" runway is about
+// football still to be played, and a round already in the books belongs in
+// neither however the paperwork stands. My Team has rolled this way since UAT
+// night (Wilko: "it's still defaulting to gameweek 1"); this is that same loop,
+// named, because the Data Room needed it too (Marc, 26 Aug 2026).
+function planningGwIndex() {
+  let g = currentGwIndex();
+  while (g < GAMEWEEKS.length - 1 && gwStatus(g) === 'final') g++;
+  return g;
+}
 /* Ham Cup selection window: opens 7 days before the tie's first kickoff (or
  * at the draw / Chairman's early-open if later); the Trough freezes at open */
 const HAM_WINDOW_MS = 7 * 24 * 3600e3;
@@ -6643,11 +6654,7 @@ function viewTeam() {
   // default to the next UNSETTLED gameweek — after a round goes final (real
   // Tuesday or Simulation Chamber), "current" means next week's team sheet
   // (Wilko, UAT night: "it's still defaulting to gameweek 1")
-  if (teamView.gw == null) {
-    let g = currentGwIndex();
-    while (g < GAMEWEEKS.length - 1 && gwStatus(g) === 'final') g++;
-    teamView.gw = g;
-  }
+  if (teamView.gw == null) teamView.gw = planningGwIndex();
   const mid = teamView.mid, gw = teamView.gw;
   const squad = squadAt(mid, gw).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
   const xi = lineupFor(mid, gw);
@@ -10934,7 +10941,7 @@ function fixtureMatrixCard() {
       <p class="muted" style="font-size:12.5px">No fixtures loaded yet. Refresh to pull the season's schedule.</p></div>`;
   }
   const weeks = Math.min(Math.max(1, fdrView.weeks || 6), 10);
-  const start = currentGwIndex();
+  const start = planningGwIndex();   // never a round already in the books
   const gwNs = [];
   for (let i = start; i < GAMEWEEKS.length && gwNs.length < weeks; i++) gwNs.push(GAMEWEEKS[i].n);
   const rows = Object.keys(TEAM_BY_NAME).map(team => {
@@ -11062,7 +11069,7 @@ function compareBody(ids, fwdRunway = true) {
   }).join('');
   // the fixture runway the Draft Console's version always had — on draft night
   // who they play next is half the argument, and it belongs to no tally
-  const gws = GAMEWEEKS.slice(currentGwIndex(), currentGwIndex() + fwd);
+  const gws = GAMEWEEKS.slice(planningGwIndex(), planningGwIndex() + fwd);
   const runway = fwdRunway && gws.length ? `<tr><td>Next ${gws.length}<span class="muted" style="font-size:10px"> fixtures</span></td>
     ${ps.map(p => `<td class="num" style="font-size:11px">${gws.map(g => `<span class="muted">GW${g.n}</span> ${esc(nextOpp(p.team, g.n) || '—')}`).join(' &middot; ')}</td>`).join('')}</tr>` : '';
   const best = Math.max(...tally);
@@ -11444,7 +11451,7 @@ function viewFixtures() {
       <p class="muted" style="margin:10px 0 18px">Refresh to pull the season's schedule and any results.</p>
       <button class="btn" id="fxSync">&#8635; Refresh</button></div>`;
   }
-  if (fxView.gw == null) fxView.gw = GAMEWEEKS[currentGwIndex()].n;
+  if (fxView.gw == null) fxView.gw = GAMEWEEKS[planningGwIndex()].n;
   const fxs = state.fixtures.filter(f => f.gw === fxView.gw);
   const byDay = {};
   for (const f of fxs) {
@@ -11453,7 +11460,7 @@ function viewFixtures() {
   }
   return `
   <div class="team-controls card">
-    <select id="fxGw">${GAMEWEEKS.map(g => `<option value="${g.n}" ${g.n === fxView.gw ? 'selected' : ''}>GW${g.n}${g.n === GAMEWEEKS[currentGwIndex()].n ? ' (current)' : ''}</option>`).join('')}</select>
+    <select id="fxGw">${GAMEWEEKS.map(g => `<option value="${g.n}" ${g.n === fxView.gw ? 'selected' : ''}>GW${g.n}${g.n === GAMEWEEKS[planningGwIndex()].n ? ' (current)' : ''}</option>`).join('')}</select>
   </div>
   ${Object.entries(byDay).map(([day, list]) => `
     <div class="fx-day"><h3>${day}</h3><div class="fx-grid">
