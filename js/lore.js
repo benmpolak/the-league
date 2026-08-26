@@ -346,6 +346,60 @@ const GAZETTE_PRESS = [
   { n: 'Howard', beat: 'pod' },               // talkTROUGH, first-time caller since August
 ];
 
+/* ================= Meet the Managers =================
+   Ian's commission (25 Aug 2026): the lads' ten standard questions, put to
+   one manager at a time, roughly two a month. Answers are the manager's own
+   words from the group chat, lightly subbed; the footnotes are the
+   Committee's. `gw` is the GAMEWEEKS index whose matchday edition carries
+   the issue — it prints at that Friday's deadline and stays in the week's
+   review edition, so the archive keeps every issue for good. Rendered by
+   Gazette.interview() in js/gazette.js. */
+const GAZETTE_INTERVIEWS = [
+  {
+    gw: 1, // GW2 — the Friday 28 Aug paper (Ben, 26 Aug: answers in, "gazette issue to go out on friday")
+    who: /jackson/i,
+    kicker: 'MEET THE MANAGERS · No. 1 · THE REIGNING CHAMPION',
+    head: 'ATTACK IS OVERRATED. DEFENCE FIRST.',
+    by: 'Adam Jackson of Interjacksonale, in conversation with Alyson Unrudd',
+    // Ric's paywall (25 Aug chat: "I pay full subscription £"; would pause it
+    // "for the Ben Levy month"). The tease sits above the fold, per the plan.
+    paywall: 'GAZETTE PREMIUM — Meet the Managers is a subscriber-exclusive feature. A subscription costs nothing and is billed never; Ric Blank pays full price anyway, and the circulation desk thanks him. One request to pause a subscription “for the Ben Levy month” is under review.',
+    intro: [
+      'The first in a series of twelve. Over the season the Gazette will sit down with every manager in The League, beginning — by order of silverware — with the reigning champion. Our ten questions were sent to Interjacksonale and, per club policy, “forwarded to our press team”. The answers below arrived from the same phone.',
+    ],
+    qa: [
+      ['How many years have you been a manager?',
+        'I think this is season 9.†'],
+      ['Describe your managerial style in five words.',
+        'Attack is overrated. Defence first.'],
+      ['Who is your managerial inspiration?',
+        'I’m cut from the same cloth as some of the greats — Tony Pulis, Big Sam, Sean Dyche. No nonsense, lump it up to the big lad, chaos in the box.'],
+      ['Who is your biggest rival in the league, and why?',
+        'You can’t help but love it when you beat The Chairman. Going to The Great Hall of the People and pinching a win brings a huge amount of satisfaction, and gives us hope that one day we’ll be released from the shackles of dictatorship.'],
+      ['Which manager in The League do you have the best trading relationship with?',
+        'Trading, what’s that?‡'],
+      ['What is your go-to formation?',
+        'If I could play six at the back with no striker, that would be ideal. Sadly football (Dev) hasn’t progressed enough for my methods yet.'],
+      ['What is your favourite regional newspaper for team news?',
+        'Used to be the Blackpool Gazette — is Charlie Adam starting? Will Ian Evatt be fit for the weekend? Sadly those days are long gone, so now I rely on our chief ITK, Alex Singer. With X notifications on every player, there is no team news he doesn’t know.'],
+      ['What sort of victory gives you more satisfaction: winning with under 30 points, or getting over 50?',
+        'Over 50 lets me enjoy my weekend more. Get the points on the board early and sit back and relax whilst your opponent wonders if Jaidon Antony will be starting for Brentford vs Ipswich on MNF.'],
+      ['Which former manager would you like to see back in The League?',
+        'Jason would be pure box office, however I think by the first international window I’d be fed up of him. Haynesy, on the other hand — proper mensch. Would welcome him back in a heartbeat.*'],
+      ['What’s harder to win: the league, or The League?',
+        'Do people even celebrate the league?'],
+    ],
+    // the Committee footnote goes where he is most wrong (the plan, 25 Aug);
+    // the walkout detail is Ben's (26 Aug: "walked away for a bit and returned")
+    notes: [
+      '† The register records this as the twelfth season of The League. The Committee accepts nine as accurate only under Mr Jackson’s personal accounting, which omits the seasons after he walked out. The walkout is noted. It is always noted.',
+      '* For the Gazette’s continuing coverage of the Stein situation, see every edition this paper has ever printed.',
+    ],
+    tradeCheck: true, // ‡ — the ledger answers the trading question itself
+    tail: 'Meet the Managers continues through the season. The press teams of the remaining eleven clubs have been notified, whether they know it or not.',
+  },
+];
+
 /* ================= The Podcunt Network — advertising =================
    Two shows, two audiences, two utterly different commercial departments.
    The ads are the fastest way to tell the registers apart, so they are held

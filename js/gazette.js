@@ -675,6 +675,41 @@ window.Gazette = (() => {
     return out.join('');
   }
 
+  /* ---------- Meet the Managers ---------- */
+
+  /* Ian's commission (25 Aug): the ten standard questions, one manager at a
+     time. Data lives in GAZETTE_INTERVIEWS (js/lore.js), keyed to a gameweek:
+     the issue prints in that week's matchday edition (app.js previewArticle)
+     and is carried in the same week's review edition below, so the archive
+     keeps it. Static copy, no shared RNG, everything through esc(). */
+  function interview(gwIdx) {
+    try {
+      const roster = typeof GAZETTE_INTERVIEWS !== 'undefined' ? GAZETTE_INTERVIEWS : [];
+      const ent = roster.find(e => e.gw === gwIdx);
+      if (!ent) return '';
+      const m = (state.managers || []).find(x => ent.who.test(managerName(x.id)));
+      if (!m) return '';
+      const notes = [...(ent.notes || [])];
+      if (ent.tradeCheck) {
+        // the ledger fact-checks "Trading, what's that?" at press time
+        const traded = state.transfers.some(t => t.trade && t.managerId === m.id);
+        notes.push(traded
+          ? `‡ The ledger, consulted after going to press, records completed trade business involving ${teamName(m.id)} this season. “What’s that” is therefore a matter between the manager and the ledger.`
+          : '‡ The ledger confirms it: no trades. The first entirely accurate answer in the history of this feature.');
+      }
+      return `<div class="prog-story prog-lead-story prog-interview">
+        <div class="prog-story-kicker">${esc(ent.kicker)}</div>
+        <div class="prog-head">${esc(ent.head)}</div>
+        <div class="prog-by">${esc(ent.by)}</div>
+        ${ent.paywall ? `<div class="prog-paywall">${esc(ent.paywall)}</div>` : ''}
+        ${(ent.intro || []).map(p => `<p>${esc(p)}</p>`).join('')}
+        ${ent.qa.map(([q, a]) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(a)}</p>`).join('')}
+        ${notes.length ? `<div class="prog-int-notes">${notes.map(n => `<p>${esc(n)}</p>`).join('')}</div>` : ''}
+        ${ent.tail ? `<p class="prog-match-detail">${esc(ent.tail)}</p>` : ''}
+      </div>`;
+    } catch (e) { return ''; }
+  }
+
   /* ---------- the edition ---------- */
 
   function build(gwIdx, used) {
@@ -698,6 +733,7 @@ window.Gazette = (() => {
       <div class="prog-cols">${lead}${second}</div>
       ${nibBlock}
       ${stakes}
+      ${interview(gwIdx)}
       ${departments(gwIdx, facts, used)}
     </div>`;
   }
@@ -1029,5 +1065,5 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, draftSpecial, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  return { review, preview, draftSpecial, interview, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

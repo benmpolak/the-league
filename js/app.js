@@ -9238,12 +9238,16 @@ function previewArticle(i, pick) {
     'The Committee wishes all twelve managers the fortune they deserve. Exactly that much.',
     'Lineups lock at kick-off. Regret locks in shortly afterwards.',
   ], i + 3);
+  // Meet the Managers (Ian's commission) — an issue keyed to this gameweek
+  // prints here first; its .prog-head makes it the front-page splash
+  const sitdown = (typeof Gazette !== 'undefined' && Gazette.interview) ? Gazette.interview(i) : '';
   return `<div class="prog-art">
     <p class="prog-lead">${esc(lead)}</p>
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${draftRecap ? `<p>${esc(draftRecap)}</p>` : ''}
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
     <div class="prog-sec">Around the grounds</div><p>${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
+    ${sitdown}
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }
