@@ -82,6 +82,24 @@ let pass = 0, fail = 0;
       (() => { teamView.gw = null; viewTeam(); return teamView.gw; })() === 1,
       String(teamView.gw));
 
+    // Marc, 27 Aug: "it is clearly wrong because it says current next to
+    // gameweek 1" — the SELECTION had moved on while the label had not, so the
+    // picker sat on GW2 with the tag still pinned to a finished round.
+    (() => {
+      teamView.gw = null;
+      const html = viewTeam();
+      const opts = [...html.matchAll(/<option value="(\d+)"[^>]*>([^<]*)<\/option>/g)]
+        .map(m => ({ i: +m[1], text: m[2] }));
+      const tagged = opts.filter(o => o.text.includes('(current)'));
+      t('exactly one gameweek is tagged current', tagged.length === 1,
+        JSON.stringify(tagged.map(o => o.text)));
+      t('and it is GW2, not the round that has finished',
+        tagged[0] && tagged[0].i === 1, tagged[0] ? tagged[0].text : 'none');
+      t('the finished round is marked as finished instead',
+        (opts.find(o => o.i === 0) || {}).text.includes('✓'),
+        (opts.find(o => o.i === 0) || {}).text);
+    })();
+
     t('the real-fixtures page opens on GW2',
       (() => { fxView.gw = null; viewFixtures(); return fxView.gw; })() === GAMEWEEKS[1].n,
       `${fxView.gw} (want ${GAMEWEEKS[1].n})`);

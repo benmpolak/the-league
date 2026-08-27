@@ -6663,7 +6663,13 @@ function viewTeam() {
   // lineups lock at the gameweek deadline, like the real thing
   const locked = !demoMode && gwHasStarted(gw);
   const cur = currentGwIndex();
-  const ownedNow = ownedIdsAt(cur);
+  const ownedNow = ownedIdsAt(cur);   // ownership is a calendar question
+  // ...but "current" in the picker is not. Marc, 27 Aug 2026: "it is clearly
+  // wrong because it says current next to gameweek 1" — GW1 was finished and
+  // locked, and the tag sat on it because the label read the calendar index
+  // while the selection had already moved on. The round you are picking for is
+  // the current one, which is what the fixtures page has always said.
+  const curLabel = planningGwIndex();
 
   const countsBar = ['GK', 'DF', 'MF', 'FW'].map(pos => {
     const [lo, hi] = XI_RULES[pos];
@@ -6676,7 +6682,7 @@ function viewTeam() {
   ${notMine ? `<div class="card" style="margin-bottom:12px;border-color:var(--accent)"><p style="font-size:13px">&#128065;&#65039; You're looking at <b>${esc(teamName(mid))}</b> — ${esc(managerName(mid))}'s team${isCommissioner() ? '. Commissioner changes require confirmation.' : '. Look, don\'t touch.'} <button class="btn small" id="backToMine" style="margin-left:8px">Back to my team</button></p></div>` : ''}
   <div class="team-controls card">
     <select id="teamMgr" aria-label="Manager">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
-    <select id="teamGw" aria-label="Gameweek">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === cur ? ' (current)' : ''}</option>`).join('')}</select>
+    <select id="teamGw" aria-label="Gameweek">${GAMEWEEKS.map((g, i) => `<option value="${i}" ${i === gw ? 'selected' : ''}>GW${g.n} — ${g.label}${i === curLabel ? ' (current)' : ''}${gwStatus(i) === 'final' ? ' ✓' : ''}</option>`).join('')}</select>
     <span class="tag">${locked ? (gwIsOver(gw) ? 'Gameweek finished — locked' : 'Deadline passed — locked') : `Lineup open — locks ${new Date(gwFrom(gw)).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`}</span>
     <span class="tag">GW points: <b class="gold">&nbsp;${liveScoreHtml(mid, gw)}</b></span>
     <span class="tag" style="font-weight:400">${lineupStamp(mid, gw)}</span>
