@@ -140,8 +140,15 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
      The Post-Draft Special must survive GW1 settling — it vanished before. */
   const week = await page.evaluate(async () => {
     const out = {};
+    const realNow = Date.now;
+    // The Draft Special is deliberately a seven-day back page. Pin this
+    // assertion inside that window instead of letting the wall calendar turn
+    // it red on day eight (28 Aug), then move beyond the boundary explicitly.
+    const specialAt = gazetteEditions().find(e => e.key === 'special')?.printed;
+    Date.now = () => specialAt + 6 * 864e5;
     document.querySelectorAll('.overlay').forEach(o => o.remove());
-    gazetteSheet();
+    try { gazetteSheet(); }
+    catch (e) { Date.now = realNow; throw e; }
     const room = () => document.querySelector('.gazette-room');
     const rules = () => [...(room()?.querySelectorAll('.prog-backpage-rule') || [])].map(x => x.textContent.trim());
     const nav = () => [...(room()?.querySelectorAll('[data-progw]') || [])].map(b => b.dataset.progw);
@@ -154,8 +161,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     out.backPlate = room()?.querySelector('.prog-date')?.textContent || '';
     // eight days on: the special has aged out of the week stack but keeps
     // its archive slot forever
-    const realNow = Date.now;
-    Date.now = () => realNow() + 8 * 864e5;
+    Date.now = () => specialAt + 8 * 864e5;
     try { gazetteSheet(); out.agedRules = rules(); out.agedNav = nav(); }
     finally { Date.now = realNow; }
     room()?.closest('.overlay')?.remove();
