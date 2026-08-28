@@ -79,6 +79,36 @@ def main():
     st, err = get('phase')
     print(f'phase           : {st if not err else "unreadable — " + err}')
 
+    # The live overlay, which is what the Vidiprinter actually diffs during a
+    # match. Marc, 28 Aug 2026, 40 minutes into Palace v City: "why is the
+    # vidiprinter not working" — and the honest answer from a sandbox that
+    # cannot reach Firebase was "one of the two lanes is provably dead and I
+    # cannot see the other". This makes the other one readable.
+    #
+    # liveTick writes this every minute off the FPL API, independently of the
+    # Pages feed, so a dead data refresh should NOT stop it. If the overlay is
+    # fresh and carries players, the fast lane is doing its job and the tape's
+    # silence is a client question; if it is stale or absent during a live
+    # window, the fast lane is the fault. Scalars only — a stamp, a gameweek
+    # and a count. No names, no stats, no rosters.
+    lv, err = get('liveStats')
+    if err:
+        print(f'live overlay    : unreadable — {err}')
+    elif not lv:
+        print('live overlay    : absent (no live match, or the fast lane is not writing)')
+    else:
+        t = lv.get('t')
+        players = len(lv.get('playerStats') or {})
+        fx = lv.get('fx') or []
+        started = sum(1 for f in fx if isinstance(f, dict) and f.get('started'))
+        when = 'unknown'
+        if isinstance(t, (int, float)):
+            age = (datetime.now(timezone.utc).timestamp() * 1000 - t) / 60000
+            when = f'{datetime.fromtimestamp(t / 1000, timezone.utc):%a %d %b %H:%M}Z ({age:.0f}m ago)'
+        print(f'live overlay    : GW{lv.get("n")}  written {when}')
+        print(f'   players with stats : {players}')
+        print(f'   fixtures started   : {started} of {len(fx)}')
+
     # the run ledger says what the scheduler actually did, which is the bit
     # that distinguishes "ran", "skipped: not due" and "deferred"
     runs, err = get('waiverRuns')
