@@ -151,9 +151,20 @@ let pass = 0, fail = 0;
         was > 0 && was < playerXp(victim),
         `carrying ${was.toFixed(2)} of a possible ${playerXp(victim).toFixed(2)}`);
       victim.status = 'i';
+      // ...and somebody comes on for him. This used to assert the drop was his
+      // whole contribution, which quietly assumed a ruled-out starter is simply
+      // lost — the ten-man projection Marc caught on 28 Aug 2026 ("why isnt it
+      // identifying that neto will come on"). The auto-sub replaces him, so the
+      // side loses what he carried LESS what his replacement brings. With no
+      // replacement available `gained` is 0 and this is the old assertion.
+      const rep = forecastSubs(mid, GW).find(x => x.out === victim.id);
+      const inc = rep && PLAYER_BY_ID[rep.in];
+      const gained = inc ? playerXp(inc) * startChance(inc, GW) : 0;
       const after = teamOutlook(mid, GW).exp;
-      t('ruling a man out removes exactly what he was contributing, no more',
-        near(before - after, was, 0.01), `dropped ${(before - after).toFixed(2)}, he was carrying ${was.toFixed(2)}`);
+      t('ruling a man out costs what he carried, less whatever comes on for him',
+        near(before - after, was - gained, 0.02),
+        `dropped ${(before - after).toFixed(2)}; he carried ${was.toFixed(2)}, `
+        + `${inc ? `${inc.name} brings ${gained.toFixed(2)}` : 'nobody could replace him'}`);
       t('and the projection did not go up', after < before, `${after.toFixed(2)} vs ${before.toFixed(2)}`);
       victim.status = 'a';
     })();

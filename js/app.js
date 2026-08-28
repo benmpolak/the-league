@@ -1053,8 +1053,12 @@ const playerXp = p => {
 };
 // the pre-kickoff projection, weighted the same way as the live one: a man
 // carrying a doubt is not worth a full afternoon (Marc, 24 Aug 2026)
+// liveXI, not lineupFor: the same projected eleven teamOutlook uses, so the
+// duel heading and the win bar underneath it cannot disagree (r3ui pins that
+// they match, and caught it the moment forecast subs moved one and not the
+// other — Marc, 28 Aug 2026)
 const projectedGwScore = (mid, gwIdx) =>
-  Math.round(lineupFor(mid, gwIdx).reduce((t, pid) => {
+  Math.round(liveXI(mid, gwIdx).xi.reduce((t, pid) => {
     const p = PLAYER_BY_ID[pid];
     return t + playerXp(p) * startChance(p, gwIdx);
   }, 0));
@@ -3083,6 +3087,14 @@ function effectiveXI(mid, gwIdx) {
    that i will get 2 more points ... the projection is slightly off")
    Built on effectiveXI's output, so once the round IS done this finds nothing
    left to do and the numbers can't be counted twice. */
+// every fixture his club had this gameweek has whistled. A blank gameweek (no
+// fixture at all) proves nothing — he cannot be written off on the evidence of
+// a match that was never played.
+function clubRoundOver(p, gwN) {
+  if (!p) return false;
+  const fx = teamFixturesInGw(p.team, gwN);
+  return fx.length > 0 && fx.every(fxOver);
+}
 function pendingSubs(mid, gwIdx, base) {
   const gwN = GAMEWEEKS[gwIdx]?.n;
   if (gwN == null) return [];
@@ -3094,12 +3106,7 @@ function pendingSubs(mid, gwIdx, base) {
   // certainly out: every fixture his club had this week whistled, no minutes.
   // A blank gameweek (no fixture at all) proves nothing — he can't be replaced
   // on the evidence of a match that was never played.
-  const clubDone = pid => {
-    const p = PLAYER_BY_ID[pid];
-    if (!p) return false;
-    const fx = teamFixturesInGw(p.team, gwN);
-    return fx.length > 0 && fx.every(fxOver);
-  };
+  const clubDone = pid => clubRoundOver(PLAYER_BY_ID[pid], gwN);
   // certainly in: he is already on the pitch, or has been
   const bench = benchFor(mid, gwIdx).filter(p => appearedInGw(p.id, gwIdx));
   const subs = [];
@@ -3126,6 +3133,63 @@ function pendingSubs(mid, gwIdx, base) {
 }
 // the eleven the projection should believe in: settled subs plus certain ones.
 // Display and settlement stay separate — this never feeds gwManagerPoints.
+/* ----- the sub you can SEE coming, before he has kicked a ball -----
+   Marc, 28 Aug 2026, looking at a locked GW2 side: "why isnt it identifying
+   that neto will come on".
+
+   pendingSubs deliberately will not answer that. It banks points that are
+   certain but not yet awarded, so it requires the incoming man to have ALREADY
+   played — you cannot bank a return from someone who has not kicked a ball,
+   and Neto's Chelsea play on Sunday.
+
+   The projection, though, was quietly wrong, and that is the real complaint.
+   Mateta is injured until 11 October, Palace have played, he never appeared —
+   so startChance returns 0 and he sits in the projected XI contributing
+   nothing while nobody is promoted behind him. The side projects as ten men.
+   The auto-sub WILL bring Neto on at settlement, and the forecast should say
+   so rather than quietly banking a hole.
+
+   PROJECTION ONLY. effectiveXI, gwManagerPoints and the live score never see
+   this: a forecast must not move a settled number.
+
+   Known soft spot, and it is the same calibration debt as the Scout weights:
+   the promoted man is credited at his startChance, which asks "will he START".
+   For an auto-sub the question is really "will he get on at all", which is a
+   higher number — Scout leaving Neto out of Chelsea's XI reads 0.2 here, when
+   a substitute appearance would do. Under-crediting him is the conservative
+   error, so it stands until there is a season of appearances to calibrate on. */
+function forecastSubs(mid, gwIdx, base) {
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return [];
+  const xi = [...(base || effectiveXI(mid, gwIdx).xi)];
+  // he cannot play: his club's round is over and he never appeared, or the
+  // paperwork rules him out already (injured, banned, departed)
+  const cannotPlay = pid => {
+    const p = PLAYER_BY_ID[pid];
+    if (!p || appearedInGw(pid, gwIdx)) return false;
+    return clubRoundOver(p, gwN) || startChance(p, gwIdx) === 0;
+  };
+  // he still might: not ruled out himself, and his club still has a game left
+  const bench = benchFor(mid, gwIdx).filter(p =>
+    !appearedInGw(p.id, gwIdx) && startChance(p, gwIdx) > 0 && !clubRoundOver(p, gwN));
+  const subs = [];
+  for (const pid of [...xi]) {
+    if (!cannotPlay(pid)) continue;
+    const idx = xi.indexOf(pid);
+    for (const cand of bench) {
+      if (xi.includes(cand.id)) continue;
+      const trial = [...xi];
+      trial[idx] = cand.id;
+      const c = xiCounts(trial);
+      if (['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1])) {
+        xi[idx] = cand.id;
+        subs.push({ out: pid, in: cand.id });
+        break;
+      }
+    }
+  }
+  return subs;
+}
 function liveXI(mid, gwIdx) {
   const eff = effectiveXI(mid, gwIdx);
   const xi = [...eff.xi];
@@ -3134,7 +3198,13 @@ function liveXI(mid, gwIdx) {
     const k = xi.indexOf(s.out);
     if (k >= 0) xi[k] = s.in;
   }
-  return { xi, subs };
+  // then the ones we can see coming but cannot bank yet (Marc, 28 Aug 2026)
+  const forecast = forecastSubs(mid, gwIdx, xi);
+  for (const s of forecast) {
+    const k = xi.indexOf(s.out);
+    if (k >= 0) xi[k] = s.in;
+  }
+  return { xi, subs, forecast };
 }
 // what those certain subs will add to the score at the final whistle
 function pendingSubPoints(mid, gwIdx) {
@@ -3157,9 +3227,20 @@ function subMarks(mid, gwIdx) {
     mark(s.in, 'in', false, nm(s.out), `Auto-sub — came on for ${nm(s.out)}`);
     mark(s.out, 'out', false, nm(s.in), `Auto-subbed out — never played. ${nm(s.in)} took his place`);
   }
-  for (const s of pendingSubs(mid, gwIdx, settled.xi)) {
+  const pend = pendingSubs(mid, gwIdx, settled.xi);
+  for (const s of pend) {
     mark(s.out, 'out', true, nm(s.in), `Never got on — ${nm(s.in)} replaces him at the final whistle`);
     mark(s.in, 'in', true, nm(s.out), `Coming on for ${nm(s.out)} — his points land at the final whistle`);
+  }
+  // and the one we can see coming before he has kicked a ball (Marc, 28 Aug
+  // 2026: "why isnt it identifying that neto will come on"). Drawn as an
+  // outline, not a solid arrow: his club has not played, so this is a forecast
+  // rather than a sub that has happened, and it must not read like one.
+  const xiSoFar = [...settled.xi];
+  for (const s of pend) { const k = xiSoFar.indexOf(s.out); if (k >= 0) xiSoFar[k] = s.in; }
+  for (const s of forecastSubs(mid, gwIdx, xiSoFar)) {
+    if (!marks[s.out]) marks[s.out] = `<span class="sub-arrow out fc" title="Cannot play — ${nm(s.in)} is expected to replace him">&#9663; <span class="sub-for">${nm(s.in)}</span></span>`;
+    if (!marks[s.in]) marks[s.in] = `<span class="sub-arrow in fc" title="Expected to come on for ${nm(s.out)} — he has not played yet, so nothing is banked">&#9653; <span class="sub-for">${nm(s.out)}</span></span>`;
   }
   return marks;
 }

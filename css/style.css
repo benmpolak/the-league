@@ -1074,6 +1074,10 @@ tr.st-red .pname { color: #ff9c9c; }
 /* the points those subs will add, sat next to the settled score */
 .pend-pts { font-size: .72em; font-weight: 700; color: #3fb96d; opacity: .85; vertical-align: super; }
 @media (prefers-reduced-motion: reduce) { .sub-arrow.pend { animation: none; } }
+/* a sub we can see coming before the man has kicked a ball (Marc, 28 Aug 2026).
+   Hollow arrow, no pulse, dimmer: the solid ones are substitutions that have
+   happened and are worth points; this is a forecast and must not read as one. */
+.sub-arrow.fc { opacity: .72; font-weight: 700; }
 
 /* phones: stable app-style bottom navigation; secondary pages live under More */
 @media (max-width: 700px) {
