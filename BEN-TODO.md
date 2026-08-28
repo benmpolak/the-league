@@ -8,6 +8,95 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 06. GITHUB'S SCHEDULER HAS STOPPED — move the FPL fetch to a Cloud Function (28 Aug)
+
+**One fault, and almost everything that went wrong this week came off it.**
+
+`fpl.yml` asks for a run every five minutes — 288 a day. Counted off the commit
+log for 28 Aug:
+
+| Job | Cron asks for | Actually ran, 24h |
+|---|---|---|
+| `fpl.yml` — data refresh | ~288 | **5** (gaps of 6h, 6h, 3h) |
+| `live.yml` — live fast lane | ~288 | **~3**, last at 12:12Z, none through the 19:00 kickoff |
+| `backup.yml` — league backup | 24 | **2** (a 13-hour hole, 05:17 → 18:33) |
+
+One of those five `fpl.yml` runs was Marc pressing the button by hand. On
+26 Aug the hourly backup ran roughly hourly, as designed; by the 28th it managed
+twice. **It has been degrading since 26 Aug and is still degrading.**
+
+**What it broke, in order:**
+
+- **Waivers, Friday morning.** `functions/index.js:298` refuses to run on a feed
+  older than 90 minutes. The feed was 368 minutes old, so the run threw and no
+  claims settled. Marc ran `fpl.yml` by hand at 10:40; `waiverTick` picked it up
+  at 11:07 and waivers went through.
+- **The scoreboard**, hours behind during live matches.
+- **The Vidiprinter**, blank through Palace v City — `data/stats.json` held zero
+  GW2 player stats three hours after kickoff, so there was nothing to report.
+
+**This is GitHub, not us.** `liveTick` — the Cloud Function on Firebase's own
+scheduler, `* * * * *` — ran perfectly all evening. Read off the live public
+node at 19:44Z, mid-match:
+
+    live overlay    : GW2  written Fri 28 Aug 19:44Z (1m ago)
+       players with stats : 22
+       fixtures started   : 1 of 10
+
+Right round, right count, one minute old, while every GitHub cron on the repo
+sat idle. Firebase's scheduler is keeping its promises; GitHub's is not.
+
+### What is already done, and what it is not
+
+`.github/workflows/matchwatch.yml` + `scripts/matchwatch.py` (pushed 28 Aug).
+GitHub throttles the *scheduler*, not a job already running, and this repo is
+public so Actions minutes are free. So instead of 288 short runs it asks for a
+few long ones: each fire reads `data/fixtures.json`, and if a match window is
+open it fetches every 2½ minutes until it closes. Three legs chained with
+`needs:` — which always fires, unlike cron — so one trigger covers ~15 hours.
+Off-matchday it exits in seconds. Windows open 75 minutes before kickoff (team
+sheets) and close 150 after the last one (bonus points settling); nearby
+kickoffs merge, so the lull between the 14:00s and a 16:30 does not drop the
+watch. `test/matchwatch.test.js` drives the real GW2 card through it, 19 checks.
+
+It worked on the first pass: pushed at 21:06Z, committed a refresh eight seconds
+later, feed age 0 minutes, 30 GW2 players.
+
+**But it is a workaround and should be read as one.** It still depends on
+*something* firing to start it — four scattered crons, any push, or the button.
+It burns a runner for hours. And it does nothing for `backup.yml`, which is the
+one with real stakes: thirteen hours without a league backup is a data-loss
+window, not an inconvenience.
+
+### What only you can do
+
+**Move the FPL fetch to a Cloud Function, next to `liveTick`.** Same schedule
+mechanism that demonstrably works, no runner, no throttling, and it fixes
+waivers, the live scoreboard and the Vidiprinter's canonical lane in one go.
+`scripts/fetch_fpl.py` is the logic to port; `pushLiveOnce` is the shape to copy.
+The awkward part is that the Pages feed is a *committed file* and a Cloud
+Function cannot push to git — so either it writes the feed to RTDB and the
+client prefers that (closer to what `liveStats` already does), or it fires a
+`repository_dispatch` and a workflow does the commit. The first is cleaner and
+removes git from the matchday path entirely.
+
+**And give `backup.yml` the same treatment**, or accept that a backup is a
+twice-daily thing and say so in the runbook. It is currently neither.
+
+Order of play, none of it urgent enough to do tonight:
+
+1. Nothing. `matchwatch` covers this weekend; tomorrow's 11:30 kickoff needs no
+   button pressed.
+2. Decide RTDB-feed vs `repository_dispatch` for the fetch.
+3. Port and deploy. Then `fpl.yml` and `matchwatch.yml` can both be retired, and
+   `live.yml` — already documented as the independent fallback to `liveTick` —
+   is doing nothing useful three runs a day.
+
+Raised by Marc, 28 Aug: *"why, do i have to do this. you know the timings,
+surely we can automate it."* He was right that it should not be a button.
+
+---
+
 ## 04. THE HOLDING PEN — the rule was wrong, and this branch fixes it (21 Aug)
 
 Branch: `claude/holding-pen-arrivals`, cut fresh from main.
@@ -112,6 +201,22 @@ So the outstanding item in this section is now just one:
   three waiver assertions. It does not fail; it stops testing. It is the one I
   would still fix, and it is the same root cause — pinning live data rather
   than a seeded fixture. Ben's N1 fix is the pattern to copy.
+
+**Re-measured 28 Aug, and it needs splitting in two — the two halves are not
+the same item.**
+
+- The `resolveWaivers` block is **still skipping**, verified by running with
+  `VERBOSE=1`: `waivers: (skipped — no suitable free agent in demo pool)`. Still
+  the one worth fixing, still wants a seeded pool rather than the live one.
+- The demo-season `waiverOrder` comparison, by contrast, **is** running and
+  earned its keep: it caught a real clock bug this evening. The suite went red
+  at 17:30Z on the 28th with `waiverOrder 1/3/5` when the wall calendar rolled
+  into GW2 while the demo stayed pinned to GW1, so the engine read `transferGw`
+  2 against the app's 1. The harness was passing `now: () => Date.now()` while
+  its own comment said to freeze the clock inside the demo gameweek's window.
+  Fixed in the test — with the clock frozen correctly the engine and app.js
+  agree on every check, so no engine or app change was needed. Third
+  wall-calendar expiry in a week, after N1 and the Gazette smoke.
 
 ---
 
