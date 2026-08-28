@@ -19,6 +19,14 @@ const SB = 'the-league-sandbox';
   const { chk } = run;
   const { players, gws } = T.genTestData();
   const fixtureDir = path.join(__dirname, 'fixtures', 'testdata');
+  // Reproduce 28 Aug: GitHub's best-effort refresh had not run for two hours,
+  // but the already-finished round was canonical and safe to rank from. Keep
+  // the whole functions suite on that old timestamp; any blanket age veto
+  // will break the real waiver tests below before this assertion can lie.
+  const statsFixturePath = path.join(fixtureDir, 'data', 'stats.json');
+  const staleStatsFixture = JSON.parse(fs.readFileSync(statsFixturePath, 'utf8'));
+  staleStatsFixture.generated = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  fs.writeFileSync(statsFixturePath, JSON.stringify(staleStatsFixture));
   const server = await T.serveTestData(fixtureDir);
   await T.wipe();
 
@@ -267,8 +275,12 @@ const SB = 'the-league-sandbox';
   }
   chk('claims are invisible to other managers (rules)', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/private/${members[3].uid}/claims`, { token: tok2 })).status));
   chk('non-commissioner cannot run waivers', (await T.mutate(LG, 'waiverRunNow', {}, tok2)).error?.status === 'PERMISSION_DENIED');
+  const fixtureStats = JSON.parse(fs.readFileSync(statsFixturePath, 'utf8'));
+  chk('waiver repro feed is over 90 minutes old (the old blanket veto is exercised)',
+    Date.now() - new Date(fixtureStats.generated).getTime() > 90 * 60 * 1000,
+    fixtureStats.generated);
   const wr = await T.mutate(LG, 'waiverRunNow', {}, tok1);
-  chk('waiver run executes', !wr.error, JSON.stringify(wr.error));
+  chk('a safe waiver run is not blocked solely by feed age', !wr.error, JSON.stringify(wr.error));
   const prizeWinners = (wr.result?.executed || []).filter(e => e.in === prize);
   chk('contested claim: exactly one winner', prizeWinners.length === 1, JSON.stringify(wr.result));
   const clA = (await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/claims`).get()).val();

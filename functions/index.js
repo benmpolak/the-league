@@ -294,9 +294,6 @@ async function runWaivers(league, runId, trigger, failAt) {
   }
   try {
     const ctx = await loadCtx();
-    if (ctx.feedGenerated && Date.now() - new Date(ctx.feedGenerated).getTime() > 90 * 60 * 1000) {
-      throw new HttpsError('failed-precondition', 'the stats feed is stale (>90 min old) — waivers refuse to run on old scores. Check the Refresh FPL data Action.');
-    }
     const eng = ctx.eng;
     const state = await loadState(league, ctx, { withPrivate: true });
     let plan = claim.snapshot.val()?.plan || null;
@@ -313,6 +310,13 @@ async function runWaivers(league, runId, trigger, failAt) {
         return { skipped: 'chairman' };
       }
       if (trigger === 'schedule' && !eng.waiverRunDue(state)) { await runRef.update({ status: 'done', result: 'skipped: not due', finishedAt: Date.now() }); return { skipped: 'not due' }; }
+      // Do not veto a run merely because the feed's generated timestamp is
+      // old. GitHub's cron is best-effort and on 28 Aug that blanket 90-minute
+      // check held a perfectly safe pre-deadline run for two hours. What can
+      // corrupt priority is narrower: a round that should have settled but
+      // has not. Judge that from fixtures + canonical stats below. A stale
+      // feed in which every played round is final is safe; a fresh feed with
+      // a regressed/empty played round is not.
       // A round that by the clock should long since have settled but is not
       // final means the feed has regressed under us — priority computed now
       // would miss that round, or fall all the way back to reverse draft,
