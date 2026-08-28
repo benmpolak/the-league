@@ -712,7 +712,6 @@ function buildDemoState() {
   s.tradeBlock = { 2: [s.draft.picks.find(pk => pk.managerId === 2).playerId] };
   return s;
 }
-let vidiStash = null;
 async function enterDemo() {
   if (demoMode) return;
   demoBackup = state;
@@ -723,20 +722,8 @@ async function enterDemo() {
   state.view = NAV_ITEMS.some(([k]) => k === hv) ? hv : 'dash'; // demo opens at home too
   teamView.gw = 0;
   fxView.gw = GAMEWEEKS[0]?.n || 1;
-  // a live-looking Vidiprinter tape from real drafted names (memory only —
-  // the device's real tape is stashed and restored on exit)
-  const dsq = mid => state.draft.picks.filter(pk => pk.managerId === mid).map(pk => PLAYER_BY_ID[pk.playerId]);
-  const dfw = mid => dsq(mid).find(p => p.pos === 'FW') || dsq(mid)[0];
-  const ddf = mid => dsq(mid).find(p => p.pos === 'DF') || dsq(mid)[0];
-  vidiStash = vidiFeed;
-  vidiFeed = [
-    { txt: `⚽ 2 GOALS · 🅰️ assist — ${dfw(8).name} (${dfw(8).club}) — ${teamName(8)} +13 (13!!)` },
-    { txt: `🚨📯 LOBUS KLAXON 📯🚨 ${dfw(8).name} — certified lobus — has SCORED. Great feet for a big man.` },
-    { txt: `⚽ GOAL — ${dfw(5).name} (${dfw(5).club}) — ${teamName(5)} +5` },
-    { txt: `🟥 RED CARD — ${ddf(3).name} (${ddf(3).club}) — ${teamName(3)} -5` },
-    { txt: `🟨 booked — ${ddf(1).name} (${ddf(1).club}) — ${teamName(1)} -1` },
-    { txt: `⚽ GOAL — ${dfw(12).name} (${dfw(12).club}) — benched by ${teamName(12)} (!)` },
-  ].map((x, i) => ({ ts: Date.now() - (i + 2) * 7 * 60 * 1000, gw: 1, ...x }));
+  // the demo's Vidiprinter needs no hand-written tape any more: it derives
+  // from the demo gameweek's stats like every other device does (Marc, 28 Aug)
   render();
   toast('Demo mode — fake draft, fake results. Your real league is untouched.');
   // pull the full real season in, so every feature has something to show
@@ -764,7 +751,6 @@ function exitDemo() {
   teamView.gw = null;
   fxView.gw = null;
   demoBackup = null;
-  if (vidiStash !== null) { vidiFeed = vidiStash; vidiStash = null; }
   // any league changes that landed while we were in the demo were swallowed —
   // apply the freshest snapshot now so we return to the real, current league
   if (_snapSeen && netOn()) applySharedSnapshot(_snapLatest);
@@ -2414,7 +2400,7 @@ function applyLiveStats() {
   // from gwManagerPoints, which reads state (Ben, 23 Aug: "some of the scores
   // looked wrong" — the tape was scoring ties off stale stats and a raw XI)
   if (lv.t !== vidiLiveT && state.phase === 'season') {
-    try { vidiDiff(lv.n - 1, prevPS, lv.playerStats); } catch (e) { console.warn('[vidi]', e); }
+    try { vidiKlaxon(lv.n - 1, prevPS, lv.playerStats); } catch (e) { console.warn('[vidi]', e); }
     vidiLiveT = lv.t;
   }
 }
@@ -3416,62 +3402,42 @@ function fxYtHref(f) {
 function anyMatchLive() { return state.fixtures.some(f => f.started && !fxOver(f)); }
 
 /* ---- the Vidiprinter (ledger #8 — Tussie's Soccer-Saturday ticker) ----
-   Every stats sync is diffed against the last; anything that happened
-   comes off the tape, newest first. Kept per device, like a real telly. */
-const VIDI_KEY = `${LS_NS}-vidi`;
-const VIDI_ERA_KEY = `${LS_NS}-vidi-era`;
+
+   DERIVED from the round's stats, not from what this device happened to watch.
+
+   Marc, 28 Aug 2026, mid Palace v City: "its definitely the first but i think
+   this shows a misunderstanding of what the vidiprinter is. its a record of
+   everything live, shouldnt be linked to anyones device."
+
+   He is right, and the old design had it backwards. The tape used to be built
+   by diffing each stats sync against the last and appending to a localStorage
+   feed — so it recorded what YOUR phone was awake to see. Three consequences,
+   all of them wrong: two managers watching the same match got different tapes;
+   the timestamp on a line was when your device noticed, not when the thing
+   happened; and anything that occurred before you opened the app was lost for
+   good, because the first snapshot became a silent baseline. That last one is
+   what emptied the tape during Palace v City — with the Pages feed three hours
+   stale and holding no GW2 stats at all, the baseline was EMPTY, so the guard
+   against printing a whole gameweek at once swallowed the entire match.
+
+   A player's cumulative counters for the round already ARE the record: a man
+   sitting on g:2 scored twice, whether or not anyone's phone was watching. So
+   the tape is now computed from those counters every render. Same input, same
+   output, on every device, complete from the moment you open it, and nothing
+   kept in localStorage at all.
+
+   What that costs, honestly: FPL's feed carries no minute-of-event, so true
+   chronology is not recoverable. It never was — the old per-line clock was
+   device-local fiction. Lines are grouped by match instead, live games first,
+   and each carries its fixture and the score in it rather than a fake time. */
 const VIDI_WORDS = { 10: 'TEN', 11: 'ELEVEN', 12: 'TWELVE', 13: 'THIRTEEN', 14: 'FOURTEEN', 15: 'FIFTEEN', 16: 'SIXTEEN' };
-let vidiFeed = [];
-try { vidiFeed = JSON.parse(localStorage.getItem(VIDI_KEY)) || []; } catch { vidiFeed = []; }
-// scrub the tape itself, not just new arrivals (Ben, 25 Aug: Castagne is
-// "still x3") — the triplicate was PRINTED before the dedupe existed, so it
-// lives on in localStorage where a filter on incoming lines never touches
-// it. Collapse repeats on the saved tape: same key, or for the old keyless
-// lines the same gameweek + text. The original print survives; keyed lines
-// with different keys (a genuine second goal) both stay.
-(function vidiScrub() {
-  if (!vidiFeed.length) return;
-  const keys = new Set(), legacyTxt = new Set(), keep = [];
-  for (const l of [...vidiFeed].reverse()) { // oldest first — keep the first print
-    const txtSig = `${l.gw}:${l.txt}`;
-    if (l.key ? (keys.has(l.key) || legacyTxt.has(txtSig)) : legacyTxt.has(txtSig)) continue;
-    if (l.key) keys.add(l.key); else legacyTxt.add(txtSig);
-    keep.push(l);
+// the round the tape is reporting on: the latest one that has any stats
+function vidiRound() {
+  for (let i = GAMEWEEKS.length - 1; i >= 0; i--) {
+    const ps = gwEvent(i)?.playerStats;
+    if (ps && Object.keys(ps).length) return i;
   }
-  if (keep.length !== vidiFeed.length) {
-    vidiFeed = keep.reverse();
-    try { localStorage.setItem(VIDI_KEY, JSON.stringify(vidiFeed)); } catch { /* fine */ }
-  }
-})();
-// a NEW draft is a new era — the old tape's "GW2" lines from a previous
-// sandbox season confused Marc mid-mock. Stamp the tape with the draft it
-// belongs to and wipe it when the league re-drafts.
-function vidiEraCheck() {
-  const era = String(state.draftPool?.at || '');
-  if (!era) return;
-  if (localStorage.getItem(VIDI_ERA_KEY) !== era) {
-    vidiFeed = [];
-    try { localStorage.setItem(VIDI_KEY, '[]'); localStorage.setItem(VIDI_ERA_KEY, era); } catch { /* fine */ }
-  }
-}
-function vidiPush(lines) {
-  if (!lines.length) return;
-  vidiEraCheck();
-  // the same incident must never print twice (Ben, 25 Aug: Castagne "booked"
-  // three times). Two sync lanes diff against different baselines, and FPL's
-  // live stats flicker — a card drops out of one payload and returns in the
-  // next, re-emitting the event. Identity = player + gw + cumulative counts,
-  // so a re-emission is skipped but a genuine second goal still prints.
-  const seen = new Set(vidiFeed.map(l => l.key).filter(Boolean));
-  // lines printed before keys existed can't be matched by key — a flicker
-  // re-emitting one of those would print a fresh, keyed copy next to the
-  // old keyless one. Match those on gameweek + text instead (keyless only,
-  // so two keyed lines that read the same — a second assist — both print).
-  const legacyTxt = new Set(vidiFeed.filter(l => !l.key).map(l => `${l.gw}:${l.txt}`));
-  lines = lines.filter(l => !(l.key && seen.has(l.key)) && !legacyTxt.has(`${l.gw}:${l.txt}`));
-  if (!lines.length) return;
-  vidiFeed = [...lines, ...vidiFeed].slice(0, 60);
-  try { localStorage.setItem(VIDI_KEY, JSON.stringify(vidiFeed)); } catch { /* tape full, carry on */ }
+  return null;
 }
 const VIDI_EVENTS = [
   ['g', '⚽', n => n > 1 ? `${n} GOALS` : 'GOAL'],
@@ -3482,68 +3448,85 @@ const VIDI_EVENTS = [
   ['rc', '🟥', () => 'RED CARD'],
   ['yc', '🟨', () => 'booked'],
 ];
-function vidiDiff(gwIdx, oldPS, newPS) {
-  if (state.phase !== 'season' || !oldPS || !Object.keys(oldPS).length) return;
+/* One line per player who has done something this round, built from his
+   cumulative counters. Deterministic: same stats in, same tape out, so every
+   manager's screen agrees. Grouped by match — live games first, then most
+   recent kickoff — because FPL gives no minute-of-event and inventing an
+   order would be the same fiction as the old device clock. */
+function vidiLines(gwIdx) {
+  const ps = gwEvent(gwIdx)?.playerStats;
+  if (!ps || !Object.keys(ps).length) return [];
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return [];
   // the ticker credits the fantasy team — starters get the points line
   const starterOf = {}, benchOf = {};
   for (const m of state.managers) {
     for (const pid of effectiveXI(m.id, gwIdx).xi) starterOf[pid] = m.id;
     for (const p of squadAt(m.id, gwIdx)) if (starterOf[p.id] == null) benchOf[p.id] = m.id;
   }
-  const lines = [];
-  for (const [pid, s] of Object.entries(newPS)) {
+  const out = [];
+  for (const [pid, s] of Object.entries(ps)) {
     const p = PLAYER_BY_ID[pid];
     if (!p) continue;
-    const o = oldPS[pid] || {};
     const bits = [];
     for (const [k, icon, word] of VIDI_EVENTS) {
-      const d = (s[k] || 0) - (o[k] || 0);
-      if (d > 0) bits.push(`${icon} ${word(d)}`);
+      const n = s[k] || 0;
+      if (n > 0) bits.push(`${icon} ${word(n)}`);
     }
     if (!bits.length) continue;
-    const dp = statPoints(p, s) - (Object.keys(o).length ? statPoints(p, o) : 0);
-    const now = statPoints(p, s);
+    const fx = teamFixturesInGw(p.team, gwN).find(f => f.started) || teamFixturesInGw(p.team, gwN)[0] || null;
+    const live = !!(fx && fx.started && !fxOver(fx));
+    // his contribution to the round, not a delta: a derived tape has no
+    // "since last time" to measure against, and the total is the truer number
+    const pts = statPoints(p, s);
     const mid = starterOf[p.id];
-    const who = mid != null ? `${teamName(mid)} ${dp >= 0 ? '+' : ''}${dp}`
+    const who = mid != null ? `${teamName(mid)} ${pts >= 0 ? '+' : ''}${pts}`
       : benchOf[p.id] != null ? `benched by ${teamName(benchOf[p.id])} (!)` : 'the Trough';
-    const haul = now >= 10 && mid != null ? ` (${VIDI_WORDS[now] || now}!!)` : '';
-    // a goal carries BOTH scoreboards (Marc: the actual game's score; Toby:
-    // what it does to the fantasy tie — Ben: "both")
+    const haul = pts >= 10 && mid != null ? ` (${VIDI_WORDS[pts] || pts}!!)` : '';
+    // the real game's score, which is a property of the match and so reads the
+    // same for everyone. The fantasy tie used to ride along on every goal line
+    // (Ben, 23 Aug: "both") — it cannot any more, because a derived line has no
+    // moment attached and would just repeat the CURRENT tie on every row. It is
+    // on the scoreboard directly above this card.
     let score = '';
-    if ((s.g || 0) - (o.g || 0) > 0) {
-      const fx = state.fixtures.find(f => f.gw === GAMEWEEKS[gwIdx].n && (f.home === p.team || f.away === p.team) && f.started);
-      if (fx && fx.hs != null) score += ` — makes it ${TEAM_BY_NAME[fx.home]?.short || fx.home} ${fx.hs}–${fx.as} ${TEAM_BY_NAME[fx.away]?.short || fx.away}`;
-      if (mid != null) {
-        const pr = pairingsFor(gwIdx).find(x => x.includes(mid));
-        if (pr) {
-          const op = pr[0] === mid ? pr[1] : pr[0];
-          // the SAME scorer as the dashboard and the matchup — auto-subs,
-          // Chairman's corrections and the Lobus bonus included. The hand-
-          // rolled raw-lineup sum drifted from every other scoreboard the
-          // moment any of those applied (Ben, 23 Aug: "scores looked wrong").
-          // Every caller now lands newPS in state.matchStats before diffing.
-          const a2 = gwManagerPoints(mid, gwIdx), b2 = gwManagerPoints(op, gwIdx);
-          score += a2 === b2 ? ` · ${teamName(mid)} level with ${teamName(op)} at ${a2}`
-            : a2 > b2 ? ` · ${teamName(mid)} lead ${teamName(op)} ${a2}–${b2}`
-            : ` · ${teamName(mid)} still trail ${teamName(op)} ${a2}–${b2}`;
-        }
-      }
-    }
-    // identity for the dedupe in vidiPush: which counters, at what totals
-    const key = `${GAMEWEEKS[gwIdx].n}:${p.id}:` + VIDI_EVENTS.filter(([k]) => (s[k] || 0) - (o[k] || 0) > 0).map(([k]) => `${k}${s[k] || 0}`).join('|');
-    lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, key, txt: `${bits.join(' · ')} — ${p.name} (${p.club}) — ${who}${haul}${score}` });
+    if ((s.g || 0) > 0 && fx && fx.hs != null)
+      score = ` — ${TEAM_BY_NAME[fx.home]?.short || fx.home} ${fx.hs}\u2013${fx.as} ${TEAM_BY_NAME[fx.away]?.short || fx.away}`;
+    const at = fx ? `${TEAM_BY_NAME[fx.home]?.short || fx.home} v ${TEAM_BY_NAME[fx.away]?.short || fx.away}` : `GW${gwN}`;
+    const sortKick = fx && fx.date ? Date.parse(fx.date) : 0;
+    out.push({ key: `${gwN}:${p.id}`, at, live, sortKick, pts,
+      txt: `${bits.join(' \u00b7 ')} — ${p.name} (${p.club}) — ${who}${haul}${score}` });
     // the Lobus Klaxon: declarations are GONE (Marc, UAT night — "remove the
-    // declare my lobus"); the klaxon now fires off the certified registry
-    // instead, so the gag needs no admin. Big units only.
-    const dg = (s.g || 0) - (o.g || 0);
-    if (dg > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l))) {
-      // Marc, 9 Aug: a lobus belongs to no club. Declarations are long gone, so
-      // the klaxon speaks about the man himself — no owner, no "feral" branch.
-      lines.push({ ts: Date.now(), gw: GAMEWEEKS[gwIdx].n, key: `${GAMEWEEKS[gwIdx].n}:${p.id}:lobus${s.g || 0}`, txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
-      playSound('klaxon');
-    }
+    // declare my lobus"); it fires off the certified registry instead, so the
+    // gag needs no admin. Big units only. Derived like everything else, so the
+    // line is on the tape for a man who scored before you opened the app.
+    if ((s.g || 0) > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l)))
+      out.push({ key: `${gwN}:${p.id}:lobus`, at, live, sortKick, pts: 99,
+        txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
   }
-  vidiPush(lines);
+  // live matches on top, then the most recent kickoff; within a match the
+  // biggest story first. Stable, and identical wherever it is computed.
+  out.sort((a, b) => (b.live - a.live) || (b.sortKick - a.sortKick) || (b.pts - a.pts) || a.key.localeCompare(b.key));
+  return out;
+}
+/* The klaxon SOUND still needs a before-and-after — a noise is a live moment,
+   not a record, and blasting it for every historic goal on page load would be
+   a disaster. Sounded keys are per session on purpose. */
+const vidiKlaxonHeard = new Set();
+function vidiKlaxon(gwIdx, oldPS, newPS) {
+  if (state.phase !== 'season' || !newPS || !oldPS || !Object.keys(oldPS).length) return;
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return;
+  for (const [pid, s] of Object.entries(newPS)) {
+    const p = PLAYER_BY_ID[pid];
+    if (!p || p.pos !== 'FW') continue;
+    const g = s.g || 0;
+    if (g <= (oldPS[pid]?.g || 0)) continue;
+    if (!LOBUS_LIST.some(l => normName(p.name).includes(l))) continue;
+    const k = `${gwN}:${p.id}:${g}`;
+    if (vidiKlaxonHeard.has(k)) continue;
+    vidiKlaxonHeard.add(k);
+    playSound('klaxon');
+  }
 }
 /* ----- the Simulation Chamber (sandbox-only): a pretend matchday for the
    lads' real drafted teams. The Chairman kicks it off; every device derives
@@ -3728,9 +3711,9 @@ function applyMock() {
   const existing = state.matchStats[gwKey];
   if (existing && !String(existing.label || '').includes('simulation')) mockEvSaved[gwKey] = existing;
   state.matchStats[gwKey] = { gw: mk.gw, label: `GW${GAMEWEEKS[mk.gw].n} — simulation`, date: GAMEWEEKS[mk.gw].from, final, playerStats: ps };
-  // tape diff AFTER the stats land — vidiDiff scores ties via gwManagerPoints,
+  // klaxon AFTER the stats land — the tape itself is derived from them,
   // which reads state (Ben, 23 Aug)
-  if (prevMockPS && state.phase === 'season') { try { vidiDiff(mk.gw, prevMockPS, ps); } catch { /* the tape can miss a beat */ } }
+  if (prevMockPS && state.phase === 'season') { try { vidiKlaxon(mk.gw, prevMockPS, ps); } catch { /* the klaxon can miss a beat */ } }
   mockGwKeyApplied = gwKey;
   return true;
 }
@@ -3765,14 +3748,18 @@ setInterval(() => {
     .catch(e => console.warn('[live] self-heal failed', e));
 }, 10e3);
 function vidiCard(compact = false) {
-  vidiEraCheck();
   const live = anyMatchLive();
-  if (!vidiFeed.length && !live) return '';
-  const rows = vidiFeed.slice(0, compact ? 12 : 30).map(l =>
-    `<div class="vidi-line"><span class="vidi-when">${new Date(l.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} GW${l.gw}</span> ${esc(l.txt)}</div>`).join('');
+  const gwIdx = vidiRound();
+  const all = gwIdx == null ? [] : vidiLines(gwIdx);
+  if (!all.length && !live) return '';
+  // the fixture replaces the old per-line clock: it is a property of the match,
+  // so it reads the same on every phone (Marc, 28 Aug)
+  const rows = all.slice(0, compact ? 12 : 30).map(l =>
+    `<div class="vidi-line"><span class="vidi-when">${esc(l.at)}</span> ${esc(l.txt)}</div>`).join('');
+  const more = all.length > (compact ? 12 : 30) ? `<div class="vidi-line" style="color:var(--muted)">…and ${all.length - (compact ? 12 : 30)} more this gameweek.</div>` : '';
   return `<div class="card" style="margin-top:14px">
     <h2>The Vidiprinter ${live ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">every incident, straight off the wire</span></h2>
-    <div class="vidi-tape">${rows || '<div class="vidi-line" style="color:var(--muted)">The tape is quiet. Kick-off will fix that.</div>'}</div>
+    <div class="vidi-tape">${rows || '<div class="vidi-line" style="color:var(--muted)">The tape is quiet. Kick-off will fix that.</div>'}${more}</div>
   </div>`;
 }
 
@@ -3816,7 +3803,7 @@ async function syncNow(manual = false) {
         playerStats: gw.stats || {},
       };
       if (JSON.stringify(gw.stats || {}).length !== before) fresh++;
-      try { vidiDiff(i, oldPS, gw.stats || {}); } catch (e) { console.warn('[vidi]', e); }
+      try { vidiKlaxon(i, oldPS, gw.stats || {}); } catch (e) { console.warn('[vidi]', e); }
     }
     state.lastSync = new Date().toISOString();
     save(); render();

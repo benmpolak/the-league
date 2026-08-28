@@ -126,17 +126,20 @@ const chk = (name, ok, detail = '') => {
     state.fixtures = [{ id: 777, gw: 1, date: new Date().toISOString(), home: PLAYERS[0].team, away: 'Phantom', started: true, finished: false, minutes: 40, hs: 0, as: 0 }];
     state.matchStats = { gw1: { gw: 0, final: false, playerStats: { [pid]: { min: 45, st: 1, g: 0 } } } };
     state.feedGenerated = null;
-    vidiFeed = [];
     const t1 = Date.now();
     state.liveStats = { n: 1, t: t1, playerStats: { [pid]: { min: 55, st: 1, g: 1 } }, fx: [{ id: 777, hs: 1, as: 0, started: true, fp: false, min: 55 }] };
     applyLiveStats();
-    out.goalLine = vidiFeed.length === 1 && /GOAL/.test(vidiFeed[0].txt) && vidiFeed[0].txt.includes(PLAYERS[0].name);
+    // the tape is derived from the stats the overlay just landed, not from a
+    // diff this device happened to catch (Marc, 28 Aug)
+    out.goalLine = vidiLines(0).length === 1 && /GOAL/.test(vidiLines(0)[0].txt) && vidiLines(0)[0].txt.includes(PLAYERS[0].name);
     out.fxMerged = state.fixtures[0].hs === 1 && state.fixtures[0].minutes === 55;
     applyLiveStats(); // same stamp — the tape must not stutter
-    out.noDup = vidiFeed.length === 1;
+    out.noDup = vidiLines(0).length === 1;
     state.liveStats = { n: 1, t: t1 + 60e3, playerStats: { [pid]: { min: 65, st: 1, g: 1, a: 1 } }, fx: [{ id: 777, hs: 1, as: 0, started: true, fp: true, min: 90 }] };
     applyLiveStats();
-    out.assistLine = vidiFeed.length === 2 && /assist/.test(vidiFeed[0].txt);
+    // one man, one line: the assist joins the goal rather than opening a
+    // second entry, because the line reports his round and not an instant
+    out.assistLine = vidiLines(0).length === 1 && /GOAL/.test(vidiLines(0)[0].txt) && /assist/.test(vidiLines(0)[0].txt);
     out.whistleMerged = state.fixtures[0].fp === true && state.fixtures[0].minutes === 90;
     // fp counts as over for liveness and for "still to play"
     out.liveOff = !anyMatchLive();
@@ -147,14 +150,14 @@ const chk = (name, ok, detail = '') => {
     out.ytExact = fxYtHref(state.fixtures[0]);
     state.highlights = null;
     out.ytFallback = fxYtHref(state.fixtures[0]);
-    state.liveStats = null; vidiFeed = [];
+    state.liveStats = null;
     return out;
   });
   chk('highlights: curated fixture gets the exact watch link', /watch\?v=abc123DEF45$/.test(vidi.ytExact), vidi.ytExact);
   chk('highlights: uncurated fixture falls back to the app-safe search', /results\?search_query=.*sky%20sports/.test(vidi.ytFallback), vidi.ytFallback);
   chk('vidi: a goal arriving via the overlay reaches the tape', vidi.goalLine, JSON.stringify(vidi));
   chk('vidi: the same overlay stamp never prints twice', vidi.noDup);
-  chk('vidi: the next stamp prints the assist', vidi.assistLine, JSON.stringify(vidi));
+  chk('vidi: the assist joins his existing line', vidi.assistLine, JSON.stringify(vidi));
   chk('fx merge: score and minutes land from the overlay', vidi.fxMerged, JSON.stringify(vidi));
   chk('fx merge: the provisional whistle ends the match everywhere', vidi.whistleMerged && vidi.liveOff && vidi.fracDone, JSON.stringify(vidi));
 

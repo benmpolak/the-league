@@ -356,13 +356,19 @@ const chk = (name, ok, detail = '') => {
     // put the lobus in manager 1's squad so the owner path renders (and can be XSS-probed)
     state.transfers.push({ gw: 0, managerId: 1, inId: lob.id, type: 'test' });
     state.managers[0].team = '<img data-klaxon-xss src=x>';
-    vidiFeed = [];
-    vidiDiff(0, { [lob.id]: { min: 90, st: 1, g: 0, a: 0 } }, { [lob.id]: { min: 90, st: 1, g: 1, a: 0 } });
-    const goalLines = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
-    vidiDiff(0, { [lob.id]: { min: 90, st: 1, g: 1, a: 0 } }, { [lob.id]: { min: 90, st: 1, g: 1, a: 1 } });
-    const afterAssist = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
-    vidiDiff(0, { [civilian.id]: { min: 90, st: 1, g: 0, a: 0 } }, { [civilian.id]: { min: 90, st: 1, g: 1, a: 0 } });
-    const afterCivilian = vidiFeed.filter(x => x.txt.includes('LOBUS KLAXON')).length;
+    // the tape is derived from the round's stats now (Marc, 28 Aug: "its a
+    // record of everything live, shouldnt be linked to anyones device"), so
+    // the klaxon line is a property of the scoreline, not of a diff
+    const key = `gw${GAMEWEEKS[0].n}`;
+    state.matchStats[key] = state.matchStats[key] || { gw: 0, final: false, playerStats: {} };
+    const ev = state.matchStats[key];
+    const klax = () => vidiLines(0).filter(x => x.txt.includes('LOBUS KLAXON')).length;
+    ev.playerStats = { [lob.id]: { min: 90, st: 1, g: 1, a: 0 } };
+    const goalLines = klax();
+    ev.playerStats = { [lob.id]: { min: 90, st: 1, g: 1, a: 1 } };
+    const afterAssist = klax();          // an assist adds no second klaxon
+    ev.playerStats[civilian.id] = { min: 90, st: 1, g: 1, a: 0 };
+    const afterCivilian = klax();        // and a civilian goal adds none at all
     state.view = 'dash'; render();
     state.transfers.pop();
     return { goalLines, afterAssist, afterCivilian, injected: !!document.querySelector('[data-klaxon-xss]') };
