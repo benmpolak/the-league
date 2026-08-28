@@ -1,0 +1,95 @@
+name: Match watch
+
+# Keeps the feed fresh through a match day without anyone pressing a button
+# (Marc, 28 Aug 2026: "why, do i have to do this. you know the timings, surely
+# we can automate it").
+#
+# fpl.yml asks for a run every five minutes and GitHub gave it five in the whole
+# of 28 Aug, with six-hour gaps. Cron on this repo is a suggestion. But GitHub
+# throttles the SCHEDULER, not a job already running, and this repo is public so
+# Actions minutes are free. So: a few long fires instead of 288 short ones.
+#
+# Each job watches for up to ~5h, fetching every couple of minutes while a match
+# window is open and exiting in seconds when there isn't one. The three jobs are
+# chained with `needs:`, which — unlike cron — always fires, so ONE trigger
+# covers roughly fifteen hours: a whole Saturday card from a single morning fire.
+#
+# Deliberately many ways in, because any single one may be throttled: four
+# scattered cron times (not on the hour, where everyone else's crons queue), any
+# push, and a manual button. Overlapping fires queue rather than cancel, which
+# just extends coverage.
+#
+# This is NOT the real fix. The real fix is moving the fetch to a Cloud Function
+# next to liveTick, whose every-minute schedule ran perfectly all evening while
+# every GitHub cron sat idle. That needs a deploy, which is Ben's.
+
+on:
+  schedule:
+    - cron: '13 6 * * *'      # before a Saturday 11:30 GMT kickoff
+    - cron: '47 10 * * *'     # and again in case the first was swallowed
+    - cron: '29 14 * * *'     # afternoon card
+    - cron: '11 18 * * *'     # evening kickoff
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: matchwatch
+  cancel-in-progress: false   # queue, don't cancel — a queued fire extends cover
+
+jobs:
+  leg1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      # each leg starts from current main, not the SHA that triggered the run:
+      # by the time leg3 begins, the trigger's snapshot is ten hours old. Full
+      # history because a pass that loses a push race rebases onto main.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Watch
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          python3 scripts/matchwatch.py
+
+  leg2:
+    needs: leg1
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      # each leg starts from current main, not the SHA that triggered the run:
+      # by the time leg3 begins, the trigger's snapshot is ten hours old. Full
+      # history because a pass that loses a push race rebases onto main.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Watch
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          python3 scripts/matchwatch.py
+
+  leg3:
+    needs: leg2
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      # each leg starts from current main, not the SHA that triggered the run:
+      # by the time leg3 begins, the trigger's snapshot is ten hours old. Full
+      # history because a pass that loses a push race rebases onto main.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Watch
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          python3 scripts/matchwatch.py
