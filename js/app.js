@@ -231,10 +231,16 @@ function syncIdentity() {
 const isCommissioner = () => netOn() ? membership?.role === 'commissioner' : whoami === state.managers[0]?.id;
 // the one write path when online: a server-side mutation. The authoritative
 // result comes back via the snapshot listener; errors surface as toasts.
-// Callable mutations do NOT queue offline — while disconnected the game is
-// read-only and every attempt fails immediately with a reconnect message.
-// One in-flight request per action: no double submissions from double taps.
+// Callable mutations travel over HTTPS, independently of RTDB's live socket.
+// `.info/connected` can flap false on a phone while HTTPS is perfectly healthy;
+// refusing here made an optimistic XI/waiver edit look saved, then disappear on
+// the next snapshot (Ian + Marc, 28 Aug). Always TRY the callable and let its
+// actual network result decide. One-shot actions still reject double taps;
+// replace-style editors are serialised so rapid phone taps land in order and
+// the last complete list/XI cannot be overtaken by an earlier request.
 const _actPending = new Set();
+const _serialActions = new Set(['claimSet', 'lineupSave', 'benchOrder', 'autolistSet', 'watchlistSet']);
+const _actTails = new Map();
 function serverAct(action, data = {}) {
   const refuse = msg => {
     toast(msg);
@@ -242,11 +248,20 @@ function serverAct(action, data = {}) {
     p.catch(() => {}); // pre-handled: call sites may not attach their own catch
     return p;
   };
-  if (netOn() && !syncConnected) return refuse('You’re offline — the league is read-only until you reconnect.');
+  if (!window.WCSync?.call) return refuse('League connection is still starting — try again in a moment.');
+  const dispatch = () => window.WCSync.call(action, data)
+    .catch(e => { toast(e.message || 'That change did not save — try again.'); throw e; });
+  if (_serialActions.has(action)) {
+    const previous = _actTails.get(action) || Promise.resolve();
+    const current = previous.catch(() => {}).then(dispatch);
+    _actTails.set(action, current);
+    const clear = () => { if (_actTails.get(action) === current) _actTails.delete(action); };
+    current.then(clear, clear);
+    return current;
+  }
   if (_actPending.has(action)) return refuse('Still sending the last one — give it a second.');
   _actPending.add(action);
-  return window.WCSync.call(action, data)
-    .catch(e => { toast(e.message || 'The Committee refused that one.'); throw e; })
+  return dispatch()
     .finally(() => _actPending.delete(action));
 }
 const canActFor = mid => demoMode || !syncOn() || whoami === mid || isCommissioner();
@@ -4359,7 +4374,7 @@ function renderSyncArea() {
   // carries its own age and degrades visibly, and two warnings overflowed
   // the 320px header. One pill, one truth.)
   if (syncOn()) {
-    bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Offline — the league is read-only until you reconnect'}" title="${syncConnected ? 'Live sync: connected' : 'Offline — the league is read-only until you reconnect'}">&#9679;</span>`);
+    bits.push(`<span class="conn ${syncConnected ? 'up' : ''}" role="status" aria-label="${syncConnected ? 'Live sync connected' : 'Live updates reconnecting — saves will still be attempted'}" title="${syncConnected ? 'Live sync: connected' : 'Live updates reconnecting — saves will still be attempted'}">&#9679;</span>`);
     // signed in but membership never landed: SAY so — a pill reading "Sign in"
     // while the account is authenticated reads as a broken app (Ben, 2 Aug)
     const stuck = netOn() && authUser && !whoami;
