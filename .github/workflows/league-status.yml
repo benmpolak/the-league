@@ -1,0 +1,36 @@
+name: League status
+
+# Read-only operational readout of the live league (Marc, 28 Aug 2026: "surely
+# you can do this without me telling you"). The dev sandbox cannot reach
+# Firebase — its egress proxy blocks the database host — so twice this week the
+# state of the live league was inferred from a symptom and reported as fact.
+# The runner can reach it; this puts the answer somewhere a session with no
+# network can read it back, instead of asking a human to go and look.
+#
+# Runs on push so it needs nobody's click, plus hourly, plus on demand.
+# Reads the PUBLIC node only, unauthenticated, no secrets. Prints scalars.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: league-status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the league's public state
+        # never fail the run: this is a readout, and a readout that goes red
+        # trains everybody to ignore it
+        continue-on-error: true
+        run: python3 scripts/league_status.py
