@@ -111,6 +111,11 @@ async function freshLink() {
   // and a third load of the scrubbed URL stays quiet too
   const p2b = await newPage(ctx);
   await p2b.goto(`http://127.0.0.1:${SITE_PORT}/index.html?emu=127.0.0.1`, { waitUntil: 'domcontentloaded' });
+  // A clean URL is already "scrubbed", so settle()'s generic URL condition
+  // would return before Firebase's asynchronous persisted-session callback.
+  // Wait for the state this case is actually proving; otherwise a fast test
+  // runner invents a sign-out that never occurred.
+  await p2b.waitForFunction(() => window.WCSync && WCSync.auth.user(), { timeout: 8000 }).catch(() => {});
   const s2b = await settle(p2b);
   chk('AJ case: subsequent clean loads stay quiet', s2b.signedIn && s2b.prompts === 0, JSON.stringify(s2b));
   await p2.close(); await p2b.close();
