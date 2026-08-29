@@ -680,6 +680,14 @@ const SEED_SEASON = `(() => {
 
   /* G18 — 320px search palette */
   const g320 = await newPage(dCtx, baseUrl + '?demo', { width: 320, height: 650 });
+  // the 320px rules arrive with viewport emulation, and a slow runner can
+  // answer getComputedStyle before they have applied (CI, 29 Aug: 36px home
+  // button — so the block WAS in force — yet its text read visible). Wait for
+  // the layout to settle rather than trusting the first paint.
+  await g320.waitForFunction(() => {
+    const t = document.querySelector('#homeBtn .sync-txt');
+    return t && getComputedStyle(t).display === 'none';
+  }, { timeout: 5000 }).catch(() => {});
   const g18 = await g320.evaluate(async () => {
     const home = document.getElementById('homeBtn');
     const homeRect = home.getBoundingClientRect();
