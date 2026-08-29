@@ -177,7 +177,10 @@ const chk = (name, ok, detail = '') => {
       state.draft.order = state.managers.map(m => m.id); state.draft.picks = [];
       state.draft.deadline = null; state.draft.ceremonyReady = {};
       document.querySelectorAll('.overlay').forEach(x => x.remove()); render();
-      await new Promise(r => setTimeout(r, 450));
+      // the clock is repainted by a timer, not by render(): wait for its first
+      // tick rather than a fixed 450ms, which lost the race under a full local
+      // suite run on 29 Aug (read '–:––' at 390px, passed alone twice)
+      for (let k = 0; k < 30 && !/\d+\/12/.test(document.getElementById('pickClock')?.textContent || ''); k++) await new Promise(r => setTimeout(r, 100));
       const card = document.querySelector('.ceremony-wait');
       const before = { text: card?.innerText || '', right: card?.getBoundingClientRect().right,
         viewport: innerWidth, auto: !!document.getElementById('autoPick'),
