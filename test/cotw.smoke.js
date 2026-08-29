@@ -62,8 +62,19 @@ const chk = (name, ok, detail = '') => {
     };
 
     baseline();
+    // the demo draft deals squads off the LIVE player feed, and on 29 Aug the
+    // overnight refresh dealt one side five Arsenal men — a genuine, permitted
+    // standing offence (count XX), not misbehaviour the baseline can undo. So
+    // "clean" tolerates a hoard, but only a REAL one: the charge must match
+    // the squad it is levelled at, or it is a fabrication and fails here.
     const clean = cotwCharges(0);
-    log.push(`${clean.length === 0 ? 'PASS' : 'FAIL'}   0 a league that behaved itself is charged with nothing${clean.length ? ' — ' + JSON.stringify(clean.slice(0, 3)) : ''}`);
+    const hoardOk = c => c.gravity === 20 && (() => {
+      const byClub = {};
+      for (const p of squadAt(c.id, 0)) byClub[p.team] = (byClub[p.team] || 0) + 1;
+      return Object.values(byClub).some(n => n >= 5 && c.why.includes(`carrying ${n} `));
+    })();
+    const dirty = clean.filter(c => !hoardOk(c));
+    log.push(`${dirty.length === 0 ? 'PASS' : 'FAIL'}   0 a league that behaved itself is charged with nothing (a true club hoard excepted)${dirty.length ? ' — ' + JSON.stringify(dirty.slice(0, 3)) : ''}`);
 
     const M = state.managers.map(m => m.id);
     const sqOf = mid => squadAt(mid, 0);
