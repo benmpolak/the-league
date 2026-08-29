@@ -227,6 +227,29 @@ let pass = 0, fail = 0;
         rep && (marks[s.out.id] || '').includes(rep.name), marks[s.out.id] || '');
     })();
 
+    /* ----- Toby's case (29 Aug): the bench man ahead has ALREADY played -----
+       Amad ruled out, Munoz first on the bench with 6 points already, and
+       the forecast named the SECOND bench man because it only considered men
+       who had not yet appeared. A man who has played can come on — he is the
+       surest sub there is — and bench order decides. */
+    (() => {
+      const s = setUp();
+      const before = forecastSubs(s.mid, GW).find(x => x.out === s.out.id);
+      const rep = before && PLAYER_BY_ID[before.in];
+      t('(setup) the forecast names someone before anyone on the bench has played', !!rep, 'no forecast');
+      if (rep) {
+        const ev = state.matchStats['gw' + GAMEWEEKS[GW].n];
+        ev.playerStats[rep.id] = { ...played(), g: 1 }; // he has been on, and scored
+        for (const f of state.fixtures) if (f.gw === GAMEWEEKS[GW].n && (f.home === rep.team || f.away === rep.team)) { f.started = true; f.fp = true; }
+        const after = forecastSubs(s.mid, GW).find(x => x.out === s.out.id);
+        t('a bench man who has already played is still the one the forecast names',
+          !!after && after.in === rep.id,
+          after ? `named ${PLAYER_BY_ID[after.in].name}, expected ${rep.name}` : 'no forecast at all');
+        t('and the projected XI carries him',
+          liveXI(s.mid, GW).xi.includes(rep.id));
+      }
+    })();
+
     return log;
   });
 
