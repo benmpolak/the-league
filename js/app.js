@@ -8818,9 +8818,9 @@ function mediaSection() {
      the stations have already moved on to the draft reaction, and the pilots
      have retired. Asking the generator which episode is current gets this
      right on its own: it returns a pilot only while there is no draft. */
-  const lead = Podcast.latest('gfw');
+  const lead = Podcast.latest(Podcast.ON_AIR[0]);
   const launch = !!lead && lead.kind === 'pilot';
-  const rows = ['gfw', 'tt'].map(id => {
+  const rows = Podcast.ON_AIR.map(id => {
     const ep = Podcast.latest(id);
     if (!ep) return '';
     const s = ep.show;
@@ -8840,7 +8840,7 @@ function mediaSection() {
      published, draft night became unreachable — recordings we had paid to cut,
      with no door to them. Everything the schedule has ever published, newest
      first, minus the two on the desk. */
-  const currentIds = new Set(['gfw', 'tt'].map(id => Podcast.latest(id)?.id).filter(Boolean));
+  const currentIds = new Set(Podcast.ON_AIR.map(id => Podcast.latest(id)?.id).filter(Boolean));
   const back = Podcast.published()
     .filter(p => !currentIds.has(p.id))
     .map(p => ({ p, ep: Podcast.episode(p.show, p.kind, p.gw) }))

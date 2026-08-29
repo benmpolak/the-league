@@ -217,6 +217,17 @@ window.Podcast = (() => {
   // bill has quietly left the schedules (bothBody stays for the archive).
   const reviewAt = i => { const k = gwKicks(i); return k ? k.last + 150 * 60000 : null; };
 
+  /* Who is on air. The Committee took Gazette Football Weekly off the
+     schedule after GW1 (Marc, 29 Aug: "I think we just do talk trough. Its
+     funnier"; Ben: "can the guardian one for now — can archive the others").
+     Two shows twice a week was also burning the whole ElevenLabs allowance
+     inside a fortnight. OFF_AIR names the first gameweek index a station
+     publishes nothing for: everything it broadcast before that stays in the
+     back catalogue, because nothing is ever deleted. */
+  const ON_AIR = ['tt'];
+  const OFF_AIR = { gfw: 1 };
+  const onAir = (id, i) => !(id in OFF_AIR) || i < OFF_AIR[id];
+
   /* Every episode currently published, newest first. Time enters HERE and
      nowhere else. */
   function published(now = Date.now()) {
@@ -233,6 +244,7 @@ window.Podcast = (() => {
         if (r != null && gwStatus(r) === 'final') paired.add(r);
       }
       for (let i = 0; i < REGULAR_GWS; i++) {
+        if (!onAir(id, i)) break; // off air from here — the archive keeps the rest
         const p = previewAt(i);
         if (p != null && now >= p) {
           const r = reviewSharingSlotWith(i);
@@ -827,5 +839,5 @@ window.Podcast = (() => {
   const episode = (showId, kind, gw) => build(showId, kind, gw);
   const latest = (showId, now) => { const e = latestFor(showId, now); return e ? build(e.show, e.kind, e.gw) : null; };
 
-  return { SHOWS, VOICES, logoSvg, published, latest, episode, sayable, browserSay, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
+  return { SHOWS, ON_AIR, VOICES, logoSvg, published, latest, episode, sayable, browserSay, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
 })();

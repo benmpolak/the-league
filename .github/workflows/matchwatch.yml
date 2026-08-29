@@ -23,14 +23,13 @@ name: Match watch
 # next to liveTick, whose every-minute schedule ran perfectly all evening while
 # every GitHub cron sat idle. That needs a deploy, which is Ben's.
 
+# 29 Aug: STOOD DOWN to a manual fallback. The feedTick Cloud Function now
+# fires fpl.yml by repository_dispatch every five minutes through a match
+# window, which is the proper fix this file was holding the fort for. Two
+# writers committing the same files at the same time would only race each
+# other, so no cron and no push trigger here — press the button if feedTick
+# is ever found wanting (Firebase logs → feedTick).
 on:
-  schedule:
-    - cron: '13 6 * * *'      # before a Saturday 11:30 GMT kickoff
-    - cron: '47 10 * * *'     # and again in case the first was swallowed
-    - cron: '29 14 * * *'     # afternoon card
-    - cron: '11 18 * * *'     # evening kickoff
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

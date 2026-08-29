@@ -551,17 +551,17 @@ const chk = (name, ok, detail = '') => {
     return {
       // edition zero carries both pilots, framed as part of that edition
       launchHeading: /wireless/i.test(before.head),
-      launchBothShows: before.rows === 2,
+      launchBothShows: before.rows === Podcast.ON_AIR.length,
       launchIsPilots: before.titles.every(t => /Season Preview|SEASON PREVIEW/.test(t)),
       // ...and once the draft has happened the desk moves on with the Gazette
       deskHeading: /Media Desk/i.test(after.head),
-      deskBothShows: after.rows === 2,
+      deskBothShows: after.rows === Podcast.ON_AIR.length,
       deskNotPilots: after.titles.every(t => !/edition zero/.test(t)),
       // ...showing whatever the schedule says is CURRENT for each show. This
       // used to assert the word "Draft", which only held in the window between
       // draft night and the next preview slot — it expired at noon the day
       // after the real draft and reddened CI (21 Aug). Ask the schedule.
-      deskIsCurrent: ['gfw', 'tt'].every(id => {
+      deskIsCurrent: Podcast.ON_AIR.every(id => {
         const ep = Podcast.published().find(e => e.show === id);
         const title = ep && Podcast.episode(ep.show, ep.kind, ep.gw)?.title;
         return !!title && after.titles.some(t => t.includes(title));
