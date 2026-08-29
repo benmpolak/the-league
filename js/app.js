@@ -2368,13 +2368,17 @@ function waiverClockLine() {
  * live gameweek's stats into public/liveStats roughly every minute during
  * matches. This overlay is DISPLAY-ONLY freshness on top of the canonical
  * Pages feed — it never outranks a fresher feed sync, never touches a final
- * round, dies of staleness on its own, and stays out of the sandbox (the
+ * round, and stays out of the sandbox (the
  * Chamber owns pretend matchdays) and the demo. */
 function applyLiveStats() {
   const lv = state.liveStats;
   if (!lv || !lv.playerStats || !lv.n) return;
   if (SANDBOX || demoMode || state.mock) return;
-  if (Date.now() - (lv.t || 0) > 10 * 60e3) return; // stale — the feed is truth
+  // an old overlay is NOT dropped on age alone (28 Aug, Palace v City: the
+  // whistle went, the overlay aged past ten minutes, and every phone fell back
+  // to a half-time Pages feed — "points … gone backwards", Toby). The last
+  // live write is the full-time picture; only a FRESHER canonical feed
+  // retires it. The header pill still says how old the data is.
   if (state.feedGenerated && new Date(state.feedGenerated).getTime() > lv.t) return; // feed is fresher
   const key = `gw${lv.n}`;
   const ev = state.matchStats[key];

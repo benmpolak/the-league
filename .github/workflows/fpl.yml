@@ -7,6 +7,10 @@ on:
     # ~15-20min to ~5-10min (scheduler jitter means 5 is a floor, not a promise)
     - cron: '*/5 * * * *'
   workflow_dispatch:
+  # fired by the feedTick Cloud Function (28 Aug: GitHub's cron collapsed to
+  # a handful of runs a day; Cloud Scheduler keeps time, GitHub does the work)
+  repository_dispatch:
+    types: [fpl-refresh]
 
 permissions:
   contents: write

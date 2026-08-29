@@ -2304,16 +2304,16 @@ function liveRows(elements) {
   return out;
 }
 
-// clear a leftover overlay exactly once per quiet spell — the flag only skips
-// the read while this instance KNOWS the node is empty; a cold start re-checks
-let _overlayMaybeSet = true;
-async function clearLiveOverlay() {
-  if (!_overlayMaybeSet) return false;
-  const had = (await liveRef().get()).val() != null;
-  if (had) await liveRef().set(null);
-  _overlayMaybeSet = false;
-  return had;
-}
+// The overlay is NEVER deleted at the whistle. It used to be — "clear a
+// leftover overlay once per quiet spell" — and on 28 Aug (Palace v City) that
+// sent every phone BACKWARDS at full time: the moment FPL flagged the match
+// finished, liveTick wiped the node and the clients fell back to the Pages
+// feed, which GitHub's throttled cron had last committed at half-time (Toby,
+// 23:05: "points had been updated and now gone backwards … to half time
+// figures"). The last live write IS the full-time picture; it stays until a
+// fresher canonical feed retires it — the client already prefers the feed
+// whenever feedGenerated is newer than the overlay's stamp, and never
+// repaints a settled round. The next round's kickoff overwrites it.
 
 /* One idempotent fetch-and-write pass, shared by the scheduler tick and the
  * client-triggered refresh. Milliseconds on the quiet path: outside a kickoff
@@ -2322,14 +2322,14 @@ async function pushLiveOnce() {
   const now = Date.now();
   const fixtures = await liveFixtures(now);
   const win = fixtures.filter(f => kickWindow(f, now));
-  if (!win.length) return { live: false, cleared: await clearLiveOverlay() };
+  if (!win.length) return { live: false };
   // inside a window, FPL's own fixture flags decide what is ACTUALLY live
   let liveGw = null, gwFx = null;
   for (const gwN of [...new Set(win.map(f => f.gw).filter(Number.isInteger))]) {
     const fpl = toArr(await fetchFplJson(`fixtures/?event=${gwN}`, 'fpl fixtures', 2 * 1024 * 1024));
     if (fpl.some(f => f && f.started && !(f.finished || f.finished_provisional))) { liveGw = gwN; gwFx = fpl; break; }
   }
-  if (liveGw == null) return { live: false, cleared: await clearLiveOverlay() };
+  if (liveGw == null) return { live: false };
   const live = await fetchFplJson(`event/${liveGw}/live/`, 'fpl live', Feed.LIMITS.statsBytes);
   const playerStats = liveRows(live && live.elements);
   // live fixture truth rides along: scores, minutes and the provisional
@@ -2346,7 +2346,6 @@ async function pushLiveOnce() {
   }));
   const t = Date.now();
   await liveRef().set({ n: liveGw, t, playerStats, fx });
-  _overlayMaybeSet = true;
   return { live: true, n: liveGw, t, players: Object.keys(playerStats).length };
 }
 
@@ -2356,7 +2355,58 @@ async function pushLiveOnce() {
 exports.liveTick = onSchedule({ schedule: '* * * * *', timeZone: 'Etc/UTC' }, async () => {
   const res = await pushLiveOnce();
   if (res.live) console.log(`liveTick: GW${res.n}, ${res.players} players`);
-  else if (res.cleared) console.log('liveTick: cleared stale overlay');
+});
+
+/* ---------------- the feed clock ----------------
+ * GitHub's cron scheduler collapsed under this repo on 26–28 Aug: fpl.yml
+ * asked for 288 runs on the 28th and got five, with six-hour holes. Every
+ * failure that day came off it — Friday's waivers refusing a 368-minute-old
+ * feed, the scoreboard hours behind, a Vidiprinter with nothing to derive
+ * from. Cloud Scheduler has been punctual for waiverTick and liveTick since
+ * launch, so the CLOCK moves here: every five minutes this tick decides
+ * whether the feed is due and, if it is, fires a repository_dispatch that runs
+ * fpl.yml. An event-triggered run queues within seconds where a cron tick is
+ * a suggestion. The fetch-and-commit itself stays on GitHub — a function
+ * cannot push to git, and the Pages feed is a committed file.
+ *
+ * Cadence: every tick inside a match window (confirmed team sheets land ~75
+ * minutes before kickoff, provisional flags ~150 after), on the hour and half
+ * hour otherwise. The hourly league backup rides the same clock at the top of
+ * each hour, because backup.yml's cron was down to twice a day as well.
+ *
+ * Writes nothing to RTDB. Needs the GH_DISPATCH_TOKEN secret (Contents:
+ * write on the repo); without it the tick logs and stands down. */
+const GH_REPO = process.env.GH_DISPATCH_REPO || 'benmpolak/the-league';
+const FEED_PRE_MS = 75 * 60e3, FEED_POST_MS = 150 * 60e3;
+const feedWindow = (f, now) => f && f.date && !f.finished
+  && now >= Date.parse(f.date) - FEED_PRE_MS
+  && now <= Date.parse(f.date) + FEED_POST_MS;
+async function ghDispatch(token, eventType) {
+  const r = await fetch(`https://api.github.com/repos/${GH_REPO}/dispatches`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`, accept: 'application/vnd.github+json',
+      'user-agent': 'the-league/1.0', 'content-type': 'application/json',
+    },
+    body: JSON.stringify({ event_type: eventType }),
+  });
+  if (r.status !== 204) throw new Error(`github dispatch ${eventType}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+}
+function feedDue(fixtures, now) {
+  const m = new Date(now).getUTCMinutes();
+  const inWindow = fixtures.some(f => feedWindow(f, now));
+  const events = [];
+  if (inWindow || m < 5 || (m >= 30 && m < 35)) events.push('fpl-refresh');
+  if (m < 5) events.push('league-backup');
+  return { events, inWindow };
+}
+exports.feedTick = onSchedule({ schedule: '*/5 * * * *', timeZone: 'Etc/UTC', secrets: ['GH_DISPATCH_TOKEN'] }, async () => {
+  const token = process.env.GH_DISPATCH_TOKEN;
+  if (!token) { console.warn('feedTick: GH_DISPATCH_TOKEN is not set — nothing dispatched'); return; }
+  const now = Date.now();
+  const { events, inWindow } = feedDue(await liveFixtures(now), now);
+  for (const ev of events) await ghDispatch(token, ev); // errors reach the Scheduler's logs; next tick retries
+  console.log(`feedTick: ${events.join(', ') || 'quiet'}${inWindow ? ' (match window)' : ''}`);
 });
 
 // Layer 3 — self-healing. A signed-in manager whose client sees a live match
@@ -2377,7 +2427,8 @@ exports.liveRefresh = onCall(async req => {
  * the DB-emulator gate covers the suites that require this module in-process. */
 if (EMULATED || process.env.FIREBASE_DATABASE_EMULATOR_HOST) {
   exports._liveTest = {
-    reset() { _fxCache = null; _overlayMaybeSet = true; },
+    reset() { _fxCache = null; },
     pushLiveOnce,
+    feedDue,
   };
 }

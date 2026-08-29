@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '7 * * * *'   # hourly, 7 past
   workflow_dispatch:
+  # fired by the feedTick Cloud Function (28 Aug: GitHub's cron collapsed to
+  # a handful of runs a day; Cloud Scheduler keeps time, GitHub does the work)
+  repository_dispatch:
+    types: [league-backup]
 
 permissions:
   contents: read

@@ -36,11 +36,13 @@ const chk = (name, ok, detail = '') => {
     applyLiveStats();
     out.freshApplies = !!state.matchStats[gwKey] && state.matchStats[gwKey].playerStats[pid].g === 1 && state.matchStats[gwKey].final === false;
 
-    // stale overlay ignored
+    // an old overlay with no fresher feed behind it still stands (28 Aug:
+    // dropping it on age sent the scoreboard back to half-time figures)
     state.matchStats = {};
+    state.feedGenerated = new Date(Date.now() - 60 * 60e3).toISOString();
     state.liveStats = mk(Date.now() - 11 * 60e3);
     applyLiveStats();
-    out.staleIgnored = !state.matchStats[gwKey];
+    out.oldStands = !!state.matchStats[gwKey] && state.matchStats[gwKey].playerStats[pid].g === 1;
 
     // a fresher canonical feed outranks it
     state.matchStats = {};
@@ -162,7 +164,7 @@ const chk = (name, ok, detail = '') => {
   chk('fx merge: the provisional whistle ends the match everywhere', vidi.whistleMerged && vidi.liveOff && vidi.fracDone, JSON.stringify(vidi));
 
   chk('fresh liveStats overlays the live round (non-final)', r.freshApplies);
-  chk('stale liveStats is ignored — the feed is truth', r.staleIgnored);
+  chk('an old overlay stands until a fresher feed retires it (never back to half-time)', r.oldStands);
   chk('a fresher canonical feed outranks the overlay', r.feedWins);
   chk('a settled round is never repainted', r.finalUntouched);
   chk('demo mode is untouched', r.demoSkipped);

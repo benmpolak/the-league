@@ -165,13 +165,29 @@ const el = (id, stats, explain) => ({ id, stats, ...(explain ? { explain } : {})
   chk('liveTick: failed pass left the last good overlay intact', (await node())?.playerStats?.[105]?.g === 2);
   fpl.fail = false;
 
-  // full-time: FPL says finished → the overlay is cleared, exactly once
+  // full-time: FPL says finished → the last write STANDS. Clearing it here
+  // sent every phone back to a half-time Pages feed on 28 Aug; a fresher feed
+  // retires the overlay client-side, the next kickoff overwrites it.
   fpl.fixtures[0].finished_provisional = true;
   fpl.fixtures[0].finished = true;
+  const ftT = (await node())?.t;
   await Functions.liveTick.run({});
-  chk('liveTick: clears the overlay when nothing is live', (await node()) === null);
+  chk('liveTick: the full-time overlay is kept, not cleared', (await node())?.playerStats?.[105]?.g === 2);
+  chk('liveTick: and not rewritten either (stamp unchanged)', (await node())?.t === ftT);
   await Functions.liveTick.run({});
-  chk('liveTick: idle re-run stays clean (no crash, node stays null)', (await node()) === null);
+  chk('liveTick: idle re-run is a no-op', (await node())?.t === ftT);
+
+  // the feed clock: due every tick inside a match window, on the hour and
+  // half hour otherwise; the backup rides the top of the hour
+  const fd = Functions._liveTest.feedDue;
+  const fxIn = [{ date: new Date(Date.UTC(2026, 7, 29, 11, 30)).toISOString(), finished: false }];
+  const at = (h, m) => Date.UTC(2026, 7, 29, h, m);
+  chk('feedTick: team-sheet hour before kickoff is a match window', fd(fxIn, at(10, 20)).inWindow && fd(fxIn, at(10, 20)).events.includes('fpl-refresh'));
+  chk('feedTick: 150 min after kickoff still refreshes', fd(fxIn, at(13, 55)).inWindow);
+  chk('feedTick: quiet quarter-hour outside a window dispatches nothing', fd(fxIn, at(16, 15)).events.length === 0);
+  chk('feedTick: half hour refreshes the feed only', JSON.stringify(fd(fxIn, at(16, 31)).events) === '["fpl-refresh"]');
+  chk('feedTick: top of the hour refreshes and backs up', JSON.stringify(fd(fxIn, at(17, 2)).events) === '["fpl-refresh","league-backup"]');
+  chk('feedTick: a finished fixture opens no window', !fd([{ ...fxIn[0], finished: true }], at(12, 0)).inWindow);
 
   // quiet path: site fixtures show no kickoff window → FPL is never touched
   const fxPath = path.join(fixtureDir, 'data', 'fixtures.json');
@@ -182,7 +198,7 @@ const el = (id, stats, explain) => ({ id, stats, ...(explain ? { explain } : {})
   fpl.hits = 0;
   await Functions.liveTick.run({});
   chk('liveTick: quiet path never calls FPL', fpl.hits === 0, `hits=${fpl.hits}`);
-  chk('liveTick: quiet path leaves the node clear', (await node()) === null);
+  chk('liveTick: quiet path leaves the last overlay alone', (await node())?.t === ftT);
   fs.writeFileSync(fxPath, fxOriginal); // later suites read this file — restore it
 
   dataServer.close();
