@@ -10,6 +10,15 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ## 06. GITHUB'S SCHEDULER HAS STOPPED — move the FPL fetch to a Cloud Function (28 Aug)
 
+**Done 29 Aug (commit 196cd56):** `feedTick` Cloud Function, every 5 min on
+Cloud Scheduler, fires `repository_dispatch` → `fpl.yml` (every tick inside a
+match window, on the hour/half hour otherwise) and → `backup.yml` hourly. The
+`repository_dispatch` option, not RTDB: git stays the feed's home, one small
+function, no client change. Needs the `GH_DISPATCH_TOKEN` secret. Same deploy
+fixed the full-time regression (liveTick no longer deletes the overlay at the
+whistle; client no longer drops it on age). `fpl.yml`/`live.yml` crons left
+in place as harmless extras; retire once feedTick has a clean week.
+
 **One fault, and almost everything that went wrong this week came off it.**
 
 `fpl.yml` asks for a run every five minutes — 288 a day. Counted off the commit
