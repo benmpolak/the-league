@@ -334,9 +334,14 @@ const chk = (name, ok, detail = '') => {
     seasons.sortable && seasons.onPreset, JSON.stringify({ s: seasons.sortable, p: seasons.onPreset }));
   chk('SC11: printed xGI equals printed xG + printed xA for every one of them',
     sums.badCount === 0, `${sums.badCount} disagree: ${sums.bad.join(', ')}`);
+  // the man himself keeps playing, so his numbers move with the feed (29 Aug:
+  // his xA went 0.01 -> 0.02 and a frozen '0.03' went red). Pin the RULE Marc
+  // asked for — xGI printed to the same precision as its inputs, and equal to
+  // their sum — not the values he happened to hold on 24 Aug.
   if (sums.thomas) {
-    chk('SC11: Bobby Thomas reads 0.02 + 0.01 = 0.03, not 0.0',
-      sums.thomas.xgi === '0.03', JSON.stringify(sums.thomas));
+    const { xg, xa, xgi } = sums.thomas;
+    chk('SC11: Bobby Thomas reads xG + xA = xGI at two decimals, not a one-decimal 0.0',
+      /^\d+\.\d\d$/.test(xgi) && Math.abs(+xg + +xa - +xgi) < 0.005, JSON.stringify(sums.thomas));
   }
 
   chk('SC10: no uncaught browser errors', errors.length === 0, errors.join(' | '));
