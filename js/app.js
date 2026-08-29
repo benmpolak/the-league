@@ -3173,9 +3173,13 @@ function forecastSubs(mid, gwIdx, base) {
     if (!p || appearedInGw(pid, gwIdx)) return false;
     return clubRoundOver(p, gwN) || startChance(p, gwIdx) === 0;
   };
-  // he still might: not ruled out himself, and his club still has a game left
+  // he can come on: he has ALREADY played (the surest sub there is — Toby,
+  // 29 Aug, Amad ruled out with Munoz sat on 6 on the bench: "gone with
+  // second sub?" — the forecast was skipping every bench man who had played
+  // and naming the next one down), or he is not ruled out himself and his
+  // club still has a game left. Manager's bench order throughout.
   const bench = benchFor(mid, gwIdx).filter(p =>
-    !appearedInGw(p.id, gwIdx) && startChance(p, gwIdx) > 0 && !clubRoundOver(p, gwN));
+    appearedInGw(p.id, gwIdx) || (startChance(p, gwIdx) > 0 && !clubRoundOver(p, gwN)));
   const subs = [];
   for (const pid of [...xi]) {
     if (!cannotPlay(pid)) continue;
