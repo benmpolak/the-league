@@ -251,5 +251,102 @@ const mkEngine = () => Engine.make({
     JSON.stringify(st) === snapshot);
 }
 
+/* ---------- SQUAD LAW: the same rules that govern any other signing ----------
+   Marc, 30 Aug: "are the same rules that govern squad selection re formations
+   been tested?" They were not — the resolver called squadShapeOk and the suite
+   only ever fed it a legal swap, so it proved the call existed and nothing
+   about what it refuses. Squad law is 14 men, GK 1-2, DF 4-6, MF 4-6, FW 2-4. */
+{
+  const eng = mkEngine();
+  const st = baseState();
+  const mine = pos => st.draft.picks
+    .filter(k => k.managerId === MID['Ducky'])
+    .map(k => ALL.find(p => p.id === k.playerId)).filter(p => p.pos === pos);
+  const penOf = pos => PEN.find(p => p.pos === pos);
+
+  // a third keeper: GK max is 2, and he already has two
+  st.windowClaims[MID['Ducky']] = [{ in: penOf('GK').id, out: mine('DF')[0].id }];
+  let res = eng.resolveWindowWaiver(st, 1);
+  chk('a third goalkeeper is refused — GK max is 2',
+    res.executed.length === 0, JSON.stringify(res.executed));
+
+  // dropping to one forward: FW min is 2, and he has exactly two
+  st.windowClaims[MID['Ducky']] = [{ in: penOf('MF').id, out: mine('FW')[0].id }];
+  res = eng.resolveWindowWaiver(st, 1);
+  chk('dropping below two forwards is refused — FW min is 2',
+    res.executed.length === 0, JSON.stringify(res.executed));
+
+  // dropping to three defenders: DF min is 4, and he has five... so ONE is fine
+  st.windowClaims[MID['Ducky']] = [{ in: penOf('MF').id, out: mine('DF')[0].id }];
+  res = eng.resolveWindowWaiver(st, 1);
+  chk('but a swap that keeps every minimum is allowed (DF 5 -> 4, MF 5 -> 6)',
+    res.executed.length === 1, JSON.stringify(res.executed));
+
+  // and a sixth midfielder is the cap, so a seventh is not
+  const seven = [
+    { in: PEN.filter(p => p.pos === 'MF')[0].id, out: mine('DF')[0].id },
+    { in: PEN.filter(p => p.pos === 'MF')[1].id, out: mine('DF')[1].id },
+  ];
+  st.windowClaims[MID['Ducky']] = seven;
+  res = eng.resolveWindowWaiver(st, 1);
+  chk('MF 5 -> 6 lands, MF 6 -> 7 does not — the cap holds across both picks',
+    res.executed.length === 1, JSON.stringify(res.executed.map(e => e.in)));
+
+  // like-for-like is always safe
+  st.windowClaims[MID['Ducky']] = [{ in: penOf('FW').id, out: mine('FW')[0].id }];
+  res = eng.resolveWindowWaiver(st, 1);
+  chk('a like-for-like swap is always legal', res.executed.length === 1);
+
+  // and the squad is still exactly fourteen afterwards
+  const after = { ...st, transfers: [...st.transfers, ...res.records] };
+  chk('the squad is still fourteen men after the run',
+    eng.squadAt(after, MID['Ducky'], eng.transferGw(st)).length === 14,
+    String(eng.squadAt(after, MID['Ducky'], eng.transferGw(st)).length));
+  chk('and still a legal shape',
+    eng.squadShapeOk(after, eng.squadAt(after, MID['Ducky'], eng.transferGw(st))));
+}
+
+/* ---------- SCHEDULING: the Friday clock must not move ----------
+   The other half of Marc's sentence, and the half I had not tested. The order
+   check proves who is where in the queue; this proves WHEN the queue next
+   runs, and that a Thursday run does not eat Friday's pending claims. */
+{
+  const eng = mkEngine();
+  const st = baseState();
+  st.waiverMeta = { lastRun: '2026-09-01T09:00:00.000Z', control: 'auto', skip: null };
+  const cur = eng.currentGwIndex(st);
+  // somebody has a REGULAR Friday claim lodged and pending
+  const drop = st.draft.picks.find(k => k.managerId === MID['Lee']).playerId;
+  st.claims = { [cur]: { [MID['Lee']]: [{ in: PEN[4].id, out: drop }] } };
+  const clockBefore = eng.nextWaiverRun(Date.parse('2026-09-03T10:00:00Z')).toISOString();
+  const metaBefore = JSON.stringify(st.waiverMeta);
+  const claimsBefore = JSON.stringify(st.claims);
+
+  const dDrop = st.draft.picks.find(k => k.managerId === MID['Ducky']).playerId;
+  st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: dDrop }];
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+
+  chk('a window run actually did something (not vacuous)', res.executed.length === 1);
+  chk('it returns no stampedMeta at all — it CANNOT move the Friday clock',
+    !('stampedMeta' in res), Object.keys(res).join(','));
+  chk('waiverMeta is untouched, lastRun included',
+    JSON.stringify(st.waiverMeta) === metaBefore, JSON.stringify(st.waiverMeta));
+  chk('the next Friday run is at exactly the same moment as before',
+    eng.nextWaiverRun(Date.parse('2026-09-03T10:00:00Z')).toISOString() === clockBefore, clockBefore);
+  chk('it returns no buckets — regular claim buckets are not swept',
+    !('buckets' in res), Object.keys(res).join(','));
+  chk("Lee's pending Friday claim is still lodged and untouched",
+    JSON.stringify(st.claims) === claimsBefore, JSON.stringify(st.claims));
+
+  // and Friday still runs afterwards, honouring that claim
+  const applied = { ...st, transfers: [...st.transfers, ...res.records] };
+  const fri = eng.resolveWaivers(applied, Date.parse('2026-09-04T09:00:00Z'));
+  chk('and Friday still executes it the next morning',
+    fri.executed.some(e => e.mid === MID['Lee'] && e.in === PEN[4].id),
+    JSON.stringify(fri.executed));
+  chk('Friday stamps its own lastRun, as it always did',
+    !!fri.stampedMeta.lastRun, JSON.stringify(fri.stampedMeta));
+}
+
 console.log(`\n[window-waiver] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

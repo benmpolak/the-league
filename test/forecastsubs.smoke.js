@@ -64,7 +64,10 @@ let pass = 0, fail = 0;
       const cnt = xiCounts(lineupFor(mid, GW));
       const slack = ['FW', 'MF', 'DF'].find(pos => cnt[pos] > XI_RULES[pos][0]);
       const out = xi.find(p => p.pos === slack) || xi[10];
-      const inc = bench.find(p => p.id !== out.id) || bench[0];
+      // NOT a club-mate of the injured man: setUp marks that club's fixture
+      // finished, which would rule the replacement out too and make the setup
+      // assert against itself. Cost a green run to find, on 30 Aug.
+      const inc = bench.find(p => p.id !== out.id && p.team !== out.team) || bench.find(p => p.id !== out.id) || bench[0];
       // every fixture still to come...
       state.fixtures = [];
       for (let k = 0; k + 1 < TEAMS.length; k += 2)

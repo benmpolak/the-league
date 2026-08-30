@@ -301,42 +301,50 @@ const check = (label, ok, detail = '') => {
     transfersView.tab = 'trough'; render();
     await new Promise(r => setTimeout(r, 100));
     const lockedBefore = lockedArrivals().length;
-    const btn = document.querySelector('#wdStart');
-    if (!btn) return { noBtn: true, lockedBefore };
-    btn.click(); // confirm auto-accepted
-    await new Promise(r => setTimeout(r, 150));
-    const liveNow = state.windowDraft?.status === 'live';
-    const firstUp = wdActor();
-    const reversed = state.windowDraft.order[0] === state.draft.order[11];
-    // first manager signs an arrival (picking a drop that keeps the squad legal)
-    const actor = wdActor();
-    const outSel = document.querySelector('#wdOut');
-    let signed = false;
-    const tg = transferGw(); // window-draft signings apply from the next unplayed GW
-    for (const inBtn of document.querySelectorAll('[data-wdin]')) {
-      const inP = PLAYER_BY_ID[+inBtn.dataset.wdin];
-      const drop = squadAt(actor, tg).find(d => squadShapeOk([...squadAt(actor, tg).filter(q => q.id !== d.id), inP]));
-      if (!drop) continue;
-      outSel.value = drop.id;
-      inBtn.click();
-      signed = true;
-      break;
+    // The live draft is retired (Marc, 30 Aug 2026) — the pen is settled by
+    // the Window Waiver now: everyone lodges a blind list, one run, two rounds,
+    // snaking in the reverse of draft night. Drive that instead.
+    transfersView.tab = 'window'; render();
+    await new Promise(r => setTimeout(r, 100));
+    const tg = transferGw();
+    const slots = windowSlots();
+    const reversed = slots[0] === state.draft.order[state.draft.order.length - 1];
+    const twoEach = state.managers.every(m => windowPickNos(m.id).length === 2);
+    const snakes = slots.length === state.managers.length * 2
+      && slots[state.managers.length - 1] === slots[state.managers.length];
+    // every manager lodges a legal list against the pen
+    let lodged = 0;
+    for (const m of state.managers) {
+      const list = [];
+      for (const p of lockedArrivals()) {
+        const drop = squadAt(m.id, tg).find(d => squadShapeOk([...squadAt(m.id, tg).filter(q => q.id !== d.id), p]));
+        if (drop) list.push({ in: p.id, out: drop.id });
+      }
+      if (list.length) { setWindowClaims(m.id, list); lodged++; }
     }
-    await new Promise(r => setTimeout(r, 150));
-    if (!signed) return { noLegalSign: true };
-    for (let k = 0; k < 13 && document.querySelector('#wdPass'); k++) {
-      document.querySelector('#wdPass').click();
-      await new Promise(r => setTimeout(r, 60));
-    }
+    await new Promise(r => setTimeout(r, 100));
+    const firstUp = slots[0];
+    runWindowWaiver();
+    await new Promise(r => setTimeout(r, 200));
+    const won = state.transfers.filter(t => t.windowDraft && t.gw === tg);
     return {
-      lockedBefore, liveNow, reversed, firstUp,
-      done: state.windowDraft?.status === 'done',
+      lockedBefore, reversed, twoEach, snakes, lodged, firstUp,
+      signed: won.length,
+      // the man who picks first must have got one, since he lodged a full list
+      firstUpSigned: won.some(t => t.managerId === firstUp),
+      // nobody takes more than his two slots
+      neverMoreThanTwo: state.managers.every(m => won.filter(t => t.managerId === m.id).length <= 2),
+      // and not one of them counts as a waiver take
+      noWaiverFlag: won.every(t => !t.waiver),
       unlocked: lockedArrivals().length === 0,
-      tagged: state.transfers.some(t => t.windowDraft),
+      tagged: won.length > 0,
+      listsCleared: Object.keys(state.windowClaims || {}).length === 0,
     };
   });
-  check('window draft: lock → reverse-order draft → pass-lap → trough release',
-    wd.lockedBefore === 3 && wd.liveNow && wd.reversed && wd.done && wd.unlocked && wd.tagged, JSON.stringify(wd));
+  check('window waiver: lock → blind lists → one run → trough release',
+    wd.lockedBefore === 3 && wd.reversed && wd.twoEach && wd.snakes && wd.lodged === 12
+    && wd.firstUpSigned && wd.neverMoreThanTwo && wd.noWaiverFlag
+    && wd.unlocked && wd.tagged && wd.listsCleared, JSON.stringify(wd));
 
   // ---------- 6. Monzo Cup recomputed independently ----------
   const cup = await p.evaluate(() => {

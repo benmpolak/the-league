@@ -283,7 +283,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'windowClaims', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -568,7 +568,8 @@ function freshState() {
     claims: {},            // gwIndex -> { managerId: [{in, out}] ranked }
     waiverMeta: { lastRun: null, control: 'auto' }, // control: auto | open | closed
     draftPool: null,       // draft-night snapshot {at, ids: {pid: club}} — anyone outside it is a locked "new arrival"
-    windowDraft: null,     // {status: live|done, order, turn, passes, picks} — post-window mini-draft of arrivals
+    windowDraft: null,     // {status: live|done, order, turn, passes, picks} — the retired live mini-draft
+    windowClaims: {},      // {mid: [{in, out}]} — the Window Waiver's blind lists (Marc, 30 Aug 2026)
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
     heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
     suggestions: [],       // the Suggestion Box — feature requests from the floor, ruled on by the Committee
@@ -775,6 +776,7 @@ function load() {
     if (s && !s.shirtNums) s.shirtNums = {};
     if (s && s.draftPool === undefined) s.draftPool = null;
     if (s && s.windowDraft === undefined) s.windowDraft = null;
+    if (s && s.windowClaims === undefined) s.windowClaims = {};
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.heckles) s.heckles = {};
     if (s && !s.suggestions) s.suggestions = [];
@@ -2457,6 +2459,78 @@ function lockedArrivals() {
   if (!state.draftPool?.ids) return [];
   const owned = ownedIdsAt(currentGwIndex());
   return PLAYERS.filter(p => isArrival(p) && !owned.has(p.id));
+}
+/* ----- the Window Waiver (Marc, 30 Aug 2026) -----
+   The holding pen is settled by blind lists instead of a live draft, so nobody
+   has to be at a keyboard. One run, Thursday 3 Sept at 10:00 London — BST, so
+   09:00Z. Order is the reverse of draft night and never moves; two rounds,
+   snaking, so Ducky holds picks 1 and 24 and Toby 12 and 13.
+
+   Kept identical to resolveWindowWaiver in js/engine.js — the server resolves
+   it, this only lets you lodge and read back your list. */
+const WINDOW_WAIVER_AT = Date.parse('2026-09-03T09:00:00Z');
+const WINDOW_ROUNDS = 2;
+const windowOrder = () => [...toArr(state.draft?.order)].reverse();
+function windowSlots() {
+  const ord = windowOrder(), out = [];
+  for (let r = 0; r < WINDOW_ROUNDS; r++) out.push(...(r % 2 ? [...ord].reverse() : ord));
+  return out;
+}
+const windowPickNos = mid => windowSlots().map((m, i) => (m === mid ? i + 1 : 0)).filter(Boolean);
+const windowWaiverDone = () => Date.now() >= WINDOW_WAIVER_AT;
+const myWindowClaims = mid => toArr(state.windowClaims?.[mid]);
+function setWindowClaims(mid, arr) {
+  // codes ride along so a lodged list survives a feed id shift (Desk §3b)
+  arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
+  if (netOn()) serverAct('windowClaimSet', { claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+  (state.windowClaims = state.windowClaims || {})[mid] = arr;
+  save(); render();
+}
+// Run it. Normally Thursday 10:00 does this on the server, which is the only
+// place that can see everybody's blind list; the Chairman keeps a manual
+// button as the fallback, and offline it is the only way it can happen at all.
+// Kept identical to resolveWindowWaiver in js/engine.js.
+function runWindowWaiver() {
+  if (netOn() && !isCommissioner()) { toast('Only the Chairman runs the window waiver'); return; }
+  if (netOn()) {
+    serverAct('windowWaiverRun', {}).then(res => {
+      const ex = toArr(res?.executed);
+      toast(ex.length
+        ? `Window waiver done — ${ex.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}.`
+        : 'Window waiver done — nobody lodged a legal list.');
+    }).catch(() => toast('The window waiver has not been deployed yet — ask the Chairman.'));
+    return;
+  }
+  const runStart = Date.now() - 1;
+  const tgw = transferGw();
+  const pen = new Set(lockedArrivals().map(p => p.id));
+  const pending = {};
+  for (const m of state.managers) pending[m.id] = [...myWindowClaims(m.id)];
+  const executed = [];
+  for (const mid of windowSlots()) {
+    const list = pending[mid];
+    if (!list || !list.length) continue;            // no list: the slot passes
+    while (list.length) {
+      const c = list.shift();
+      const inP = PLAYER_BY_ID[c.in];
+      if (!inP || !pen.has(inP.id) || ownedIdsAt(tgw).has(inP.id)) continue;
+      if (!squadAt(mid, tgw).some(x => x.id === c.out)) continue;
+      if (!squadShapeOk([...squadAt(mid, tgw).filter(x => x.id !== c.out), inP])) continue;
+      state.transfers.push({ managerId: mid, outId: c.out, outCode: PLAYER_BY_ID[c.out]?.code ?? null,
+        inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: runStart + 1, windowDraft: true,
+        n: state.transfers.length + 1 });
+      const lu = state.lineups[mid]?.[tgw];
+      if (lu) state.lineups[mid][tgw] = toArr(lu).filter(id => id !== c.out);
+      executed.push({ mid, in: inP.id, out: c.out });
+      break;                                        // one signing per slot
+    }
+  }
+  state.windowClaims = {};
+  save();
+  toast(executed.length
+    ? `Window waiver done — ${executed.map(e => `${managerName(e.mid)} lands ${PLAYER_BY_ID[e.in]?.name}`).join(', ')}.`
+    : 'Window waiver done — nobody lodged a legal list.');
+  wdFinish();  // leftovers spill into the Trough, as they always did
 }
 function wdActor() {
   const wd = state.windowDraft, ord = wd.order;
@@ -7209,16 +7283,26 @@ function viewTransfers() {
   const ownedNow = ownedIdsAt(cur);
   // the waiver list gets Ian's green box (25 Aug: his list was 30 deep and
   // shopping meant scrolling past it both ways) — own tab, canon name
-  const tabs = [['trough', 'The Trough & Waivers'], ['claims', 'Waiver list'], ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
+  // The Window Waiver gets its own tab rather than sitting under the Trough
+  // (Marc, 30 Aug 2026: "id make it a separate list with a button at the top
+  // otherwise the window list and the normal list are one after another and
+  // its a bit confusing"). Two lists that resolve on different days, by
+  // different rules, must not read as one scroll. It appears only while the
+  // pen holds somebody, and goes away again when it empties.
+  const penOpen = lockedArrivals().length > 0;
+  const tabs = [['trough', 'The Trough & Waivers'], ['claims', 'Waiver list'],
+    ...(penOpen ? [['window', 'Window waiver']] : []),
+    ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
   const tab = transfersView.tab;
   const pendingIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid).length;
   const nClaims = myClaims(mid).length;
+  const nWindow = myWindowClaims(mid).length;
   // ONE lens statement for the whole hub (sol product review #2): every deal
   // on these pages — signings, claims, trades, window picks — lands in the
   // same gameweek, and the pages say so out loud
   const tgwHub = transferGw();
   const head = `<div class="team-controls card">
-    ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}${id === 'claims' && nClaims ? ` <span class="tag">${nClaims}</span>` : ''}</button>`).join('')}
+    ${tabs.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-trtab="${id}">${label}${id === 'trades' && pendingIn ? ` <span class="tag live-tag">${pendingIn}</span>` : ''}${id === 'claims' && nClaims ? ` <span class="tag">${nClaims}</span>` : ''}${id === 'window' && nWindow ? ` <span class="tag">${nWindow}</span>` : ''}</button>`).join('')}
     ${SANDBOX && netOn() && isCommissioner() ? `<label class="tag" style="margin-left:auto">acting as&nbsp;<select id="actAsSel" style="font-size:11.5px">${state.managers.map(m => `<option value="${m.id}" ${m.id === mid ? 'selected' : ''}>${esc(managerName(m.id))}${m.id === whoami ? ' (me)' : ''}</option>`).join('')}</select></label>`
       : `<span class="tag" style="margin-left:auto">acting as ${esc(managerName(mid))}</span>`}
     <span class="tag" title="Squads and ownership on these pages are shown as of this gameweek — no deal ever rewrites a week already being played">deals land in <b>&nbsp;GW${GAMEWEEKS[tgwHub].n}</b>${tgwHub !== cur ? ' &middot; this round is in play' : ''}</span>
@@ -7303,7 +7387,7 @@ function viewTransfers() {
       </div>
     </div>`;
   })();
-  if (tab === 'trough') {
+  if (tab === 'trough' || tab === 'window') {
     const wd = state.windowDraft;
     const arrivals = lockedArrivals();
     let wdCard = '';
@@ -7333,15 +7417,48 @@ function viewTransfers() {
         ${wd.picks?.length ? `<p class="muted" style="font-size:11.5px;margin-top:8px"><b style="color:var(--text)">So far:</b> ${wd.picks.map(k => `${esc(managerName(k.mid))} → ${esc(PLAYER_BY_ID[k.in]?.name || '?')}`).join(' · ')}</p>` : ''}
       </div>`;
     } else if (arrivals.length) {
+      /* The Window Waiver (Marc, 30 Aug 2026): "everyone does a waiver list
+         rather than a draft where everyone needs to be online". Lodge a list,
+         go to work, find out at ten. */
+      const picks = windowPickNos(mid);
+      const wlist = myWindowClaims(mid);
+      const mySquad = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
+      const shut = windowWaiverDone();
+      const wrows = wlist.map((c, k) => `
+        <div class="lrow claim-row" style="font-size:12.5px">
+          <span class="muted">&#8942; #${k + 1}</span> <span class="pos-badge pos-${PLAYER_BY_ID[c.in]?.pos}">${PLAYER_BY_ID[c.in]?.pos || '?'}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+          <span class="muted">in, ${esc(PLAYER_BY_ID[c.out]?.name || '?')} out</span>
+          ${shut ? '' : `<span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
+            <button class="btn ghost small icon-btn" data-wcup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
+            <button class="btn ghost small icon-btn" data-wcdn="${k}" title="Lower priority" ${k === wlist.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
+            <button class="btn ghost small icon-btn" data-wcdel="${k}" title="Withdraw" aria-label="Withdraw">&#10005;</button>
+          </span>`}
+        </div>`).join('');
       wdCard = `<div class="card" style="margin-bottom:14px">
-        <h2>The Window <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
-        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick goes to whoever picked last on draft night, snaking back up. Leftovers spill into the Trough. No more WhatsApp draft, no more Ben Levy day.</p>
-        <p style="font-size:12px;margin-top:6px"><b>In the holding pen:</b></p>
+        <h2>The Window Waiver <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
+        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. They are then settled by <b>one blind waiver</b> — lodge a list, go to work, find out at ten. Nobody has to be at a keyboard. Two rounds, snaking, in the <b>reverse of draft night</b>: last on the night picks first. Leftovers spill into the Trough.</p>
+        <p style="font-size:12.5px"><b>One run: ${new Date(WINDOW_WAIVER_AT).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.</b> ${shut ? '<span class="muted">The desk is shut — the run has been and gone.</span>' : `Your picks are <b class="gold">#${picks.join('</b> and <b class="gold">#')}</b> of ${windowSlots().length}. This does not touch Friday: a man signed here costs you no waiver take, and the regular run is unmoved.`}</p>
+        <div class="order-strip" style="margin:8px 0">${windowOrder().map(id => `<span class="order-chip ${id === mid ? 'now' : ''}">${esc(managerName(id))}</span>`).join('<span class="muted" style="align-self:center">&rsaquo;</span>')}<span class="tag" style="margin-left:10px">then back up</span></div>
+        ${shut ? '' : `<h3 style="margin-top:10px">Your list <span class="muted" style="font-weight:400;font-size:12px">${wlist.length ? `${wlist.length} lodged &middot; highest first` : 'nothing lodged — you will sign nobody'}</span></h3>
+        <div class="pick-log" style="max-height:240px">${wrows || '<span class="muted" style="font-size:12px">Empty. A blank list is a pass: you keep your fourteen and sign nobody.</span>'}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+          <select id="wcIn" aria-label="Player in" style="flex:1 1 180px;min-width:0">
+            <option value="">Sign…</option>
+            ${[...arrivals].sort(metricSort('pts')).map(p => `<option value="${p.id}">${p.pos} — ${esc(p.name)} (${esc(p.club)}) · ${metricsFor(p).pts} pts</option>`).join('')}
+          </select>
+          <select id="wcOut" aria-label="Player out" style="flex:1 1 180px;min-width:0">
+            <option value="">…and drop</option>
+            ${mySquad.map(p => `<option value="${p.id}">${p.pos} — ${esc(p.name)} (${esc(p.club)})</option>`).join('')}
+          </select>
+          <button class="btn small" id="wcAdd">Add to list</button>
+        </div>
+        <p class="muted" style="font-size:11px;margin-top:6px">Nobody sees your list, including the Chairman. You may lodge more than two — the extras are your cover for when somebody above you takes the man you wanted.</p>`}
+        <p style="font-size:12px;margin-top:10px"><b>In the holding pen:</b></p>
         <div class="pen-list">${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him to the Trough without a Window Draft.">&rarr; Trough</button>` : ''}</span>`).join('')}${arrivals.length > 15 ? `<span class="muted">+${arrivals.length - 15} more</span>` : ''}</div>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-          <button class="btn small" id="wdStart">Start the Window Draft</button>
+          <button class="btn small" id="wwRun">Run the window waiver now</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
-        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Wait for the window to actually shut.</p>`}
+        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Thursday at ten does this on its own; these are the fallbacks.</p>`}
       </div>`;
     }
     const ctl = waiverControl();
@@ -7357,7 +7474,16 @@ function viewTransfers() {
       : ctl === 'open' ? '<span class="tag">THROWN OPEN — free agents sign instantly; fresh drops still clear at the next run</span>'
       : !tw.open ? `<span class="tag live-tag">TROUGH SHUT — ${esc(tw.why)}</span> <span class="tag">every free agent is on waivers${tw.until ? ` · clears ${fmtWhen(tw.until)}` : ' until the run'}</span>`
       : `<span class="tag">open — drops sit on waivers until ${fmtWhen(nextRun)}</span> <span class="tag" id="wvClock2">${waiverClockLine()}</span>`;
-    return `${head}${myPitchCard}${wdCard}<div class="card">
+    // the Window Waiver tab is that card and nothing else — the whole point of
+    // giving it a tab is that it does not run on into the weekly list
+    if (tab === 'window') return `${head}${wdCard || '<div class="card"><p class="muted">The holding pen is empty. Nothing to bid for.</p></div>'}`;
+    // and the Trough gets a signpost in its place, not the desk itself
+    const wdSign = arrivals.length ? `<div class="card" style="margin-bottom:14px">
+      <p style="font-size:12.5px;margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>&#128274; <b>${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''}</b> locked in the holding pen — settled by the Window Waiver, ${esc(new Date(WINDOW_WAIVER_AT).toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' }))}. Separate list, separate run; nothing to do with the weekly one.</span>
+        <button class="btn small" data-trtab="window" style="margin-left:auto">${nWindow ? `Your window list (${nWindow})` : 'Lodge a window list'}</button>
+      </p></div>` : '';
+    return `${head}${myPitchCard}${wdSign}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.</p>
       ${(() => {
@@ -7627,6 +7753,38 @@ function bindTransfers() {
       .then(ok => toast(ok ? 'Recorded. It is now canon.' : 'Didn’t record — check connection and try again'));
   };
   // --- the Window Draft ---
+  const wwr = $('#wwRun');
+  if (wwr) wwr.onclick = () => { if (confirm('Run the window waiver now? Every lodged list is resolved and the leftovers go to the Trough.')) runWindowWaiver(); };
+  // --- the Window Waiver list (Marc, 30 Aug 2026) ---
+  const wcAdd = $('#wcAdd');
+  if (wcAdd) wcAdd.onclick = () => {
+    const inId = +($('#wcIn')?.value || 0), outId = +($('#wcOut')?.value || 0);
+    if (!inId || !outId) { toast('Pick a man to sign and a man to drop'); return; }
+    const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
+    // the same squad law the run itself applies, so a doomed line is refused
+    // at the desk rather than silently skipped on Thursday morning
+    const after = [...squadAt(mid, transferGw()).filter(x => x.id !== outId), inP];
+    if (!squadShapeOk(after)) {
+      toast(`${inP.name} for ${outP.name} would leave an illegal squad — check your ${inP.pos} and ${outP.pos} counts`);
+      return;
+    }
+    const arr = [...myWindowClaims(mid)];
+    if (arr.some(c => c.in === inId && c.out === outId)) { toast('That line is already on your list'); return; }
+    arr.push({ in: inId, out: outId });
+    setWindowClaims(mid, arr);
+    toast(`Lodged: ${inP.name} in, ${outP.name} out — #${arr.length} on your list`);
+  };
+  document.querySelectorAll('[data-wcdel]').forEach(b => b.onclick = () => {
+    const arr = [...myWindowClaims(mid)]; arr.splice(+b.dataset.wcdel, 1); setWindowClaims(mid, arr);
+  });
+  document.querySelectorAll('[data-wcup]').forEach(b => b.onclick = () => {
+    const k = +b.dataset.wcup, arr = [...myWindowClaims(mid)];
+    if (k > 0) { [arr[k - 1], arr[k]] = [arr[k], arr[k - 1]]; setWindowClaims(mid, arr); }
+  });
+  document.querySelectorAll('[data-wcdn]').forEach(b => b.onclick = () => {
+    const k = +b.dataset.wcdn, arr = [...myWindowClaims(mid)];
+    if (k < arr.length - 1) { [arr[k], arr[k + 1]] = [arr[k + 1], arr[k]]; setWindowClaims(mid, arr); }
+  });
   const wds = $('#wdStart');
   if (wds) wds.onclick = () => {
     const ord = [...state.draft.order].reverse();
