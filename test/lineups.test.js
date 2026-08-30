@@ -11,6 +11,7 @@
  */
 'use strict';
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -82,11 +83,36 @@ for (let i = 0; i < AMB.length; i++) {
   chk(`"${name}" (${club}) -> ${want}${why ? ' — ' + why : ''}`, amb[i] === want, `got ${amb[i]}`);
 }
 
+/* A shared first name inside one club must never resolve. This used to name
+ * Emiliano Martinez and Emiliano Buendía at Aston Villa — until 30 Aug 2026,
+ * when Martinez moved to Chelsea, Villa had exactly one Emiliano, and the
+ * matcher started answering correctly while the test called it a failure.
+ * Same wall-calendar trap as engine.parity: a fixture pinned to live data.
+ * So find a real pair in TODAY's feed instead, and say so if none exists. */
+function sharedFirstName(players) {
+  const byClub = {};
+  for (const p of players) {
+    const first = String(p.full || '').trim().split(/\s+/)[0];
+    if (!first || first.length < 4) continue;
+    const k = `${p.club}|${first}`;
+    (byClub[k] = byClub[k] || []).push(p);
+  }
+  for (const [k, group] of Object.entries(byClub)) {
+    // two DIFFERENT men, and the first name must not be either one's short name
+    if (group.length < 2) continue;
+    const [club, first] = k.split('|');
+    if (group.some(p => p.name === first)) continue;
+    return { first, club, who: group.map(p => p.full).join(' and ') };
+  }
+  return null;
+}
+
 /* ----- REFUSING is the right answer ----- */
 const REFUSE = [
   ['Pedro', 'CHE', 'Chelsea have Pedro Neto AND João Pedro — a coin toss, so no answer'],
   ['James', 'EVE', 'James Tarkowski and James Garner — first names are not identifiers'],
-  ['Emiliano', 'AVL', 'Emiliano Martinez and Emiliano Buendía'],
+  // (a third shared-first-name case is derived from the live feed below — a
+  //  hardcoded pair here died the day one of them was transferred)
   ['Bruno Fernandes', 'LIV', 'right man, wrong club — the club scope must hold'],
   ['Calvert-Lewin', 'ARS', 'likewise'],
   ['Reginald Perrin', 'ARS', 'nobody at all'],
@@ -98,6 +124,17 @@ const refuse = lookup(REFUSE.map(([n, c]) => [n, c]));
 for (let i = 0; i < REFUSE.length; i++) {
   const [name, club, why] = REFUSE[i];
   chk(`"${name}" (${club || '-'}) -> no answer — ${why}`, refuse[i] === null, `got ${refuse[i]}`);
+}
+{
+  const feed = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'data.json'), 'utf-8'));
+  const all = Array.isArray(feed) ? feed : (Array.isArray(feed.players) ? feed.players : Object.values(feed.players || {}));
+  const dup = sharedFirstName(all);
+  if (!dup) {
+    chk('a shared first name inside one club refuses (none in the feed today)', true, 'no such pair right now');
+  } else {
+    const got = lookup([[dup.first, dup.club]])[0];
+    chk(`"${dup.first}" (${dup.club}) -> no answer — ${dup.who}`, got === null, `got ${got}`);
+  }
 }
 
 /* ----- nobody is matched twice, and everybody is reachable ----- */
