@@ -1405,6 +1405,20 @@ const statusChip = p => STATUS_ICON[p.status]
 const provChip = p => p?.provisional
   ? '<span class="prov-chip" title="Committee placeholder \u2014 signed, but not yet in the FPL feed. Price and Rate are estimates, and he scores nothing until he lands.">PROV</span>' : '';
 const statusClass = p => p.status === 'a' ? '' : p.status === 'd' ? 'st-amber' : 'st-red';
+/* A club-office title typed in sentence case, shown as a title (Marc, 30 Aug
+   2026: "there is lower case all over place... eg. assistant manager,
+   perennial bridesmaid"). The built-in archetypes in js/lore.js are already
+   Title Case; this is for the ones managers type themselves, which cannot be
+   fixed at the source without editing their clubs for them.
+   Leaves anything already carrying a capital alone — so F.O.C., PSG and
+   McParland survive — and keeps the little joining words small. */
+const TITLE_SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs', 'with']);
+const titleish = str => String(str || '').split(/(\s+)/).map((w, i) => {
+  if (!w.trim()) return w;
+  if (/[A-Z]/.test(w)) return w;                       // already styled — leave it
+  if (i > 0 && TITLE_SMALL.has(w.toLowerCase())) return w;
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}).join('');
 function toast(msg) {
   const el = $('#toast') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'toast' }));
   el.setAttribute('role', 'status');
@@ -3620,7 +3634,7 @@ function vidiRound() {
 }
 const VIDI_EVENTS = [
   ['g', '⚽', n => n > 1 ? `${n} GOALS` : 'GOAL'],
-  ['a', '🅰️', n => n > 1 ? `${n} assists` : 'assist'],
+  ['a', '🅰️', n => n > 1 ? `${n} ASSISTS` : 'ASSIST'],
   ['ps', '🧄', () => 'PENALTY SAVED'],
   ['pm', '🙈', () => 'penalty missed'],
   ['og', '😬', () => 'own goal'],
@@ -3937,7 +3951,7 @@ function vidiCard(compact = false) {
     `<div class="vidi-line"><span class="vidi-when">${esc(l.at)}</span> ${esc(l.txt)}</div>`).join('');
   const more = all.length > (compact ? 12 : 30) ? `<div class="vidi-line" style="color:var(--muted)">…and ${all.length - (compact ? 12 : 30)} more this gameweek.</div>` : '';
   return `<div class="card" style="margin-top:14px">
-    <h2>The Vidiprinter ${live ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''} <span class="muted" style="font-weight:400;font-size:12px">every incident, straight off the wire</span></h2>
+    <h2>The Vidiprinter ${live ? '<span class="tag live-tag"><span class="rec"></span>LIVE</span>' : ''}</h2>
     <div class="vidi-tape">${rows || '<div class="vidi-line" style="color:var(--muted)">The tape is quiet. Kick-off will fix that.</div>'}${more}</div>
   </div>`;
 }
@@ -7035,7 +7049,7 @@ function assistantCard(mid, gw) {
   const asst = assistantFor(mid);
   const head = body => `<div class="card assistant-card">
     <div class="assistant-pop" aria-hidden="true"><span class="assistant-person">&#129489;&#8205;&#128188;</span><small>${asst.e}</small></div>
-    <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">assistant manager${gafferFor(mid) ? ` — No. 2 to ${esc(gafferFor(mid).t)}` : ''}</span></h2>${body}</div>
+    <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">Assistant Manager${gafferFor(mid) ? ` — No. 2 to ${esc(titleish(gafferFor(mid).t))}` : ''}</span></h2>${body}</div>
   </div>`;
   if (signedOut) {
     return head(`<p class="muted" style="font-size:12.5px;opacity:.75">He has opinions on the XI and the Trough, but he only briefs his own manager. Sign in (top right) and he's yours.</p>`);
@@ -7087,7 +7101,7 @@ function assistantCard(mid, gw) {
   }
   tips.sort((a, b) => b.gain - a.gain);
   const tipRows = tips.slice(0, 3).map(t =>
-    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers — worth putting a waiver in.' : 'Free in the Trough. I’d move.'}</div>`).join('');
+    `<div class="lrow" style="font-size:12.5px">${pname(t.p)} <span class="muted">(${t.p.pos}, ${esc(t.p.team)})</span> &mdash; projects <b>+${t.gain.toFixed(1)}</b> over ${pname(t.weakest)} across three weeks. ${onWaivers(t.p) ? 'On waivers.' : 'Free in the Trough.'}</div>`).join('');
   const brief = lines.length
     ? lines.map(l => `<div class="lrow" style="font-size:12.5px">${l}</div>`).join('')
     : `<p class="muted" style="font-size:12.5px">The XI picks itself for GW${gwN}. I've nothing, gaffer. Good session though.</p>`;
@@ -7135,7 +7149,7 @@ function nextSixCard(mid) {
         </tr>`).join('')}</tbody>
       </table>
       </div>
-      <p class="muted" style="font-size:11px;margin-top:6px">This is the squad as it stands — signings change it. &mdash; is a blank, two chips is a double, colours are the usual fixture tints. Tap a name for stats.</p>
+
     </details>
   </div>`;
 }
@@ -9740,7 +9754,7 @@ function bracketCard() {
   return `<div class="card"><h2>The Playoff Bracket${po ? '' : ' <span class="tag">projected</span>'}</h2>
     <p class="muted" style="font-size:11.5px;margin-bottom:8px">${po
       ? 'Top eight. Handicap quarter-finals, fixed bracket, three-legged final. Ties: higher seed.'
-      : `If the season ended today &mdash; seeds from the table, quarter-final head starts = the full table-Points gap. Firms up as the table does; the real thing kicks off GW34.`}</p>
+      : ''}</p>
     <div class="bracket">
       <div class="br-col"><p class="br-stage">Quarter-finals &middot; GW34</p>${qfCol}</div>
       <div class="br-col"><p class="br-stage">Semi-finals &middot; GW35</p>${semiCol}</div>
@@ -9912,7 +9926,7 @@ function pointsGridCard(standings) {
   for (const r of standings) scores[r.id] = gws.map(i => gwManagerPoints(r.id, i));
   const hi = gws.map((_, k) => Math.max(...standings.map(r => scores[r.id][k])));
   return `<div class="card" style="margin-bottom:18px">
-    <h2>Points, week by week <span class="muted" style="font-weight:400;font-size:12px">gold = top score of the week</span></h2>
+    <h2>Points, Week by Week</h2>
     <div style="overflow-x:auto">
     <table class="pool-table" style="font-size:12px">
       <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num act">Total</th></tr></thead>
@@ -9939,7 +9953,7 @@ function crystalBallCard(standings) {
   const luckiest = [...rows].sort((x, y) => y.luck - x.luck)[0];
   const wasteful = [...rows].sort((x, y) => y.waste - x.waste)[0];
   return `<div class="card" style="margin-bottom:18px">
-    <h2>The Crystal Ball <span class="muted" style="font-weight:400;font-size:12px">luck, waste and destiny — the arguments, quantified</span></h2>
+    <h2>The Crystal Ball</h2>
     <div style="overflow-x:auto">
     <table class="pool-table">
       <thead><tr><th>Team</th>
@@ -9958,7 +9972,12 @@ function crystalBallCard(standings) {
       </tr>`).join('')}
       </tbody>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px"><b>Vs all:</b> the record your weekly score would have earned against all 11 managers, not only your fixture. <b>Luck:</b> actual H2H points minus what those scores deserved. <b>Waste:</b> points left on the bench vs your best possible XI. ${odds ? '<b>Playoff odds:</b> 1,000 simulated seasons from everyone’s scoring so far.' : 'Playoff odds appear after three finished gameweeks.'}</p>
+    <ul class="rule-list tight">
+      <li><b>Vs all</b> — your record if you had played all eleven, not just your fixture.</li>
+      <li><b>Luck</b> — H2H points earned minus what those scores deserved.</li>
+      <li><b>Waste</b> — points left on the bench against your best possible XI.</li>
+      ${odds ? '<li><b>Playoffs %</b> — 1,000 simulated seasons from everyone&rsquo;s scoring so far.</li>' : '<li><b>Playoffs %</b> — appears after three finished gameweeks.</li>'}
+    </ul>
   </div>`;
 }
 /* ----- the week's awards, auto-issued ----- */
@@ -10439,7 +10458,13 @@ function playoffCard() {
   const po = playoffState();
   if (!po) {
     return `<div class="card" style="margin-bottom:18px"><h2>The Playoffs</h2>
-      <p class="muted" style="font-size:12.5px">GW33 ends the regular season. Top eight go through. <b>GW34</b>: handicap quarter-finals — 1v8, 2v7, 3v6, 4v5, the higher seed starting with <b>the full table-Points gap</b> between the pair. Finish miles clear, start miles ahead. <b>GW35</b>: semi-finals — winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6. <b>GW36–38</b>: the three-legged final — most legs won, then cumulative points, then regular-season position. Ties elsewhere: higher seed advances.</p></div>`;
+      <ul class="rule-list">
+        <li><b>GW33</b> — the regular season ends. Top eight go through.</li>
+        <li><b>GW34</b> — handicap quarter-finals: 1v8, 2v7, 3v6, 4v5. The higher seed starts with the full table-Points gap between the pair. Finish miles clear, start miles ahead.</li>
+        <li><b>GW35</b> — semi-finals: 1v8 winner meets 4v5 winner, 2v7 winner meets 3v6 winner.</li>
+        <li><b>GW36–38</b> — the three-legged final: most legs won, then cumulative points, then regular-season position.</li>
+        <li>Ties anywhere else: the higher seed advances.</li>
+      </ul></div>`;
   }
   const seedNo = id => po.seeds.indexOf(id) + 1;
   const stageHead = t => `<p class="muted" style="font-size:11px;margin:10px 0 2px;text-transform:uppercase;letter-spacing:.06em">${t}</p>`;
@@ -10714,7 +10739,7 @@ function gwPreviewCard(i) {
   const d = gwPreviewData(i);
   if (!d) return '';
   const { rows, motw, notes, recent } = d;
-  const trough = recent.length ? `<p class="muted" style="font-size:12px;margin-top:10px"><b>Trough watch:</b> ${recent.map(t => `${esc(managerName(t.managerId))} ${t.trade ? 'traded for' : 'signed'} ${esc(PLAYER_BY_ID[t.inId]?.name || '?')}`).join(' · ')}</p>` : '';
+  const trough = '';   // Marc, 30 Aug 2026: the preview is about this tie, not everyone's shopping
   return `<div class="card" style="margin-bottom:18px">
     <h2>GW${GAMEWEEKS[i].n} Preview <span class="tag">projected scores &amp; win chance</span>
       <button class="btn ghost small" id="copyPreview" style="margin-left:auto" title="WhatsApp-ready preview">&#128203; Copy the Preview</button></h2>
@@ -10734,7 +10759,7 @@ function gwPreviewCard(i) {
       </div>`;
     }).join('')}
     ${trough}
-    <p class="muted" style="font-size:10.5px;margin-top:8px">Projections built from FPL expected points for each current XI. The Committee accepts no liability.</p>
+
   </div>`;
 }
 
@@ -10776,19 +10801,23 @@ function viewH2H() {
         const sb = st === 'upcoming' ? '–' : liveScoreHtml(b, i);
         return `<div class="h2h-fx fx-row" data-mu="${a}:${b}:${i}" style="cursor:pointer" title="Tap for the matchup">
           <span class="fx-name fx-l ${aWin ? 'h2h-win' : ''}">${esc(teamName(a))}</span>
-          <span class="fx-chip">${kitSvg(a)}<small class="muted">(H)</small></span>
+          <span class="fx-chip">${kitSvg(a)}</span>
           <span class="fx-score">${sa} &ndash; ${sb}</span>
           <span class="fx-chip">${kitSvg(b)}</span>
           <span class="fx-name ${bWin ? 'h2h-win' : ''}">${esc(teamName(b))}</span>
         </div>
-        <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}${st === 'live' || st === 'underway' ? (() => {
-          // three-way, to agree with the bar on the matchup card this row opens
+        <div class="venue-line">${derbyTag(a, b) ? derbyTag(a, b) + ' &middot; ' : ''}${esc(stadium(a))}</div>
+        ${st === 'live' || st === 'underway' ? (() => {
+          // Stacked under the venue rather than run on after it (Marc, 30 Aug
+          // 2026: "have the stadium central underneath the match, and then the
+          // %s below the stadium"). Three-way, to agree with the bar on the
+          // matchup card this row opens.
           const o = matchOdds(a, b, i);
           const w = Math.round(o.win * 100), dr = Math.round(o.draw * 100);
           const ta = teamOutlook(a, i), tb = teamOutlook(b, i);
-          return ` &middot; win chance ${w}%${dr ? ` – ${dr}% draw` : ''} – ${100 - w - dr}%` +
-            ` &middot; ${ta.toPlay} v ${tb.toPlay} still to play`;
-        })() : ''}</div>`;
+          return `<div class="odds-line">${w}%${dr ? ` &middot; ${dr}% draw` : ''} &middot; ${100 - w - dr}%`
+            + ` <span class="muted">&middot; ${ta.toPlay} v ${tb.toPlay} still to play</span></div>`;
+        })() : ''}`;
       }).join('')}
       <h3 style="margin-top:14px">GW${g.n} — the real fixtures</h3>
       ${(() => {
@@ -11055,7 +11084,7 @@ function h2hMatrixCard() {
       <p class="muted" style="font-size:12.5px">No gameweek has been settled yet. Grudges are still theoretical.</p></div>`;
   }
   return `<div class="card" style="margin-top:14px">
-    <h2>Head-to-head <span class="muted" style="font-weight:400;font-size:12px">row's record vs column (W-D-L), this season</span></h2>
+    <h2>Head-to-Head</h2>
     <div style="overflow-x:auto">
     <table class="pool-table" style="font-size:11px">
       <thead><tr><th></th>${ms.map(c => `<th class="num" title="${esc(teamName(c.id))}">${init(teamName(c.id))}</th>`).join('')}</tr></thead>
@@ -11065,7 +11094,7 @@ function h2hMatrixCard() {
           : `<td class="num" style="white-space:nowrap;${grid[i][j].w > grid[i][j].l ? 'color:#3fb96d' : grid[i][j].w < grid[i][j].l ? 'color:#e05555' : ''}">${grid[i][j].w}-${grid[i][j].d}-${grid[i][j].l}</td>`).join('')}
       </tr>`).join('')}</tbody>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px">${met} meeting${met === 1 ? '' : 's'} settled so far. Each pair meets three times across the regular season.</p>
+
   </div>`;
 }
 function finishedGwIdxs() {
@@ -11133,7 +11162,7 @@ function viewTable() {
   const nCols = form ? 4 : 10; // QF column retired — the bracket below carries it now
   return `
     <div class="card" style="margin-bottom:14px">
-      <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : 'settled gameweeks only &middot; win 3 &middot; draw 1 &middot; tiebreak: overall points'}</span></h2>
+      <h2>The Table <span class="muted" style="font-weight:400;font-size:12px">${form ? `points over the last ${form.counted || 0} finished GW${form.counted === 1 ? '' : 's'} &middot; informational only` : ''}</span></h2>
       ${toggles}
       ${formNote}
       <div style="overflow-x:auto">
@@ -12400,7 +12429,6 @@ function showPlayerCard(pid) {
     </div>
     <div class="quota-bar" style="margin:10px 0">
       <span class="quota-pill">League pts <b class="gold">&nbsp;${pp.pts}</b></span>
-      <span class="quota-pill">FPL official ${p.pts}</span>
       <span class="quota-pill" title="FPL expected points, next gameweek">xPts next ${playerXp(p).toFixed(1)}</span>
     </div>
     ${(() => {
@@ -12414,11 +12442,6 @@ function showPlayerCard(pid) {
         return `<span class="quota-pill">GW${f.gw} <b class="${fdrCls(opp)}">${esc(TEAM_BY_NAME[opp]?.short || opp)} (${f.home === p.team ? 'H' : 'A'})</b></span>`;
       };
       return `<div class="quota-bar" style="margin:0 0 10px">${ups.map(pill).join('')}</div>`;
-    })()}
-    ${(() => {
-      const ls = lastSeasonOf(p);
-      return ls ? `<p class="muted" style="font-size:12px;margin-bottom:8px"><b style="color:var(--text)">${LS_SEASON}:</b> ${ls.pts} FPL pts &middot; ${ls.g} G &middot; ${ls.a} A &middot; ${ls.cs} CS &middot; ${ls.ppg} per game &middot; ${Math.round((ls.mp || 0) / 90)} &times; 90s${ls.club && ls.club !== p.club ? ` <span class="muted">(at ${esc(ls.club)})</span>` : ''}</p>`
-        : `<p class="muted" style="font-size:12px;margin-bottom:8px">No ${LS_SEASON} record — new to the Premier League.</p>`;
     })()}
     ${pp.lines.length ? `<p class="muted" style="font-size:12px;margin-bottom:8px">${esc(pp.lines.join(' \u00b7 '))}</p>` : ''}
     ${(() => {

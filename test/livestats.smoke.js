@@ -141,7 +141,9 @@ const chk = (name, ok, detail = '') => {
     applyLiveStats();
     // one man, one line: the assist joins the goal rather than opening a
     // second entry, because the line reports his round and not an instant
-    out.assistLine = vidiLines(0).length === 1 && /GOAL/.test(vidiLines(0)[0].txt) && /assist/.test(vidiLines(0)[0].txt);
+    // Marc, 30 Aug 2026: the tape shouts every event label, so it is ASSIST
+    // now, not assist. Case-insensitive so the wording can move again.
+    out.assistLine = vidiLines(0).length === 1 && /GOAL/.test(vidiLines(0)[0].txt) && /assist/i.test(vidiLines(0)[0].txt);
     out.whistleMerged = state.fixtures[0].fp === true && state.fixtures[0].minutes === 90;
     // fp counts as over for liveness and for "still to play"
     out.liveOff = !anyMatchLive();

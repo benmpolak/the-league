@@ -81,7 +81,12 @@ body {
   box-shadow: var(--shadow);
 }
 .nav-more-menu button { width: 100%; text-align: left; }
-.sync-area { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+/* flex-shrink:0 and its own min-width: the LIVE pill was being squeezed back
+   under the masthead on a phone and printing over "The League" (Marc, 30 Aug
+   2026: "'Live' text clashes with 'The League'"). The status area reserves its
+   width; the brand is the thing that gives, and its h1 already ellipsises. */
+.sync-area { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); flex: 0 0 auto; min-width: 0; margin-left: auto; }
+.sync-area > * { flex: none; }
 
 main { max-width: 1240px; margin: 0 auto; padding: 28px 24px 80px; }
 .footer { text-align: center; color: #515d77; font-size: 11px; padding: 20px; border-top: 1px solid var(--line); }
@@ -806,7 +811,11 @@ input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
 .pitch-chip.sel { border-color: var(--accent); background: #ffffff1c; }
 .pitch-chip .kit { width: 30px; height: 38px; }
 .pitch-name { font-size: 10.5px; font-weight: 700; text-shadow: 0 1px 2px #000a; text-align: center; }
-.venue-line { font-size: 10px; color: var(--muted); text-align: center; margin: -2px 0 6px; font-style: italic; }
+.venue-line { font-size: 10px; color: var(--muted); text-align: center; margin: -2px 0 1px; font-style: italic; }
+/* the odds on their own centred line under the venue, not run on after it
+   (Marc, 30 Aug 2026) — one short line each reads far cleaner than one long
+   wrapping one */
+.odds-line { font-size: 10px; color: var(--muted); text-align: center; margin: 0 0 6px; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .preview-note.chant { font-style: italic; opacity: .85; }
 
 /* pitch v2 — big enough to read a formation off it */
@@ -1104,7 +1113,7 @@ tr.st-red .pname { color: #ff9c9c; }
   .on-clock > .pick-clock { font-size: 34px; padding: 10px; width: 100%; box-sizing: border-box; }
   .on-clock .oc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .on-clock .oc-btns .btn { width: 100%; padding: 11px 8px; }
-  .brand { gap: 7px; min-width: 0; flex: 1; }
+  .brand { gap: 7px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
   .brand-crest { width: 38px; height: 38px; border-radius: 50%; }
   /* Ben, 16 Aug: the season was clipping against the identity chip — on
      phones it moves to its own line under the name, always whole */
@@ -1621,3 +1630,12 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .claim-row.claim-dead { opacity: .62; }
 .claim-row.claim-dead b { text-decoration: line-through; text-decoration-color: #e0a83c; }
 .claim-dead-tag { background: #e0a83c22; color: #e0a83c; border-color: #e0a83c55; font-size: 9px; }
+
+/* Rules and explanations as bullets rather than a wall of prose (Marc, 30 Aug
+   2026, on the Playoffs card: "way too much text, formatting is messy, some
+   bold/some not. Needs organising into succinct bullet points"). */
+.rule-list { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+.rule-list li { margin-bottom: 4px; }
+.rule-list li:last-child { margin-bottom: 0; }
+.rule-list b { color: var(--text); }
+.rule-list.tight { font-size: 10.5px; line-height: 1.5; margin-top: 6px; }

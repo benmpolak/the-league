@@ -397,16 +397,27 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
     for (const g of GAMEWEEKS) g.finished = false;
     tableView.mode = 'overall';
     state.view = 'table'; render();
-    const sub = document.querySelector('h2 .muted').textContent;
+    // Marc, 30 Aug 2026: the standing "win 3 / draw 1 / tiebreak" line under
+    // the Table heading was cut as clutter, so ask the toggles which view is
+    // showing rather than reading it off a caption that no longer exists.
+    // The Form button carries .ghost while Overall is live, and vice versa.
+    const live = m => {
+      const b = document.querySelector('[data-tblmode="' + m + '"]');
+      return !!b && !b.classList.contains('ghost');
+    };
+    const sub = { overall: live('overall'), form: live('form') };
     // Marc, 9 Aug: the two fixed Last 3 / Last 5 buttons are now one Form
     // button plus a window selector, so the window is set on tableView.n
     document.querySelector('[data-tblmode="form"]').click();
+    const onForm = { overall: live('overall'), form: live('form') };
     const note = document.querySelector('.card p.muted')?.textContent || '';
     const mids = [...document.querySelectorAll('[data-mgr-row]')].map(r => +r.dataset.mgrRow);
     document.querySelector('[data-tblmode="overall"]').click();
-    return { sub, note, mids, constitutional: state.managers.map(m => m.id) };
+    return { sub, onForm, note, mids, constitutional: state.managers.map(m => m.id) };
   })()`);
-  chk('F1: Overall is the default view', /overall points/.test(f0.sub), f0.sub);
+  chk('F1: Overall is the default view, and Form takes over when asked',
+    f0.sub.overall && !f0.sub.form && f0.onForm.form && !f0.onForm.overall,
+    JSON.stringify({ sub: f0.sub, onForm: f0.onForm }));
   chk('F5a: pre-season Last 3 explains form begins after GW1, constitutional order',
     /Form begins after GW1/.test(f0.note) && JSON.stringify(f0.mids) === JSON.stringify(f0.constitutional), f0.note);
 
