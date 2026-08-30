@@ -1603,6 +1603,11 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 /* the holding pen, one man per chip so the Chairman can admit a late feed
    entry without opening the whole window (Marc, 21 Aug) */
 .pen-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* the position badge leads the pill now (Marc, 28 Aug 2026: "can you add the
+   position to the players in the holding pen"), so the 10px of left padding
+   that used to sit before the name would leave it floating — the badge is its
+   own left edge, exactly as it is in the Window Draft list above */
 .pen-man { display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
-  border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; }
+  border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px; }
 .pen-man .pen-admit { padding: 1px 7px; font-size: 10.5px; }
+.pen-man .pos-badge { font-size: 9px; padding: 2px 5px; }
