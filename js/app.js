@@ -7456,7 +7456,8 @@ function viewTransfers() {
       const shut = windowWaiverDone();
       const wrows = wlist.map((c, k) => `
         <div class="lrow claim-row" style="font-size:12.5px">
-          <span class="muted">&#8942; #${k + 1}</span> <span class="pos-badge pos-${PLAYER_BY_ID[c.in]?.pos}">${PLAYER_BY_ID[c.in]?.pos || '?'}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+          ${shut ? `<span class="muted">#${k + 1}</span>` : `<input class="auto-rank" type="number" min="1" max="${wlist.length}" value="${k + 1}" data-wcrank="${k}" draggable="false"
+            title="Type a number to move him there" aria-label="${esc(PLAYER_BY_ID[c.in]?.name || 'this claim')} is number ${k + 1}. Type a number to move him.">`} <span class="pos-badge pos-${PLAYER_BY_ID[c.in]?.pos}">${PLAYER_BY_ID[c.in]?.pos || '?'}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
           <span class="muted">in, ${esc(PLAYER_BY_ID[c.out]?.name || '?')} out</span>
           ${shut ? '' : `<span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
             <button class="btn ghost small icon-btn" data-wcup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
@@ -7568,7 +7569,8 @@ function viewTransfers() {
     };
     const claimRows = claims.map((c, k) => `
       <div class="lrow claim-row${deadClaim(c) ? ' claim-dead' : ''}" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
-        <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
+        <input class="auto-rank" type="number" min="1" max="${claims.length}" value="${k + 1}" data-claimrank="${k}" draggable="false"
+          title="Type a number to move him there — everyone else shifts down" aria-label="${esc(PLAYER_BY_ID[c.in]?.name || 'this claim')} is number ${k + 1}. Type a number to move him."> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
         ${deadClaim(c) ? `<span class="tag claim-dead-tag" title="${esc(deadClaim(c))}">will not land</span>` : ''}
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
@@ -7587,7 +7589,7 @@ function viewTransfers() {
       </div>`).join('') : '';
     return `${head}<div class="card">
       <h2>${esc(managerName(mid))}'s waiver list</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Top of the list is tried first when waivers are processed — next run ${esc(fmtWhen(nextRun))}. Drag to reorder, &#10005; to withdraw. Lodge new requests from <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Top of the list is tried first when waivers are processed — next run ${esc(fmtWhen(nextRun))}. Type a number to move a man straight there, or drag; &#10005; to withdraw. Lodge new requests from <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>.</p>
       ${claims.length ? claimRows
         : `<p class="muted" style="font-size:12px;margin-bottom:8px">Nothing on the list. Sign a player who's <b>on waivers</b> in the Trough and he joins your waiver list.</p>`}
       ${movesBlock}
@@ -7915,6 +7917,33 @@ function bindTransfers() {
     } else slot.style.display = 'none';
   });
   // claim list management (withdraw / reprioritise)
+  /* Type the number to move a claim, exactly as the Draft Console's autolist
+     works (Marc, 30 Aug 2026: "its quite awkward to reorder your list if it is
+     too long"). Arrows are fine for a nudge and useless for moving #17 to #2. */
+  const rankMove = (arr, from, raw, save) => {
+    // an emptied box is somebody backing out, not a request for slot 0 —
+    // Number('') is 0 and would have sent him to the top of the list
+    const want = String(raw).trim() === '' ? NaN : Math.round(Number(raw));
+    if (!Number.isFinite(want)) { render(); return; }   // put the old number back
+    const to = Math.max(0, Math.min(arr.length - 1, want - 1));
+    if (to === from) { render(); return; }
+    const next = [...arr];
+    next.splice(to, 0, next.splice(from, 1)[0]);
+    save(next);
+  };
+  const bindRank = (sel, listOf, save, guard) => {
+    document.querySelectorAll(`[data-${sel}]`).forEach(inp => {
+      const commit = () => {
+        if (guard && !guard()) { render(); return; }
+        rankMove(listOf(), +inp.dataset[sel], inp.value, save);
+      };
+      inp.onchange = commit;
+      inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } };
+    });
+  };
+  bindRank('claimrank', () => myClaims(mid), a => setClaims(mid, a),
+    () => actGuard(mid, 'waiver claims'));       // the same gate the arrows use
+  bindRank('wcrank', () => myWindowClaims(mid), a => setWindowClaims(mid, a));
   document.querySelectorAll('[data-claimdel]').forEach(b => b.onclick = () => {
     if (!actGuard(mid, 'waiver claims')) return;
     const arr = [...myClaims(mid)]; arr.splice(+b.dataset.claimdel, 1); setClaims(mid, arr);
