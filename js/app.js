@@ -446,7 +446,11 @@ function applySharedSnapshot(data) {
     // online, claims/autolists/watchlists never travel in the public snapshot —
     // they are per-owner private data fed by onPrivateSnapshot. Keep the local
     // copy. A watchlist is nobody else's business (Marc, 20 Aug).
-    if (netOn() && (k === 'claims' || k === 'autolists' || k === 'watchlists')) continue;
+    // windowClaims joined them on 31 Aug, when the Chairman deployed the desk
+    // that lodges a window list at private/{uid}/windowClaims. Without this the
+    // public snapshot — which by design carries no window lists at all — kept
+    // overwriting a lodged list with nothing, and it vanished off the screen.
+    if (netOn() && (k === 'claims' || k === 'autolists' || k === 'watchlists' || k === 'windowClaims')) continue;
     state[k] = data[k] !== undefined ? data[k] : defaults[k];
   }
   applySquadRules(state.settings);
@@ -491,6 +495,9 @@ function applyPrivateNode(node) {
   const claims = {};
   for (const [g, arr] of Object.entries(node?.claims || {})) claims[g] = { [mid]: toArr(arr) };
   state.claims = claims;
+  // the window list rides the same private node, and is read back the same way:
+  // wholesale, so nobody else's blind list can linger on this device
+  state.windowClaims = { [mid]: toArr(node?.windowClaims) };
   save(); render();
 }
 window.onPrivateSnapshot = node => {
@@ -2511,9 +2518,18 @@ const myWindowClaims = mid => toArr(state.windowClaims?.[mid]);
 function setWindowClaims(mid, arr) {
   // codes ride along so a lodged list survives a feed id shift (Desk §3b)
   arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
-  if (netOn()) serverAct('windowClaimSet', { claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+  const before = myWindowClaims(mid);
   (state.windowClaims = state.windowClaims || {})[mid] = arr;
   save(); render();
+  // The desk checks every line — in the pen, unowned, yours to drop, and the
+  // squad still legal after the swap — and refuses the WHOLE list if one is
+  // doomed. serverAct already reads the reason out; what was missing was the
+  // roll-back, so a refused list sat on screen looking lodged and then did
+  // nothing on Thursday morning. Put the old list back instead.
+  if (netOn()) {
+    serverAct('windowClaimSet', { claims: arr, ...(mid !== whoami && { asManager: mid }) })
+      .catch(() => { (state.windowClaims = state.windowClaims || {})[mid] = before; save(); render(); });
+  }
 }
 // Run it. Normally Thursday 10:00 does this on the server, which is the only
 // place that can see everybody's blind list; the Chairman keeps a manual
