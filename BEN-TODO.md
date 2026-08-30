@@ -8,6 +8,74 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 07b. THE WINDOW DRAFT BECOMES A WAIVER — Thu 3 Sept 10:00 (30 Aug)
+
+**A rules change, and it supersedes Toby's ask in §7.** Marc, 30 Aug: *"we
+would like to do the window draft as a waiver where everyone does a waiver list
+rather than a draft where everyone needs to be online. we want the waiver to be
+a one off waiver, that takes place on Thursday at 10am, only including players
+in the holding pen. the order is the reverse of the draft, with duckett first
+and toby last. there will be two rounds only and it will be a snake draft. so
+toby has picks 12 and 13, duckett has 1 and 24. this will not impact the waiver
+order or scheduling of the regular friday waiver."*
+
+§7 records Toby wanting it armed for **Wed 2 Sept 20:00 as a live draft**.
+Marc's version replaces that outright — confirmed with him: Thu 3 Sept, and the
+live draft console retires rather than staying as a fallback. Flagging it
+because §1 sets the precedent that rules changes are the group's, and Toby
+should not find his request quietly overwritten.
+
+Also settled with Marc: a manager who lodges no list, or whose list is dead by
+the time his slot comes round, **signs nobody** — the slot passes, exactly like
+a normal waiver. And each line on the list is a `{in, out}` pair, the same
+shape ordinary claims already use, because two signings means two men leaving a
+fourteen-man squad.
+
+### What is built and green
+
+`resolveWindowWaiver(state, runStart, rounds)` in **js/engine.js**, exported
+alongside `windowSnake`, `penIds` and `WINDOW_ROUNDS`. Pure: mutates nothing,
+returns `{records, executed, strippedLineups, tgw, slots}` in the same shape
+`resolveWaivers` already returns, so the caller applies it the same way.
+
+`test/windowwaiver.test.js`, 28 checks, wired into `test:offline`. The two that
+matter:
+
+- **The snake is pinned by name and by arithmetic.** Toby holds picks 12 and
+  13, Ducky 1 and 24, everyone gets exactly two, 24 slots over two rounds.
+- **Friday is untouched, and the check has teeth.** The waiver order is
+  byte-identical after a window run, AND a control proves a genuine waiver take
+  *does* move it — so the first assertion is not passing vacuously.
+
+That second one is free rather than clever: `takesQueue` counts only
+`t.waiver`, and these records carry `windowDraft: true` instead. Marc's "will
+not impact the waiver order" holds by construction.
+
+### What still needs you
+
+1. **A server action to lodge a list.** Claims live per-uid and private, merged
+   server-side, exactly as ordinary claims do — a blind list that any client
+   could read is not blind. New node `windowClaims/{uid}`, an ordered array of
+   `{in, out}`. The engine reads `state.windowClaims[mid]`.
+2. **The run itself.** One-off, Thu 3 Sept 10:00 London. `waiverTick` already
+   owns the due-check pattern; this wants a one-shot slot beside it that fires
+   once and marks itself spent, and must NOT stamp `waiverMeta.lastRun` or the
+   Friday clock moves.
+3. **Leftovers to the Trough** when it finishes, which is what `wdFinish`
+   already does — refresh the draft-pool snapshot so the pen empties.
+4. **Deploy**, then retire `ACTIONS.windowDraft`'s `start`/`pick`/`pass` ops
+   and the live console in `viewTransfers`. `admit` stays: it is the Osman
+   escape hatch from §04 and has nothing to do with the draft.
+
+### Still to build client-side (Marc's AI, not you)
+
+The list-lodging UI. Nobody can enter a list yet, so this is not usable by
+anyone until both halves exist. Flagged here so the two do not get deployed out
+of step: **the server action should land before or with the UI**, never after,
+or managers will type lists into a screen that quietly drops them.
+
+---
+
 ## 06. GITHUB'S SCHEDULER HAS STOPPED — move the FPL fetch to a Cloud Function (28 Aug)
 
 **Done 29 Aug (commit 196cd56):** `feedTick` Cloud Function, every 5 min on

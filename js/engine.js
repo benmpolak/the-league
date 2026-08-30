@@ -764,6 +764,94 @@
       return { records, executed, buckets, stampedMeta, strippedLineups, tgw };
     }
 
+    /* ---- the Window Waiver ----
+       Marc, 30 Aug 2026: "we would like to do the window draft as a waiver
+       where everyone does a waiver list rather than a draft where everyone
+       needs to be online."
+
+       Replaces the live Window Draft. Everyone lodges an ordered list of
+       {in, out} claims against the holding pen; at the appointed hour this
+       walks a FIXED snake and gives each manager the best claim on his list
+       that is still legal when his slot comes round.
+
+       Three things it deliberately is not:
+
+       - It is not the weekly takes-queue. The order is the reverse of draft
+         night and it never moves: Ducky first, Toby last. Nobody drops down it
+         for winning, because with two picks each there is nothing to balance.
+       - It does not touch Friday. The records carry windowDraft: true and NOT
+         waiver: true, and takesQueue counts only t.waiver — so a man signed
+         here does not spend a waiver take and the Friday order is exactly what
+         it would have been. That is the whole of Marc's "this will not impact
+         the waiver order", and it holds by construction rather than by care.
+       - It does not pick for anybody. No list, or a list whose every line has
+         gone or become illegal, means the slot passes and he signs nobody.
+
+       Two rounds, snaking, so with twelve managers picks 1-12 run Ducky to
+       Toby and 13-24 run Toby back to Ducky: Toby holds 12 and 13, Ducky 1
+       and 24. Mutates nothing; returns what the caller must apply atomically,
+       in the same shape resolveWaivers uses. */
+    const WINDOW_ROUNDS = 2;
+    function windowSnake(order, rounds) {
+      const slots = [];
+      for (let r = 0; r < rounds; r++)
+        slots.push(...(r % 2 ? [...order].reverse() : [...order]));
+      return slots;
+    }
+    // the pen: an id draft night never saw, that nobody owns yet
+    function penIds(state, tgw) {
+      if (!state.draftPool || !state.draftPool.ids) return new Set();
+      const owned = ownedIdsAt(state, tgw);
+      return new Set(PLAYERS.filter(p => isArrival(state, p) && !owned.has(p.id)).map(p => p.id));
+    }
+    function resolveWindowWaiver(state, runStart, rounds) {
+      const tgw = transferGw(state);
+      const work = {
+        ...state,
+        transfers: [...state.transfers],
+        lineups: JSON.parse(JSON.stringify(state.lineups || {})),
+      };
+      // reverse of draft night, and it stays that way for both rounds
+      const order = toArr(state.draft && state.draft.order).slice().reverse();
+      const slots = windowSnake(order, rounds || WINDOW_ROUNDS);
+      const pen = penIds(state, tgw);
+      const pending = {};
+      for (const mid of order) pending[mid] = toArr(state.windowClaims && state.windowClaims[mid]).slice();
+      const executed = [];
+      const records = [];
+      const strippedLineups = {};
+      const taken = new Set();
+      for (const mid of slots) {
+        const list = pending[mid];
+        if (!list || !list.length) continue;         // no list: the slot passes
+        while (list.length) {
+          const c = list.shift();
+          const inP = PLAYER_BY_ID[c && c.in];
+          // only the pen, only what nobody has taken in this run or since
+          if (!inP || !pen.has(inP.id) || taken.has(inP.id)) continue;
+          if (ownedIdsAt(work, tgw).has(inP.id)) continue;
+          // he must still own the man he offered, and the squad must survive it
+          if (!squadAt(work, mid, tgw).some(x => x.id === c.out)) continue;
+          if (!squadShapeOk(work, [...squadAt(work, mid, tgw).filter(x => x.id !== c.out), inP])) continue;
+          const rec = {
+            managerId: mid, outId: c.out, outCode: (PLAYER_BY_ID[c.out] || {}).code ?? null,
+            inId: inP.id, inCode: inP.code ?? null, gw: tgw, t: runStart + 1, windowDraft: true,
+          };
+          work.transfers.push(rec);
+          records.push(rec);
+          taken.add(inP.id);
+          const lu = work.lineups[mid] && work.lineups[mid][tgw];
+          if (lu) {
+            work.lineups[mid][tgw] = toArr(lu).filter(id => id !== c.out);
+            strippedLineups[mid] = work.lineups[mid][tgw];
+          }
+          executed.push({ mid, in: inP.id, out: c.out });
+          break;                                     // one signing per slot
+        }
+      }
+      return { records, executed, strippedLineups, tgw, slots };
+    }
+
     /* ---- window draft ---- */
     function wdActor(state) {
       const wd = state.windowDraft, ord = toArr(wd.order);
@@ -781,6 +869,7 @@
       xiCounts, xiValid, legalizeXI, autoXI, lineupFor, benchFor,
       statPoints, gwPlayerPoints, appearedInGw, effectiveXI, gwManagerPoints, standingsBefore,
       nextWaiverRun, nextProcessableWaiverRun, waiverControl, lastWaiverRun, waiverRunDue, waiverOrder, waiverBase, takesQueue, resolveWaivers,
+      WINDOW_ROUNDS, windowSnake, penIds, resolveWindowWaiver,
       mockScorelines, mockGwStats,
       gwKicks, gwClearAt, nextSlotAt, waiverSlotId, slotAtFromId, waiverSchedule, troughWindow,
       wdActor,
