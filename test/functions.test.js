@@ -888,6 +888,44 @@ const SB = 'the-league-sandbox';
   chk('draftPool refreshed in the same commit (leftover arrival unlocked)', poolAfter != null, JSON.stringify(poolAfter));
   chk('acting on a finished window rejected', (await T.mutate(LG, 'windowDraft', { op: 'pass' }, tok1)).error?.status === 'FAILED_PRECONDITION');
 
+  /* ---------------- the Window Waiver: blind lists, one run ---------------- */
+  // fresh pen: two arrivals untouched by the window draft above
+  await mkArrival(wdFree[2]); await mkArrival(wdFree[3]);
+  const wOut2 = byPos(await squadOf(2), 'MF')[0], wOut3 = byPos(await squadOf(3), 'MF')[0];
+  chk('window list refuses a man outside the pen',
+    (await T.mutate(LG, 'windowClaimSet', { claims: [{ in: freeOf('MF')[0], out: wOut2 }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
+  // both want the same man; the order is the reverse of draft night, so 3 wins
+  // and 2 falls through to his cover line — nobody loses his slot as well
+  chk('manager 2 lodges a window list (with cover)',
+    !(await T.mutate(LG, 'windowClaimSet', { claims: [{ in: wdFree[2], out: wOut2 }, { in: wdFree[3], out: wOut2 }] }, tok2)).error);
+  chk('manager 3 lodges a window list',
+    !(await T.mutate(LG, 'windowClaimSet', { claims: [{ in: wdFree[2], out: wOut3 }] }, tok3)).error);
+  chk('window lists are private (rules)',
+    [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/private/${members[2].uid}/windowClaims`, { token: tok3 })).status));
+  chk('window run is Chairman-only',
+    (await T.mutate(LG, 'windowWaiverRun', {}, tok2)).error?.status === 'PERMISSION_DENIED');
+  const wmBefore = (await db.ref(`v2/leagues/${LG}/public/waiverMeta`).get()).val();
+  const ww = await T.mutate(LG, 'windowWaiverRun', { runId: 'emuww' }, tok1);
+  chk('the window waiver runs', !ww.error, JSON.stringify(ww.error));
+  const wwex = ww.result?.executed || [];
+  chk('reverse order holds: 3 wins the contested man, 2 lands his cover',
+    wwex.some(e => e.mid === 3 && e.in === wdFree[2]) && wwex.some(e => e.mid === 2 && e.in === wdFree[3]),
+    JSON.stringify(wwex));
+  const wwtr = Object.values((await db.ref(`v2/leagues/${LG}/public/transfers`).get()).val() || {})
+    .filter(t => t && t.runId === 'window-emuww');
+  chk('window signings carry windowDraft and never the waiver flag',
+    wwtr.length === wwex.length && wwtr.every(t => t.windowDraft === true && !t.waiver), JSON.stringify(wwtr.map(t => [t.inId, !!t.windowDraft, !!t.waiver])));
+  const wmAfter = (await db.ref(`v2/leagues/${LG}/public/waiverMeta`).get()).val();
+  chk('the Friday clock is unmoved (waiverMeta untouched)',
+    JSON.stringify(wmBefore) === JSON.stringify(wmAfter), JSON.stringify([wmBefore, wmAfter]));
+  chk('window lists cleared by the run',
+    !(await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/windowClaims`).get()).val()
+    && !(await db.ref(`v2/leagues/${LG}/private/${members[3].uid}/windowClaims`).get()).val());
+  chk('leftovers unlocked into the Trough (snapshot refreshed)',
+    (await db.ref(`v2/leagues/${LG}/public/draftPool/ids/${wdFree[2]}`).get()).val() != null);
+  chk('re-running the same window run is a no-op skip',
+    (await T.mutate(LG, 'windowWaiverRun', { runId: 'emuww' }, tok1)).result?.skipped === 'already processed');
+
   /* ---------------- waivers: recoverable, effectively exactly-once ---------------- */
   const wFree = freeOf('FW');
   const claimFor2 = { in: wFree[0], out: byPos(await squadOf(2), 'FW')[0] };

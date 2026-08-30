@@ -51,6 +51,14 @@ That second one is free rather than clever: `takesQueue` counts only
 `t.waiver`, and these records carry `windowDraft: true` instead. Marc's "will
 not impact the waiver order" holds by construction.
 
+**Done 31 Aug (Ben's desk):** all four numbered items below shipped and
+deployed. `windowClaimSet` (private per-uid lists, validated at the desk),
+`windowWaiverRun` + the one-off `window-2026-09-03` slot on the hourly tick
+(exactly-once via the run ledger, 14-day tail, `waiverMeta` never touched),
+leftovers to the Trough in the same commit. Twelve emulator checks in
+`functions.test.js` pin the lot — reverse order, cover lines, privacy rules,
+the unmoved Friday clock, replay-safety. Marc's UI can point at it now.
+
 ### What still needs you
 
 1. **A server action to lodge a list.** Claims live per-uid and private, merged

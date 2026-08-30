@@ -181,6 +181,7 @@ async function loadState(league, ctx, { withPrivate = false } = {}) {
       const mid = mem[uid]?.managerId;
       if (!Number.isInteger(mid)) continue;
       if (node.autolist) s.autolists[mid] = toArr(node.autolist);
+      if (node.windowClaims) (s.windowClaims = s.windowClaims || {})[mid] = toArr(node.windowClaims);
       for (const [g, arr] of Object.entries(node.claims || {})) {
         (s.claims[g] = s.claims[g] || {})[mid] = toArr(arr);
       }
@@ -1666,6 +1667,153 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
   return { ok: true, turn: wdAfter?.turn ?? null, status: wdAfter?.status ?? null };
 };
 
+/* ---------------- the Window Waiver (Marc, 30 Aug 2026) ----------------
+ * "the window draft as a waiver where everyone does a waiver list rather than
+ * a draft where everyone needs to be online... one off waiver, Thursday at
+ * 10am, only including players in the holding pen... this will not impact the
+ * waiver order or scheduling of the regular friday waiver."
+ *
+ * The law lives in js/engine.js (resolveWindowWaiver) so this file runs the
+ * same rules the client renders. Lists are lodged per-uid and PRIVATE — a
+ * blind list any client could read is not blind — merged by loadState the way
+ * ordinary claims are. The run follows runWaivers' recoverable shape: claim
+ * the run id under a lease, persist the plan, apply idempotently, mark done.
+ * It never touches waiverMeta, so the Friday clock cannot move. */
+const WINDOW_WAIVER_AT = Date.parse('2026-09-03T09:00:00Z'); // Thu 3 Sept 10:00 London — mirrored in js/app.js
+const WINDOW_WAIVER_SLOT = 'window-2026-09-03';
+
+ACTIONS.windowClaimSet = async ({ league, a, data, eng, ctx, state }) => {
+  if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'season not underway');
+  const raw = toArr(data.claims);
+  if (raw.length > 30) throw new HttpsError('invalid-argument', 'too many lines (max 30)');
+  const claims = raw.map(c => ({
+    in: Number(c && c.in), out: Number(c && c.out),
+    inCode: ctx.PLAYER_BY_ID[Number(c && c.in)]?.code ?? null, outCode: ctx.PLAYER_BY_ID[Number(c && c.out)]?.code ?? null,
+  }));
+  if (claims.some(c => !Number.isInteger(c.in) || !Number.isInteger(c.out))) throw new HttpsError('invalid-argument', 'bad line');
+  // the commissioner may lodge FOR a manager in the sandbox only, exactly as
+  // claimSet rules: against real managers the write would replace a private
+  // list the Chairman cannot see
+  const mid = actingManager(a, data);
+  if (mid !== a.managerId && league !== 'the-league-sandbox') {
+    throw new HttpsError('failed-precondition', 'acting-as lists only exist in the sandbox');
+  }
+  const tgw = eng.transferGw(state);
+  const squad = eng.squadAt(state, mid, tgw);
+  const squadIds = new Set(squad.map(p => p.id));
+  const owned = eng.ownedIdsAt(state, tgw);
+  for (const c of claims) {
+    const inP = ctx.PLAYER_BY_ID[c.in];
+    if (!inP) throw new HttpsError('invalid-argument', 'line names an unknown player');
+    // a doomed line is refused at the desk, not skipped on Thursday morning
+    if (!eng.isArrival(state, inP)) throw new HttpsError('failed-precondition', `${inP.name} is not in the holding pen — use the weekly waiver list`);
+    if (owned.has(c.in)) throw new HttpsError('failed-precondition', 'already owned');
+    if (!squadIds.has(c.out)) throw new HttpsError('failed-precondition', 'the drop player is not in your squad');
+    if (!eng.squadShapeOk(state, [...squad.filter(p => p.id !== c.out), ctx.PLAYER_BY_ID[c.in]])) throw new HttpsError('failed-precondition', 'line would leave an illegal squad shape');
+  }
+  let uid = a.uid;
+  if (mid !== a.managerId) {
+    uid = await uidForManager(league, mid);
+    if (!uid) throw new HttpsError('failed-precondition', 'that manager has no account to hold a list');
+  }
+  await db().ref(`${leagueBase(league)}/private/${uid}/windowClaims`).set(claims);
+  return { ok: true };
+};
+
+// applyWaiverPlan's twin for the window ledger: replay detection keys on the
+// windowDraft flag these records carry, never the waiver flag they must not.
+async function applyWindowPlan(league, runId, plan, state, eng, ctx) {
+  if (!plan.records || !plan.records.length) return { applied: 0, dropped: 0, landed: [] };
+  const ref = db().ref(`${leagueBase(league)}/public/transfers`);
+  const seedSnap = (await ref.get()).val();
+  const keyOf = r => `${r.managerId}:${r.inId}:${r.outId}`;
+  let applied = 0, dropped = 0, landedKeys = new Set();
+  const res = await ref.transaction(cur => {
+    const out = toArr(cur === null ? seedSnap : cur).map(x => ({ ...x }));
+    applied = 0; dropped = 0; landedKeys = new Set();
+    const have = new Set(out.filter(t => t && t.windowDraft && t.runId === runId).map(keyOf));
+    for (const r of plan.records) {
+      const key = keyOf(r);
+      if (have.has(key)) { applied++; landedKeys.add(key); continue; } // replay — already landed
+      const owned = eng.ownedIdsGiven(state, out, plan.tgw);
+      if (owned.has(r.inId) || !owned.has(r.outId)) { dropped++; continue; } // gone since planning — the line lapses
+      const current = { ...state, transfers: out };
+      const squad = eng.squadAt(current, r.managerId, plan.tgw);
+      const inP = ctx.PLAYER_BY_ID[r.inId];
+      const after = inP ? [...squad.filter(p => p.id !== r.outId), inP] : [];
+      if (!inP || !eng.squadShapeOk(current, after)) { dropped++; continue; }
+      out.push({ ...r, n: out.length + 1 });
+      applied++; landedKeys.add(key);
+    }
+    return out;
+  });
+  if (!res.committed) throw new HttpsError('aborted', 'transfer ledger contended — run again');
+  return { applied, dropped, landed: plan.records.filter(r => landedKeys.has(keyOf(r))) };
+}
+
+async function runWindowWaiver(league, runId, trigger) {
+  const base = leagueBase(league);
+  const runRef = db().ref(`${base}/server/waiverRuns/${runId}`);
+  const now0 = Date.now();
+  const claim = await runRef.transaction(cur => {
+    if (cur && cur.status === 'done') return; // abort: nothing to do
+    if (cur && (cur.status === 'running' || cur.status === 'applying')
+      && now0 - (cur.startedAt || 0) < WAIVER_LEASE_MS) return; // abort: live lease
+    return { ...(cur || {}), status: cur?.plan ? 'applying' : 'running', trigger, startedAt: now0, attempt: ((cur && cur.attempt) || 0) + 1 };
+  });
+  if (!claim.committed) {
+    if (claim.snapshot.val()?.status === 'done') return { skipped: 'already processed' };
+    throw new HttpsError('aborted', 'window waiver already in progress — retry shortly');
+  }
+  try {
+    const ctx = await loadCtx();
+    const eng = ctx.eng;
+    const state = await loadState(league, ctx, { withPrivate: true });
+    let plan = claim.snapshot.val()?.plan || null;
+    if (!plan) {
+      if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
+      const runStart = Date.now() - 1;
+      const res = eng.resolveWindowWaiver(state, runStart);
+      plan = { records: res.records.map(r => ({ ...r, runId })), executed: res.executed, strippedLineups: res.strippedLineups, tgw: res.tgw };
+      await runRef.update({ status: 'applying', plan });
+    }
+    const { applied, dropped, landed } = await applyWindowPlan(league, runId, plan, state, eng, ctx);
+    const executed = landed.map(r => ({ mid: r.managerId, in: r.inId, out: r.outId }));
+    // strip only landed outs, from the CURRENT lineup, transactionally
+    const landedOuts = {};
+    for (const r of landed) (landedOuts[r.managerId] = landedOuts[r.managerId] || []).push(r.outId);
+    for (const [mid, outs] of Object.entries(landedOuts)) {
+      await db().ref(`${base}/public/lineups/${mid}/${plan.tgw}`).transaction(cur => {
+        if (cur == null) return;
+        return toArr(cur).filter(id => !outs.includes(id));
+      });
+    }
+    // one desk, one run: every list is consumed wholesale (there is no next
+    // run for a leftover line to roll to), the leftovers unlock into the
+    // Trough via a fresh snapshot, and waiverMeta is NEVER touched — that is
+    // Marc's "will not impact the waiver order", held by construction.
+    const mem = (await db().ref(`${base}/server/membership`).get()).val() || {};
+    const upd = {};
+    for (const uid of Object.keys(mem)) upd[`${base}/private/${uid}/windowClaims`] = null;
+    upd[`${base}/public/draftPool`] = { at: Date.now(), ids: Object.fromEntries(ctx.PLAYERS.map(p => [p.id, p.club])) };
+    upd[`${base}/server/waiverRuns/${runId}/status`] = 'done';
+    upd[`${base}/server/waiverRuns/${runId}/finishedAt`] = Date.now();
+    upd[`${base}/server/waiverRuns/${runId}/executed`] = executed;
+    upd[`${base}/server/waiverRuns/${runId}/applied`] = applied;
+    upd[`${base}/server/waiverRuns/${runId}/dropped`] = dropped;
+    await db().ref().update(upd);
+    return { executed };
+  } catch (e) {
+    await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});
+    throw e;
+  }
+}
+
+ACTIONS.windowWaiverRun = async ({ league, a, data }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  return runWindowWaiver(league, data.runId ? `window-${cleanText(data.runId, 40)}` : `window-manual-${Date.now()}`, `manual:${a.uid}`);
+};
+
 /* ----- reset / import (the nuclear desk) ----- */
 // the 12, as they appear in the client's freshState — the fallback roster when
 // a reset finds no managers to carry over
@@ -2146,7 +2294,7 @@ exports.mutate = onCall(async req => {
   if (!fn) throw new HttpsError('invalid-argument', `unknown action ${action}`);
   const a = await actor(req, league);
   const ctx = await loadCtx();
-  const needsState = !['autolistSet', 'adjustmentSet', 'waiverRunNow', 'resetLeague', 'importState'].includes(action);
+  const needsState = !['autolistSet', 'adjustmentSet', 'waiverRunNow', 'windowWaiverRun', 'resetLeague', 'importState'].includes(action);
   // a never-initialised league accepts setup actions by seeding itself first
   if (SETUP_SEED_ACTIONS.has(action) || (action === 'draftAdmin' && data.op === 'start')) await ensureSetupState(league);
   const state = needsState ? await loadState(league, ctx) : null;
@@ -2165,6 +2313,15 @@ exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', re
   for (const d of due) {
     await runWaivers('the-league-2627', `sched-${d.id}`, 'schedule').catch(e => {
       errs.push(d.id + ': ' + String(e.message || e).slice(0, 80));
+    });
+  }
+  // the one-off Window Waiver (Marc, 30 Aug): Thu 3 Sept 10:00 London. The
+  // deterministic id and the run ledger make it exactly-once; the 14-day tail
+  // lets a scheduler outage on the morning still deliver it late rather than
+  // never. Once done, every later tick returns 'already processed' for pence.
+  if (Date.now() >= WINDOW_WAIVER_AT && Date.now() - WINDOW_WAIVER_AT < 14 * 864e5) {
+    await runWindowWaiver('the-league-2627', WINDOW_WAIVER_SLOT, 'schedule').catch(e => {
+      errs.push('window: ' + String(e.message || e).slice(0, 80));
     });
   }
   // freeze any drawn Ham Cup whose selection window has opened (idempotent —
