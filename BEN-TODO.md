@@ -104,6 +104,33 @@ Order of play, none of it urgent enough to do tonight:
 Raised by Marc, 28 Aug: *"why, do i have to do this. you know the timings,
 surely we can automate it."* He was right that it should not be a button.
 
+### Retire `matchwatch.yml` too — and the reason is that it never worked
+
+Marc, 30 Aug: put it on the same list as the `fpl.yml`/`live.yml` crons. It
+belongs there, but it is a stronger case than "harmless extra", because the
+run log says the stopgap was never actually load-bearing.
+
+**Five runs, ever. All five triggered by `push`. Not one of its four scheduled
+crons has fired.** Its whole design was "cron is unreliable, so get one fire to
+cover fifteen hours" — and it could not get the one fire. Through Saturday's
+card (29 Aug, 11:30 through 16:30) it did not run at all: the 06:13, 10:47,
+14:29 and 18:11 crons were all swallowed exactly like every other cron on the
+repo, and nobody happened to push. Saturday's coverage was `feedTick` from the
+moment you deployed it, and nothing else.
+
+So it is not redundant cover, it is dead weight that reads like cover — which
+is worse, because the next person to look at the Actions tab will assume the
+matchday feed has a backup that has never once run on its own.
+
+`git rm .github/workflows/matchwatch.yml scripts/matchwatch.py
+test/matchwatch.test.js` and drop `matchwatch.test.js` from `test:offline` in
+`package.json`. Keep it until `feedTick` has its clean week if you would rather
+hold a spare, but it is a spare that has only ever started when a human pushed.
+
+The window logic in `matchwatch.py` — 75 minutes before kickoff to 150 after,
+with nearby kickoffs merged — is the same rule `feedTick` now uses, so nothing
+is lost by deleting it. That much of it survives in your function.
+
 ---
 
 ## 04. THE HOLDING PEN — the rule was wrong, and this branch fixes it (21 Aug)
