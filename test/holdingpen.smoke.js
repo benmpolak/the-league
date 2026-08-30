@@ -36,29 +36,56 @@ const chk = (name, ok, detail = '') => {
     state = buildDemoState(); state.phase = 'season';
     whoami = state.managers[0].id;
 
-    // draft night happened, then two men appeared: one moved clubs, one the
-    // feed had simply never created
-    const mover = PLAYERS.find(x => !ownedIdsAt(0).has(x.id));
-    const latecomer = PLAYERS.find(x => x.id !== mover.id && !ownedIdsAt(0).has(x.id));
+    // draft night happened, then three men appeared: one moved clubs with
+    // nobody owning him, one moved clubs and somebody does, one the feed had
+    // simply never created
+    const cur = currentGwIndex();
+    const unownedMover = PLAYERS.find(x => !ownedIdsAt(cur).has(x.id));
+    const latecomer = PLAYERS.find(x => x.id !== unownedMover.id && !ownedIdsAt(cur).has(x.id));
+    const ownedMover = PLAYERS.find(x => ownedIdsAt(cur).has(x.id));
     const ids = Object.fromEntries(PLAYERS.map(x => [x.id, x.club]));
-    ids[mover.id] = 'ZZZ';        // he was at another club on draft night
-    delete ids[latecomer.id];      // he did not exist on draft night
+    ids[unownedMover.id] = 'ZZZ';   // both were at another club on draft night
+    ids[ownedMover.id] = 'ZZZ';
+    delete ids[latecomer.id];        // and this one did not exist at all
     state.draftPool = { at: Date.now(), ids };
 
     ok('the late feed entry is in the pen', arrivalLocked(latecomer), latecomer.name);
+    // Marc, 30 Aug 2026: "nico, disasi and pinnock all need to be in the
+    // holding pen" — all three kept their FPL id across a move, so the old
+    // id-based rule left them loose in the Trough
+    ok('an unowned man who moved PL clubs is penned too',
+      arrivalLocked(unownedMover), `${unownedMover.name} ZZZ -> ${unownedMover.club}`);
+    ok('and he shows up in the pen list', lockedArrivals().some(x => x.id === unownedMover.id));
     // Marc, 21 Aug: "konsa was already on the game and drafted by somebody" —
-    // moving between two PL clubs is not arriving, and the man who owns him
-    // must still be able to field him
-    ok('a man who moved between PL clubs is NOT penned', !arrivalLocked(mover), `${mover.name} ZZZ -> ${mover.club}`);
+    // THE guarantee from Chairman's Desk §04. An owned man is his owner's
+    // business; locking one is what stopped Konsa's owner fielding him.
+    ok('but an OWNED mover is never locked — his owner can still field him',
+      !arrivalLocked(ownedMover), `${ownedMover.name} ZZZ -> ${ownedMover.club}`);
+    ok('and he never appears in the pen list',
+      !lockedArrivals().some(x => x.id === ownedMover.id), ownedMover.name);
 
     admitArrival(latecomer.id);
     ok('admitting the latecomer frees him', !arrivalLocked(latecomer));
     ok('he is signable in the Trough now',
-      PLAYERS.filter(x => !ownedIdsAt(0).has(x.id) && !arrivalLocked(x)).some(x => x.id === latecomer.id));
+      PLAYERS.filter(x => !ownedIdsAt(cur).has(x.id) && !arrivalLocked(x)).some(x => x.id === latecomer.id));
     ok('nobody else was released', Object.keys(state.draftPool.ids).length === Object.keys(ids).length + 1);
-    // the two engines must agree, or the server refuses an XI the client offered
+
+    // The two engines must agree or the server refuses an XI the client offered.
+    // This used to grep app.js for a substring, which said nothing about
+    // BEHAVIOUR and broke the moment the rule changed. Compare them properly.
+    const eng = Engine.make({
+      players: PLAYERS, gameweeks: GAMEWEEKS, fixtures: state.fixtures || [],
+      lastSeasonByCode: (typeof LAST_SEASON !== 'undefined' && LAST_SEASON.byCode) || {},
+      now: () => Date.now(),
+    });
+    const sample = [latecomer, unownedMover, ownedMover, ...PLAYERS.slice(0, 60)];
+    const disagree = sample.filter(x =>
+      eng.isArrival(state, x) !== isArrival(x) || eng.arrivalLocked(state, x) !== arrivalLocked(x));
     ok('client and server read arrivals identically',
-      String(isArrival).includes('=== undefined'), 'js/app.js matches js/engine.js');
+      disagree.length === 0, disagree.map(x => x.name).join(', ') || 'js/app.js matches js/engine.js');
+    ok('(and the comparison is not vacuous — it saw a penned man and a free one)',
+      sample.some(x => arrivalLocked(x)) && sample.some(x => !arrivalLocked(x)));
+
     return out.join('\n');
   });
   for (const line of report.split('\n')) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));

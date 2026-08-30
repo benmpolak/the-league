@@ -32,6 +32,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.environ.get('LEAGUE_DB',
                     'https://calciopoli-wc26-default-rtdb.europe-west1.firebasedatabase.app')
 LEAGUE = os.environ.get('LEAGUE_ID', 'the-league-2627')
@@ -125,6 +126,66 @@ def main():
             when = r.get('finishedAt') or r.get('deferredAt') or r.get('startedAt')
             when = datetime.fromtimestamp(when / 1000, timezone.utc).strftime('%a %d %b %H:%M') if isinstance(when, (int, float)) else '?'
             print(f'   {rid:<26} {str(r.get("status")):<10} {when}  {str(r.get("result") or r.get("reason") or "")[:52]}')
+
+    # ---- the holding pen, audited against the live feed ----
+    # Marc, 30 Aug 2026: "we need to have a mechanism to ensure that the holding
+    # pen is correct by the time thursday comes around."
+    #
+    # The pen is derived, not stored: it is every man the draft-night snapshot
+    # does not have AT HIS CURRENT CLUB, minus anyone who owns him. So it moves
+    # on its own as the feed moves, which is right, and also means nobody can
+    # see it drift. This recomputes it from the live snapshot and the committed
+    # feed and prints it, so the Thursday list is checkable at any hour instead
+    # of being taken on trust.
+    #
+    # Player names are public football data and the pen is on every manager's
+    # Trough page, so naming them here leaks nothing. Who OWNS a man is roster
+    # data and stays out, per the rest of this script.
+    pool, err = get('draftPool/ids')
+    if err:
+        print(f'holding pen     : unreadable — {err}')
+    elif not pool:
+        print('holding pen     : no draft-night snapshot on the league')
+    else:
+        try:
+            feed = json.load(open(os.path.join(ROOT, 'data', 'data.json'), encoding='utf-8'))
+            players = feed['players'] if isinstance(feed, dict) and 'players' in feed else feed
+            if isinstance(players, dict):
+                players = list(players.values())
+        except Exception as e:
+            players = None
+            print(f'holding pen     : feed unreadable — {str(e)[:80]}')
+        if players:
+            at = pool if isinstance(pool, dict) else {i: v for i, v in enumerate(pool)}
+            def club_at_draft(pid):
+                return at.get(pid, at.get(str(pid)))
+            owned = set()
+            picks, _ = get('draft/picks')
+            for k in (picks.values() if isinstance(picks, dict) else (picks or [])):
+                if isinstance(k, dict) and k.get('playerId') is not None:
+                    owned.add(int(k['playerId']))
+            trs, _ = get('transfers')
+            for t in (trs.values() if isinstance(trs, dict) else (trs or [])):
+                if not isinstance(t, dict):
+                    continue
+                if t.get('inId') is not None:
+                    owned.add(int(t['inId']))
+                owned.discard(int(t['outId'])) if t.get('outId') is not None else None
+            pen, movers_owned = [], []
+            for p in players:
+                was = club_at_draft(p['id'])
+                if was == p.get('club'):
+                    continue                       # the snapshot has him where he is
+                (pen if p['id'] not in owned else movers_owned).append((p, was))
+            print(f'holding pen     : {len(pen)} man/men, recomputed from the live snapshot')
+            for p, was in sorted(pen, key=lambda x: (-(x[0].get('pts') or 0), x[0]['name'])):
+                why = 'new to the game' if was is None else f'moved from {was}'
+                flag = '' if p.get('status') == 'a' else f"  [{p.get('status')}]"
+                print(f"   {p['name'][:20]:<21}{p.get('club',''):<5}{p.get('pos',''):<4}"
+                      f"{p.get('mp', 0):>5} min  {why}{flag}")
+            if movers_owned:
+                print(f'   ...plus {len(movers_owned)} owned mover(s), correctly NOT penned: '
+                      + ', '.join(sorted(p['name'] for p, _ in movers_owned)))
 
     # counts only — never contents
     for node, label in (('claims', 'pending claims'), ('trades', 'trades')):

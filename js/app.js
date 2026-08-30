@@ -2449,12 +2449,27 @@ function onWaivers(p) {
    until the transfer window shuts. The Chairman then runs the Window Draft —
    snaking backwards from the original order (pick 12 goes first) until a full
    lap of passes — and whatever's left spills into the Trough. */
-// Only a player the draft-night snapshot has never seen is an arrival. Moving
-// between two PL clubs is not arriving — he was already on the game and
-// already drafted, and he stays with his owner (Marc, 21 Aug). Keep this
-// identical to js/engine.js or the server will refuse an XI the client offered.
-const isArrival = p => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
-const arrivalLocked = p => isArrival(p); // unlocks when the Window Draft ends (snapshot refreshes)
+/* An arrival is a man the draft-night snapshot does not have AT THIS CLUB —
+   new to the game, or moved between two PL clubs since.
+
+   Marc, 30 Aug 2026: "nico, disasi and pinnock all need to be in the holding
+   pen". All three kept their FPL id across a move (N.Gonzalez MCI->NEW, Disasi
+   CHE->CRY, Pinnock BRE->COV), so the old rule — an id the snapshot never saw
+   — left them loose in the Trough while a brand-new id was penned. Same event,
+   two answers, decided by an implementation detail of the feed.
+
+   OWNERSHIP is what the 21 Aug ruling was really about, and it survives intact:
+   "konsa was already on the game and drafted by somebody". A mover somebody
+   owns stays with his owner and is never locked — that is arrivalLocked below,
+   and it is the whole of the fix in Chairman's Desk §04. Konsa, Marmoush,
+   Delap, N.Jackson and Sávio are all owned movers and none of them locks.
+
+   Keep this identical to js/engine.js or the server will refuse an XI the
+   client offered. */
+const isArrival = p => !!state.draftPool?.ids && p && state.draftPool.ids[p.id] !== p.club;
+// locked only while nobody owns him: an owned man is his owner's business, and
+// locking one is exactly the bug that stopped Konsa's owner fielding him
+const arrivalLocked = p => isArrival(p) && !ownedIdsAt(currentGwIndex()).has(p.id);
 function lockedArrivals() {
   if (!state.draftPool?.ids) return [];
   const owned = ownedIdsAt(currentGwIndex());
@@ -2649,6 +2664,7 @@ function processWaivers(manual = false) {
         const c = pending[mid].shift();
         const inP = PLAYER_BY_ID[c.in];
         if (!inP || ownedIdsAt(tgw).has(c.in)) continue;                      // gone — try next claim
+        if (arrivalLocked(inP)) continue;                                     // in the pen — the Window Waiver's, not this one's
         if (!squadAt(mid, tgw).some(x => x.id === c.out)) continue;           // out-player no longer theirs
         if (!squadShapeOk([...squadAt(mid, tgw).filter(x => x.id !== c.out), inP])) continue;
         state.transfers.push({ managerId: mid, outId: c.out, outCode: PLAYER_BY_ID[c.out]?.code ?? null, inId: c.in, inCode: PLAYER_BY_ID[c.in]?.code ?? null, gw: tgw, n: state.transfers.length + 1, t: Date.now(), waiver: true });
@@ -7526,10 +7542,21 @@ function viewTransfers() {
     // requests here without costing anyone a scroll on the shopping page.
     const claims = myClaims(mid);
     const nextRun = nextLiveWaiverRun();
+    // a claim that cannot land any more says so here rather than dying quietly
+    // on Tuesday morning (Marc, 30 Aug 2026). The pen is the live case: Nico,
+    // Disasi and Pinnock were claimable until the arrival rule was corrected.
+    const deadClaim = c => {
+      const p = PLAYER_BY_ID[c.in];
+      if (!p) return 'that player is no longer in the feed';
+      if (arrivalLocked(p)) return `${p.name} is in the holding pen — he goes to the Window Waiver, not this one`;
+      if (ownedIdsAt(transferGw()).has(c.in)) return `${p.name} has already been signed`;
+      return '';
+    };
     const claimRows = claims.map((c, k) => `
-      <div class="lrow claim-row" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
+      <div class="lrow claim-row${deadClaim(c) ? ' claim-dead' : ''}" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
         <span class="muted" style="cursor:grab" title="Drag to reorder">&#8942; #${k + 1}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
+        ${deadClaim(c) ? `<span class="tag claim-dead-tag" title="${esc(deadClaim(c))}">will not land</span>` : ''}
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
           <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
           <button class="btn ghost small icon-btn" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>

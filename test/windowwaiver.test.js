@@ -55,7 +55,12 @@ for (const n of DRAFT_ORDER)
 const PEN = [];
 for (const pos of ['FW', 'FW', 'MF', 'MF', 'DF', 'GK'])
   PEN.push({ id: pid, code: 90000 + pid++, name: `PEN-${pos}-${pid}`, pos, club: 'MCI', team: 'Man City', price: 60 });
-const ALL = [...PLAYERS, ...PEN];
+// spares: on the game at draft night (so NOT arrivals) but undrafted, which is
+// what an ordinary Trough free agent looks like
+const SPARE = [];
+for (const pos of ['MF', 'DF', 'FW'])
+  SPARE.push({ id: pid, code: 90000 + pid++, name: `SPARE-${pos}-${pid}`, pos, club: 'LIV', team: 'Liverpool', price: 45 });
+const ALL = [...PLAYERS, ...SPARE, ...PEN];
 const byName = n => ALL.find(p => p.name === n);
 
 function baseState() {
@@ -68,7 +73,9 @@ function baseState() {
     settings: {},
     draft: { order: DRAFT_ORDER.map(n => MID[n]), picks },
     // draft night saw the squad players and nobody else — so the PEN men are arrivals
-    draftPool: { ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) },
+    // the snapshot knows the drafted men AND the spares, at their own clubs —
+    // only the PEN men are missing from it
+    draftPool: { ids: Object.fromEntries([...PLAYERS, ...SPARE].map(p => [p.id, p.club])) },
     lineups: {}, transfers: [], claims: {}, waiverMeta: {}, matchStats: {},
     windowClaims: {},
   };
@@ -316,8 +323,10 @@ const mkEngine = () => Engine.make({
   st.waiverMeta = { lastRun: '2026-09-01T09:00:00.000Z', control: 'auto', skip: null };
   const cur = eng.currentGwIndex(st);
   // somebody has a REGULAR Friday claim lodged and pending
-  const drop = st.draft.picks.find(k => k.managerId === MID['Lee']).playerId;
-  st.claims = { [cur]: { [MID['Lee']]: [{ in: PEN[4].id, out: drop }] } };
+  const drop = st.draft.picks.find(k => k.managerId === MID['Lee'] && ALL.find(p => p.id === k.playerId).pos === 'MF').playerId;
+  // a SPARE, not a pen man: a pen man is no longer the weekly waiver's to give
+  // away, which is its own check below
+  st.claims = { [cur]: { [MID['Lee']]: [{ in: SPARE[0].id, out: drop }] } };
   const clockBefore = eng.nextWaiverRun(Date.parse('2026-09-03T10:00:00Z')).toISOString();
   const metaBefore = JSON.stringify(st.waiverMeta);
   const claimsBefore = JSON.stringify(st.claims);
@@ -342,10 +351,42 @@ const mkEngine = () => Engine.make({
   const applied = { ...st, transfers: [...st.transfers, ...res.records] };
   const fri = eng.resolveWaivers(applied, Date.parse('2026-09-04T09:00:00Z'));
   chk('and Friday still executes it the next morning',
-    fri.executed.some(e => e.mid === MID['Lee'] && e.in === PEN[4].id),
+    fri.executed.some(e => e.mid === MID['Lee'] && e.in === SPARE[0].id),
     JSON.stringify(fri.executed));
   chk('Friday stamps its own lastRun, as it always did',
     !!fri.stampedMeta.lastRun, JSON.stringify(fri.stampedMeta));
+}
+
+/* ---------- A FRIDAY CLAIM FOR A PEN MAN IS REJECTED ----------
+   Marc, 30 Aug 2026: "you also need to be prepared that someone may already
+   have put this on their waiver list for tuesday and this waiver will need to
+   be rejected."
+
+   Exactly right, and it was not handled. Nico, Disasi and Pinnock sat loose in
+   the Trough until the arrival rule was corrected, so a claim lodged against
+   one of them predates the pen. The weekly run must refuse it rather than hand
+   over a man who belongs to Thursday. */
+{
+  const eng = mkEngine();
+  const st = baseState();
+  const cur = eng.currentGwIndex(st);
+  const mfDrop = who => st.draft.picks.find(k => k.managerId === MID[who] && ALL.find(p => p.id === k.playerId).pos === 'MF').playerId;
+  st.claims = { [cur]: {
+    [MID['Lee']]: [
+      { in: PEN[2].id, out: mfDrop('Lee') },     // a pen man — must be refused
+      { in: SPARE[0].id, out: mfDrop('Lee') },   // ...and he falls through to this
+    ],
+  } };
+  const fri = eng.resolveWaivers(st, Date.parse('2026-09-01T09:00:00Z'));
+  chk('a Tuesday claim for a man now in the pen does NOT go through',
+    !fri.executed.some(e => e.in === PEN[2].id), JSON.stringify(fri.executed));
+  chk('and the claimant falls through to the next legal line instead of losing his turn',
+    fri.executed.some(e => e.mid === MID['Lee'] && e.in === SPARE[0].id), JSON.stringify(fri.executed));
+  chk('the pen man is still in the pen afterwards, ready for Thursday',
+    eng.penIds({ ...st, transfers: [...st.transfers, ...fri.records] }, cur).has(PEN[2].id));
+  // and an OWNED mover is not penned, so a claim naming him is a different matter
+  chk('(control: the same claim for a spare lands, so the refusal is specific)',
+    fri.executed.length >= 1);
 }
 
 console.log(`\n[window-waiver] ${pass} passed, ${fail} failed`);

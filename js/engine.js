@@ -219,8 +219,16 @@
     // and drafted by somebody"). Comparing the club as well used to send every
     // intra-PL transfer back to the pen, where the owner could not even field
     // him. Membership of the draft-night snapshot is the whole question.
-    const isArrival = (state, p) => !!state.draftPool?.ids && state.draftPool.ids[p.id] === undefined;
-    const arrivalLocked = isArrival;
+    /* An arrival is a man the draft-night snapshot does not have AT THIS CLUB —
+       new to the game, or moved between two PL clubs since (Marc, 30 Aug 2026:
+       "nico, disasi and pinnock all need to be in the holding pen"; all three
+       kept their FPL id across the move, so the old id-based rule missed them).
+       Locked only while nobody owns him — the 21 Aug ruling was about ownership
+       ("konsa was already on the game and drafted by somebody"), and locking an
+       owned man is the §04 bug that stopped his owner fielding him.
+       Kept identical to js/app.js. */
+    const isArrival = (state, p) => !!state.draftPool?.ids && !!p && state.draftPool.ids[p.id] !== p.club;
+    const arrivalLocked = (state, p) => isArrival(state, p) && !ownedIdsAt(state, currentGwIndex()).has(p.id);
 
     /* ---- draft ---- */
     const totalPicks = state => state.managers.length * SQUAD_RULES.size;
@@ -731,6 +739,13 @@
             const c = pending[mid].shift();
             const inP = PLAYER_BY_ID[c.in];
             if (!inP || ownedIdsAt(work, tgw).has(c.in)) continue;
+            // a man in the holding pen is not the weekly waiver's to give away
+            // (Marc, 30 Aug 2026: "someone may already have put this on their
+            // waiver list for tuesday and this waiver will need to be
+            // rejected"). Nico, Disasi and Pinnock were loose in the Trough
+            // until the arrival rule was corrected, so a claim lodged against
+            // one of them predates the pen and must die rather than land.
+            if (arrivalLocked(work, inP)) continue;
             if (!squadAt(work, mid, tgw).some(x => x.id === c.out)) continue;
             if (!squadShapeOk(work, [...squadAt(work, mid, tgw).filter(x => x.id !== c.out), inP])) continue;
             // t must be STRICTLY after this run's lastRun stamp or the player

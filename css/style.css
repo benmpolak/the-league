@@ -1611,3 +1611,13 @@ details[open] > .n6-summary::after { content: ' ▴'; }
   border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px; }
 .pen-man .pen-admit { padding: 1px 7px; font-size: 10.5px; }
 .pen-man .pos-badge { font-size: 9px; padding: 2px 5px; }
+
+/* A lodged claim that can no longer land — most often a man who has since gone
+   into the holding pen (Marc, 30 Aug 2026: "someone may already have put this
+   on their waiver list for tuesday and this waiver will need to be rejected").
+   Struck through and dimmed, but NOT removed: it is still his claim to withdraw
+   or reorder, and silently deleting somebody's list is worse than showing it
+   dead. */
+.claim-row.claim-dead { opacity: .62; }
+.claim-row.claim-dead b { text-decoration: line-through; text-decoration-color: #e0a83c; }
+.claim-dead-tag { background: #e0a83c22; color: #e0a83c; border-color: #e0a83c55; font-size: 9px; }
