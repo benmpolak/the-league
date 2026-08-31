@@ -64,6 +64,28 @@ const chk = (name, ok, detail = '') => {
     ok('and he never appears in the pen list',
       !lockedArrivals().some(x => x.id === ownedMover.id), ownedMover.name);
 
+    /* The pen list shows EVERY name (Marc, 31 Aug 2026: "the holding pen
+       currently says '+3 more'. we need to see all names"). It was cut at
+       fifteen, and the Chairman's "→ Trough" button went with the hidden ones —
+       so the one man he most needed to release was the one he could not see.
+       Pen a comfortable number over the old cut-off and count what is drawn. */
+    const many = PLAYERS.filter(x => !ownedIdsAt(cur).has(x.id)).slice(0, 22);
+    const wide = Object.fromEntries(PLAYERS.map(x => [x.id, x.club]));
+    for (const x of many) wide[x.id] = 'ZZZ';
+    state.draftPool = { at: Date.now(), ids: wide };
+    transfersView.tab = 'window';
+    state.view = 'transfers'; render();
+    const penned = lockedArrivals().length;
+    const drawn = document.querySelectorAll('.pen-list .pen-man').length;
+    ok('the pen genuinely holds more men than the old cut-off', penned >= 20, String(penned));
+    ok('and every one of them is on the page', drawn === penned, `${drawn} drawn of ${penned}`);
+    ok('nothing says "+N more" any more',
+      !/\+\s*\d+\s*more/i.test(document.querySelector('.pen-list')?.parentElement?.textContent || ''));
+    ok('the Chairman gets a Trough button against every man, not just the first fifteen',
+      document.querySelectorAll('.pen-list [data-admit]').length === penned,
+      String(document.querySelectorAll('.pen-list [data-admit]').length));
+    state.draftPool = { at: Date.now(), ids };   // back to the three-man pen
+
     admitArrival(latecomer.id);
     ok('admitting the latecomer frees him', !arrivalLocked(latecomer));
     ok('he is signable in the Trough now',

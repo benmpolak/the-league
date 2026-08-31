@@ -82,6 +82,32 @@ anyone until both halves exist. Flagged here so the two do not get deployed out
 of step: **the server action should land before or with the UI**, never after,
 or managers will type lists into a screen that quietly drops them.
 
+**Done 31 Aug:** lodging works and holds. The list is read back off
+`private/{uid}/windowClaims`, the public snapshot no longer wipes it, and a
+list the desk refuses rolls back instead of sitting on screen looking lodged.
+
+### One button only you can press, before Thursday 10:00
+
+**Amario Cozier-Duberry (id 624, MF, Brighton) is in the pen and should not
+be.** Marc, 31 Aug 2026: "we need to release cozier duberry because he isnt a
+new signing." He is the §04 case exactly — not a man who moved in this window,
+just one the feed created late — so the pen rule cannot tell him apart from a
+genuine arrival and never will.
+
+Open Transfers → the Window Waiver card, find him in the pen list, press
+**→ Trough**. That is `admitArrival` → `windowDraft {op:'admit'}`, Chairman
+only, and it frees him and nobody else.
+
+Two notes. He may not have been visible to press: the pen list was cut off at
+fifteen names with "+3 more", and the admit button went with the hidden ones.
+That is fixed — every name shows now. And **this cannot be done from a dev
+session**: the sandbox cannot reach the league database (verified, 403 at the
+proxy), and admitting is a write to the real league either way. It is your
+button.
+
+Worth a look at the rest of the list while you are in there. Anyone else the
+feed added late rather than transferred wants the same treatment before the run.
+
 ---
 
 ## 06. GITHUB'S SCHEDULER HAS STOPPED — move the FPL fetch to a Cloud Function (28 Aug)

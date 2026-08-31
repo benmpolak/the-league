@@ -7550,8 +7550,13 @@ function viewTransfers() {
           <button class="btn small" id="wcAdd">Add to list</button>
         </div>
         <p class="muted" style="font-size:11px;margin-top:6px">Nobody sees your list, including the Chairman. You may lodge more than two — the extras are your cover for when somebody above you takes the man you wanted.</p>`}
-        <p style="font-size:12px;margin-top:10px"><b>In the holding pen:</b></p>
-        <div class="pen-list">${[...arrivals].sort(metricSort('pts')).slice(0, 15).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him to the Trough without a Window Draft.">&rarr; Trough</button>` : ''}</span>`).join('')}${arrivals.length > 15 ? `<span class="muted">+${arrivals.length - 15} more</span>` : ''}</div>
+        <p style="font-size:12px;margin-top:10px"><b>In the holding pen:</b> <span class="muted" style="font-weight:400">all ${arrivals.length} of them</span></p>
+        <!-- Every name, no cut-off (Marc, 31 Aug 2026: "the holding pen
+             currently says +3 more. we need to see all names"). You cannot
+             lodge for a man you cannot see, and the Chairman cannot send a
+             wrongly-penned man to the Trough without his button — which used
+             to be hidden behind that same "+3 more". -->
+        <div class="pen-list">${[...arrivals].sort(metricSort('pts')).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him to the Trough without a Window Draft.">&rarr; Trough</button>` : ''}</span>`).join('')}</div>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wwRun">Run the window waiver now</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
