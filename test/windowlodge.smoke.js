@@ -118,6 +118,38 @@ const chk = (name, ok, detail = '') => {
     window.serverAct = () => Promise.resolve({ ok: true });
     setWindowClaims(mid, pen.slice(0, 3).map((p, k) => ({ in: p.id, out: squad[k].id })));
     await new Promise(r => setTimeout(r, 60));
+    /* ---- what an ordinary manager sees of the pen ----
+       Marc, 31 Aug 2026: "is the view amended so i can see who else has been
+       added". The names are everybody's business — you cannot lodge for a man
+       you cannot see. The RELEASE is the Chairman's, and is refused at the
+       server, not merely hidden here. Membership carries no commissioner role
+       on this page, so this is the ordinary manager's view. */
+    // widen the pen past the old fifteen-name cut-off, or "not a cut-off list"
+    // proves nothing
+    const wide = Object.fromEntries(PLAYERS.map(p => [p.id, p.club]));
+    for (const p of spare.slice(0, 21)) wide[p.id] = 'ZZZ';
+    state.draftPool = { at: Date.now(), ids: wide };
+    const pen2 = lockedArrivals();
+    ok('(setup) the pen is wider than the old cut-off', pen2.length > 15, String(pen2.length));
+    transfersView.tab = 'window';
+    state.view = 'transfers'; render();
+    const names = document.querySelectorAll('.pen-list .pen-man').length;
+    const buttons = document.querySelectorAll('.pen-list [data-admit]').length;
+    ok('an ordinary manager is not the Chairman here', !isCommissioner());
+    ok('and he sees every man in the pen, not a cut-off list',
+      pen2.length > 0 && names === pen2.length, `${names} shown of ${pen2.length}`);
+    ok('nothing says "+N more" to him either',
+      !/\+\s*\d+\s*more/i.test(document.querySelector('.pen-list')?.parentElement?.textContent || ''));
+    ok('but the release button is the Chairman\'s alone', buttons === 0, `${buttons} admit buttons`);
+    // and the same view for the Chairman DOES carry them, so the check above is
+    // about the role and not about the list being empty
+    membership = { managerId: mid, role: 'commissioner' };
+    render();
+    ok('(control: the Chairman gets one against every name)',
+      document.querySelectorAll('.pen-list [data-admit]').length === pen2.length,
+      String(document.querySelectorAll('.pen-list [data-admit]').length));
+    membership = { managerId: mid };
+
     ok('(control: a list the desk accepts still lands)', myWindowClaims(mid).length === 3,
       String(myWindowClaims(mid).length));
 
