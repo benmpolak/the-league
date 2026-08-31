@@ -1436,6 +1436,10 @@ tr.st-red .pname { color: #ff9c9c; }
   display: grid; grid-template-columns: 18px 38px minmax(0, 1fr); gap: 6px;
   align-items: start; min-width: 0; cursor: pointer; font-size: 11px; line-height: 1.3;
 }
+/* a family of columns (the three minute counts) takes the full width and
+   stacks, so the set can never be split across a row break by the two-up grid
+   (Marc, 31 Aug 2026) */
+.scout-col-family { grid-column: 1 / -1; display: grid; gap: 5px; }
 /* Column reordering (Marc, 10 Aug): drag the table's own headers, the way a
    spreadsheet does. The menu strip survives as the PHONE path only — HTML5
    drag is a laptop luxury and a header is far too small a target on a phone. */

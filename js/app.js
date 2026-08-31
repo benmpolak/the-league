@@ -6086,9 +6086,29 @@ const STAT_COLS = live => {
   const all = ALL_STAT_COLS(live);
   return visibleColKeys(live).map(k => all.find(c => c.k === k)).filter(Boolean);
 };
+/* Columns that belong together get kept together (Marc, 31 Aug 2026: "they
+   should be in consecutive order on the dropdown and they arent"). The menu is
+   a two-up grid, so three consecutive entries always straddled a row: two on
+   one line, the third alone under the first. A family is drawn as one block
+   across the full width instead, and cannot be split by however many columns
+   the grid happens to have at that screen width. */
+const COL_FAMILIES = [['min', 'minPrev', 'minGw']];
 function colOptionsHtml(live) {
   const vis = visibleColKeys(live);
-  return ALL_STAT_COLS(live).map(c => `<label class="scout-col-option"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b>${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`).join('');
+  const one = c => `<label class="scout-col-option"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b>${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`;
+  const cols = ALL_STAT_COLS(live);
+  const famOf = k => COL_FAMILIES.find(f => f.includes(k));
+  const out = [];
+  const done = new Set();
+  for (const c of cols) {
+    if (done.has(c.k)) continue;
+    const fam = famOf(c.k);
+    if (!fam) { out.push(one(c)); continue; }
+    const members = fam.map(k => cols.find(x => x.k === k)).filter(Boolean);
+    members.forEach(x => done.add(x.k));
+    out.push(`<div class="scout-col-family">${members.map(one).join('')}</div>`);
+  }
+  return out.join('');
 }
 /* Column order strip (Marc, 10 Aug). Drag on a laptop, arrows on a phone —
    the same pairing the draft order, the autopick queue and the claims ladder

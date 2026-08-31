@@ -102,7 +102,66 @@ const chk = (name, ok, detail = '') => {
     const ph = pre[pre.findIndex(c => c.k === 'minPrev')].h;
     ok('with no previous round the heading says so rather than inventing GW0',
       !/GW0|GW-1|undefined|NaN/.test(ph), ph);
+
+    /* ---- the headings must FOLLOW the calendar ----
+       Marc, 31 Aug 2026: "will the name of the filter change as the weeks
+       progress... the way you have done it is better if it will update to
+       gameweek 3, 4, 5 at the right time but you need to make sure that
+       works." So walk the season and check every round, not a sample. */
+    const wrong = [];
+    for (let i = 1; i < GAMEWEEKS.length; i++) {
+      demoGwOverride = i;
+      const cs = ALL_STAT_COLS(seasonHasStats());
+      const hPrev = cs[cs.findIndex(c => c.k === 'minPrev')].h;
+      const hNow = cs[cs.findIndex(c => c.k === 'minGw')].h;
+      if (hPrev !== `MP GW${GAMEWEEKS[i - 1].n}` || hNow !== `MP GW${GAMEWEEKS[i].n}`) {
+        wrong.push(`i=${i}: ${hPrev} / ${hNow}`);
+      }
+    }
+    ok(`every one of the ${GAMEWEEKS.length - 1} rounds names itself and the one before it`,
+      wrong.length === 0, wrong.slice(0, 3).join(' | '));
+    // and specifically the rounds Marc named
+    demoGwOverride = 2;
+    const c3 = ALL_STAT_COLS(seasonHasStats());
+    ok('at GW3 the headings read GW2 and GW3',
+      c3[c3.findIndex(c => c.k === 'minPrev')].h === 'MP GW2' &&
+      c3[c3.findIndex(c => c.k === 'minGw')].h === 'MP GW3',
+      `${c3[c3.findIndex(c => c.k === 'minPrev')].h} / ${c3[c3.findIndex(c => c.k === 'minGw')].h}`);
+    demoGwOverride = 4;
+    const c5 = ALL_STAT_COLS(seasonHasStats());
+    ok('at GW5 they read GW4 and GW5',
+      c5[c5.findIndex(c => c.k === 'minPrev')].h === 'MP GW4' &&
+      c5[c5.findIndex(c => c.k === 'minGw')].h === 'MP GW5');
+
+    /* ---- and the NUMBERS must move with them, with no new stats landing ----
+       This is the trap: the metrics cache used to key on how many player stats
+       exist, which does not change at the moment the calendar rolls. Write GW3
+       once, then roll the clock and read again WITHOUT touching the stats. */
     demoGwOverride = 1;
+    put(2, dropped, 55);                    // a GW3 line, written while it is still GW2
+    _metricsCache = new Map(); _metricsKey = null;
+    const atGw2 = { now: metricsFor(dropped).minGw, prev: metricsFor(dropped).minPrev };
+    demoGwOverride = 2;                      // the calendar rolls. Nothing else changes.
+    const atGw3 = { now: metricsFor(dropped).minGw, prev: metricsFor(dropped).minPrev };
+    ok('rolling the calendar moves the numbers along, with no new stats landing',
+      atGw2.now === 0 && atGw2.prev === 90 && atGw3.now === 55 && atGw3.prev === 0,
+      `GW2 read ${atGw2.prev}/${atGw2.now}, GW3 read ${atGw3.prev}/${atGw3.now}`);
+
+    /* ---- the three sit together in the menu, whatever the grid does ---- */
+    demoGwOverride = 1;
+    state.view = 'data'; render();
+    const tools = document.querySelector('.scout-tools');
+    if (tools) tools.open = true;
+    const fam = document.querySelector('.scout-col-family');
+    const inFam = fam ? [...fam.querySelectorAll('[data-coltoggle]')].map(i => i.dataset.coltoggle) : [];
+    ok('the three are drawn as one block, so the grid cannot split them',
+      inFam.join(',') === 'min,minPrev,minGw', inFam.join(',') || 'no family block found');
+    const allBoxes = [...document.querySelectorAll('.scout-column-grid [data-coltoggle]')].map(i => i.dataset.coltoggle);
+    const at = allBoxes.indexOf('min');
+    ok('and nothing is drawn between them',
+      allBoxes.slice(at, at + 3).join(',') === 'min,minPrev,minGw', allBoxes.slice(at, at + 3).join(','));
+    ok('(the menu still lists every other column too)',
+      allBoxes.length === ALL_STAT_COLS(seasonHasStats()).length, String(allBoxes.length));
 
     return out.join('\n');
   });
