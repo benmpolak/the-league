@@ -801,7 +801,15 @@ const SB = 'the-league-sandbox';
   const myDF2 = byPos(await squadOf(2), 'DF')[0];
   const freeGK2 = freeOf('GK')[0];
   chk('shape-breaking claim rejected', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: freeGK2, out: myDF2 }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
-  chk('claim flood rejected (max 30)', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: Array.from({ length: 31 }, () => ({ in: freeFWs[0], out: myFW2 })) }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  /* The cap is 100 (Marc, 31 Aug 2026: "it needs to be far bigger than anyone
+     could use" — Ian's list was 30 deep by the second week, so the old ceiling
+     was one a manager could actually walk into). Both halves matter: a flood is
+     still refused, and a list of a size a real manager might build is NOT. */
+  const flood = n => Array.from({ length: n }, () => ({ in: freeFWs[0], out: myFW2 }));
+  chk('claim flood rejected (max 100)', (await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: flood(101) }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('...but a list of 40 is accepted, where the old cap of 30 refused it',
+    !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: flood(40) }, tok2)).error);
+  await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [] }, tok2);   // put his ladder back
   // acting-as claims are SANDBOX-ONLY (sol test-night P1: the Chairman can't
   // see the target's private ladder, so the write would replace claims he
   // never saw). On the real league both roles are refused; the sandbox happy

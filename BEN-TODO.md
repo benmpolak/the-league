@@ -86,6 +86,33 @@ or managers will type lists into a screen that quietly drops them.
 `private/{uid}/windowClaims`, the public snapshot no longer wipes it, and a
 list the desk refuses rolls back instead of sitting on screen looking lodged.
 
+### A deploy: the waiver-claim cap goes 30 → 100
+
+Marc, 31 Aug 2026: "why does there need to be a limit at all? can we make it
+100? it needs to be far bigger than anyone could use."
+
+There has to be a limit — the server writes what the caller sends straight into
+the league, and without a ceiling one request can push an arbitrarily large
+array into the database. But 30 was a round number picked on 8 Aug on the
+assumption nobody would go near it, and **Ian's list was 30 deep by 25 August**.
+A guard a real manager walks into in the second week of the season is not a
+guard, it is a rule nobody agreed to.
+
+`functions/index.js` now has one `MAX_CLAIMS = 100` and three readers:
+`claimSet`, `windowClaimSet`, and the claims-bucket check on the restore path.
+That third one matters — leave it at 30 while the other two go to 100 and a
+backup taken with a long list cannot be put back.
+
+**This is inert until you deploy.** Pushing to main publishes the site, not the
+functions, and there is no cap on the client, so nothing changes for anyone
+until `firebase deploy`. `test/functions.test.js` pins both halves — 101 is
+refused, 40 is accepted where the old cap refused it. **I could not run
+`npm run test:emu` to see it pass**: the emulator will not start in the dev
+sandbox (it cannot fetch its rules runtime through the egress proxy — the error
+is a "request blocked" body where JSON should be, not anything in
+`database.rules.v2.json`, which parses). So this is reviewed and syntax-checked,
+not executed. Please run the emulator suite before you deploy it.
+
 ### One button only you can press, before Thursday 10:00
 
 **Amario Cozier-Duberry (id 624, MF, Brighton) is in the pen and should not

@@ -243,6 +243,27 @@ async function stripLineup(league, state, mid, tgw, outId) {
  * lease expires and the work really completes. */
 const WAIVER_LEASE_MS = 3 * 60 * 1000;
 
+/* How many lines one manager may lodge on a waiver list — the weekly one and
+   the Window Waiver's alike, and the number a restore will accept in a claims
+   bucket. All three must agree or a backup taken with a long list cannot be
+   put back, so they read this and not a literal.
+
+   Marc, 31 Aug 2026: "why does there need to be a limit at all? can we make it
+   100? it needs to be far bigger than anyone could use."
+
+   There has to be A limit, because the server writes what the caller sends
+   straight into the league: without a ceiling one request can push an
+   arbitrarily large array into the database, and that is a fault whether it
+   arrives by malice or by a loop with a bug in it. It is a guard on the size
+   of a write, not a rule of the league — the rules PDF says nothing about it.
+
+   But 30 was wrong. It was a round number picked when these actions were
+   first written on 8 Aug, on the assumption nobody would go near it, and Ian's
+   list was 30 deep by 25 August — a real manager at the ceiling in the second
+   week of the season. A guard nobody can reach is doing its job quietly; one a
+   manager walks into is just a rule nobody agreed to. */
+const MAX_CLAIMS = 100;
+
 async function applyWaiverPlan(league, runId, plan, state, eng, ctx) {
   if (!plan.records || !plan.records.length) return { applied: 0, dropped: 0, landed: [] };
   const ref = db().ref(`${leagueBase(league)}/public/transfers`);
@@ -881,7 +902,7 @@ ACTIONS.claimSet = async ({ league, a, data, eng, ctx, state }) => {
   const cur = eng.currentGwIndex();
   if (!Number.isInteger(g) || Math.abs(g - cur) > 1) throw new HttpsError('invalid-argument', 'claims go in the current gameweek bucket');
   const raw = toArr(data.claims);
-  if (raw.length > 30) throw new HttpsError('invalid-argument', 'too many claims (max 30)');
+  if (raw.length > MAX_CLAIMS) throw new HttpsError('invalid-argument', `too many claims (max ${MAX_CLAIMS})`);
   // t identifies each LODGING, not just the pair — waiver cleanup matches on
   // it, so re-saving an identical {in,out} after a run planned is a NEW claim
   // that survives the replay (sol r5)
@@ -1685,7 +1706,7 @@ const WINDOW_WAIVER_SLOT = 'window-2026-09-03';
 ACTIONS.windowClaimSet = async ({ league, a, data, eng, ctx, state }) => {
   if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'season not underway');
   const raw = toArr(data.claims);
-  if (raw.length > 30) throw new HttpsError('invalid-argument', 'too many lines (max 30)');
+  if (raw.length > MAX_CLAIMS) throw new HttpsError('invalid-argument', `too many lines (max ${MAX_CLAIMS})`);
   const claims = raw.map(c => ({
     in: Number(c && c.in), out: Number(c && c.out),
     inCode: ctx.PLAYER_BY_ID[Number(c && c.in)]?.code ?? null, outCode: ctx.PLAYER_BY_ID[Number(c && c.out)]?.code ?? null,
@@ -2114,7 +2135,7 @@ ACTIONS.importState = async ({ league, a, data, ctx }) => {
     if (!/^\d{1,2}$/.test(g)) importError(`claims bucket "${g}"`);
     for (const [mid, arr] of Object.entries(byMid || {})) {
       const list = toArr(arr);
-      if (list.length > 30) importError('claims bucket too long');
+      if (list.length > MAX_CLAIMS) importError('claims bucket too long');
       const uid = mem[mid];
       if (uid) ((priv[uid] = priv[uid] || {}).claims = priv[uid].claims || {})[g] = list;
     }
