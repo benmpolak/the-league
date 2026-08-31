@@ -364,6 +364,14 @@ const chk = (name, ok, detail = '') => {
   const p8hx = await page.evaluate(async () => {
     state.heckles = {}; window._hecklesSeen = {};
     document.querySelectorAll('.heckle-flash').forEach(el => el.remove()); // p8b's flash may still be up
+    // and drain the RAIL, not just the DOM: p8b's barb can still be QUEUED
+    // behind P8's pick billboard (both wear .heckle-flash, so p8b's own read
+    // matched the billboard while the barb waited). Left queued, it goes up
+    // ahead of the custom line and this check reads a stale random barb —
+    // exactly what happened when the timings drifted on 30 Aug. The rail's
+    // own stale-element guard blesses direct cleanup like this.
+    _draftShoutQueue.length = 0; clearTimeout(_draftShoutTimer); _draftShoutTimer = null;
+    _draftShoutEl = null; _draftShoutCurrent = null;
     document.getElementById('heckleBtn')?.click();
     const inp = document.getElementById('hkText');
     if (!inp) return { inp: false };
