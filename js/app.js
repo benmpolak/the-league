@@ -3136,6 +3136,17 @@ function gwPlayerPoints(pid, gwIdx) {
   // per-gameweek Chairman's correction — mirrors engine.js exactly
   return base + (+(((state.adjustments || {})[gwIdx] || {})[pid]) || 0);
 }
+/* Minutes in ONE gameweek (Marc, 31 Aug 2026: "minutes in previous gameweek
+   and minutes in current gameweek as a filter"). A season total says a man is
+   a regular; it does not say whether he still is. Two rounds' minutes side by
+   side is how you spot the one who has quietly stopped starting.
+
+   A double gameweek keeps both matches in the same event, so this is already
+   his minutes for the whole round, not for one fixture. */
+function gwMinutes(pid, gwIdx) {
+  if (gwIdx == null || gwIdx < 0 || gwIdx >= GAMEWEEKS.length) return 0;
+  return gwEvent(gwIdx)?.playerStats?.[pid]?.min || 0;
+}
 // did the player get on the pitch at all this gameweek?
 function appearedInGw(pid, gwIdx) {
   const s = gwEvent(gwIdx)?.playerStats?.[pid];
@@ -5928,7 +5939,11 @@ function projPts(p, n) {
 }
 function metricsFor(p) {
   const live = seasonHasStats();
-  const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0);
+  // the gameweek is part of the key because minGw/minPrev are ABOUT a round:
+  // when the calendar rolls and no new stat has landed yet, the stat count is
+  // unchanged and a cache without it would keep serving last round's minutes
+  // under this round's heading
+  const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0) + ':gw' + currentGwIndex();
   if (_metricsKey !== key) { _metricsCache = new Map(); _metricsKey = key; }
   let m = _metricsCache.get(p.id);
   if (m) return m;
@@ -5949,6 +5964,11 @@ function metricsFor(p) {
       // blend; using Rate here made the two columns identical (Ben, 5 Aug).
       : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, price: p.price };
   }
+  // the two single-round minute counts sit outside the live/pre-season split
+  // for the same reason the xG family does: they come off the round's own
+  // stats, and read 0 before a round has any — which is honest
+  m.minGw = gwMinutes(p.id, currentGwIndex());
+  m.minPrev = gwMinutes(p.id, currentGwIndex() - 1);
   m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
   // the xG family comes straight off the player record — FPL's season-to-date
   // figures, refreshed with the feed — so it is identical in both branches
@@ -5996,13 +6016,23 @@ function nextFxHtml(team, gwN = null) {
   const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null;
   return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t;
 }
+// "MP GW3" where a real round exists; before GW1 there is no round to name, so
+// the column says what it is instead of inventing a number
+const gwColHead = (i, fallback) =>
+  i >= 0 && i < GAMEWEEKS.length ? `MP GW${GAMEWEEKS[i].n}` : `MP ${fallback}`;
 // the full column menu, Draft Fantasy style; users pick their own set (kept per device)
 const ALL_STAT_COLS = live => [
   { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => nextFxHtml(p.team), cls: ' muted', sortable: false },
   // FPL price column RETIRED (Lee read '£m' as transfer fees — there is no
   // money in this league; do not resurrect)
   { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
-  { k: 'min', h: 'MP', t: 'Minutes played', v: m => m.min },
+  // The three minute counts stand together, season first then the two rounds
+  // in the order they were played (Marc, 31 Aug 2026: "order all three next to
+  // each other"). Headers name the actual gameweek, the way the xGI column
+  // names its season, so nobody has to remember which round is which.
+  { k: 'min', h: 'MP', t: 'Total minutes played this season', v: m => m.min },
+  { k: 'minPrev', h: gwColHead(currentGwIndex() - 1, 'prev'), t: 'Minutes played in the previous gameweek', v: m => m.minPrev },
+  { k: 'minGw', h: gwColHead(currentGwIndex(), 'now'), t: 'Minutes played in the current gameweek', v: m => m.minGw },
   { k: 'g', h: 'G', t: 'Goals', v: m => m.g },
   { k: 'a', h: 'A', t: 'Assists', v: m => m.a },
   { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
@@ -6150,7 +6180,7 @@ const SCOUT_PRESETS = [
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
   { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'xgiLs', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgiLs', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'minPrev', 'minGw', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgiLs', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Data Room's own filter state (Marc, 9 Aug: the Data Room is where you go
