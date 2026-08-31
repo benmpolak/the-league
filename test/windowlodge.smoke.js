@@ -92,6 +92,11 @@ const chk = (name, ok, detail = '') => {
 
     // ---- 2. the private node reads it back ----
     // the authoritative copy, on a device with nothing local — a reload, or your phone
+    // (re-pin the identity first: this page runs ONLINE against staging, and a
+    // live auth resolve can push onMembershipSnapshot(null) mid-test — on a
+    // fast connection that landed between the checks and applyPrivateNode
+    // returned early on a nulled membership, 31 Aug)
+    membership = { managerId: mid }; whoami = mid;
     state.windowClaims = {};
     applyPrivateNode({ windowClaims: list, claims: {}, autolist: [], watchlist: [] });
     ok('the private node hands the authoritative list back',
