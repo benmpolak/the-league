@@ -643,10 +643,24 @@ window.Gazette = (() => {
     if (flagged.length) {
       out.push(`<div class="prog-sec">The Treatment Table</div><p>${flagged.map(x => `${pname(x.p)} <span class="muted">(${esc(teamName(x.mid))}${x.p.news ? ` — ${esc(x.p.news)}` : ''})</span>`).join('; ')}</p>`);
     }
-    // Corrections & Clarifications — an upset means somebody's form book lied
+    // Corrections & Clarifications — an upset means somebody's form book lied,
+    // and the odd edition carries a one-off notice the Committee owes the
+    // readership (keyed by gameweek NUMBER so a back edition keeps its own)
+    const corrections = [];
     const up = allFacts.find(f => f.kind === 'upset' || f.kind === 'bottle-job');
     if (up) {
-      out.push(`<div class="prog-sec">Corrections &amp; Clarifications</div><p class="muted" style="font-size:12px">${esc(`In previous editions the Gazette may have described ${teamName(up.l)} as "in control of their own destiny". The Gazette regrets the error.`)}</p>`);
+      corrections.push(`In previous editions the Gazette may have described ${teamName(up.l)} as "in control of their own destiny". The Gazette regrets the error.`);
+    }
+    /* The podcast outage, GW2 (Ben, 1 Sept: "i think we put something in the
+       gazette - clarification style"). Lee heard half a silent talkTROUGH;
+       Ric accused the league-owned press of burying the story. Printed
+       straight, which is the only way this paper knows. */
+    const NOTICES = {
+      2: 'Listeners to Monday night’s talkTROUGH will have noticed that Richard Keyes and Jamie O’Hara-Hara fell silent mid-broadcast. The Gazette can confirm the pair had not walked out, been sent to Dubai, or discovered the meaning of restraint: the League’s voice budget simply ran out, there being, in the Chairman’s words, not enough money in the League. The Committee has responded by permanently cancelling this newspaper’s own sister programme, Gazette Football Weekly, a decision the Gazette reports without comment and entirely without bitterness. talkTROUGH resumes when the account resets in mid-September. Readers suggesting that a state-run league would have working podcasts are reminded that a state-run league would also have a functioning letters page. The Gazette remains editorially independent, fully funded, and in print. It regrets the silence, though not whose it was.',
+    };
+    if (NOTICES[GAMEWEEKS[gwIdx]?.n]) corrections.push(NOTICES[GAMEWEEKS[gwIdx].n]);
+    if (corrections.length) {
+      out.push(`<div class="prog-sec">Corrections &amp; Clarifications</div>${corrections.map(c => `<p class="muted" style="font-size:12px">${esc(c)}</p>`).join('')}`);
     }
     // For the Record — marks set, broken or tied at THIS edition
     if (typeof seasonRecordsNow === 'function') {
