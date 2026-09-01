@@ -1074,6 +1074,10 @@ const projectedGwScore = (mid, gwIdx) =>
 // waiver/deadline times shown in the reader's OWN timezone — a UK league does
 // the BST maths wrong when the app insists on UTC
 const fmtWhen = d => new Date(d).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+// ledger stamp: date + time, no year (the ledger is one season long) — the
+// history pages should say WHEN a deal happened, not just which gameweek it
+// counts toward (Ben, 1 Sept: "so people can see")
+const fmtStamp = ts => ts ? new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(',', ' ·') : '';
 // win chance from the projected-score gap (logistic; ~12-point gap ≈ 70%)
 const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
 
@@ -7778,7 +7782,7 @@ function viewTransfers() {
     const rowHtml = t => `<div class="hist-row">
       <span class="business-mark business-${kindOf(t)}" aria-hidden="true">${marks[kindOf(t)]}</span>
       <div class="hist-main">
-        <div class="business-who"><button class="hist-team" data-histteam="${t.managerId}" title="Open ${esc(teamName(t.managerId))}'s squad">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b></button> <span class="tag">${kindOf(t)}</span></div>
+        <div class="business-who"><button class="hist-team" data-histteam="${t.managerId}" title="Open ${esc(teamName(t.managerId))}'s squad">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b></button> <span class="tag">${kindOf(t)}</span>${t.t ? ` <span class="muted hist-when">${fmtStamp(t.t)}</span>` : ''}</div>
         <div class="hist-flow">
           <span class="business-label business-label-in">&#8593; IN</span> ${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}
           <span class="business-label business-label-out">&#8595; OUT</span> ${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}
@@ -7840,7 +7844,7 @@ function viewTransfers() {
         <span class="business-label business-label-out">&#8595; OUT</span> <span class="business-players business-players-out">${pname(PLAYER_BY_ID[t.outId])}</span>
       </div>
     </div>
-    <span class="business-gw"><small>GW</small><b>${GAMEWEEKS[t.gw].n}</b></span>
+    <span class="business-gw"><small>GW</small><b>${GAMEWEEKS[t.gw].n}</b>${t.t ? `<span class="muted hist-when">${fmtStamp(t.t)}</span>` : ''}</span>
   </div>`).join('');
   return `${head}<div class="waiver-duo">
   <div class="card">
@@ -8845,7 +8849,7 @@ function latestBusinessCard(compact = false) {
         ${g.outs.length ? `<span class="business-label business-label-out">&#8595; OUT</span> <span class="business-players business-players-out">${playerList(g.outs)}</span>` : ''}
       </div>
     </div>
-    <span class="business-gw"><small>COUNTS</small><b>GW${GAMEWEEKS[g.gw]?.n ?? '?'}</b></span>
+    <span class="business-gw"><small>COUNTS</small><b>GW${GAMEWEEKS[g.gw]?.n ?? '?'}</b>${+g.t ? `<span class="muted hist-when">${fmtStamp(+g.t)}</span>` : ''}</span>
   </div>`;
   // a 23-deal waiver round made this card a broadsheet (Ben, 25 Aug: "far
   // too long") — fold everything past the first few behind one button.

@@ -1643,3 +1643,7 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .rule-list li:last-child { margin-bottom: 0; }
 .rule-list b { color: var(--text); }
 .rule-list.tight { font-size: 10.5px; line-height: 1.5; margin-top: 6px; }
+
+/* ledger timestamps — quiet, and stacked under the badge on the cards */
+.hist-when { font-size: 10.5px; white-space: nowrap; }
+.business-gw .hist-when { display: block; margin-top: 2px; text-align: right; }
