@@ -29,6 +29,10 @@ const chk = (name, ok, detail = '') => {
   await p.waitForFunction(() => state && state.phase === 'season' && Object.keys(state.matchStats).length > 0);
 
   const season = await p.evaluate(() => {
+    // pin the demo to the gameweek the wall clock is actually in (see the
+    // clock note below) — the fictional results cover gws 0-5 either way
+    demoGwOverride = null;
+    demoGwOverride = currentGwIndex();
     const eng = Engine.make({
       players: PLAYERS,
       gameweeks: GAMEWEEKS,
@@ -37,18 +41,19 @@ const chk = (name, ok, detail = '') => {
       // without them would disagree with the app about auto-subs
       fixtures: state.fixtures,
       lastSeasonByCode: (typeof LAST_SEASON !== 'undefined' && LAST_SEASON.byCode) || {},
-      // app.js currentGwIndex honours the demo override; give the engine the
-      // same view of "now" by freezing it inside the demo GW's window.
-      //
-      // The comment said this from the start; the code passed Date.now() and
-      // did not do it. It stayed green only while the wall clock happened to
-      // sit in the same gameweek the demo pins to, and went red at 17:30Z on
-      // 28 Aug 2026 when the real calendar rolled into GW2 and the demo stayed
-      // on GW1 — engine transferGw 2 against the app's 1, which reorders the
-      // waiver queue and nothing else. Same wall-calendar expiry as the
-      // Gazette smoke the same morning. The engine has no demo override, and
-      // should not: it is server law and knows nothing about a demo.
-      now: () => Date.parse(gwFrom(demoGwOverride)) + 1000,
+      // ONE clock and ONE gameweek for both sides, and both the REAL ones.
+      // The app in demo mode is mixed-clock: currentGwIndex honours the demo
+      // override, but gwIsOver/roundBlown read the wall clock and the real
+      // fixtures' whistle flags. So freezing the ENGINE to the demo window
+      // (the 28 Aug fix) only held until the wall calendar next rolled — it
+      // went red again on 1 Sept when GW2 settled overnight: the app called
+      // GW2 blown on the real clock while the engine, frozen back in GW1's
+      // window, refused, skewing standingsBefore(3,5) and the waiver queue.
+      // Pinning the demo override to the real current gameweek and running
+      // the engine on Date.now() gives the two sides identical inputs on any
+      // date, which is what a PARITY suite is for. The engine still has no
+      // demo override, and should not: it is server law.
+      now: () => Date.now(),
     });
     const mids = state.managers.map(m => m.id);
     const gws = [0, 1, 2, 3, 4, 5];
