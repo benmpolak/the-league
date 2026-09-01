@@ -62,9 +62,16 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     const headline = doc.querySelector('.prog-lead-story .prog-head')?.textContent || '';
     state.view = 'dash'; render();
     const frontHeadline = document.querySelector('.prog-card .prog-head-lead')?.textContent || '';
+    // the front page leads on TODAY'S paper, which is not always review(0):
+    // the demo carries fictional stats for later weeks, and the moment the
+    // REAL calendar settles one of them (GW2 blew on 31 Aug) lastFinalGw
+    // moves and the dashboard follows. Compare against the edition the
+    // paper actually printed today, not the one this test happens to study.
+    const d2 = document.createElement('div'); d2.innerHTML = Gazette.review(lastFinalGw());
+    const leadToday = d2.querySelector('.prog-lead-story .prog-head')?.textContent || '';
     return {
       deterministic: Gazette.review(0) === html, scoresOk, stories: doc.querySelectorAll('.prog-story').length,
-      headline, frontHeadline, scoreline: !!doc.querySelector('.prog-lead-story .prog-scoreline'),
+      headline, frontHeadline, leadToday, scoreline: !!doc.querySelector('.prog-lead-story .prog-scoreline'),
       awards: !!doc.querySelector('.prog-awards'), oldFiles: [...doc.querySelectorAll('.prog-sec')].some(x => /Old Files/.test(x.textContent)),
       dressingRoom: [...doc.querySelectorAll('.prog-sec')].some(x => /Dressing Room/.test(x.textContent)),
       sheetRows: doc.querySelectorAll('.prog-team-sheet .prog-sheet-row').length,
@@ -78,7 +85,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   chk('every scoreline printed matches the computed results; output deterministic',
     facts.deterministic && facts.scoresOk && facts.stories >= 3, JSON.stringify(facts));
   chk('front page leads on an editorial headline; the edition has lore, verdicts and football language',
-    facts.headline && facts.frontHeadline === facts.headline && facts.scoreline && facts.awards && facts.oldFiles
+    facts.headline && facts.frontHeadline === facts.leadToday && facts.scoreline && facts.awards && facts.oldFiles
       && facts.dressingRoom && facts.sheetRows === 12 && facts.receiptRows === 6 && facts.selectionDetail && facts.draftSources
       && facts.words >= 280 && facts.footballese, JSON.stringify(facts));
 

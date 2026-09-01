@@ -48,6 +48,26 @@ const chk = (name, ok, detail = '') => {
     const list = [0, 1, 2, 3, 4].map(k => ({ in: spare[k].id, out: squad[k].id }));
     const names = ids => ids.map(c => PLAYER_BY_ID[c.in].name);
 
+    // ---------- one list, one bucket (Wilko, 1 Sept 2026) ----------
+    // A weekend claim lived in last week's bucket, resolved FIRST, and had
+    // vanished from the screen when the week rolled — the list said Damsgaard
+    // was #1 while a hidden Nunes line outranked it. The list must show every
+    // live claim in resolver order, and an edit must consolidate the lot.
+    (() => {
+      const cur = currentGwIndex();
+      state.claims = { [cur - 1]: { [mid]: [{ in: spare[9].id, out: squad[0].id }] },
+        [cur]: { [mid]: [{ in: spare[8].id, out: squad[1].id }] } };
+      ok('the list shows the rolled-over claim, and ahead (resolver order)',
+        names(myClaims(mid)).join(',') === `${spare[9].name},${spare[8].name}`, names(myClaims(mid)).join(','));
+      setClaims(mid, [...myClaims(mid)].reverse());
+      ok('an edit consolidates every bucket into the current one',
+        !Object.keys(state.claims[cur - 1]?.[mid] || {}).length && myClaims(mid).length === 2,
+        JSON.stringify(state.claims));
+      ok('and the visible order is now the whole truth',
+        names(myClaims(mid)).join(',') === `${spare[8].name},${spare[9].name}`, names(myClaims(mid)).join(','));
+      state.claims = {};
+    })();
+
     // ---------- the weekly waiver list ----------
     setClaims(mid, list);
     transfersView.tab = 'claims';

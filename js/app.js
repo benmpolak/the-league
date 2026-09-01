@@ -2636,15 +2636,38 @@ function wdFinish() {
   if (!netOn()) { done(); return; }
   serverAct('windowDraft', { op: 'end' }).catch(() => {});
 }
-function myClaims(mid) { return toArr(state.claims?.[currentGwIndex()]?.[mid]); }
+/* Claims live in per-gameweek buckets, and the resolver walks OLD buckets
+   first. Showing only the current bucket lied to Wilko on 1 Sept 2026: a
+   weekend claim (lodged while GW2 was still current) resolved ahead of the
+   Damsgaard line his screen called #1, because the screen had stopped
+   showing the weekend bucket the moment the week rolled. Harmless that day —
+   he won both — but in a contested week the hidden order would pick his
+   winner for him. So: the LIST is every live claim, older buckets first
+   (exactly the order the resolver uses), and any edit consolidates the lot
+   into the current bucket — after which what you see is what runs. */
+const claimBuckets = () => Object.keys(state.claims || {}).map(Number).filter(g => g <= currentGwIndex()).sort((a, b) => a - b);
+function myClaims(mid) {
+  const out = [];
+  for (const g of claimBuckets()) out.push(...toArr(state.claims[g]?.[mid]));
+  return out;
+}
 function setClaims(mid, arr) {
   const cur = currentGwIndex();
   // codes ride along so a lodged claim survives a feed id shift (Desk §3b)
   arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
+  const stale = claimBuckets().filter(g => g !== cur && toArr(state.claims[g]?.[mid]).length);
   if (netOn()) {
     serverAct('claimSet', { gwIndex: cur, claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+    // consolidation: the rolled-over bucket empties in the same breath, so the
+    // private node ends up holding ONE list in ONE bucket. The server only
+    // reaches back one week, which is as far back as a live bucket can exist
+    // (every run consumes all buckets up to its day).
+    for (const g of stale) {
+      if (Math.abs(g - cur) <= 1) serverAct('claimSet', { gwIndex: g, claims: [], ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+    }
     // the private snapshot echoes the authoritative list back
   }
+  for (const g of stale) if (state.claims[g]) delete state.claims[g][mid];
   (state.claims[cur] = state.claims[cur] || {})[mid] = arr;
   save(); render();
 }
