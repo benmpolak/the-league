@@ -24,10 +24,17 @@ if the workflow is broken:
 
     git push --force https://github.com/benmpolak/the-league-beta.git main:main
 
-## DO NOT read app.js top to bottom
+## Keep your context small — this repo is big
 
-`js/app.js` is ~8,000 lines and holds every view. Grep for the function you
-need and read a slice. Landmarks (all in app.js unless noted):
+- `js/app.js` is ~13,000 lines (800 KB, more than one context window). NEVER
+  read it top to bottom. Grep for the function you need and read a slice.
+- `functions/index.js` is ~2,600 lines. Same rule.
+- Do NOT read `BEN-TODO.md`, `MARC-REQUESTS.md` or anything in `docs/archive/`
+  (finished round briefs and handoffs) unless Ben points you at a section.
+- `git log` is mostly `fpl-bot` data-refresh commits. Use
+  `git log --author=benpolak --author=Claude --author=Marc` to see real work.
+
+Landmarks (all in app.js unless noted):
 
 - `viewDraft` / `bindDraft` — the Draft Console (scouting floor pre-draft, live board during)
 - `viewTeam` / `bindTeam` — My Team, pitch with tap-to-swap XI
