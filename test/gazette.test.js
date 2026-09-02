@@ -217,24 +217,50 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     if (ian) ian.team = 'CF <script>alert(1)</script> FC';
     const hostile = Gazette.frontPage(gw3);
     if (ian) ian.team = keep;
-    const pre = /AND THEN THE CLIFF/.test(a) || !lockedArrivals().length;
-    const n = state.transfers.length;
+    // the demo has no holding pen; craft one the way the feed would — five
+    // unowned men whose club moved since the pool was snapshotted
+    const keepPool = state.draftPool;
+    if (!lockedArrivals().length) {
+      const owned = ownedIdsAt(currentGwIndex());
+      const ids = {};
+      for (const p of PLAYERS) ids[p.id] = p.club;
+      for (const p of PLAYERS.filter(p => !owned.has(p.id)).slice(0, 5)) ids[p.id] = 'MOVED';
+      state.draftPool = { at: Date.now(), ids };
+    }
     const pen = lockedArrivals();
+    const special = Gazette.windowSpecial();
+    const pre = !pen.length || (/AND THEN THE CLIFF/.test(special) && /The Pen in Full/.test(special) && /The Running Order/.test(special) && /How It Works/.test(special));
+    const n = state.transfers.length;
     const first = windowSlots()[0];
     if (pen.length) state.transfers.push({ managerId: first, inId: pen[0].id, outId: squadAt(first, gw3).at(-1).id, gw: gw3, t: Date.now(), windowDraft: true, n: n + 1 });
-    const post = Gazette.frontPage(gw3);
+    const post = Gazette.windowSpecial();
+    const postFront = Gazette.frontPage(gw3);
+    // the special is today's paper inside its window, and never outside it
+    const realNow = Date.now;
+    Date.now = () => Gazette.WINDOW_SPECIAL_FROM + 3600e3;
+    const todayIn = progTodays()?.edition, keyIn = gazetteLeadKey(progTodays()), archived = gazetteEditions().some(e => e.kind === 'window');
+    Date.now = () => Gazette.WINDOW_SPECIAL_FROM - 3600e3;
+    const todayBefore = progTodays()?.edition;
+    Date.now = () => new Date(GAMEWEEKS[gw3].from).getTime() + 60e3;
+    const todayAfter = progTodays()?.edition;
+    Date.now = realNow;
     state.transfers.length = n;
+    state.draftPool = keepPool;
     const inPreview = previewArticle(gw3, (arr, seed) => arr[seed % arr.length]);
     return { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 1), deterministic: Gazette.frontPage(gw3) === a,
       letters: /LETTERS TO THE EDITOR/.test(a) && /SEE MY FOURTEEN/.test(a), lead: /FORTUNE FAVOURS THE BRAVE/.test(a),
+      noWindowOnFriday: !/WINDOW WAIVER/.test(a) && !/WINDOW WAIVER/.test(postFront),
       escaped: !/<script>/.test(hostile) && /&lt;script&gt;/.test(hostile), pre, penSize: pen.length,
-      post: !pen.length || (/IN FULL/.test(post) && /PICK 1 ·/.test(post) && post.includes(pen[0].name)),
+      post: !pen.length || (/IN FULL/.test(post) && /PICK 1 ·/.test(post) && post.includes(pen[0].name) && /Closing Remark/.test(post)),
+      todayIn, keyIn, archived, todayBefore, todayAfter,
       hooked: inPreview.includes(a) && inPreview.indexOf(a) < inPreview.indexOf('prog-lead') };
   });
   chk('commissioned front page prints only for GW3, deterministically, with the lead and the letters',
-    fp.others === '' && fp.deterministic && fp.letters && fp.lead, JSON.stringify(fp));
+    fp.others === '' && fp.deterministic && fp.letters && fp.lead && fp.noWindowOnFriday, JSON.stringify(fp));
   chk('commissioned front page escapes manager-controlled text', fp.escaped, JSON.stringify(fp));
-  chk('window waiver story previews the pen, then follows the ledger once it has run', fp.pre && fp.post, JSON.stringify(fp));
+  chk('window waiver special previews the pen, order and rules, then follows the ledger once it has run', fp.pre && fp.post, JSON.stringify(fp));
+  chk('window waiver special is the paper from Wednesday evening to the GW3 deadline, with an archive slot',
+    fp.todayIn === 'window waiver result' && fp.keyIn === 'window' && fp.archived && !/^window waiver/.test(fp.todayBefore || '') && !/^window waiver/.test(fp.todayAfter || ''), JSON.stringify(fp));
   chk('front page prints above the matchday fixtures so the dashboard lifts its headline', fp.hooked, JSON.stringify(fp));
 
   await browser.close();

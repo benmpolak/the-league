@@ -936,8 +936,66 @@ window.Gazette = (() => {
     </div>`;
   }
 
+  /* ---------- the Window Waiver special (Ben, 2 Sept: "a preview of the pen
+     tonight actually? special edition") ----------
+     On the front step from Wednesday evening until the GW3 deadline prints
+     the matchday edition over it; the archive keeps it under its own slot.
+     Before Thursday's run it is the pen, the running order and the rules;
+     once the ledger carries windowDraft records the same edition becomes
+     the result, pick by pick. Everything from public state, nothing from
+     the lodged lists, which are private by rule. */
+  const WINDOW_SPECIAL_FROM = Date.parse('2026-09-02T16:30:00Z'); // 17:30 London, Wed 2 Sept
+  const windowGwIdx = () => GAMEWEEKS.findIndex(g => g.n === 3);
+  const windowRun = () => state.transfers.some(t => t.windowDraft);
+  function windowSpecialLive() {
+    const i = windowGwIdx();
+    if (i < 0 || !GAMEWEEKS[i]) return false;
+    return Date.now() >= WINDOW_SPECIAL_FROM && Date.now() < new Date(GAMEWEEKS[i].from).getTime();
+  }
+  function windowSpecial() {
+    try {
+      const gwIdx = windowGwIdx();
+      if (gwIdx < 0) return '';
+      const story = windowStory(gwIdx);
+      if (!story) return '';
+      const xp = p => Number(p.xp) || 0;
+      const tier = v => v >= 2.5 ? 'Footballers' : v >= 2 ? 'Squad players' : v >= 1.5 ? 'Bodies' : v >= 1 ? 'Names' : 'Rumours';
+      const out = [story];
+      const pen = typeof lockedArrivals === 'function' ? lockedArrivals() : [];
+      const n = state.managers.length;
+      if (!windowRun()) {
+        // the pen in full, sorted into the stats desk's tiers
+        if (pen.length) {
+          const groups = {};
+          for (const p of [...pen].sort((a, b) => xp(b) - xp(a) || a.name.localeCompare(b.name))) (groups[tier(xp(p))] = groups[tier(xp(p))] || []).push(p);
+          const order = ['Footballers', 'Squad players', 'Bodies', 'Names', 'Rumours'];
+          out.push(`<div class="prog-sec">The Pen in Full</div><p class="prog-deck">Every man in the holding pen by the feed's expected points a week, sorted into the stats desk's tiers. Injured men are marked; the tiers are not medical advice.</p>${order.filter(k => groups[k]).map(k => `<div class="prog-nib"><b>${esc(k)} (${groups[k].length})</b><span>${esc(groups[k].map(p => `${p.name} ${p.pos} ${p.club} ${xp(p).toFixed(1)}${p.status && p.status !== 'a' ? ' †' : ''}`).join(' · '))}</span></div>`).join('')}`);
+        }
+        // the running order: each club's two slots, in first-round order
+        const slots = typeof windowSlots === 'function' ? windowSlots() : [];
+        if (slots.length >= 2 * n) {
+          const firstRound = slots.slice(0, n);
+          const picksOf = mid => slots.map((m, k) => (m === mid ? k + 1 : 0)).filter(Boolean);
+          const line = firstRound.map(mid => `${teamName(mid)} ${picksOf(mid).join(' & ')}`).join('; ');
+          const mid12 = firstRound[n - 1];
+          out.push(`<div class="prog-sec">The Running Order</div><p>${esc(`The reverse of draft night, twice, snaking: ${line}. ${teamName(mid12)} pick back to back, which in this pen means two rumours in a row.`)}</p>`);
+        }
+        const hour = typeof windowWaiverHour === 'function' ? windowWaiverHour() : '8pm';
+        out.push(`<div class="prog-sec">How It Works</div><p class="prog-deck">${esc(`A manager lodges a list of pairs — a man in from the pen, a man out from his squad — in order of preference. At ${hour} on Thursday the Committee walks the running order once: at each slot the first live line on that club's list is signed, one signing per slot, and the rest of the list waits for the club's second slot. A line is dead if the man is gone, the man out is gone, or the squad would break shape; a list with no live line passes the slot. Nobody needs to be awake. Whatever is left afterwards spills into the Trough, free to a good home, or any home.`)}</p>`);
+        out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc('A list lodged is a list run; a list not lodged is a slot passed. Both are legal. One of them is wise, and the Committee declines to say which.')}</p>`);
+      } else {
+        // the leftovers, now in the Trough
+        const left = [...pen].sort((a, b) => xp(b) - xp(a) || a.name.localeCompare(b.name)).slice(0, 6);
+        if (left.length) out.push(`<div class="prog-sec">Left in the Trough</div><p>${esc(`The best of what nobody wanted, by the feed's expected points: ${left.map(p => `${p.name} (${p.club}, ${xp(p).toFixed(1)})`).join(', ')}. Free to a good home, or any home.`)}</p>`);
+        const lodged = new Set(state.transfers.filter(t => t.windowDraft).map(t => t.managerId)).size;
+        out.push(`<div class="prog-sec">The Committee&rsquo;s Closing Remark</div><p class="muted" style="font-size:12px">${esc(`The Committee thanks all twelve clubs for their lists, and the ${word(lodged)} of them that lodged one. The pen is closed. The Trough, as ever, is not.`)}</p>`);
+      }
+      return `<div class="prog-art">${out.join('')}</div>`;
+    } catch (e) { return ''; }
+  }
+
   const COMMISSIONS = {
-    3: gwIdx => luckStory(gwIdx) + windowStory(gwIdx) + lettersPage(gwIdx),
+    3: gwIdx => luckStory(gwIdx) + lettersPage(gwIdx),
   };
   /* the commissioned front page for a matchday edition, or '' — app.js
      previewArticle prints it above the fixtures, so its .prog-head is the
@@ -1304,5 +1362,5 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, draftSpecial, interview, frontPage, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  return { review, preview, draftSpecial, interview, frontPage, windowSpecial, windowSpecialLive, windowRun, WINDOW_SPECIAL_FROM, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

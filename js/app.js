@@ -8948,6 +8948,12 @@ function progTodays() {
     const art = previewArticle(cur, pick);
     if (art) return { edition: 'matchday edition', gwN: GAMEWEEKS[cur].n, article: art };
   }
+  // the Window Waiver special (Ben, 2 Sept): the pen tonight, the result
+  // once the run lands, until the GW3 deadline prints the matchday edition
+  if (typeof Gazette !== 'undefined' && Gazette.windowSpecial && Gazette.windowSpecialLive()) {
+    const art = Gazette.windowSpecial();
+    if (art) return { edition: Gazette.windowRun() ? 'window waiver result' : 'window waiver special', gwN: null, article: art };
+  }
   const last = lastFinalGw();
   if (last >= 0) return { edition: 'review edition', gwN: GAMEWEEKS[last].n, article: reviewArticle(last, pick), gw: last };
   // nothing settled yet: once the board is full the Post-Draft Special is
@@ -9056,6 +9062,11 @@ function gazetteEditions() {
     if (art) eds.push({ key: 'preview', kind: 'preview', edition: 'the season preview', gwN: null, gw: null,
       printed: gw1 - 5 * 864e5, article: () => art });
   }
+  if (typeof Gazette !== 'undefined' && Gazette.windowSpecial && Date.now() >= Gazette.WINDOW_SPECIAL_FROM) {
+    const art = Gazette.windowSpecial();
+    if (art) eds.push({ key: 'window', kind: 'window', edition: Gazette.windowRun() ? 'window waiver result' : 'window waiver special', gwN: null, gw: null,
+      printed: Gazette.WINDOW_SPECIAL_FROM, article: () => art });
+  }
   return eds.sort((a, b) => b.printed - a.printed);
 }
 // which edition in the log is the one progTodays() serves as the paper
@@ -9065,6 +9076,7 @@ function gazetteLeadKey(today) {
   if (today.edition === 'review edition') return `rev${today.gw}`;
   if (today.edition === 'post-draft special') return 'special';
   if (today.edition === 'the season preview') return 'preview';
+  if (/^window waiver/.test(today.edition)) return 'window';
   return null;
 }
 
@@ -9079,7 +9091,7 @@ function gazetteSheet(gwIdx = null) {
   // named pre-season editions (they live in the archive forever — the
   // Post-Draft Special must not vanish the day GW1 settles; Ben, GW1 night)
   let showing = today, atKey = null;
-  if (gwIdx === 'special' || gwIdx === 'preview') {
+  if (gwIdx === 'special' || gwIdx === 'preview' || gwIdx === 'window') {
     const e = eds.find(x => x.kind === gwIdx);
     if (e) { showing = { edition: `${e.edition} — from the archive`, gwN: e.gwN, article: e.article(), gw: null }; atKey = e.key; }
   } else if (gwIdx != null && settled.includes(gwIdx)) {
@@ -9106,13 +9118,13 @@ function gazetteSheet(gwIdx = null) {
   // vanished the whole nav when you were READING the only archived edition
   // while today's paper was a different one, stranding the reader in the
   // archive with no way back (product review #5, went red 21 Aug).
-  const named = eds.filter(e => e.kind === 'special' || e.kind === 'preview');
+  const named = eds.filter(e => e.kind === 'special' || e.kind === 'preview' || e.kind === 'window');
   const showToday = atKey != null && today;
   const archNav = settled.some(i => `rev${i}` !== atKey) || named.some(e => e.key !== atKey) || showToday ? `
     <div class="prog-arch">
       <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
       ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${atKey === `rev${i}` ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
-      ${named.map(e => `<button class="btn ghost small" data-progw="${e.key}" ${atKey === e.key ? 'disabled' : ''}>${e.kind === 'special' ? 'Draft Special' : 'Season Preview'}</button>`).join('')}
+      ${named.map(e => `<button class="btn ghost small" data-progw="${e.key}" ${atKey === e.key ? 'disabled' : ''}>${e.kind === 'special' ? 'Draft Special' : e.kind === 'window' ? 'Window Waiver' : 'Season Preview'}</button>`).join('')}
       ${showToday ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
     </div>` : '';
   const replacing = !!document.querySelector('.gazette-room');
@@ -9133,7 +9145,7 @@ function gazetteSheet(gwIdx = null) {
   ov.querySelector('#gzClose').onclick = () => closeOv(ov);
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
     const v = b.dataset.progw;
-    gazetteSheet(v === 'today' ? null : (v === 'special' || v === 'preview') ? v : +v);
+    gazetteSheet(v === 'today' ? null : (v === 'special' || v === 'preview' || v === 'window') ? v : +v);
   });
   ov.querySelectorAll('[data-podopen]').forEach(b => b.onclick = e => {
     e.stopPropagation();
