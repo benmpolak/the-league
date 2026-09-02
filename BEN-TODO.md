@@ -86,9 +86,9 @@ or managers will type lists into a screen that quietly drops them.
 `private/{uid}/windowClaims`, the public snapshot no longer wipes it, and a
 list the desk refuses rolls back instead of sitting on screen looking lodged.
 
-### A deploy: the waiver-claim cap goes 30 → 100 — ON MAIN, WAITING ON YOU
+### ~~A deploy: the waiver-claim cap goes 30 → 100~~ — DEPLOYED 2 Sept
 
-*(commit `2a86daf`, 31 Aug. Nothing else is blocking it.)*
+*(commit `2a86daf`, 31 Aug. Functions deployed by Ben 2 Sept ~13:00 London; cap is 100 live.)*
 
 Marc, 31 Aug 2026: "why does there need to be a limit at all? can we make it
 100? it needs to be far bigger than anyone could use."
@@ -128,7 +128,7 @@ group is where any remaining wrongly-penned man is.
 
 ### The escape hatch cannot release a man who MOVED — and six just did
 
-*(Fixed on main 2 Sept, commit `da1a0e7` — the one-line guard below, as written. Emulator suite run on Ben's machine: 480 passed, 0 failed. Goes live with the same functions deploy as the claim cap.)*
+*(Fixed on main 2 Sept, commit `da1a0e7` — the one-line guard below, as written. Emulator suite run on Ben's machine: 480 passed, 0 failed. DEPLOYED 2 Sept ~13:00 London alongside the cap — the button releases movers now.)*
 
 **Found 2 Sept, and it matters before 10:00 tomorrow.** `windowDraft {op:'admit'}`
 still guards on the OLD arrival rule:
