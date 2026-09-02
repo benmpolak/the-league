@@ -1619,10 +1619,13 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
     if (!p) throw new HttpsError('invalid-argument', 'unknown player');
     const pool = state.draftPool;
     if (!pool || !pool.ids) throw new HttpsError('failed-precondition', 'no draft pool to admit him to');
-    // a man the snapshot already knows was never in the pen — isArrival only
-    // fires on an id draft night never saw, so there is nothing to admit
-    if (pool.ids[pid] !== undefined) {
-      throw new HttpsError('failed-precondition', `${p.name} was on the game at draft night — he was never in the pen`);
+    // a man the snapshot already has AT HIS CURRENT CLUB was never in the pen
+    // — isArrival fires when the snapshot's club differs from today's, which
+    // since 30 Aug pens movers as well as men draft night never saw. A mover's
+    // id IS in the snapshot (at his old club), so the old `!== undefined`
+    // guard refused precisely the men the rule pens (found 2 Sept).
+    if (pool.ids[pid] === p.club) {
+      throw new HttpsError('failed-precondition', `${p.name} is already at ${p.club} in the draft-night snapshot — he was never in the pen`);
     }
     await db().ref(`${base}/public/draftPool/ids/${pid}`).set(p.club);
     return { ok: true, admitted: pid, club: p.club };
