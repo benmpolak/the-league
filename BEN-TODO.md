@@ -86,7 +86,9 @@ or managers will type lists into a screen that quietly drops them.
 `private/{uid}/windowClaims`, the public snapshot no longer wipes it, and a
 list the desk refuses rolls back instead of sitting on screen looking lodged.
 
-### A deploy: the waiver-claim cap goes 30 → 100
+### A deploy: the waiver-claim cap goes 30 → 100 — ON MAIN, WAITING ON YOU
+
+*(commit `2a86daf`, 31 Aug. Nothing else is blocking it.)*
 
 Marc, 31 Aug 2026: "why does there need to be a limit at all? can we make it
 100? it needs to be far bigger than anyone could use."
@@ -113,27 +115,87 @@ is a "request blocked" body where JSON should be, not anything in
 `database.rules.v2.json`, which parses). So this is reviewed and syntax-checked,
 not executed. Please run the emulator suite before you deploy it.
 
-### One button only you can press, before Thursday 10:00
+### ~~One button only you can press~~ — DONE, and thank you
 
-**Amario Cozier-Duberry (id 624, MF, Brighton) is in the pen and should not
-be.** Marc, 31 Aug 2026: "we need to release cozier duberry because he isnt a
-new signing." He is the §04 case exactly — not a man who moved in this window,
-just one the feed created late — so the pen rule cannot tell him apart from a
-genuine arrival and never will.
+Cozier-Duberry is out of the pen, and Cairns with him. Neither is owned by
+anybody, so the only thing that can have moved them is your **→ Trough**
+button. Confirmed off the 06:23 status read on 2 Sept.
 
-Open Transfers → the Window Waiver card, find him in the pen list, press
-**→ Trough**. That is `admitArrival` → `windowDraft {op:'admit'}`, Chairman
-only, and it frees him and nobody else.
+Worth another look down the list before the run: "new to the game" covers both
+a genuine signing from abroad and a man who was at the club all along and only
+just got an FPL entry. The rule cannot tell those apart and never will, so that
+group is where any remaining wrongly-penned man is.
 
-Two notes. He may not have been visible to press: the pen list was cut off at
-fifteen names with "+3 more", and the admit button went with the hidden ones.
-That is fixed — every name shows now. And **this cannot be done from a dev
-session**: the sandbox cannot reach the league database (verified, 403 at the
-proxy), and admitting is a write to the real league either way. It is your
-button.
+### The escape hatch cannot release a man who MOVED — and six just did
 
-Worth a look at the rest of the list while you are in there. Anyone else the
-feed added late rather than transferred wants the same treatment before the run.
+**Found 2 Sept, and it matters before 10:00 tomorrow.** `windowDraft {op:'admit'}`
+still guards on the OLD arrival rule:
+
+```js
+// functions/index.js, ACTIONS.windowDraft, op === 'admit'
+if (pool.ids[pid] !== undefined) {
+  throw new HttpsError('failed-precondition', `${p.name} was on the game at draft night — he was never in the pen`);
+}
+```
+
+That was right when an arrival meant "an id draft night never saw". Since
+30 Aug an arrival is "a man the snapshot does not have AT HIS CURRENT CLUB",
+which pens **movers** too — and a mover's id IS in the snapshot, at his old
+club. So the button refuses precisely the men the new rule pens. The comment
+above it still describes the old rule; it was not updated with the change, and
+this is the cost.
+
+Live consequence: Tosin, Danso, Mudryk, Enzo Fernández, Ndiaye and Grealish
+were all corrected into the feed today and are all movers. If any one of them
+turns out to be wrongly penned — a loan you would rather did not count, or a
+club I have got wrong — **you cannot free him.** The Chairman has no lever, and
+neither does anyone else.
+
+The guard should ask whether the snapshot already has him where he now plays,
+which is the real "nothing to admit" case:
+
+```js
+if (pool.ids[pid] === p.club) {
+  throw new HttpsError('failed-precondition', `${p.name} is already at ${p.club} in the draft-night snapshot — he was never in the pen`);
+}
+```
+
+One line, same file, needs a deploy. Deliberately not committed: it is server
+code, you deploy it, and you should read it rather than find it in a diff.
+
+### Engine parity is unreliable, and it guards the waiver order
+
+**What it is:** the game law is written twice — `js/engine.js` for the client,
+the same copy on the server — and `test/engine.parity.test.js` is the tripwire
+that catches them drifting. If they drift you get the worst class of bug: the
+app offers something the server refuses, or the screen shows one waiver order
+and the run uses another.
+
+**What happened:** it went red on 2 Sept on `season: roster/lineup/scoring
+parity`, and the diff named `waiverOrder` and `standingsBefore` at gameweeks 1,
+3 and 5 — the two functions that decide who wins a contested claim. It has
+since gone green, three runs out of three, with nothing changed that should
+have fixed it.
+
+**Why green is not reassuring here.** The waiver half of the suite skips itself
+when the demo pool happens not to offer a free agent all three test managers
+could legally sign — and it reports that skip as a PASS:
+
+```js
+if (waiv.skip) chk('waivers: (skipped — no suitable free agent in demo pool)', true);
+```
+
+Eight checks ran when it failed. Six run now. So three waiver-parity checks are
+currently not running at all, and the suite says green either way. A skip that
+counts as a pass is not a tripwire.
+
+**Two things worth doing,** neither of them yours unless you want them:
+a skipped branch should report as a SKIP, not a PASS, so the coverage is
+visible; and the 2 Sept failure needs diagnosing properly rather than being
+allowed to lapse — that suite has cried wolf twice this week on wall-calendar
+drift (28 Aug, 1 Sept), which is exactly how a real divergence gets waved
+through. **There is a waiver on Friday.** Marc has been told; say the word and
+I will take it.
 
 ---
 
