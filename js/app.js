@@ -2519,6 +2519,10 @@ const WINDOW_WAIVER_AT = Date.parse('2026-09-03T19:00:00Z');
 // drift from the constant the way a hardcoded "ten" just did
 const windowWaiverHour = () => new Date(WINDOW_WAIVER_AT)
   .toLocaleTimeString('en-GB', { hour: 'numeric', hour12: true }).replace(/\s/g, '').toLowerCase();
+// the whole thing, in the reader's own clock — for the Rules page and anywhere
+// else that has to say WHEN rather than just draw the card
+const windowWaiverWhen = () => new Date(WINDOW_WAIVER_AT)
+  .toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 const WINDOW_ROUNDS = 2;
 const windowOrder = () => [...toArr(state.draft?.order)].reverse();
 function windowSlots() {
@@ -2948,7 +2952,7 @@ function squadProvenance(mid, pid) {
   if (pk) return `R${Math.ceil(pk.n / Math.max(1, state.managers.length))} · #${pk.n}`;
   const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
   if (!tr) return '';
-  return tr.trade ? 'trade' : tr.windowDraft ? 'window draft' : tr.waiver ? 'waiver' : 'trough';
+  return tr.trade ? 'trade' : tr.windowDraft ? 'window waiver' : tr.waiver ? 'waiver' : 'trough';
 }
 function viewSquads() {
   const POS_ORDER = { GK: 0, DF: 1, MF: 2, FW: 3 };
@@ -7593,7 +7597,7 @@ function viewTransfers() {
              lodge for a man you cannot see, and the Chairman cannot send a
              wrongly-penned man to the Trough without his button — which used
              to be hidden behind that same "+3 more". -->
-        <div class="pen-list">${[...arrivals].sort(metricSort('pts')).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him to the Trough without a Window Draft.">&rarr; Trough</button>` : ''}</span>`).join('')}</div>
+        <div class="pen-list">${[...arrivals].sort(metricSort('pts')).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him straight to the Trough, out of the Window Waiver.">&rarr; Trough</button>` : ''}</span>`).join('')}</div>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wwRun">Run the window waiver now</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
@@ -7693,7 +7697,7 @@ function viewTransfers() {
     const tgwCl = transferGw();
     const moves = state.transfers.filter(t => t.managerId === mid && t.gw === tgwCl);
     const movesBlock = moves.length ? `<h3 style="margin-top:10px">Done this window</h3>` + moves.map(t => `
-      <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window draft' : t.waiver ? 'waiver, went through' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
+      <div class="lrow" style="font-size:12.5px"><b>${pname(PLAYER_BY_ID[t.inId])}</b> <span class="muted">in${PLAYER_BY_ID[t.outId] ? `, ${PLAYER_BY_ID[t.outId].name} out` : ''} · ${t.trade ? 'trade' : t.windowDraft ? 'window waiver' : t.waiver ? 'waiver, went through' : 'from the Trough'} · counts from GW${GAMEWEEKS[t.gw]?.n ?? '?'}</span>
       </div>`).join('') : '';
     return `${head}<div class="card">
       <h2>${esc(managerName(mid))}'s waiver list</h2>
@@ -8181,7 +8185,7 @@ function bindTransfers() {
           // who-makes-way picker instead (Ben, 25 Aug — either order works)
           const needOut = !ownerMid && !locked && !outP;
           const ok = !ownerMid && !locked && outP && squadShapeOk([...squadAfterOut, p]) && !dupe;
-          const why = locked ? 'New arrival — locked until the window shuts, then the Window Draft'
+          const why = locked ? `In the holding pen — he is settled by the Window Waiver${windowWaiverDone() ? '' : `, ${windowWaiverWhen()}`}, not this one`
             : !outP ? 'Tap to choose who makes way' : dupe ? 'That exact claim is already on your list' : 'Breaks the squad position limits';
           const m = metricsFor(p);
           const action = ownerMid
@@ -8800,7 +8804,7 @@ function transferVerdict(wf, horizon) {
   return 'an expensive mistake';
 }
 function reportCardHtml(t) {
-  const kind = t.trade ? 'trade' : t.windowDraft ? 'Window Draft' : t.waiver ? 'waiver claim' : 'Trough signing';
+  const kind = t.trade ? 'trade' : t.windowDraft ? 'Window Waiver' : t.waiver ? 'waiver claim' : 'Trough signing';
   const w3 = transferWindowFacts(t, 3);
   const w6 = transferWindowFacts(t, 6);
   const windowRow = (wf, label) => {
@@ -9730,7 +9734,7 @@ function reviewArticle(last, pick) {
     if (pk) return 'his own draft pick';
     const tr = [...state.transfers].reverse().find(t => t.managerId === mid && t.inId === pid);
     if (!tr) return '';
-    return tr.trade ? 'landed in a trade' : tr.windowDraft ? 'a Window Draft signing' : tr.waiver ? 'a waiver-wire claim' : 'plucked from the Trough for nothing';
+    return tr.trade ? 'landed in a trade' : tr.windowDraft ? 'a Window Waiver signing' : tr.waiver ? 'a waiver-wire claim' : 'plucked from the Trough for nothing';
   };
   const shift = pid => {
     const s = gwEvent(last)?.playerStats?.[pid];
@@ -12041,7 +12045,7 @@ function viewRules() {
     <div class="card">
       <h2>The Basics</h2>
       <p class="rules-p">Twelve managers. One snake draft over all ${PLAYERS.length} Premier League players — order reverses every round. Est. 2015; this is season twelve.</p>
-      <p class="rules-p">Squads are fixed at <b>${SQUAD_RULES.size}</b>: ${['GK', 'DF', 'MF', 'FW'].map(p => `${SQUAD_RULES.min[p]}–${SQUAD_RULES.max[p]} ${p}`).join(', ')}. Those lower bounds leave room for only <b>one positional flex</b> — you cannot carry 6 midfielders and 4 forwards together. The same rule applies to the draft, autopicks, trades, waivers, the Trough and the Window Draft. <b>No club cap.</b></p>
+      <p class="rules-p">Squads are fixed at <b>${SQUAD_RULES.size}</b>: ${['GK', 'DF', 'MF', 'FW'].map(p => `${SQUAD_RULES.min[p]}–${SQUAD_RULES.max[p]} ${p}`).join(', ')}. Those lower bounds leave room for only <b>one positional flex</b> — you cannot carry 6 midfielders and 4 forwards together. The same rule applies to the draft, autopicks, trades, waivers, the Trough and the Window Waiver. <b>No club cap.</b></p>
       <p class="rules-p"><b>Starting XI:</b> pick 11 from your ${SQUAD_RULES.size} each gameweek — 1 GK, 3–5 DF, 2–5 MF, 1–3 FW. <b>Only starters score.</b> Lineups lock at the FPL deadline.</p>
       <p class="rules-p"><b>Forgot to set it?</b> Your last saved XI carries over, minus anyone you've since sold (repaired to a legal shape if needed). A best XI is auto-picked only if you've never set one at all. Nobody scores nil for being on holiday.</p>
       <p class="rules-p"><b>Auto-subs:</b> if a starter doesn't play at all that gameweek, your bench comes in automatically <b>in the order you've set</b> — leftmost first (tap two bench players on the pitch view to reorder).</p>
@@ -12060,7 +12064,7 @@ function viewRules() {
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
       <p class="rules-p"><b>Waivers:</b> the market runs to a fixed clock. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>10am every Tuesday and Friday</b> (reverse table order — win a claim, drop to the back); the first run after the gameweek's last fixture reopens the Trough. The Chairman can run waivers early, skip one run by exception (claims roll to the next), or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
-      <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked away until the transfer window shuts. The Chairman then runs the <b>Window Draft</b> — first pick to whoever picked last on draft night, snaking back up, until a full lap of passes. Whatever's left spills into the Trough.</p>
+      <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked in the <b>holding pen</b> until the transfer window shuts. The pen is then settled by the <b>Window Waiver</b> — one blind run, not a live draft: everybody lodges a list, nobody has to be at a keyboard. Two rounds, snaking, in the reverse of draft night, so whoever picked last that night picks first here. A man signed this way costs you no waiver take and the regular Tuesday and Friday runs are unmoved. Whatever is left spills into the Trough.${windowWaiverDone() ? '' : ` <b>The next one runs ${esc(windowWaiverWhen())}.</b>`}</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Nitty-gritty confirmed nearer the time, as is tradition.</p>
       <p class="rules-p"><b>Trades:</b> player-for-player swaps between managers, agreed in the group, any time until the playoff lock. Doesn't use your waiver turn.</p>
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>
@@ -12318,7 +12322,7 @@ function viewSettings() {
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
       <p class="rules-p">&sect;4 Waivers run 10am Tuesday and Friday, reverse table order. The Chairman may skip a run by exception. The Trough takes the rest.</p>
-      <p class="rules-p">&sect;5 New signings wait for the Window Draft. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
+      <p class="rules-p">&sect;5 New signings wait for the Window Waiver${windowWaiverDone() ? '' : ` &mdash; <b>${esc(windowWaiverWhen())}</b>`}. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
       <p class="rules-p">&sect;6 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
       <p class="rules-p">&sect;7 The hydration break is inviolable.</p>
       <p class="rules-p muted" style="font-style:italic">Amendments require a Committee majority and will be ignored regardless. Full rules on the Rules page.</p>
@@ -12560,7 +12564,11 @@ function showPlayerCard(pid) {
         <p class="muted" style="font-size:12px">${esc(p.full)}</p>
         <p style="font-size:13px;margin-top:4px">${flagImg(p.team)} ${esc(p.team)}</p>
         ${p.news ? `<p class="warn" style="font-size:12px;margin-top:4px">${statusChip(p)} ${esc(p.news)}</p>` : ''}
-        <p class="muted" style="font-size:12px;margin-top:4px">${owner ? `Owned by <b style="color:var(--text)">${esc(teamName(owner.id))}</b>` : 'Free agent' + (state.phase === 'season' && onWaivers(p) ? ' \u2014 on waivers' : ' \u2014 in the Trough')}</p>
+        <p class="muted" style="font-size:12px;margin-top:4px">${owner ? `Owned by <b style="color:var(--text)">${esc(teamName(owner.id))}</b>` : (arrivalLocked(p)
+          // a penned man is NOT in the Trough and cannot be signed at all —
+          // saying "free agent" of him is the card's worst possible answer
+          ? `\u{1F512} In the holding pen \u2014 settled by the Window Waiver${windowWaiverDone() ? '' : `, ${esc(windowWaiverWhen())}`}`
+          : 'Free agent' + (state.phase === 'season' && onWaivers(p) ? ' \u2014 on waivers' : ' \u2014 in the Trough'))}</p>
       </div>
       <button class="btn ghost small icon-btn" id="pcardClose" style="margin-left:auto" aria-label="Close player card">\u2715</button>
     </div>
@@ -12731,7 +12739,7 @@ function gsRowsHtml(players, ownerOf) {
     const ownerMid = ownerOf[p.id];
     const ownLabel = ownerMid
       ? `Owned by <b>${esc(teamName(ownerMid))}</b>`
-      : isArrival(p) ? '<span class="muted">&#128274; new arrival — locked until the Window Draft</span>'
+      : isArrival(p) ? `<span class="muted">&#128274; in the holding pen — settled by the Window Waiver${windowWaiverDone() ? '' : `, ${esc(windowWaiverWhen())}`}</span>`
       : state.phase === 'season' && onWaivers(p) ? '<span class="muted">on waivers</span>'
       : '<span class="muted">free agent</span>';
     const act = ownerMid && iAm && ownerMid === whoami
