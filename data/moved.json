@@ -1,1 +1,8 @@
-[]
+[
+  { "id": 501, "club": "SUN", "note": "Signed for Sunderland on loan from Spurs, with an obligation to buy.", "signed": "2026-09-01" },
+  { "id": 578, "club": "TOT", "note": "Signed for Spurs on loan from Chelsea.", "signed": "2026-09-01" },
+  { "id": 147, "club": "TOT", "note": "Signed for Spurs from Chelsea.", "signed": "2026-09-01" },
+  { "id": 155, "club": "MCI", "note": "Signed for Manchester City from Chelsea.", "signed": "2026-09-01" },
+  { "id": 237, "club": "MCI", "note": "Signed for Manchester City from Everton.", "signed": "2026-09-01" },
+  { "id": 238, "club": "EVE", "note": "Signed for Everton on loan from Manchester City.", "signed": "2026-09-01" }
+]
