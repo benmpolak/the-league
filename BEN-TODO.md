@@ -1206,3 +1206,26 @@ What the draft episode can actually mine, checked against the code:
   field. Would need a new data source; don't promise it on air.
 - Marc's editorial line stands: "the content isnt the point really. Its the
   adverts."
+
+---
+
+## 08. THE FRIDAY PAPER — GW3 matchday edition (2 Sept)
+
+Ben's commission for the Friday 4 Sept edition, built and on main. It is a
+`COMMISSIONS` entry in `js/gazette.js` keyed to gameweek NUMBER 3, printed by
+`Gazette.frontPage()` above the fixtures in `previewArticle` — so it goes to
+print at the 18:30 deadline and the archive keeps it. Three pieces:
+
+- **Lead:** Ian's lucky streak. Every figure (table place, points-for, the
+  Crystal Ball luck number, all-play record, the GW1 Jammiest Win, the
+  transaction count) is read from state at print time and each clause is
+  gated on its fact.
+- **The Window Waiver:** before the run it previews the pen (Barcola, then
+  the cliff); once the ledger carries `windowDraft` records it prints every
+  pick with its slot number, the men who signed nobody, and a verdict per
+  signing from the feed's season xP. Nothing to do after Thursday's run.
+- **Letters page:** Ian's my-fourteen petition from the group chat, and the
+  Committee's reply. The "my fourteen" feature itself was NOT built — Ben
+  and Marc both declined to spend usage on it.
+
+Pins in `test/gazette.test.js` (4 new). Nothing else in the paper moved.

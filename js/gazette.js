@@ -724,6 +724,231 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
+  /* ---------- the Chairman's commissions: the GW3 matchday edition ----------
+     Ben, 2 Sept 2026, for the Friday 4 Sept paper: lead on Ian's lucky
+     streak ("see the data on the site"), a story on the Window Waiver and
+     "how bad every pick is after Barcola", and the group chat's petition for
+     a my-fourteen stats page, which the Committee declined to build and the
+     Gazette prints instead. Every figure is read from public state at print
+     time and each sentence is gated on the fact it asserts, so the copy can
+     never disagree with the Crystal Ball or the ledger. Keyed to the
+     gameweek NUMBER so the archive keeps the issue. No shared RNG: bylines
+     by hash, everything else static. All copy goes through esc(). */
+
+  const listOf = (xs) => xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
+  const signed = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
+  const nth = (n) => typeof ord === 'function' ? ord(n) : String(n);
+  const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+  const word = k => WORDS[k] || String(k);
+  const finalBefore = (uptoGw) => { const out = []; for (let i = 0; i < uptoGw; i++) if (gwStatus(i) === 'final') out.push(i); return out; };
+
+  // all-play up to (not including) a gameweek — the Crystal Ball's maths,
+  // re-derived here so a back edition keeps its own figures
+  function allPlayTo(uptoGw) {
+    const rows = Object.fromEntries(state.managers.map(m => [m.id, { w: 0, d: 0, l: 0 }]));
+    for (const i of finalBefore(uptoGw)) {
+      const sc = state.managers.map(m => [m.id, gwManagerPoints(m.id, i)]);
+      for (const [id, s] of sc) for (const [oid, os] of sc) {
+        if (id === oid) continue;
+        if (s > os) rows[id].w++; else if (s < os) rows[id].l++; else rows[id].d++;
+      }
+    }
+    return rows;
+  }
+
+  function luckStory(gwIdx) {
+    const ian = state.managers.find(m => /tussie/i.test(managerName(m.id)));
+    if (!ian) return '';
+    const table = h2hStandings(false, gwIdx);
+    const pos = table.findIndex(r => r.id === ian.id);
+    const me = table[pos];
+    if (!me || !me.p) return '';
+    const n = state.managers.length;
+    const T = teamName(ian.id), N = managerName(ian.id);
+    const ap = allPlayTo(gwIdx);
+    const luckOf = r => r.pts - (3 * ap[r.id].w + ap[r.id].d) / (n - 1);
+    const luck = table.map(r => ({ id: r.id, v: luckOf(r) })).sort((a, b) => b.v - a.v);
+    const myLuck = luck.find(x => x.id === ian.id).v;
+    const luckRank = luck.findIndex(x => x.id === ian.id) + 1;
+    const runnerUp = luck[1];
+    const mine = ap[ian.id];
+    const topHalf = table.slice(0, Math.ceil(n / 2));
+    const fewestInTopHalf = pos < topHalf.length && topHalf.every(r => r.id === ian.id || r.pf > me.pf);
+    const outscoredWinless = table.filter(r => r.w === 0 && r.p > 0 && r.pf > me.pf).sort((a, b) => b.pf - a.pf)[0];
+    // week by week: score, rank in the round, opponent, the award desk's view
+    const weeks = [];
+    for (const i of finalBefore(gwIdx)) {
+      const pr = pairingsFor(i).find(x => x.includes(ian.id));
+      if (!pr) continue;
+      const op = pr[0] === ian.id ? pr[1] : pr[0];
+      const s = gwManagerPoints(ian.id, i), os = gwManagerPoints(op, i);
+      const rank = state.managers.map(m => gwManagerPoints(m.id, i)).sort((a, b) => b - a).indexOf(s) + 1;
+      let aw = null; try { aw = typeof weeklyAwards === 'function' ? weeklyAwards(i) : null; } catch (e) { aw = null; }
+      weeks.push({ i, n: GAMEWEEKS[i].n, op, s, os, rank, res: s > os ? 'W' : s < os ? 'L' : 'D', jammy: aw?.jammy?.w === ian.id });
+    }
+    if (!weeks.length) return '';
+    // the lowest winning score of the season so far, anyone's
+    let lowWin = null;
+    for (const i of finalBefore(gwIdx)) for (const [a, b] of pairingsFor(i)) {
+      const sa = gwManagerPoints(a, i), sb = gwManagerPoints(b, i);
+      if (sa !== sb && (lowWin == null || Math.max(sa, sb) < lowWin)) lowWin = Math.max(sa, sb);
+    }
+    // the ledger: transactions per club since draft night
+    const moves = Object.fromEntries(state.managers.map(m => [m.id, 0]));
+    const myByGw = {};
+    for (const t of state.transfers) {
+      if (t.gw > gwIdx || moves[t.managerId] == null) continue;
+      moves[t.managerId]++;
+      if (t.managerId === ian.id) myByGw[t.gw] = (myByGw[t.gw] || 0) + 1;
+    }
+    const myMoves = moves[ian.id];
+    const busiest = myMoves > 0 && Object.entries(moves).every(([id, v]) => Number(id) === ian.id || v < myMoves);
+    const busiestWeek = Object.entries(myByGw).map(([g, c]) => ({ n: GAMEWEEKS[Number(g)]?.n, c })).sort((a, b) => b.c - a.c)[0];
+    const firstXI = lineupFor(ian.id, weeks[0].i);
+    const nowIds = new Set(squadAt(ian.id, gwIdx).map(p => p.id));
+    const gone = firstXI.filter(id => !nowIds.has(id)).length;
+    // this weekend
+    const pr = pairingsFor(gwIdx).find(x => x.includes(ian.id));
+    const op = pr ? (pr[0] === ian.id ? pr[1] : pr[0]) : null;
+    const opRow = op != null ? table.find(r => r.id === op) : null;
+    const opPos = op != null ? table.findIndex(r => r.id === op) : -1;
+    let proj = null;
+    try {
+      const d = typeof gwPreviewData === 'function' ? gwPreviewData(gwIdx) : null;
+      const row = d?.rows?.find(r => r.a === ian.id || r.b === ian.id);
+      if (row) proj = { mine: row.a === ian.id ? row.sa : row.sb, theirs: row.a === ian.id ? row.sb : row.sa, motw: d.motw === row };
+    } catch (e) { proj = null; }
+
+    const perfect = me.l === 0 && me.d === 0;
+    const paras = [];
+    paras.push(`${T} sit ${nth(pos + 1)} after ${word(me.p)} round${me.p === 1 ? '' : 's'} with ${perfect ? 'a perfect record' : `${word(me.w)} win${me.w === 1 ? '' : 's'} from ${word(me.p)}`}, and the Gazette's numbers desk has spent the week trying to work out how. ${N} has ${perfect ? 'won every match he has played' : `won ${word(me.w)} of ${word(me.p)}`}. He has also scored ${me.pf} points${fewestInTopHalf ? ', fewer than any other club in the top half' : ''}${outscoredWinless ? `, and ${outscoredWinless.pf - me.pf} fewer than ${teamName(outscoredWinless.id)}, who have ${outscoredWinless.l === outscoredWinless.p ? 'lost every match they have played' : 'yet to win'}` : ''}.`);
+    paras.push(`The Crystal Ball's luck column, which sets the head-to-head points a club has banked against what its scores deserved, gives ${T} ${signed(myLuck)}: ${luckRank === 1 ? `the largest figure in the league${runnerUp && myLuck - runnerUp.v >= 0.3 ? `, ${(myLuck - runnerUp.v).toFixed(1)} clear of ${teamName(runnerUp.id)}` : ''}` : `${nth(luckRank)} in the league`}. Played against all ${word(n - 1)} rivals every week instead of one, his record reads ${mine.w} wins${mine.d ? `, ${mine.d} draw${mine.d === 1 ? '' : 's'}` : ''} and ${mine.l} defeats${mine.w === mine.l ? `: a coin, and it has come up heads ${me.w === 2 ? 'twice' : `${me.w} times`}` : ''}.`);
+    const bits = weeks.map(w => {
+      if (w.res === 'W' && w.rank > n * 2 / 3) return `Gameweek ${w.n} was the masterpiece: ${w.s} points, the ${nth(w.rank)}-best total of ${word(n)}, and a win, because ${teamName(w.op)} found ${w.os} beneath it.${w.jammy ? ` The back page called it the Jammiest Win of the week${lowWin === w.s ? ', and it remains the lowest winning score of the season' : ''}.` : lowWin === w.s ? ' It remains the lowest winning score of the season.' : ''}`;
+      if (w.res === 'W') return `Gameweek ${w.n} was more respectable: ${w.s} against ${teamName(w.op)}'s ${w.os}, the ${nth(w.rank)}-highest score of the round, which the manager will cite in his defence and the Committee will admit into evidence.`;
+      if (w.res === 'D') return `Gameweek ${w.n} was a ${w.s}–${w.os} draw with ${teamName(w.op)}, which the numbers desk regards as the universe clearing its throat.`;
+      return `Gameweek ${w.n}: ${w.s}–${w.os} to ${teamName(w.op)}, which the numbers desk regards as the correction.`;
+    });
+    paras.push(bits.join(' '));
+    if (myMoves) paras.push(`None of it has been achieved quietly. The ledger records ${myMoves} transactions in ${T}'s name since draft night${busiest ? ', more than any other club' : ''}${busiestWeek && busiestWeek.c >= 6 ? `, including a Gameweek ${busiestWeek.n} spell in which ${word(busiestWeek.c)} men came or went` : ''}.${gone ? ` ${word(gone)[0].toUpperCase()}${word(gone).slice(1)} of the eleven who started Gameweek ${weeks[0].n} ${gone === 1 ? 'is' : 'are'} no longer at the club.` : ''} Fortune, the Gazette is told, favours the brave. It has not previously been known to favour the restless.`);
+    if (op != null) {
+      const opDesc = opRow && opRow.p && opRow.l === 0 && opRow.d === 0 ? `, also unbeaten but with ${opRow.pf} points to show for it` : opPos >= 0 ? `, ${nth(opPos + 1)} in the table` : '';
+      paras.push(`The reckoning is booked for this weekend against ${teamName(op)}${opDesc}${proj?.motw ? ', in the tie of the round' : ''}. ${proj ? `The projections make it ${proj.mine}–${proj.theirs}${Math.abs(proj.mine - proj.theirs) <= 2 ? ': a coin toss, and he has been winning those' : ''}. ` : ''}Somebody's luck runs out this weekend. The Gazette has stopped saying whose.`);
+    }
+    const by = press(['colour'], 'gw3-luck').n;
+    return `<div class="prog-story prog-lead-story">
+      <div class="prog-story-kicker">THE LUCK DESK · ${esc(perfect ? `${word(me.w).toUpperCase()} FROM ${word(me.p).toUpperCase()}` : 'FORM AND FORTUNE')}</div>
+      <div class="prog-head">FORTUNE FAVOURS THE BRAVE, AND ALSO IAN</div>
+      <div class="prog-by">${esc(by)}, luck correspondent</div>
+      ${paras.map(p => `<p>${esc(p)}</p>`).join('')}
+    </div>`;
+  }
+
+  function windowStory(gwIdx) {
+    // the feed's season expectation (the Data Room number), not this week's
+    // fixture-adjusted projection — the pen is judged as a signing, not a pick
+    const xp = p => Number(p.xp) || 0;
+    const verdict = v => v >= 2.5 ? 'a footballer' : v >= 2 ? 'a squad player' : v >= 1.5 ? 'a body' : v >= 1 ? 'a name' : 'a rumour';
+    const by = press(['wire'], 'gw3-window').n;
+    const done = state.transfers.filter(t => t.windowDraft && t.gw <= gwIdx).sort((a, b) => (a.n || 0) - (b.n || 0));
+    if (done.length) {
+      // the server signs at most one man per slot and pushes in slot order,
+      // so walking the slots against the ledger recovers every pick number
+      const slots = typeof windowSlots === 'function' ? windowSlots() : [];
+      const picks = []; let k = 0;
+      for (let s = 0; s < slots.length && k < done.length; s++) if (slots[s] === done[k].managerId) picks.push({ no: s + 1, t: done[k++] });
+      while (k < done.length) picks.push({ no: null, t: done[k++] });
+      const rows = picks.map(x => ({ ...x, p: PLAYER_BY_ID[x.t.inId], out: PLAYER_BY_ID[x.t.outId] })).filter(x => x.p);
+      if (!rows.length) return '';
+      const best = [...rows].sort((a, b) => xp(b.p) - xp(a.p) || (a.no ?? 99) - (b.no ?? 99))[0];
+      const after = rows.filter(r => r !== best && (r.no ?? Infinity) > (best.no ?? -1));
+      const afterAvg = after.length ? after.reduce((t, r) => t + xp(r.p), 0) / after.length : 0;
+      const signedIds = new Set(rows.map(r => r.t.managerId));
+      const passed = state.managers.filter(m => !signedIds.has(m.id)).map(m => teamName(m.id));
+      const paras = [
+        `The Window Waiver has run, the holding pen is empty, and the ledger reads like a car boot sale at which one man turned up with a Ferrari. ${teamName(best.t.managerId)}${best.no === 1 ? ', first up by right of being last on draft night,' : best.no ? ` at pick ${best.no}` : ''} took ${best.p.name} of ${best.p.team || best.p.club}: ${xp(best.p).toFixed(1)} expected points a week, and the only name in the pen the stats desk would have crossed a road for.`,
+        after.length
+          ? `Then the cliff. The ${word(after.length)} signing${after.length === 1 ? '' : 's'} that followed average ${afterAvg.toFixed(1)} expected points between them, a figure the stats desk describes as "a Championship loan with the lights off". ${passed.length ? `${listOf(passed)} signed nobody, having lodged no list or a list the pen had already eaten, which the Committee regards as the correct reading of the pen.` : 'Every club signed somebody, which says more about the clubs than about the pen.'}`
+          : `Nobody followed. ${passed.length ? `${listOf(passed)} signed nobody, ` : ''}which the Committee regards as the correct reading of the pen.`,
+        'The leftovers have spilled into the Trough, where they are priced at nothing and, on the numbers, fairly.',
+      ];
+      const nibs = rows.map(r => `<div class="prog-nib"><b>${r.no ? `PICK ${r.no} · ` : ''}${esc(teamName(r.t.managerId))}</b><span>${esc(`${r.p.name} (${r.p.club}, ${xp(r.p).toFixed(1)} expected) in; ${r.out ? r.out.name : 'a squad place'} out. ${r === best ? 'The pen’s one footballer.' : `On the numbers, ${verdict(xp(r.p))}.`}`)}</span></div>`).join('');
+      return `<div class="prog-story">
+        <div class="prog-story-kicker">THE HOLDING PEN · THE WINDOW WAIVER</div>
+        <div class="prog-head">ONE FOOTBALLER AND A CLIFF: THE WINDOW WAIVER IN FULL</div>
+        <div class="prog-by">${esc(by)}, transfer wire</div>
+        ${paras.map(p => `<p>${esc(p)}</p>`).join('')}
+        <div class="prog-nibs">${nibs}</div>
+      </div>`;
+    }
+    // not yet run: the pen as it stands, and the order it will be picked over
+    const pen = typeof lockedArrivals === 'function' ? lockedArrivals() : [];
+    if (pen.length < 2) return '';
+    const sorted = [...pen].sort((a, b) => xp(b) - xp(a) || a.name.localeCompare(b.name));
+    const best = sorted[0], rest = sorted.slice(1);
+    const restAvg = rest.reduce((t, p) => t + xp(p), 0) / rest.length;
+    const slots = typeof windowSlots === 'function' ? windowSlots() : [];
+    const n = state.managers.length;
+    const when = typeof WINDOW_WAIVER_AT !== 'undefined' && typeof windowWaiverHour === 'function'
+      ? `${new Date(WINDOW_WAIVER_AT).toLocaleDateString('en-GB', { weekday: 'long' })} at ${windowWaiverHour()}` : 'this week';
+    const twelfth = sorted[n - 1];
+    const paras = [
+      `The Window Waiver runs ${when}: one pass over the holding pen, two rounds, snaking, in the reverse of draft-night order, nobody required to be awake.${slots.length >= 2 * n ? ` ${teamName(slots[0])} pick first and ${nth(slots.length)}; ${teamName(slots[n - 1])} ${nth(n)} and ${nth(n + 1)}.` : ''}`,
+      `The pen holds ${pen.length} men. One of them is ${best.name} of ${best.team || best.club}, ${xp(best).toFixed(1)} expected points a week. The other ${rest.length} average ${restAvg.toFixed(1)}, a figure the stats desk describes as "a Championship loan with the lights off".${twelfth ? ` In this pen the difference between the first pick and the ${nth(n)} is the difference between ${best.name} and ${twelfth.name}.` : ''}`,
+    ];
+    const nibs = sorted.slice(0, 6).map(p => `<div class="prog-nib"><b>${esc(`${p.name} (${p.club})`)}</b><span>${esc(`${xp(p).toFixed(1)} expected. On the numbers, ${verdict(xp(p))}.`)}</span></div>`).join('');
+    return `<div class="prog-story">
+      <div class="prog-story-kicker">THE HOLDING PEN · THE WINDOW WAIVER</div>
+      <div class="prog-head">${esc(best.name.toUpperCase())}, AND THEN THE CLIFF</div>
+      <div class="prog-by">${esc(by)}, transfer wire</div>
+      ${paras.map(p => `<p>${esc(p)}</p>`).join('')}
+      <div class="prog-nibs">${nibs}</div>
+    </div>`;
+  }
+
+  /* the group chat, 2 Sept 2026, printed straight: Ian wants his fourteen's
+     xG on one page; Marc says watchlist; the Chairman will not spend the
+     League's usage on it; Ric's contribution is unprintable */
+  function lettersPage(gwIdx) {
+    const ian = state.managers.find(m => /tussie/i.test(managerName(m.id)));
+    if (!ian) return '';
+    const marc = state.managers.find(m => /conway/i.test(managerName(m.id)));
+    const ric = state.managers.find(m => /blank/i.test(managerName(m.id)));
+    const table = h2hStandings(false, gwIdx);
+    const pos = table.findIndex(r => r.id === ian.id);
+    const sig = `${managerName(ian.id)}, ${teamName(ian.id)}${pos >= 0 && table[pos].p ? `, ${nth(pos + 1)} in the table` : ''}`;
+    const intro = 'The Gazette does not have a letters page. It has said so in print, twice. It publishes the following in full because the correspondent asked, repeatedly, and because it arrived through the Committee’s official complaints procedure, which is the group chat.';
+    const letter = 'Sir, — How does a manager look at the statistics of his own players? The expected goals, the expected assists, that sort of thing. I press the little i on a player and the information is not there. I am told the Data Room has everything, and it does: it has every player in the country. It does not have my fourteen on their own. I just want to see my fourteen. That is the bit I cannot crack. It is hardly too much to ask, to see the statistics of one’s own team. Can somebody not prompt the developers?';
+    const reply = [
+      `The Data Room has everything. So does the Trough, if the filter is changed. A manager who wants his fourteen on one page may put his fourteen on his watchlist, a solution the Committee’s spokesman${marc ? ` (${managerName(marc.id)})` : ''} said he liked “because I don’t have to do anything”, and which he calculated would take the correspondent less time to do than it would take the Committee to build. Asked whether he could prompt the developers, he said: “I can, but I don’t really want to.”`,
+      `The Chairman, petitioned directly, declined to spend any of the League’s usage on the matter and likened the request to a peasant asking the squire to have a word with Zeus. He referred to the correspondent throughout as “Iain the peasant”, a spelling the Gazette reproduces without endorsing. The spokesman agreed that it “seems a waste”.${ric ? ` ${managerName(ric.id)}’s contribution to the debate was received, considered, and is not printable in a family newspaper.` : ''}`,
+      'The Gazette notes for the record that the correspondent is the League’s most decorated sceptic of artificial intelligence, on record that the machines will never take a football man’s job, and that “prompt the developers” is a sentence he has now typed of his own free will. The developers, for their part, have read the letter, which is more than the Committee did. The letters page, which does not exist, is now closed.',
+    ];
+    return `<div class="prog-story prog-letters">
+      <div class="prog-story-kicker">LETTERS TO THE EDITOR · A PAGE WHICH DOES NOT EXIST</div>
+      <div class="prog-head">SIR, I JUST WANT TO SEE MY FOURTEEN</div>
+      <div class="prog-by">Correspondence desk</div>
+      <p class="muted" style="font-size:12px">${esc(intro)}</p>
+      <p><i>${esc(letter)}</i></p>
+      <p class="prog-match-detail">${esc(`— ${sig}`)}</p>
+      <div class="prog-int-q">The Committee replies</div>
+      ${reply.map(p => `<p>${esc(p)}</p>`).join('')}
+    </div>`;
+  }
+
+  const COMMISSIONS = {
+    3: gwIdx => luckStory(gwIdx) + windowStory(gwIdx) + lettersPage(gwIdx),
+  };
+  /* the commissioned front page for a matchday edition, or '' — app.js
+     previewArticle prints it above the fixtures, so its .prog-head is the
+     dashboard splash */
+  function frontPage(gwIdx) {
+    try {
+      const fn = COMMISSIONS[GAMEWEEKS[gwIdx]?.n];
+      return fn ? fn(gwIdx) : '';
+    } catch (e) { return ''; }
+  }
+
   /* ---------- the edition ---------- */
 
   function build(gwIdx, used) {
@@ -1079,5 +1304,5 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, draftSpecial, interview, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  return { review, preview, draftSpecial, interview, frontPage, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();

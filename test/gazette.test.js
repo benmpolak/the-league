@@ -206,6 +206,37 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
   chk('record book agrees with an independent recompute, is tie-safe, and renders at 390px',
     rb.hiOk === true && rb.renders === true && rb.overflow === true, JSON.stringify(rb));
 
+  /* the Chairman's commissioned front page (GW3 matchday edition, Ben 2 Sept):
+     keyed to the gameweek number, deterministic, escaped, hooked into the
+     matchday edition, and the Window Waiver story follows the ledger */
+  const fp = await page.evaluate(() => {
+    const gw3 = GAMEWEEKS.findIndex(g => g.n === 3);
+    const a = Gazette.frontPage(gw3);
+    const ian = state.managers.find(m => /tussie/i.test(managerName(m.id)));
+    const keep = ian?.team;
+    if (ian) ian.team = 'CF <script>alert(1)</script> FC';
+    const hostile = Gazette.frontPage(gw3);
+    if (ian) ian.team = keep;
+    const pre = /AND THEN THE CLIFF/.test(a) || !lockedArrivals().length;
+    const n = state.transfers.length;
+    const pen = lockedArrivals();
+    const first = windowSlots()[0];
+    if (pen.length) state.transfers.push({ managerId: first, inId: pen[0].id, outId: squadAt(first, gw3).at(-1).id, gw: gw3, t: Date.now(), windowDraft: true, n: n + 1 });
+    const post = Gazette.frontPage(gw3);
+    state.transfers.length = n;
+    const inPreview = previewArticle(gw3, (arr, seed) => arr[seed % arr.length]);
+    return { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 1), deterministic: Gazette.frontPage(gw3) === a,
+      letters: /LETTERS TO THE EDITOR/.test(a) && /SEE MY FOURTEEN/.test(a), lead: /FORTUNE FAVOURS THE BRAVE/.test(a),
+      escaped: !/<script>/.test(hostile) && /&lt;script&gt;/.test(hostile), pre, penSize: pen.length,
+      post: !pen.length || (/IN FULL/.test(post) && /PICK 1 ·/.test(post) && post.includes(pen[0].name)),
+      hooked: inPreview.includes(a) && inPreview.indexOf(a) < inPreview.indexOf('prog-lead') };
+  });
+  chk('commissioned front page prints only for GW3, deterministically, with the lead and the letters',
+    fp.others === '' && fp.deterministic && fp.letters && fp.lead, JSON.stringify(fp));
+  chk('commissioned front page escapes manager-controlled text', fp.escaped, JSON.stringify(fp));
+  chk('window waiver story previews the pen, then follows the ledger once it has run', fp.pre && fp.post, JSON.stringify(fp));
+  chk('front page prints above the matchday fixtures so the dashboard lifts its headline', fp.hooked, JSON.stringify(fp));
+
   await browser.close();
   console.log(`\n[gazette] ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

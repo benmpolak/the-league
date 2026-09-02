@@ -9685,7 +9685,12 @@ function previewArticle(i, pick) {
   // Meet the Managers (Ian's commission) — an issue keyed to this gameweek
   // prints here first; its .prog-head makes it the front-page splash
   const sitdown = (typeof Gazette !== 'undefined' && Gazette.interview) ? Gazette.interview(i) : '';
+  // the Chairman's commissioned front page (js/gazette.js frontPage) — an
+  // edition-specific splash that prints above the fixtures, so its headline
+  // is the one the dashboard lifts
+  const front = (typeof Gazette !== 'undefined' && Gazette.frontPage) ? Gazette.frontPage(i) : '';
   return `<div class="prog-art">
+    ${front}
     <p class="prog-lead">${esc(lead)}</p>
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${draftRecap ? `<p>${esc(draftRecap)}</p>` : ''}
