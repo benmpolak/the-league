@@ -1703,7 +1703,11 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
  * ordinary claims are. The run follows runWaivers' recoverable shape: claim
  * the run id under a lease, persist the plan, apply idempotently, mark done.
  * It never touches waiverMeta, so the Friday clock cannot move. */
-const WINDOW_WAIVER_AT = Date.parse('2026-09-03T09:00:00Z'); // Thu 3 Sept 10:00 London — mirrored in js/app.js
+// Thu 3 Sept 20:00 London (BST, so 19:00Z) — mirrored in js/app.js.
+// Moved from 10:00 at Marc's request, 2 Sept 2026. THIS is the copy that fires
+// the run; the client's only draws the card. waiverTick runs at 7 past the
+// hour, so the run lands at 19:07Z / 20:07 London.
+const WINDOW_WAIVER_AT = Date.parse('2026-09-03T19:00:00Z');
 const WINDOW_WAIVER_SLOT = 'window-2026-09-03';
 
 ACTIONS.windowClaimSet = async ({ league, a, data, eng, ctx, state }) => {

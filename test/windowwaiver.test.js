@@ -88,7 +88,7 @@ const GWS = Array.from({ length: 38 }, (_, i) => ({
 }));
 const mkEngine = () => Engine.make({
   players: ALL, gameweeks: GWS, fixtures: [], lastSeasonByCode: {},
-  now: () => Date.parse('2026-09-03T09:00:00Z'),
+  now: () => Date.parse('2026-09-03T19:00:00Z'),
 });
 
 /* ---------- the snake ---------- */
@@ -137,7 +137,7 @@ const mkEngine = () => Engine.make({
       { in: topFw.id, out: drop(n) },
       { in: secondFw.id, out: drop(n) },
     ];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   const winner = res.executed.find(e => e.in === topFw.id);
   chk('the first pick goes to Ducky, not to whoever is top of the Friday queue',
     winner && NAME[winner.mid] === 'Ducky', winner ? NAME[winner.mid] : 'nobody');
@@ -161,7 +161,7 @@ const mkEngine = () => Engine.make({
   const drop = who => st.draft.picks.find(k => k.managerId === MID[who] && ALL.find(p => p.id === k.playerId).pos === 'FW').playerId;
   st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: drop('Ducky') }];
   st.windowClaims[MID['Tus']] = [{ in: PEN[1].id, out: drop('Tus') }];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   chk('two men were actually signed (the check is not vacuous)', res.executed.length === 2, String(res.executed.length));
   chk('not one record is flagged as a waiver',
     res.records.every(r => !r.waiver), JSON.stringify(res.records.map(r => !!r.waiver)));
@@ -188,7 +188,7 @@ const mkEngine = () => Engine.make({
   // only two managers bother
   st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: drop('Ducky') }];
   st.windowClaims[MID['Toby']] = [{ in: PEN[1].id, out: drop('Toby') }];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   chk('a manager who lodged nothing signs nobody — his slot simply passes',
     res.executed.length === 2, `${res.executed.length} signings from 24 slots`);
   chk('and the two who did lodge both got their man',
@@ -205,7 +205,7 @@ const mkEngine = () => Engine.make({
     { in: PEN[0].id, out: notHis },                    // not his man to drop
     { in: PEN[5].id, out: hisOnlyGk[0].id },           // GK for GK — legal
   ];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   chk('a claim offering a man he does not own is skipped, not honoured',
     !res.executed.some(e => e.out === notHis), JSON.stringify(res.executed));
   chk('and he falls through to the next legal line on his list',
@@ -219,7 +219,7 @@ const mkEngine = () => Engine.make({
   // every line names a man already gone
   st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: drop('Ducky') }];
   st.windowClaims[MID['Tus']] = [{ in: PEN[0].id, out: drop('Tus') }];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   chk('a list whose every man has gone signs nobody rather than something else',
     res.executed.filter(e => NAME[e.mid] === 'Tus').length === 0, JSON.stringify(res.executed));
 }
@@ -237,7 +237,7 @@ const mkEngine = () => Engine.make({
     { in: PEN[4].id, out: spare[2].id },
     { in: PEN[5].id, out: spare[3].id },
   ];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   const his = res.executed.filter(e => NAME[e.mid] === 'Ducky');
   chk('a greedy list still only wins two — one per slot, two slots',
     his.length === 2, `${his.length} signings`);
@@ -253,7 +253,7 @@ const mkEngine = () => Engine.make({
   const drop = st.draft.picks.find(k => k.managerId === MID['Ducky']).playerId;
   st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: drop }];
   const snapshot = JSON.stringify(st);
-  eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
   chk('the state it was handed is untouched — the caller applies the result',
     JSON.stringify(st) === snapshot);
 }
@@ -333,7 +333,7 @@ const mkEngine = () => Engine.make({
 
   const dDrop = st.draft.picks.find(k => k.managerId === MID['Ducky']).playerId;
   st.windowClaims[MID['Ducky']] = [{ in: PEN[0].id, out: dDrop }];
-  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T09:00:00Z'));
+  const res = eng.resolveWindowWaiver(st, Date.parse('2026-09-03T19:00:00Z'));
 
   chk('a window run actually did something (not vacuous)', res.executed.length === 1);
   chk('it returns no stampedMeta at all — it CANNOT move the Friday clock',
@@ -387,6 +387,32 @@ const mkEngine = () => Engine.make({
   // and an OWNED mover is not penned, so a claim naming him is a different matter
   chk('(control: the same claim for a spare lands, so the refusal is specific)',
     fri.executed.length >= 1);
+}
+
+/* ---- the run time lives in TWO files and only one of them fires ----
+ * Marc, 2 Sept 2026: "can we delay the window waiver until 8pm tomorrow rather
+ * than 10am as currently scheduled." The hour is declared in js/app.js (which
+ * draws the card and decides when the desk shuts) and in functions/index.js
+ * (which actually runs it). Move one and not the other and the app promises an
+ * evening the server never delivers — or worse, shuts the desk at eight while
+ * the run already went at ten. Nothing else catches that, so this does.
+ */
+{
+  const fs = require('fs');
+  const grab = f => {
+    const m = fs.readFileSync(f, 'utf8')
+      .match(/const WINDOW_WAIVER_AT = Date\.parse\('([^']+)'\)/);
+    return m && m[1];
+  };
+  const client = grab(`${__dirname}/../js/app.js`);
+  const server = grab(`${__dirname}/../functions/index.js`);
+  chk('the client declares a window-waiver time', !!client, String(client));
+  chk('the server declares one too', !!server, String(server));
+  chk('and they are the SAME instant — the card cannot promise an hour the run ignores',
+    !!client && client === server, `client ${client} / server ${server}`);
+  // and it is the hour the Committee actually asked for
+  chk('which is Thu 3 Sept 20:00 London (19:00Z, BST)',
+    client === '2026-09-03T19:00:00Z', String(client));
 }
 
 console.log(`\n[window-waiver] ${pass} passed, ${fail} failed`);

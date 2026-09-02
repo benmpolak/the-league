@@ -2502,13 +2502,23 @@ function lockedArrivals() {
 }
 /* ----- the Window Waiver (Marc, 30 Aug 2026) -----
    The holding pen is settled by blind lists instead of a live draft, so nobody
-   has to be at a keyboard. One run, Thursday 3 Sept at 10:00 London — BST, so
-   09:00Z. Order is the reverse of draft night and never moves; two rounds,
+   has to be at a keyboard. One run, Thursday 3 Sept at 20:00 London — BST, so
+   19:00Z. Order is the reverse of draft night and never moves; two rounds,
    snaking, so Ducky holds picks 1 and 24 and Toby 12 and 13.
+
+   Moved from 10:00 to 20:00 at Marc's request, 2 Sept 2026: "can we delay the
+   window waiver until 8pm tomorrow rather than 10am as currently scheduled."
+   The hour is MIRRORED in functions/index.js and only the server's copy
+   actually fires the run — changing this one alone would have the app promise
+   an evening it never delivers.
 
    Kept identical to resolveWindowWaiver in js/engine.js — the server resolves
    it, this only lets you lodge and read back your list. */
-const WINDOW_WAIVER_AT = Date.parse('2026-09-03T09:00:00Z');
+const WINDOW_WAIVER_AT = Date.parse('2026-09-03T19:00:00Z');
+// the hour, in the reader's own timezone, so prose about the run can never
+// drift from the constant the way a hardcoded "ten" just did
+const windowWaiverHour = () => new Date(WINDOW_WAIVER_AT)
+  .toLocaleTimeString('en-GB', { hour: 'numeric', hour12: true }).replace(/\s/g, '').toLowerCase();
 const WINDOW_ROUNDS = 2;
 const windowOrder = () => [...toArr(state.draft?.order)].reverse();
 function windowSlots() {
@@ -2535,7 +2545,7 @@ function setWindowClaims(mid, arr) {
       .catch(() => { (state.windowClaims = state.windowClaims || {})[mid] = before; save(); render(); });
   }
 }
-// Run it. Normally Thursday 10:00 does this on the server, which is the only
+// Run it. Normally the Thursday run does this on the server, which is the only
 // place that can see everybody's blind list; the Chairman keeps a manual
 // button as the fallback, and offline it is the only way it can happen at all.
 // Kept identical to resolveWindowWaiver in js/engine.js.
@@ -7542,7 +7552,7 @@ function viewTransfers() {
     } else if (arrivals.length) {
       /* The Window Waiver (Marc, 30 Aug 2026): "everyone does a waiver list
          rather than a draft where everyone needs to be online". Lodge a list,
-         go to work, find out at ten. */
+         go to work, find out when it runs. */
       const picks = windowPickNos(mid);
       const wlist = myWindowClaims(mid);
       const mySquad = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
@@ -7560,7 +7570,7 @@ function viewTransfers() {
         </div>`).join('');
       wdCard = `<div class="card" style="margin-bottom:14px">
         <h2>The Window Waiver <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
-        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. They are then settled by <b>one blind waiver</b> — lodge a list, go to work, find out at ten. Nobody has to be at a keyboard. Two rounds, snaking, in the <b>reverse of draft night</b>: last on the night picks first. Leftovers spill into the Trough.</p>
+        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. They are then settled by <b>one blind waiver</b> — lodge a list, go to work, find out at ${windowWaiverHour()}. Nobody has to be at a keyboard. Two rounds, snaking, in the <b>reverse of draft night</b>: last on the night picks first. Leftovers spill into the Trough.</p>
         <p style="font-size:12.5px"><b>One run: ${new Date(WINDOW_WAIVER_AT).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.</b> ${shut ? '<span class="muted">The desk is shut — the run has been and gone.</span>' : `Your picks are <b class="gold">#${picks.join('</b> and <b class="gold">#')}</b> of ${windowSlots().length}. This does not touch Friday: a man signed here costs you no waiver take, and the regular run is unmoved.`}</p>
         <div class="order-strip" style="margin:8px 0">${windowOrder().map(id => `<span class="order-chip ${id === mid ? 'now' : ''}">${esc(managerName(id))}</span>`).join('<span class="muted" style="align-self:center">&rsaquo;</span>')}<span class="tag" style="margin-left:10px">then back up</span></div>
         ${shut ? '' : `<h3 style="margin-top:10px">Your list <span class="muted" style="font-weight:400;font-size:12px">${wlist.length ? `${wlist.length} lodged &middot; highest first` : 'nothing lodged — you will sign nobody'}</span></h3>
@@ -7587,7 +7597,7 @@ function viewTransfers() {
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
           <button class="btn small" id="wwRun">Run the window waiver now</button>
           <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
-        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Thursday at ten does this on its own; these are the fallbacks.</p>`}
+        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Thursday's run does this on its own; these are the fallbacks.</p>`}
       </div>`;
     }
     const ctl = waiverControl();

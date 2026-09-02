@@ -8,7 +8,36 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
-## 07b. THE WINDOW DRAFT BECOMES A WAIVER — Thu 3 Sept 10:00 (30 Aug)
+## 07b. THE WINDOW DRAFT BECOMES A WAIVER — Thu 3 Sept 20:00 (30 Aug)
+
+### ⚠ THE RUN TIME MOVED TO 20:00 — AND IT NEEDS YOUR DEPLOY TO TAKE EFFECT
+
+Marc, 2 Sept 2026: *"can we delay the window waiver until 8pm tomorrow rather
+than 10am as currently scheduled."*
+
+`WINDOW_WAIVER_AT` is now `2026-09-03T19:00:00Z` — 20:00 London, BST — in
+**both** `js/app.js` and `functions/index.js`. `waiverTick` runs at 7 past the
+hour, so the run lands at **20:07 London**. The slot id is unchanged
+(`window-2026-09-03`), so exactly-once still holds.
+
+**Only the server's copy fires the run, and the deployed server still says
+10:00.** So until you deploy:
+
+- the app shows everyone 20:00 and keeps the desk open all day, but
+- **the run goes at 10:07 tomorrow morning anyway**, off everyone's lodged
+  lists, hours before the card says it will.
+
+That is worse than not having moved it at all — a manager who reads the card,
+plans to finish his list over lunch and finds it already run has been actively
+misled by us. **If you cannot deploy before 10:00, tell Marc and I will put the
+client back to 10:00 so the two agree.** Either hour is fine; disagreeing is
+not.
+
+`test/windowwaiver.test.js` now reads the constant out of both files and fails
+if they differ — the drift above is the only way this goes wrong, and nothing
+else was watching for it. Verified with teeth: reverting the server copy alone
+turns it red.
+
 
 **A rules change, and it supersedes Toby's ask in §7.** Marc, 30 Aug: *"we
 would like to do the window draft as a waiver where everyone does a waiver list
@@ -65,7 +94,7 @@ the unmoved Friday clock, replay-safety. Marc's UI can point at it now.
    server-side, exactly as ordinary claims do — a blind list that any client
    could read is not blind. New node `windowClaims/{uid}`, an ordered array of
    `{in, out}`. The engine reads `state.windowClaims[mid]`.
-2. **The run itself.** One-off, Thu 3 Sept 10:00 London. `waiverTick` already
+2. **The run itself.** One-off, Thu 3 Sept 20:00 London (was 10:00). `waiverTick` already
    owns the due-check pattern; this wants a one-shot slot beside it that fires
    once and marks itself spent, and must NOT stamp `waiverMeta.lastRun` or the
    Friday clock moves.
