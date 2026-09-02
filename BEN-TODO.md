@@ -128,6 +128,8 @@ group is where any remaining wrongly-penned man is.
 
 ### The escape hatch cannot release a man who MOVED — and six just did
 
+*(Fixed on main 2 Sept, commit `da1a0e7` — the one-line guard below, as written. Emulator suite run on Ben's machine: 480 passed, 0 failed. Goes live with the same functions deploy as the claim cap.)*
+
 **Found 2 Sept, and it matters before 10:00 tomorrow.** `windowDraft {op:'admit'}`
 still guards on the OLD arrival rule:
 
