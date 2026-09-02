@@ -105,3 +105,91 @@ def merge(players):
     kept = [p for p in players
             if not p.get('provisional') and p.get('id') not in ids and p.get('id', 0) < ID_FLOOR]
     return kept + [record(e) for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# Men the feed still has at the WRONG CLUB
+#
+# Marc, 2 Sept 2026: "you appear to have missed tosin, how did this happen?"
+#
+# Because there was nothing to see. The holding pen compares a man's club in
+# the feed against his club in the draft-night snapshot. Tosin moved on
+# deadline day and FPL had not processed it — the feed said Chelsea, the
+# snapshot said Chelsea, so no rule anywhere could tell he had gone. The pen is
+# only ever as current as its source.
+#
+# provisional.json above covers the man the feed does not have AT ALL. It does
+# not cover this: a man the feed has, at a club he has left. Same disease, and
+# until now no cure — and no manual lever either, since the Chairman can
+# release a man FROM the pen but has no way to put one in.
+#
+# So: data/moved.json states where a man actually plays, and the feed is
+# corrected on the next refresh — which puts him in the pen by the ordinary
+# rule, with no special case anywhere downstream. Same handover discipline as a
+# provisional: when FPL catches up, delete the entry.
+MOVED_FILE = ROOT / 'data' / 'moved.json'
+MOVED_REQUIRED = ('id', 'club')
+
+
+def load_moves():
+    """Read and validate data/moved.json. Returns [] when absent."""
+    if not MOVED_FILE.exists():
+        return []
+    entries = json.loads(MOVED_FILE.read_text(encoding='utf-8'))
+    if not isinstance(entries, list):
+        raise ValueError('moved.json must be a list')
+    seen = set()
+    for e in entries:
+        for k in MOVED_REQUIRED:
+            if k not in e:
+                raise ValueError(f'moved entry missing "{k}": {e}')
+        if not isinstance(e['id'], int):
+            raise ValueError(f'moved id must be an integer: {e["id"]!r}')
+        if e['id'] in seen:
+            raise ValueError(f'duplicate moved id {e["id"]}')
+        seen.add(e['id'])
+    return entries
+
+
+def apply_moves(players, teams):
+    """Correct the club of men data/moved.json says have moved.
+
+    `teams` is the feed's own team list, so the full club name can never
+    disagree with the code — state the code, the name follows.
+
+    An id the feed does not carry is an ERROR, not a shrug. A typo that
+    silently corrects nobody is exactly how a man goes missing from the pen,
+    which is the fault this whole mechanism exists to fix.
+
+    An entry the feed has already caught up with is left alone and reported, so
+    the Chairman knows to delete it. It is not an error: the refresh runs every
+    five minutes and must not start failing the moment FPL does its job.
+
+    Returns (players, notes) — the list is corrected in place and also
+    returned, for callers that prefer the expression."""
+    entries = load_moves()
+    if not entries:
+        return players, []
+    by_short = {t['short']: t for t in teams}
+    by_id = {p.get('id'): p for p in players}
+    notes = []
+    for e in entries:
+        p = by_id.get(e['id'])
+        if not p:
+            raise ValueError(f'moved.json names id {e["id"]}, which is not in the feed')
+        club = str(e['club']).upper()
+        t = by_short.get(club)
+        if not t:
+            raise ValueError(f'moved.json gives id {e["id"]} the club {club!r}, '
+                             f'which is not a club this season')
+        if p.get('club') == club:
+            notes.append(f'{p["name"]}: the feed already has him at {club} — delete this entry')
+            continue
+        notes.append(f'{p["name"]}: {p.get("club")} -> {club} (the feed still says {p.get("club")})')
+        p['club'] = club
+        p['team'] = t['name']
+        # say so on his card rather than letting the correction be invisible
+        if not p.get('news'):
+            p['news'] = e.get('note') or f'Signed for {t["name"]}. Awaiting the FPL feed.'
+            p['newsAdded'] = e.get('signed') or ''
+    return players, notes

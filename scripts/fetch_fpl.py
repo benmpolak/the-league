@@ -163,6 +163,14 @@ def main():
     # source, and so a scheduled refresh can never quietly drop him.
     players = provisional.merge(players)
 
+    # ...and a man the feed HAS, at a club he has left, is the same disease.
+    # data/moved.json states where he actually plays; correcting it here puts
+    # him in the holding pen by the ordinary rule, with no special case
+    # downstream (Marc, 2 Sept 2026 — Tosin, on deadline day).
+    players, moved_notes = provisional.apply_moves(players, teams)
+    for n in moved_notes:
+        print(f'  moved: {n}')
+
     events = boot['events']
     gameweeks = []
     for i, ev in enumerate(events):

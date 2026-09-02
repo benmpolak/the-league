@@ -36,6 +36,9 @@ def main():
         raise SystemExit('could not find "const PLAYERS = [...];" in js/data.js')
     players = json.loads(m.group(1))
     merged = provisional.merge(players)
+    # the club corrections ride along: same file pair, same handover discipline
+    teams = json.loads(DATA_JSON.read_text(encoding='utf-8'))['teams']
+    merged, moved_notes = provisional.apply_moves(merged, teams)
 
     real = [p for p in merged if not p.get('provisional')]
     prov = [p for p in merged if p.get('provisional')]
@@ -44,6 +47,10 @@ def main():
         print(f"  {p['id']}  {p['pos']:2}  {p['name']} ({p['club']}) £{p['price']}m")
     if not entries:
         print('data/provisional.json is empty or absent — nothing to merge')
+    for n in moved_notes:
+        print(f'  moved: {n}')
+    if not moved_notes:
+        print('data/moved.json is empty or absent — no club corrections')
 
     if check_only:
         return
