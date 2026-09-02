@@ -549,7 +549,18 @@ const SEED_SEASON = `(() => {
     state.draftPool = null;
     return { isArr: label };
   });
-  chk('G7: post-draft arrival shows locked "new arrival" label', /new arrival/.test(g7b.isArr), g7b.isArr);
+  /* The label used to read "new arrival — locked until the Window Draft" and
+     this checked for those two words. It now names the pen and says when he is
+     settled (Marc, 2 Sept 2026: say 8pm everywhere), so check what the label is
+     FOR rather than how it was worded: a penned man must read as penned, must
+     not read as available, and must say when he is settled — the wording can
+     move again without this going red for the wrong reason. */
+  chk('G7: a penned arrival reads as penned, never as available, and says when he is settled',
+    /holding pen/i.test(g7b.isArr)
+    && !/free agent|in the Trough|on waivers/i.test(g7b.isArr)
+    && /Window Waiver/i.test(g7b.isArr)
+    && /\d{1,2}:\d{2}|[ap]m/i.test(g7b.isArr),
+    g7b.isArr);
 
   /* G9/G10 — card over palette: query survives; Escape and Back peel layers in order */
   const g9 = await gp.evaluate(async () => {
