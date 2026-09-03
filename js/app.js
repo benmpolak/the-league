@@ -49,6 +49,8 @@ function stubMissingPlayers(s) {
 // snapshot the cloud sends while we're sitting here
 function showStaleBar() {
   if (document.querySelector('.stale-bar')) return;
+  // the demo builds its own state; a stale sandbox save on the device is not its business
+  if (new URLSearchParams(location.search).has('demo')) return;
   const bar = document.createElement('div');
   bar.className = 'stale-bar';
   bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
