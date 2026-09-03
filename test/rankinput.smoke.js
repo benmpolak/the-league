@@ -124,10 +124,20 @@ const chk = (name, ok, detail = '') => {
     state.draftPool = { at: Date.now(), ids: snap };
     const pen = lockedArrivals();
     if (pen.length >= 3) {
-      setWindowClaims(mid, pen.slice(0, 3).map((p, k) => ({ in: p.id, out: squad[k].id })));
+      // swap like for like: the desk refuses a line that would leave an illegal
+      // squad, and since 3 Sept the client strips such a line rather than let it
+      // lock the list — so pairing pen[k] with squad[k] blindly no longer stands
+      const usedOut = [];
+      const dropFor = q => {
+        const o = squadAt(mid, gw).find(x => x.pos === q.pos && !usedOut.includes(x.id));
+        if (o) usedOut.push(o.id);
+        return o && o.id;
+      };
+      const wlines = pen.slice(0, 3).map(q => ({ in: q.id, out: dropFor(q) })).filter(c => c.out != null);
+      setWindowClaims(mid, wlines);
       transfersView.tab = 'window'; render();
       const wboxes = () => [...document.querySelectorAll('[data-wcrank]')];
-      ok('the window list gets rank boxes of its own', wboxes().length === 3, String(wboxes().length));
+      ok('the window list gets rank boxes of its own', wboxes().length === wlines.length && wlines.length >= 3, `${wboxes().length} of ${wlines.length}`);
       const wb = names(myWindowClaims(mid));
       type('wcrank', 2, 1);
       const wa = names(myWindowClaims(mid));
