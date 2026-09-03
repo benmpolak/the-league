@@ -35,7 +35,7 @@ window.Cunthanger = (() => {
       'More media assets to be launched in due cunt.',
       'Ownership of Cunthanger remains undisclosed.',
     ],
-    foot: 'No action is required. Do not push your mum down the stairs to test it.',
+    foot: 'No action is required. You may return to your squad.',
   };
 
   /* ---------- accounts ---------- */

@@ -9216,12 +9216,15 @@ function programmeCard() {
     const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
     const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
     const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
+    // and the next two stories, as the paper's own "also inside"
+    const others = [...scratch.querySelectorAll('.prog-lead-story .prog-head')].slice(1, 3).map(h => h.textContent.trim()).filter(Boolean);
     paper = `<div class="prog-front">
       <div class="prog-front-copy">
         <div class="prog-front-label">LEAD STORY</div>
         ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
         ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
         <div class="prog-front-by">${esc(byline)}</div>
+        ${others.length ? `<div class="ch-also">${others.map(h => `<div class="ch-also-row"><span class="ch-also-tag">Also inside</span> ${esc(h)}</div>`).join('')}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
@@ -9232,10 +9235,9 @@ function programmeCard() {
   // the feed
   const posts = ch ? cunthangerPosts() : [];
   const live = posts.some(p => p.live);
-  const top = posts[0];
   const feed = ch ? `<div class="ch-tile">
     <div class="ch-tile-label">The feed${live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}</div>
-    ${top ? chPostHtml(top) : '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}
+    <div class="ch-tile-feed">${posts.length ? posts.slice(0, 6).map(chPostHtml).join('') : '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}</div>
     <button class="btn ghost small" data-chopen>Open the feed${posts.length ? ` <span class="tag">${posts.length}</span>` : ''}</button>
   </div>` : '';
   // the wireless
@@ -9251,7 +9253,7 @@ function programmeCard() {
   return `<div class="card prog-card ch-card">
     <div class="ch-card-mast">
       <span class="ch-logo ch-logo-lg">c</span>
-      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s social media threat. Ownership undisclosed.</div></div>
+      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine. Ownership undisclosed.</div></div>
       ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
     </div>
     <div class="ch-grid">
@@ -9261,11 +9263,6 @@ function programmeCard() {
       </div>
       ${feed}
       ${wireless}
-      <div class="ch-tile ch-tile-soon">
-        <div class="ch-tile-label">In due cunt</div>
-        ${(typeof CUNTHANGER_SOON !== 'undefined' ? CUNTHANGER_SOON : []).map(x => `<div class="ch-soon"><b>${esc(x.n)}</b> <span class="muted">${esc(x.d)}</span></div>`).join('')}
-        <p class="muted" style="font-size:11.5px;margin:4px 0 0">The group does not comment on speculation, or on anything.</p>
-      </div>
     </div>
   </div>`;
 }
