@@ -47,8 +47,23 @@ chk('live posts sort first', a.findIndex(p => !p.live) >= a.filter(p => p.live).
 chk('an unknown club still gets a supporter', a.some(p => p.key === 'f1' && /Brand New Club|New Club/.test(p.who.n + p.who.h + p.text)));
 chk('team names reach the copy unescaped (app escapes at render)', a.some(p => /Dog’s Polaks|Polaks/.test(p.text)));
 chk('the roster covers two fans per club plus the press', C.accounts([{ id: 1 }, { id: 2 }], id => teams[id] || 'X').length === 4 + C.accounts([], () => '').length);
+// the press room
+const pctx = { mid: 3, gw: 2, mgr: 'Ben Levy', team: 'Atlético Benfield', short: 'Benfield', opp: 'Mighty 🦆 *', oppMgr: 'Alex Duckett', pos: 11, oppPos: 5,
+  last: { r: 'L', my: 20, th: 46, opp: 'WA Wanderers' }, doubt: { name: 'Caicedo', news: 'Knee injury - 75% chance of playing' }, star: { name: 'Palmer', pts: 31 },
+  signed: { name: 'Wissa', from: 'the Trough' }, dropped: { name: 'Beto' }, benched: { name: 'Mateta' }, axed: { name: 'Rice' }, recalled: null };
+const pre = C.questions(pctx, "pre"), pre2 = C.questions(pctx, "pre");
+chk('a press conference asks three questions, the opponent first', pre.length === 3 && pre[0].id === 'opp');
+chk('the duck survives into the copy', pre.some(q => /Mighty 🦆/.test(q.q) || q.options.some(o => /Mighty 🦆/.test(o.text))) && !pre.some(q => /\*/.test(q.q)));
+chk('selection and Trough facts get asked about', pre.some(q => ['transfer', 'selection'].includes(q.id)));
+chk('questions are deterministic', JSON.stringify(pre) === JSON.stringify(pre2));
+chk('every option resolves', pre.every(q => q.options.length === 4 && q.options.every(o => o.text && !/\{\w+\}/.test(o.text))));
+const post = C.questions({ ...pctx, result: { my: 20, th: 46 }, best: { name: 'Palmer', pts: 12 }, worst: { name: 'Meslier', pts: 0 }, benchBurn: { name: 'Mateta', pts: 9 } }, 'post');
+chk('post-match asks about the result, then the bench burn', post.length === 3 && post[0].id === 'result' && post.some(q => q.id === 'bench'));
+const mp = C.compose([{ type: 'manager', key: 'm1', mid: 3, oppMid: 8, aimed: true, mgrName: 'Ben Levy', text: 'Marc is a charity.', tone: 'unhinged', gwN: 3, at: 'GW3', sortKick: 5 }], opts);
+chk('a post shows who it is aimed at, and the wire picks it up', mp.some(p => p.who.kind === 'manager' && /→ 101011101/.test(p.at)) && mp.some(p => p.who.kind === 'press' && /Marc is a charity/.test(p.text) && /101011101/.test(p.text)));
+chk('the opponent’s supporter bites', mp.some(p => p.key === 'm1:reply' && p.who.mid === 8));
 chk('every bank line resolves its placeholders to known keys', Object.values(C.BANKS).flat().every(t =>
-  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'wor', 'team', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
+  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'wor', 'team', 'text', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
 chk('the takeover copy is intact', C.TAKEOVER.lines.some(l => /due cunt/.test(l)) && /Cunthanger Alert System/.test(C.TAKEOVER.head));
 console.log(`\n[cunthanger] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

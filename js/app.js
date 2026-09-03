@@ -4182,7 +4182,7 @@ function cunthangerEvents() {
   }
   for (const p of (state.posts || []).filter(p => p && p.text && (+p.t || 0) > now - 10 * 864e5).slice(-40)) {
     const gi = Number.isInteger(p.gw) ? p.gw : gwIdx;
-    ev.push({ type: 'manager', key: `post:${p.mid}:${p.t}`, mid: p.mid, oppMid: p.to ?? oppIn(p.mid, gi), oppPos: p.to != null ? posAt(p.to, gi) : null,
+    ev.push({ type: 'manager', key: `post:${p.mid}:${p.t}`, mid: p.mid, aimed: true, oppMid: p.to ?? null, oppPos: p.to != null ? posAt(p.to, gi) : null,
       mgrName: managerName(p.mid), text: String(p.text).slice(0, 280), tone: 'unhinged', gwN: GAMEWEEKS[gi]?.n ?? gwN, at: `GW${GAMEWEEKS[gi]?.n ?? gwN}`, live: false, sortKick: +p.t || 0 });
   }
   return ev;
@@ -4220,7 +4220,23 @@ function presserCtx(mid, gwIdx, phase) {
   const doubt = squad.find(p => (p.status === 'd' || p.status === 'i') && p.news && !/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news));
   let star = null;
   for (const p of squad) { const pts = p.pts || 0; if (!star || pts > star.pts) star = { name: p.name, pts }; }
+  // the ledger and the team sheet: who came in, who went, who sits, who's back
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  const deals = (state.transfers || []).filter(r => r.managerId === mid && !r.trade && (r.gw === gwIdx || r.gw === gwN));
+  const lastDeal = deals[deals.length - 1];
+  const signed = lastDeal && PLAYER_BY_ID[lastDeal.inId] ? { name: PLAYER_BY_ID[lastDeal.inId].name, from: lastDeal.waiver ? 'waivers' : lastDeal.windowDraft ? 'the Window Waiver' : 'the Trough' } : null;
+  const dropped = lastDeal && PLAYER_BY_ID[lastDeal.outId] ? { name: PLAYER_BY_ID[lastDeal.outId].name } : null;
+  const xiNow = new Set(lineupFor(mid, gwIdx));
+  const xiPrev = gwIdx > 0 ? new Set(lineupFor(mid, gwIdx - 1)) : new Set();
+  const squadIds = new Set(squad.map(p => p.id));
+  const byPts = (x, y) => (y.pts || 0) - (x.pts || 0);
+  const benchedP = squad.filter(p => !xiNow.has(p.id) && p.pos !== 'GK').sort(byPts)[0];
+  const axedP = squad.filter(p => xiPrev.has(p.id) && !xiNow.has(p.id) && p.pos !== 'GK').sort(byPts)[0];
+  const recalledP = squad.filter(p => xiNow.has(p.id) && !xiPrev.has(p.id) && xiPrev.size && p.id !== lastDeal?.inId).sort(byPts)[0];
+  void squadIds;
   const ctx = { mid, gw: gwIdx, mgr: managerName(mid), team: teamName(mid), short: Cunthanger.shortName(mid, teamName(mid)),
+    signed, dropped, benched: benchedP && (benchedP.pts || 0) >= 8 ? { name: benchedP.name } : null,
+    axed: axedP ? { name: axedP.name } : null, recalled: recalledP ? { name: recalledP.name } : null,
     opp: opp != null ? teamName(opp) : null, oppMgr: opp != null ? managerName(opp) : null, pos: posOf(mid), oppPos: opp != null ? posOf(opp) : null,
     last, doubt: doubt ? { name: doubt.name, news: doubt.news } : null, star: star && star.pts > 0 ? star : null };
   if (phase === 'post' && opp != null && gwStatus(gwIdx) === 'final') {
@@ -4233,6 +4249,14 @@ function presserCtx(mid, gwIdx, phase) {
       if (!worst || pts < worst.pts) worst = { name: p.name, pts };
     }
     ctx.best = best; ctx.worst = worst;
+    // points left on the bench
+    let burn = null;
+    for (const pid of benchFor(mid, gwIdx)) {
+      const p = PLAYER_BY_ID[pid]; if (!p) continue;
+      const pts = gwPlayerPoints(pid, gwIdx);
+      if (!burn || pts > burn.pts) burn = { name: p.name, pts };
+    }
+    ctx.benchBurn = burn && burn.pts >= 6 ? burn : null;
   }
   return ctx;
 }
@@ -4324,7 +4348,7 @@ function pressRoomSheet(spec) {
     toast('On the record. It’s on the feed, and it’s in the paper.');
   };
 }
-const cleanTeamName = t => String(t || '').replace(/[*°]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
+const cleanTeamName = t => String(t || '').replace(/[*°]/g, '').replace(/\s+/g, ' ').trim();
 // the press room tile on the Cunthanger card
 function pressRoomTile() {
   if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
@@ -4445,7 +4469,7 @@ function cunthangerSheet() {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
     <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
-    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once. Ownership undisclosed.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
     ${(() => {
       // Marc, 3 Sep: "abuse in all formats should be encouraged". A manager
       // posts under the club handle, aimed at this week's opponent by
@@ -9086,6 +9110,18 @@ function viewDash() {
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
       ${(() => {
+        // somebody said something about you, in public (Ben, 3 Sep: "that's the fun")
+        if (typeof Cunthanger === 'undefined') return '';
+        const me = meId();
+        const aimed = (state.posts || []).filter(p => p && p.text && p.to === me && p.mid !== me && (+p.t || 0) > Date.now() - 7 * 864e5);
+        const last = aimed[aimed.length - 1];
+        return last ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
+          <span class="gz-nudge-tag ch-tag">SAID ABOUT YOU</span>
+          <span class="gz-nudge-copy"><b>${esc(managerName(last.mid))}</b>: ${esc(last.text)}</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>` : '';
+      })()}
+      ${(() => {
         // Cunthanger on a matchday: the latest melt, one tap from the feed
         if (!anyMatchLive() || typeof Cunthanger === 'undefined') return '';
         const top = cunthangerPosts().find(p => p.live) || cunthangerPosts()[0];
@@ -9571,7 +9607,7 @@ function programmeCard() {
   return `<div class="card prog-card ch-card">
     <div class="ch-card-mast">
       <span class="ch-logo ch-logo-lg">c</span>
-      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine. Ownership undisclosed.</div></div>
+      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div>
       ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
     </div>
     <div class="ch-grid">
@@ -9776,7 +9812,7 @@ function mediaSection() {
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
       ${rows}${archive}`
     : `<div class="prog-sec ch-sec">Elsewhere in the group</div>
-      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette is a Cunthanger title. So is everything below it.</p>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette is a Cunthanger Media title. So is everything below it.</p>
       ${feed}
       ${rows.trim() ? `<div class="ch-sub">On the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>

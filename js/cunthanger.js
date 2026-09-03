@@ -33,7 +33,6 @@ window.Cunthanger = (() => {
     lines: [
       'The League Gazette and talkTROUGH have been acquired by Cunthanger.',
       'More media assets to be launched in due cunt.',
-      'Ownership of Cunthanger remains undisclosed.',
     ],
     foot: 'No action is required. You may return to your squad.',
   };
@@ -41,14 +40,15 @@ window.Cunthanger = (() => {
   /* ---------- accounts ---------- */
 
   // the club office allows *° and emoji in a team name; a tweet does not
-  const cleanTeam = (t) => String(t || '').replace(/[*°]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
+  // (the duck stays — Ben, 3 Sep: "why is mighty just mighty not mighty ducks")
+  const cleanTeam = (t) => String(t || '').replace(/[*°]/g, '').replace(/\s+/g, ' ').trim();
 
   // what a fan calls the club: lore first, then the team name with the
   // punctuation and the "FC" taken off
   function shortName(mid, teamName) {
     const lore = FANS()[mid];
     if (lore?.short) return lore.short;
-    const clean = String(teamName || '').replace(/[*°]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\bFC\b/g, '').trim();
+    const clean = String(teamName || '').replace(/[*°]/g, '').replace(/\bFC\b/g, '').trim();
     return clean.replace(/\s+/g, ' ') || `Club ${mid}`;
   }
   function fan(mid, mood, teamName) {
@@ -66,10 +66,11 @@ window.Cunthanger = (() => {
   function manager(mid, teamName, managerName) {
     const clean = cleanTeam(teamName);
     const stem = clean.replace(/[^A-Za-z0-9]/g, '') || `Club${mid}`;
-    return { h: `${stem}_Official`, n: String(managerName || `Manager ${mid}`), kind: 'manager', mid, short: shortName(mid, teamName) };
+    return { h: `${stem}Official`, n: String(managerName || `Manager ${mid}`), kind: 'manager', mid, short: shortName(mid, teamName) };
   }
-  function press(beat) {
-    const p = PRESS().find(x => x.beat === beat) || PRESS()[0] || { h: 'Cunthanger', n: 'Cunthanger', beat };
+  function press(beat, key = '') {
+    const pool = PRESS().filter(x => x.beat === beat);
+    const p = pool.length ? pool[hash(String(key) + ':press') % pool.length] : (PRESS()[0] || { h: 'Cunthanger', n: 'Cunthanger', beat });
     return { h: p.h, n: p.n, kind: 'press', beat: p.beat, bio: p.bio };
   }
 
@@ -286,6 +287,26 @@ window.Cunthanger = (() => {
           dismissive: ['I don’t read the table. I don’t read the group. I don’t read.', 'Fans? Which fans. Name one.'],
           unhinged: ['I have never felt pressure. I have felt rage, and I am feeling it now, at you, for asking.', 'The table is fake. I’ve said this to the Committee. They know what they did.'],
         } },
+      { id: 'transfer', q: [
+          'You went into the Trough and came out with {signedName}. Talk us through that.',
+          '{signedName} in from {signedFrom}, {droppedName} out. Is that an upgrade?',
+          'You’ve let {droppedName} go. Why?',
+        ], a: {
+          humble: ['{signedName} gives us something we didn’t have. {droppedName} was unlucky, honestly.', 'It’s a squad game. You make a call and you live with it.'],
+          confident: ['{signedName} is the best player in the Trough and everyone else left him there. Their problem.', 'Upgrade? It’s a different sport now.'],
+          dismissive: ['It was a Tuesday. I did a transfer. That is the whole story.', 'I don’t discuss the Trough. Nobody should discuss the Trough.'],
+          unhinged: ['{droppedName} knows what he did. {signedName} has been told what will happen if he does it too.', 'I found {signedName} in the Trough at four in the morning. I was the only one there. Ask yourself why.'],
+        } },
+      { id: 'selection', q: [
+          '{benchedName} on the bench again. What has he done?',
+          '{axedName} started last week and he’s out of the eleven. Is he dropped?',
+          '{recalledName} is back in the side. What’s changed?',
+        ], a: {
+          humble: ['Selection is the hardest part of the job. He knows the situation and he’s been brilliant about it.', 'Nobody’s dropped. It’s rotation. The fixtures decide.'],
+          confident: ['I pick the team that wins. If he doesn’t like it, he can score more points.', 'He’s back because he’s earned it. Everyone in my squad earns it.'],
+          dismissive: ['He’s on the bench because that is where I put him.', 'Is he dropped? He’s not in the eleven. You do the maths, you’re the journalist.'],
+          unhinged: ['He is on the bench because I dreamt he would score an own goal, and I do not ignore the dreams.', 'Dropped? DROPPED? He can consider himself lucky he is still in the building.'],
+        } },
       { id: 'squad', q: [
           '{doubtName} is a doubt — {doubtNews}. Does he play?',
           '{starName} has {starPts} points already. Is he the best player in the league?',
@@ -306,6 +327,15 @@ window.Cunthanger = (() => {
           confident: { won: ['Never in doubt. The plan worked. It always works.', 'I said we would win. We won. What else is there.'], lost: ['We were the better side. The scoreboard disagrees, and the scoreboard is wrong.', 'We lost to a bench. That won’t happen twice.'], drew: ['We should have won that, and next time we will.'] },
           dismissive: { won: ['It was fine. Next.', 'Three points. Yes. Anything else?'], lost: ['Lost. Whatever. It’s September.', 'I’ve already forgotten it. So should you.'], drew: ['A draw. Fine. Get on with it.'] },
           unhinged: { won: ['I want it on record that I have DESTROYED {oppMgr} and I would like a trophy for this individual match.', 'Forty points. FORTY. Put that in your paper. Put it on the front.'], lost: ['The vidiprinter was wrong, the app was wrong, and I will be raising this with the Committee, who are also wrong.', 'I don’t accept the result. I don’t accept the points. I don’t accept you.'], drew: ['A draw is a conspiracy. Two men cannot score the same number of points. Explain that.'] },
+        } },
+      { id: 'bench', q: [
+          '{benchBurnName} scored {benchBurnPts} for you. From the bench. Explain.',
+          'You left {benchBurnPts} points on the bench. Whose decision was that?',
+        ], a: {
+          humble: ['Mine. Entirely mine. I got it wrong and I’ll look at it.', 'That’s football. Sometimes the man you leave out has his day.'],
+          confident: ['We won anyway. Or we lost anyway. Either way the bench is not the story.', 'Hindsight picks a perfect team every week. I pick on Friday.'],
+          dismissive: ['I’ve seen the number. Next.', 'The bench is part of the squad. He was part of the squad. It counted for the squad.'],
+          unhinged: ['He was told to sit. He sat. Then he scored out of spite. I will be dealing with it internally.', 'I left him out because the vidiprinter told me to and now you’re telling me the vidiprinter was wrong. Which is it.'],
         } },
       { id: 'player', q: [
           '{bestName} got you {bestPts}. Where would you be without him?',
@@ -353,7 +383,7 @@ window.Cunthanger = (() => {
         case 'goal': {
           if (e.role === 'trough') {
             const beat = hash(k) % 2 ? 'wire' : 'transfers';
-            add(press(beat), k, pick(B[beat === 'wire' ? 'goal_trough_wire' : 'goal_trough_transfers'], k), vars(e), { ...meta, w: 3 });
+            add(press(beat, k), k, pick(B[beat === 'wire' ? 'goal_trough_wire' : 'goal_trough_transfers'], k), vars(e), { ...meta, w: 3 });
             break;
           }
           if (e.role === 'bench') { add(who, k, pick(voice === 'sage' ? B.goal_bench_sage : B.goal_bench_melt, k), vars(e), { ...meta, w: 7 }); break; }
@@ -376,7 +406,7 @@ window.Cunthanger = (() => {
           break;
         }
         case 'signing': {
-          add(press('transfers'), k, pick(B.signing_transfers, k), vars(e), { ...meta, w: 4 });
+          add(press('transfers', k), k, pick(B.signing_transfers, k), vars(e), { ...meta, w: 4 });
           if (hash(k + ':fan') % 2 === 0) add(who, k + ':fan', pick(voice === 'sage' ? B.signing_sage : B.signing_melt, k), vars(e), { ...meta, w: 3 });
           break;
         }
@@ -398,13 +428,18 @@ window.Cunthanger = (() => {
         case 'manager': {
           // a real person's words, verbatim, under the club handle
           const acct = manager(e.mid, tn, e.mgrName);
-          if (e.text) add(acct, k, '{text}', { text: e.text }, { ...meta, w: 6 });
+          if (e.text) add(acct, k, '{text}', { text: e.text }, { ...meta, at: e.oppMid != null && e.aimed ? `→ ${cleanTeam(teamName(e.oppMid))}` : meta.at, w: 6 });
+          // a post (not a press conference) gets picked up on the wire
+          if (e.text && e.aimed) {
+            const tpl = e.oppMid != null ? pick(PICKUP, k + ':pickup') : pick(PICKUP_ALL, k + ':pickup');
+            add(press('wire', k), k + ':wire', tpl, vars(e, { mgr: firstName(managerName(e.mid)), oppMgr: e.oppMid != null ? firstName(managerName(e.oppMid)) : '', quote: e.text }), { ...meta, at: 'The wire', sortKick: (meta.sortKick || 0) + 2, w: 5 });
+          }
           // and the other lot's supporter, straight back — but only when
           // there is something to bite on; humility gets ignored, like life
           if (e.oppMid != null && e.text && e.tone !== 'humble' && e.tone !== 'dismissive') {
             const opp = fan(e.oppMid, 'melt', teamName(e.oppMid));
             const tone = REPLY[e.tone] ? e.tone : 'unhinged';
-            add(opp, k + ':reply', pick(REPLY[tone], k + ':reply'), vars({ ...e, oppMid: e.mid, mid: e.oppMid }, { mgr: firstName(managerName(e.mid)), oppPos: e.oppPos ?? '' }), { ...meta, sortKick: (meta.sortKick || 0) + 1, w: 5 });
+            add(opp, k + ':reply', pick(REPLY[tone], k + ':reply'), vars({ ...e, oppMid: e.mid, mid: e.oppMid }, { mgr: firstName(managerName(e.mid)), oppPos: e.oppPos ?? '' }), { ...meta, at: meta.at, sortKick: (meta.sortKick || 0) + 1, w: 5 });
           }
           break;
         }
@@ -432,12 +467,28 @@ window.Cunthanger = (() => {
       resultLine: ctx.result ? `${ctx.result.my}–${ctx.result.th} against ${cleanTeam(ctx.opp || '')}.` : 'The result.',
       resultWent: ctx.result ? (ctx.result.my > ctx.result.th ? 'right' : 'wrong') : 'on',
       bestName: ctx.best?.name, bestPts: ctx.best?.pts, worstName: ctx.worst?.name, worstPts: ctx.worst?.pts,
+      signedName: ctx.signed?.name, signedFrom: ctx.signed?.from, droppedName: ctx.dropped?.name,
+      benchedName: ctx.benched?.name, axedName: ctx.axed?.name, recalledName: ctx.recalled?.name,
+      benchBurnName: ctx.benchBurn?.name, benchBurnPts: ctx.benchBurn?.pts,
     };
     const res = ctx.result ? (ctx.result.my > ctx.result.th ? 'won' : ctx.result.my < ctx.result.th ? 'lost' : 'drew') : 'won';
     const out = [];
-    (Q[phase] || []).forEach((spec, i) => {
+    const resolves = t => [...t.matchAll(/\{(\w+)\}/g)].every(m => v[m[1]] != null && v[m[1]] !== '');
+    const specs = (Q[phase] || []);
+    const lead = specs[0];
+    // fact-backed = at least one wording whose facts exist; the last wording of
+    // 'form', 'squad' and 'player' is generic, so those are always askable
+    const backed = specs.slice(1).filter(sp => sp.q.some(resolves));
+    const want = phase === 'post' ? 2 : 2;
+    // the specific stuff first (transfer, selection), then the rest, in a
+    // per-round order so two managers do not get the same paper
+    const specific = backed.filter(sp => ['transfer', 'selection', 'bench'].includes(sp.id));
+    const generic = backed.filter(sp => !specific.includes(sp));
+    const rot = a => a.length ? a.slice(hash(key + ':rot') % a.length).concat(a.slice(0, hash(key + ':rot') % a.length)) : a;
+    const chosen = [lead, ...rot(specific).concat(rot(generic)).slice(0, want)];
+    chosen.forEach((spec, i) => {
       // pick a wording whose facts exist; fall back down the list
-      let qs = spec.q.filter(t => [...t.matchAll(/\{(\w+)\}/g)].every(m => v[m[1]] != null && v[m[1]] !== ''));
+      let qs = spec.q.filter(resolves);
       if (!qs.length) qs = [spec.q[spec.q.length - 1]];
       const q = fill(pick(qs, key + ':q' + i), v);
       const options = TONES.map(([tone, label]) => {
@@ -457,6 +508,20 @@ window.Cunthanger = (() => {
     dismissive: ['Rattled. Absolutely rattled.', 'That’s a man who has read the group chat and pretended he hasn’t.'],
     unhinged: ['He’s lost it. He has actually lost it. Somebody check on {mgr}.', 'Print this. Frame it. Read it to him after the match.', 'This is the best thing that has ever been posted on here and I want him banned.'],
   };
+
+  // when a manager posts about another, the wire picks it up — that is the
+  // fun (Ben, 3 Sep: "it appears on everyone's feed"). The journalist quotes
+  // it back, names the target, and the target's supporters find out.
+  const PICKUP = [
+    'Understand {mgr} ({team}) has said this of {opp} ahead of the weekend: “{quote}” {oppMgr} is aware. More to follow.',
+    'Can confirm {mgr} said the following, on the record, about {opp}: “{quote}” The {opp} camp has been made aware.',
+    '{mgr} on {opp}, this morning: “{quote}” Sources close to {oppMgr} describe him as “relaxed”. Sources close to the sources disagree.',
+    'Told {mgr} ({team}) has gone public on {opp}: “{quote}” No response yet from {oppMgr}. There will be.',
+  ];
+  const PICKUP_ALL = [
+    '{mgr} ({team}), on the record this morning: “{quote}” The league has been made aware.',
+    'Understand {mgr} has said this, to nobody in particular and therefore everybody: “{quote}”',
+  ];
 
   // the roster, for the bio strip: every fan account plus the press
   function accounts(managers, teamName) {

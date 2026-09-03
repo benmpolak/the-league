@@ -456,7 +456,9 @@ const CUNTHANGER_FANS = {
 const CUNTHANGER_PRESS = [
   { h: 'BenSuppery', n: 'Ben Suppery', beat: 'injury', bio: 'Premier Injuries. Not a doctor. Not even close.' },
   { h: 'FabrizioRotondo', n: 'Fabrizio Rotondo', beat: 'transfers', bio: 'Here we go. 🤝 Always here we go.' },
+  { h: 'BenJacobean', n: 'Ben Jacobean', beat: 'transfers', bio: 'Exclusive. Understand. Can reveal. Told. More soon.' },
   { h: 'DavidOrnsteak', n: 'David Ornsteak', beat: 'wire', bio: 'Understand things. Can confirm other things. More to follow.' },
+  { h: 'SimonScone', n: 'Simon Scone', beat: 'wire', bio: 'BBC Sport. Measured. Sources. A cup of tea.' },
   { h: 'MattLeTus', n: 'Matt Le Tus', beat: 'conspiracy', bio: 'Former footballer. Current thinker. Do your own research.' },
 ];
 
