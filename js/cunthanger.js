@@ -40,6 +40,9 @@ window.Cunthanger = (() => {
 
   /* ---------- accounts ---------- */
 
+  // the club office allows *° and emoji in a team name; a tweet does not
+  const cleanTeam = (t) => String(t || '').replace(/[*°]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
+
   // what a fan calls the club: lore first, then the team name with the
   // punctuation and the "FC" taken off
   function shortName(mid, teamName) {
@@ -57,6 +60,13 @@ window.Cunthanger = (() => {
     return mood === 'melt'
       ? { h: `${stem}TilIDie`, n: `${short} Loyal`, kind: 'fan', mood, mid, short }
       : { h: `${stem}Watch`, n: `${short} Watch`, kind: 'fan', mood, mid, short };
+  }
+  // the managers themselves, under the club handle: the only accounts on
+  // here that a real person types into
+  function manager(mid, teamName, managerName) {
+    const clean = cleanTeam(teamName);
+    const stem = clean.replace(/[^A-Za-z0-9]/g, '') || `Club${mid}`;
+    return { h: `${stem}_Official`, n: String(managerName || `Manager ${mid}`), kind: 'manager', mid, short: shortName(mid, teamName) };
   }
   function press(beat) {
     const p = PRESS().find(x => x.beat === beat) || PRESS()[0] || { h: 'Cunthanger', n: 'Cunthanger', beat };
@@ -245,9 +255,70 @@ window.Cunthanger = (() => {
     ],
   };
 
+  /* ---------- the press room ----------
+     Ben, 3 Sep: "I'm thinking Football Manager style". Before a round, three
+     questions from the press corps built from real facts; after it, two.
+     Each has four canned answers in a tone — humble, confident, dismissive,
+     unhinged — and a box for your own words. Everything you pick goes on the
+     feed under the club handle and into the paper. Deterministic per
+     manager per round, so the paper can quote the question back. */
+  const TONES = [['humble', 'Humble'], ['confident', 'Confident'], ['dismissive', 'Dismissive'], ['unhinged', 'Unhinged']];
+  const Q = {
+    // ctx: mgr, team, short, opp, oppMgr, oppShort, pos, oppPos, last {r, my, th, opp}, doubt {name, news}, star {name, pts}, result {my, th}, worst {name, pts}, best {name, pts}, gw
+    pre: [
+      { id: 'opp', q: [
+          '{opp} this week. {oppMgr} has already been talking. What do you make of them?',
+          'It’s {opp} next. Do you fear anyone in this league?',
+          '{oppMgr} says {short} are there for the taking. Your response?',
+        ], a: {
+          humble: ['{opp} are a good side. We respect them, we prepare properly, we see where we are on Monday.', 'Every game in this league is hard. {oppMgr} has done well. We’ll focus on ourselves.'],
+          confident: ['We’re not worried about {opp}. If we play our game, we win. Simple as that.', 'I’ve watched {opp}. I’ve seen enough. We’ll be fine.'],
+          dismissive: ['Who? No, I know who. Next question.', '{oppMgr} talks a lot for a man in {oppPos} place.'],
+          unhinged: ['{opp} are a charity. {oppMgr} is a charity. I am going to win this match by forty points and then I am going to ring his mum.', 'I’ve not slept. I’ve watched every {opp} lineup since 2015. I know what he’s going to do before he does. He’s going to lose.'],
+        } },
+      { id: 'form', q: [
+          'You {lastWord} last time out. Where does that leave you going into this one?',
+          '{pos} in the table. Is that where {short} belong?',
+          'Some of the fans are asking questions. Are you feeling the pressure?',
+        ], a: {
+          humble: ['We take it a week at a time. The table sorts itself out.', 'There are things to improve. We know that. We’re working on it.'],
+          confident: ['{pos} is a snapshot. Come back in May.', 'Pressure is a privilege. We’re exactly where I expected to be.'],
+          dismissive: ['I don’t read the table. I don’t read the group. I don’t read.', 'Fans? Which fans. Name one.'],
+          unhinged: ['I have never felt pressure. I have felt rage, and I am feeling it now, at you, for asking.', 'The table is fake. I’ve said this to the Committee. They know what they did.'],
+        } },
+      { id: 'squad', q: [
+          '{doubtName} is a doubt — {doubtNews}. Does he play?',
+          '{starName} has {starPts} points already. Is he the best player in the league?',
+          'Any team news for us?',
+        ], a: {
+          humble: ['We’ll see how he is. The medical team make that call, not me.', 'He’s been good. The whole squad has. We win as a group.'],
+          confident: ['He plays. Of course he plays. Write it down.', 'Best player in the league? He’s the best player in the world and he’s ours.'],
+          dismissive: ['Team news is on Saturday. You’ll find out with everyone else.', 'I don’t discuss individuals. Or teams. Or news.'],
+          unhinged: ['He plays if I have to carry him onto the pitch myself. I have carried men before.', 'He’s not a doubt. The doubt is you, and your paper, and the vidiprinter.'],
+        } },
+    ],
+    post: [
+      { id: 'result', q: [
+          '{resultLine} Talk us through it.',
+          'That result. What went {resultWent}?',
+        ], a: {
+          humble: { won: ['Pleased with the three points. We move on.', 'Credit to {opp}, they made it hard. We got there.'], lost: ['Not good enough. That’s on me.', 'They deserved it. We regroup and go again.'], drew: ['A point is a point. It felt like a loss, but it counts as a point.'] },
+          confident: { won: ['Never in doubt. The plan worked. It always works.', 'I said we would win. We won. What else is there.'], lost: ['We were the better side. The scoreboard disagrees, and the scoreboard is wrong.', 'We lost to a bench. That won’t happen twice.'], drew: ['We should have won that, and next time we will.'] },
+          dismissive: { won: ['It was fine. Next.', 'Three points. Yes. Anything else?'], lost: ['Lost. Whatever. It’s September.', 'I’ve already forgotten it. So should you.'], drew: ['A draw. Fine. Get on with it.'] },
+          unhinged: { won: ['I want it on record that I have DESTROYED {oppMgr} and I would like a trophy for this individual match.', 'Forty points. FORTY. Put that in your paper. Put it on the front.'], lost: ['The vidiprinter was wrong, the app was wrong, and I will be raising this with the Committee, who are also wrong.', 'I don’t accept the result. I don’t accept the points. I don’t accept you.'], drew: ['A draw is a conspiracy. Two men cannot score the same number of points. Explain that.'] },
+        } },
+      { id: 'player', q: [
+          '{bestName} got you {bestPts}. Where would you be without him?',
+          '{worstName} with {worstPts}. Time to move him on?',
+        ], a: {
+          humble: ['He’s a big player for us. But it’s a squad game.', 'He’ll bounce back. Good players do.'],
+          confident: ['I drafted him. That’s where I’d be. Same place, because I’d have drafted someone else just as good.', 'He stays. I don’t move on players because of one week. I move on journalists.'],
+          dismissive: ['I don’t single out players. Even good ones. Even bad ones.', 'Next question.'],
+          unhinged: ['He is my son. Not legally. Not yet.', 'He is going in the Trough tonight and I will be waiting at the gates to make sure he goes in.'],
+        } },
+    ],
+  };
   const firstName = (s) => String(s || '').trim().split(/\s+/)[0] || 'the gaffer';
-  // the club office allows *° and emoji in a team name; a tweet does not
-  const cleanTeam = (t) => String(t || '').replace(/[*°]/g, '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').replace(/\s+/g, ' ').trim();
   const fill = (tpl, v) => tpl.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? String(v[k]) : m));
 
   /* ---------- the timeline ----------
@@ -324,6 +395,19 @@ window.Cunthanger = (() => {
           break;
         }
         case 'letus': add(press('conspiracy'), k, pick(LETUS(), k), vars(e), { ...meta, w: 2 }); break;
+        case 'manager': {
+          // a real person's words, verbatim, under the club handle
+          const acct = manager(e.mid, tn, e.mgrName);
+          if (e.text) add(acct, k, '{text}', { text: e.text }, { ...meta, w: 6 });
+          // and the other lot's supporter, straight back — but only when
+          // there is something to bite on; humility gets ignored, like life
+          if (e.oppMid != null && e.text && e.tone !== 'humble' && e.tone !== 'dismissive') {
+            const opp = fan(e.oppMid, 'melt', teamName(e.oppMid));
+            const tone = REPLY[e.tone] ? e.tone : 'unhinged';
+            add(opp, k + ':reply', pick(REPLY[tone], k + ':reply'), vars({ ...e, oppMid: e.mid, mid: e.oppMid }, { mgr: firstName(managerName(e.mid)), oppPos: e.oppPos ?? '' }), { ...meta, sortKick: (meta.sortKick || 0) + 1, w: 5 });
+          }
+          break;
+        }
         default: break;
       }
     }
@@ -332,6 +416,47 @@ window.Cunthanger = (() => {
     out.sort((a, b) => (b.live - a.live) || (b.sortKick - a.sortKick) || (b.w - a.w) || a.key.localeCompare(b.key));
     return out;
   }
+
+  // the questions a manager faces this round. ctx comes from app.js facts.
+  function questions(ctx, phase = 'pre') {
+    const key = `presser:${ctx.gw}:${ctx.mid}:${phase}`;
+    const roster = typeof GAZETTE_PRESS !== 'undefined' ? GAZETTE_PRESS : [];
+    const by = i => roster.length ? roster[hash(key + ':by' + i) % roster.length].n : 'the Gazette';
+    const v = {
+      mgr: firstName(ctx.mgr), team: cleanTeam(ctx.team), short: ctx.short || cleanTeam(ctx.team),
+      opp: cleanTeam(ctx.opp || 'the opposition'), oppMgr: firstName(ctx.oppMgr || 'the other manager'),
+      pos: ctx.pos || '—', oppPos: ctx.oppPos || '—',
+      lastWord: ctx.last ? (ctx.last.r === 'W' ? 'won' : ctx.last.r === 'L' ? 'lost' : 'drew') : 'played',
+      doubtName: ctx.doubt?.name, doubtNews: ctx.doubt?.news ? String(ctx.doubt.news).replace(/\.$/, '').toLowerCase() : '',
+      starName: ctx.star?.name, starPts: ctx.star?.pts,
+      resultLine: ctx.result ? `${ctx.result.my}–${ctx.result.th} against ${cleanTeam(ctx.opp || '')}.` : 'The result.',
+      resultWent: ctx.result ? (ctx.result.my > ctx.result.th ? 'right' : 'wrong') : 'on',
+      bestName: ctx.best?.name, bestPts: ctx.best?.pts, worstName: ctx.worst?.name, worstPts: ctx.worst?.pts,
+    };
+    const res = ctx.result ? (ctx.result.my > ctx.result.th ? 'won' : ctx.result.my < ctx.result.th ? 'lost' : 'drew') : 'won';
+    const out = [];
+    (Q[phase] || []).forEach((spec, i) => {
+      // pick a wording whose facts exist; fall back down the list
+      let qs = spec.q.filter(t => [...t.matchAll(/\{(\w+)\}/g)].every(m => v[m[1]] != null && v[m[1]] !== ''));
+      if (!qs.length) qs = [spec.q[spec.q.length - 1]];
+      const q = fill(pick(qs, key + ':q' + i), v);
+      const options = TONES.map(([tone, label]) => {
+        const bank = Array.isArray(spec.a[tone]) ? spec.a[tone] : (spec.a[tone][res] || spec.a[tone].won);
+        return { tone, label, text: fill(pick(bank, key + ':a' + i + tone), v) };
+      });
+      out.push({ id: spec.id, by: by(i), q, options });
+    });
+    return out;
+  }
+
+  // what the opponent's supporter fires back when a manager posts. Keyed by
+  // the tone the manager chose; a free-text post reads as 'unhinged'.
+  const REPLY = {
+    humble: ['Classy from {mgr}. Which is exactly what a man who is about to lose would say.', 'Very humble. Very nice. Very {oppPos}th in the table.'],
+    confident: ['Bookmarked. See you Monday, {mgr}.', '“Simple as that.” Screenshot taken. Framed.'],
+    dismissive: ['Rattled. Absolutely rattled.', 'That’s a man who has read the group chat and pretended he hasn’t.'],
+    unhinged: ['He’s lost it. He has actually lost it. Somebody check on {mgr}.', 'Print this. Frame it. Read it to him after the match.', 'This is the best thing that has ever been posted on here and I want him banned.'],
+  };
 
   // the roster, for the bio strip: every fan account plus the press
   function accounts(managers, teamName) {
@@ -344,5 +469,5 @@ window.Cunthanger = (() => {
     return rows;
   }
 
-  return { compose, accounts, fan, press, shortName, TAKEOVER, BANKS: B, hash };
+  return { compose, accounts, fan, press, manager, questions, shortName, TAKEOVER, BANKS: B, TONES, hash };
 })();

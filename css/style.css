@@ -1721,3 +1721,28 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .ch-pod-row { padding: 6px 0; }
 .ch-pod-row:first-of-type { border-top: none; }
 @media (max-width: 700px) { .ch-grid { grid-template-columns: 1fr; } }
+
+/* the press room */
+.ch-tile-press { grid-column: 1 / -1; }
+.ch-pr-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.ch-pr-row:first-of-type { border-top: none; }
+.ch-pr-row .ch-main { display: flex; flex-direction: column; gap: 1px; }
+.ch-say { display: flex; gap: 6px; margin-top: 8px; }
+.ch-say input { flex: 1; min-width: 0; }
+.ch-presser { max-width: 560px; }
+.ch-q { border-top: 1px solid var(--line); padding: 12px 0 8px; }
+.ch-q-by { font-size: 10.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.ch-q-text { font-family: Georgia, 'Times New Roman', serif; font-size: 15.5px; line-height: 1.4; margin: 4px 0 10px; }
+.ch-q-opts { display: grid; gap: 6px; }
+.ch-opt { text-align: left; background: rgba(255,255,255,.03); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.ch-opt:hover { border-color: var(--accent-dim); }
+.ch-opt.on { border-color: var(--accent); background: rgba(45,212,167,.10); }
+.ch-opt-tone { display: inline-block; font-size: 9.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-right: 8px; min-width: 74px; }
+.ch-own { width: 100%; resize: vertical; font: inherit; font-size: 13px; }
+.ch-q-done { font-family: Georgia, 'Times New Roman', serif; font-size: 14px; color: var(--muted); }
+.prog-presser { margin: 8px 0 12px; }
+.prog-presser-tie { font-family: Inter, system-ui, sans-serif; font-size: 10px; font-weight: 900; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.ch-compose { display: flex; gap: 10px; padding: 10px 0 12px; border-bottom: 2px solid var(--line); margin-bottom: 4px; }
+.ch-compose textarea { width: 100%; resize: none; font: inherit; font-size: 14px; }
+.ch-compose-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+.ch-compose-row select { flex: 1; min-width: 0; font-size: 12px; }
