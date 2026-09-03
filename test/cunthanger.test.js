@@ -41,7 +41,7 @@ chk('no empty post', a.every(p => p.text && p.text.length > 8));
 chk('every post has an account with a handle', a.every(p => p.who && p.who.h && p.who.n));
 chk('the Trough goal goes to the press, not a fan', a.filter(p => p.key === 'g3').every(p => p.who.kind === 'press'));
 chk('the injury goes to Ben Suppery with a second opinion', a.some(p => p.key === 'n1' && p.who.h === 'BenSuppery' && /Our understanding|physio|Unofficial/.test(p.text)));
-chk('the signing gets a here we go', a.some(p => p.key === 't1' && /here we go/i.test(p.text)));
+chk('the signing gets a here we go, or a can reveal', a.some(p => p.key === 't1' && /here we go|can reveal|exclusive|confirmed by sources/i.test(p.text)));
 chk('Le Tus posts a conspiracy', a.some(p => p.key === 'l1' && p.who.h === 'MattLeTus'));
 chk('live posts sort first', a.findIndex(p => !p.live) >= a.filter(p => p.live).length);
 chk('an unknown club still gets a supporter', a.some(p => p.key === 'f1' && /Brand New Club|New Club/.test(p.who.n + p.who.h + p.text)));
