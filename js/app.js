@@ -7081,7 +7081,7 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // chance in twenty minutes reads as 3.60 xG90 and tops the sort (Marc, 10 Aug)
 // the picked players live in scoutCompare now — shared with the draft pool,
 // the Trough and the search palette; what stays here is how to SHOW them
-let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
+let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0, minField: 'total',
   comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null };
 /* The squad filter, shared by the Trough and the Data Room so the two read the
    same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
@@ -7099,6 +7099,9 @@ function ownerFilterHtml(sel, current) {
   </select>`;
 }
 const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
+// one round is at most 90 (a double gameweek aside), so the season's steps are
+// useless here — these are the ones that answer "is he still playing?"
+const ROUND_MINUTES_STEPS = [1, 45, 60, 90];
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
   if (!v || typeof v !== 'object') return null;
@@ -7120,7 +7123,11 @@ function cleanScoutView(v) {
   // minutes floor for the Data Room explorer; 0 on the surfaces that have none
   const mm = +v.minMin;
   const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
-  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope, minMin };
+  // WHICH minutes the floor counts, or a view saved as "60+ last week" comes
+  // back meaning "60+ all season". A view from before 3 Sept has no minField
+  // and is a season floor by definition, which is what 'total' gives it.
+  const minField = ['total', 'prev', 'gw'].includes(v.minField) ? v.minField : 'total';
+  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope, minMin, minField };
 }
 function scoutViews() {
   try {
@@ -7164,6 +7171,7 @@ function scoutSnapshot(surface) {
     team: surface === 'draft' ? src.team : src.club,
     scope: surface === 'draft' ? 'free' : src.scope,
     minMin: src.minMin || 0,
+    minField: src.minField || 'total',
   });
 }
 function applyScoutView(v, surface) {
@@ -7178,7 +7186,7 @@ function applyScoutView(v, surface) {
   if (surface === 'draft') {
     poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, minField: clean.minField, limit: 40 };
   } else {
     transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
   }
@@ -12565,7 +12573,20 @@ function playerExplorerCard() {
   // filter on p.mp — FPL's own minutes — because that is the denominator the
   // per-90 figures are divided by. Using our match-stat minutes would gate the
   // rates on a different number entirely and hide everyone early season.
-  if (dataView.minMin) pool = pool.filter(p => (p.mp || 0) >= dataView.minMin);
+  /* The minutes floor now applies to ONE ROUND as well as the season (Marc,
+     3 Sept 2026). A season total flatters a man who has lost his place, so
+     "only show me people who played an hour last week" is a different and often
+     better question than "only show me people with 900 minutes in the bank".
+     minField defaults to 'total', so every saved view and every habit survives. */
+  if (dataView.minMin) {
+    const floor = dataView.minMin;
+    // all three read the SAME numbers the MP columns display. The season floor
+    // used to read p.mp straight off the feed while the column showed the sum
+    // of the rounds, so a filter could hide a man the table said qualified —
+    // two sources for one figure, which is one too many.
+    const key = dataView.minField === 'prev' ? 'minPrev' : dataView.minField === 'gw' ? 'minGw' : 'min';
+    pool = pool.filter(p => (metricsFor(p)[key] || 0) >= floor);
+  }
   if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
   pool.sort(dataView.sort === 'owner'
     ? (a, b) => String(teamName(ownedBy[a.id]) || '~').localeCompare(String(teamName(ownedBy[b.id]) || '~')) || rating(b) - rating(a)
@@ -12588,9 +12609,23 @@ function playerExplorerCard() {
         ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${dataView.pos === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
       <select id="dxClub" aria-label="Club"><option value="">All clubs</option>
         ${clubs.map(c => `<option value="${esc(c)}" ${dataView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-      <select id="dxMin" aria-label="Minimum minutes played" title="Per-90 columns are meaningless on a small sample — set a floor before trusting them">
-        ${MIN_MINUTES_STEPS.map(n => `<option value="${n}" ${dataView.minMin === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
-      </select>
+      ${(() => {
+        // one control, three questions: minutes across the season, or in either
+        // of the two rounds that actually tell you whether he still plays
+        const cur = currentGwIndex(), prev = cur - 1;
+        const sel = (f, n) => dataView.minMin === n && (dataView.minField || 'total') === f ? 'selected' : '';
+        const round = (f, i) => `<optgroup label="${i >= 0 && i < GAMEWEEKS.length ? `GW${GAMEWEEKS[i].n}` : 'That round'}${f === 'gw' ? ' (this week)' : ' (last week)'}">
+          ${ROUND_MINUTES_STEPS.map(n => `<option value="${f}:${n}" ${sel(f, n)}>${n === 1 ? 'Played at all' : n === 90 ? 'A full 90' : `${n}+ mins`}</option>`).join('')}
+        </optgroup>`;
+        return `<select id="dxMin" aria-label="Minimum minutes played" title="A season total flatters a man who has lost his place — filter on one round to find out who is still playing">
+          <option value="total:0" ${sel('total', 0)}>Any minutes</option>
+          <optgroup label="This season">
+            ${MIN_MINUTES_STEPS.filter(n => n).map(n => `<option value="total:${n}" ${sel('total', n)}>${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})</option>`).join('')}
+          </optgroup>
+          ${prev >= 0 ? round('prev', prev) : ''}
+          ${round('gw', cur)}
+        </select>`;
+      })()}
     </div>
     ${(() => {
       const sel = compareIds();
@@ -12647,7 +12682,11 @@ function bindExplorer() {
   };
   pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
   const mm = document.getElementById('dxMin');
-  if (mm) mm.onchange = e => { dataView = { ...dataView, minMin: +e.target.value, limit: 40 }; redraw(false); };
+  if (mm) mm.onchange = e => {
+    const [f, n] = String(e.target.value).split(':');
+    dataView = { ...dataView, minField: f || 'total', minMin: +n || 0, limit: 40 };
+    redraw(false);
+  };
   const dxo = $('#dxOwner');
   if (dxo) dxo.onchange = e => { dataView = { ...dataView, owner: e.target.value === '' ? null : +e.target.value, limit: 40 }; redraw(false); };
   // comparison: tick two, then Compare. A third tick replaces the older pick

@@ -166,6 +166,52 @@ const chk = (name, ok, detail = '') => {
     ok('(the menu still lists every other column too)',
       allBoxes.length === ALL_STAT_COLS(seasonHasStats()).length, String(allBoxes.length));
 
+    /* ---- and the same two rounds as a FILTER, not just a column ----
+       Marc, 31 Aug: the pair went in as columns you can sort by. Marc, 3 Sept,
+       asking whether the filter was done: it was not — the minutes dropdown
+       still only knew the season total, which is exactly the number that
+       flatters a man who has lost his place. */
+    demoGwOverride = 1;
+    _metricsCache = new Map(); _metricsKey = null;
+    state.view = 'data'; render();
+    const groups = [...document.querySelectorAll('#dxMin optgroup')].map(g => g.label);
+    ok('the minutes filter offers a round as well as the season',
+      groups.length === 3 && /GW/.test(groups[1]) && /GW/.test(groups[2]), groups.join(' | '));
+    const shown = () => [...document.querySelectorAll('[data-cmp]')].map(i => +i.dataset.cmp);
+    const setMin = (f, n) => { dataView = { ...dataView, minField: f, minMin: n, limit: 700 }; render(); };
+
+    setMin('prev', 60);
+    ok('60+ LAST week keeps the man who has since been dropped, and excludes the newcomer',
+      shown().includes(dropped.id) && !shown().includes(risen.id));
+    setMin('gw', 60);
+    ok('60+ THIS week turns that exactly round — which is the whole point',
+      !shown().includes(dropped.id) && shown().includes(risen.id));
+    setMin('gw', 1);
+    ok('"played at all" is a floor of one minute, not ninety',
+      shown().includes(risen.id) && !shown().includes(dropped.id));
+    // dropped has 90 across the two rounds, risen 78 — so a 90 floor separates
+    // them and a 70 floor keeps both. Checking the boundary, not a round number.
+    setMin('total', 90);
+    ok('the season floor still works: 90 keeps the 90-minute man and drops the 78',
+      shown().includes(dropped.id) && !shown().includes(risen.id));
+    setMin('total', 70);
+    ok('and dropping the floor to 70 lets the 78 back in',
+      shown().includes(dropped.id) && shown().includes(risen.id));
+    // the filter and the column must be the same number: the season floor used
+    // to read the feed's raw total while the column showed the sum of the
+    // rounds, so a filter could hide a man the table said qualified
+    ok('and every man the filter keeps really does clear the floor in the MP column',
+      shown().every(id => metricsFor(PLAYER_BY_ID[id]).min >= dataView.minMin),
+      `floor ${dataView.minMin}, worst kept ${Math.min(...shown().map(id => metricsFor(PLAYER_BY_ID[id]).min))}`);
+    setMin('total', 0);
+    ok('(control: turning the floor off restores the room)', shown().length > 50, String(shown().length));
+
+    // a saved view must remember WHICH minutes, or it changes meaning silently
+    ok('a saved view keeps the field as well as the number',
+      cleanScoutView({ name: 'v', minMin: 60, minField: 'prev' }).minField === 'prev');
+    ok('and a view saved before this existed is still a season floor',
+      cleanScoutView({ name: 'v', minMin: 450 }).minField === 'total');
+
     return out.join('\n');
   });
   for (const line of report.split('\n')) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));
