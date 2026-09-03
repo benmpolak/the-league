@@ -6300,8 +6300,23 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // chance in twenty minutes reads as 3.60 xG90 and tops the sort (Marc, 10 Aug)
 // the picked players live in scoutCompare now — shared with the draft pool,
 // the Trough and the search palette; what stays here is how to SHOW them
-let dataView = { q: '', pos: '', club: '', scope: 'all', sort: 'pts', limit: 40, minMin: 0,
+let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
   comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null };
+/* The squad filter, shared by the Trough and the Data Room so the two read the
+   same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
+   commonest use is checking your own shape before a transfer — and the other
+   eleven follow in table order. A select rather than chips: twelve buttons
+   would swamp the filter row on a phone. */
+function ownerFilterHtml(sel, current) {
+  const mine = whoami && whoami !== -1 ? state.managers.find(m => m.id === whoami) : null;
+  const others = state.managers.filter(m => !mine || m.id !== mine.id);
+  const opt = m => `<option value="${m.id}" ${current === m.id ? 'selected' : ''}>${esc(teamName(m.id))}</option>`;
+  return `<select ${sel} aria-label="Filter to one manager's squad" title="Show only the players in one manager's squad">
+    <option value="" ${current == null ? 'selected' : ''}>Anyone's squad</option>
+    ${mine ? `<optgroup label="Mine">${opt(mine)}</optgroup>` : ''}
+    <optgroup label="The rest">${others.map(opt).join('')}</optgroup>
+  </select>`;
+}
 const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
@@ -7448,7 +7463,12 @@ function bindTeam() {
 }
 
 /* ---------------- the Transfers hub (Draft Fantasy layout) ---------------- */
-let transfersView = { tab: 'trough', out: null, pos: [], club: '', scope: 'avail', sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+// owner: filter to ONE manager's squad, your own included (Marc, 3 Sept 2026:
+// "a filter that allows you to filter on the players in any specific persons
+// team including your own"). null = don't care; it wins over scope, because
+// "show me Toby's squad" and "show me free agents" are the same question asked
+// two ways and answering both at once gives an empty table.
+let transfersView = { tab: 'trough', out: null, pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // position filter is a SET like the draft pool's (Ben, 25 Aug: "midfield and
 // forward... at the same time") — empty means All. Tolerates the old string.
 const trPosOn = () => Array.isArray(transfersView.pos) ? transfersView.pos : (transfersView.pos ? [transfersView.pos] : []);
@@ -8196,7 +8216,8 @@ function bindTransfers() {
       // filter was a superset of the one beside it (Toby, sandbox 12 Aug:
       // "surely it should only be the everyone filter that has both"). Waivers
       // has its own chip; Everyone still shows the lot, owned included.
-      let pool = transfersView.scope === 'watch' ? watchIds(mid).map(id => PLAYER_BY_ID[id]).filter(Boolean)
+      let pool = transfersView.owner != null ? PLAYERS.filter(p => ownedBy[p.id] === transfersView.owner)
+        : transfersView.scope === 'watch' ? watchIds(mid).map(id => PLAYER_BY_ID[id]).filter(Boolean)
         : transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
         : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
@@ -8264,6 +8285,7 @@ function bindTransfers() {
           <option value="">All clubs</option>
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
+        ${ownerFilterHtml('id="trOwner" style="padding:6px 8px;font-size:12px"', transfersView.owner)}
         <span style="width:8px"></span>
         <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' && transfersView.scope !== 'free' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
         <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
@@ -8285,6 +8307,15 @@ function bindTransfers() {
         transfersView.pos = pp ? (on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp]) : [];
         transfersView.limit = 20; renderTrResults();
       });
+      {
+        const to = results.querySelector('#trOwner');
+        // picking a squad overrides the Free agents / Waivers / Everyone chips —
+        // they are the same question and answering both gives an empty table
+        if (to) to.onchange = e => {
+          transfersView.owner = e.target.value === '' ? null : +e.target.value;
+          transfersView.limit = 20; renderTrResults();
+        };
+      }
       results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => { transfersView.scope = b.dataset.trscope; transfersView.limit = 20; renderTrResults(); });
       results.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => {
         if (!canActFor(mid)) { toast('Sign in to keep a watchlist'); return; }
@@ -11633,7 +11664,8 @@ function playerExplorerCard() {
   const ownedBy = {};
   for (const m of state.managers) for (const p of managerSquad(m.id)) ownedBy[p.id] = m.id;
   const q = normName(dataView.q || '');
-  let pool = dataView.scope === 'owned' ? PLAYERS.filter(p => ownedBy[p.id] != null)
+  let pool = dataView.owner != null ? PLAYERS.filter(p => ownedBy[p.id] === dataView.owner)
+    : dataView.scope === 'owned' ? PLAYERS.filter(p => ownedBy[p.id] != null)
     // claim-only: dropped, and waiting on the next waiver run before the Trough
     // reopens them to anyone (Marc, 10 Aug)
     : dataView.scope === 'waivers' ? PLAYERS.filter(p => ownedBy[p.id] == null && !arrivalLocked(p) && onWaivers(p))
@@ -11662,6 +11694,7 @@ function playerExplorerCard() {
         <option value="waivers" ${dataView.scope === 'waivers' ? 'selected' : ''}>On waivers</option>
         <option value="free" ${dataView.scope === 'free' ? 'selected' : ''}>In the Trough</option>
       </select>
+      ${ownerFilterHtml('id="dxOwner"', dataView.owner)}
       <select id="dxPos" aria-label="Position"><option value="">All positions</option>
         ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${dataView.pos === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
       <select id="dxClub" aria-label="Club"><option value="">All clubs</option>
@@ -11726,6 +11759,8 @@ function bindExplorer() {
   pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
   const mm = document.getElementById('dxMin');
   if (mm) mm.onchange = e => { dataView = { ...dataView, minMin: +e.target.value, limit: 40 }; redraw(false); };
+  const dxo = $('#dxOwner');
+  if (dxo) dxo.onchange = e => { dataView = { ...dataView, owner: e.target.value === '' ? null : +e.target.value, limit: 40 }; redraw(false); };
   // comparison: tick two, then Compare. A third tick replaces the older pick
   // rather than refusing — refusing makes you hunt for what to untick.
   document.querySelectorAll('[data-cmp]').forEach(cb => cb.onchange = () => {

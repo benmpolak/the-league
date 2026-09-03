@@ -64,10 +64,6 @@ let pass = 0, fail = 0;
       const cnt = xiCounts(lineupFor(mid, GW));
       const slack = ['FW', 'MF', 'DF'].find(pos => cnt[pos] > XI_RULES[pos][0]);
       const out = xi.find(p => p.pos === slack) || xi[10];
-      // NOT a club-mate of the injured man: setUp marks that club's fixture
-      // finished, which would rule the replacement out too and make the setup
-      // assert against itself. Cost a green run to find, on 30 Aug.
-      const inc = bench.find(p => p.id !== out.id && p.team !== out.team) || bench.find(p => p.id !== out.id) || bench[0];
       // every fixture still to come...
       state.fixtures = [];
       for (let k = 0; k + 1 < TEAMS.length; k += 2)
@@ -79,6 +75,18 @@ let pass = 0, fail = 0;
           f.date = new Date(Date.now() - 5 * 36e5).toISOString();
           f.started = true; f.minutes = 90; f.finished = true;
         }
+      /* The replacement's club must still be TO PLAY, and "not a club-mate" was
+         not enough: finishing the injured man's fixture finishes it for his
+         OPPONENT too, so a bench man from the other side of that one game was
+         just as done. The 30 Aug fix caught the club-mate and missed the
+         opponent; it stayed green until the feed dealt an opponent's man onto
+         the bench (Allan, Man City, 3 Sept).
+
+         So choose him AFTER the fixtures are set, by the only question that
+         matters — is his round over? — instead of guessing at which clubs that
+         will be true for. */
+      const inc = bench.find(p => p.id !== out.id && !clubRoundOver(p, g.n))
+        || bench.find(p => p.id !== out.id) || bench[0];
       // he is injured and never appeared; the replacement is fit and to come
       out.status = 'i'; out.chance = 0;
       inc.status = 'a'; inc.chance = null;
