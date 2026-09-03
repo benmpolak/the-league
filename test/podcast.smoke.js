@@ -531,7 +531,7 @@ const chk = (name, ok, detail = '') => {
     const read = () => {
       const room = document.querySelector('.gazette-room');
       const head = [...room.querySelectorAll('.prog-sec')].map(x => x.textContent)
-        .find(t => /wireless|Media Desk|Cunthanger/i.test(t)) || '';
+        .find(t => /wireless|Media Desk|Cunthanger|in the group/i.test(t)) || '';
       // desk rows only — the back catalogue is .pod-row too (added 21 Aug)
       const deskRows = [...room.querySelectorAll('.pod-row')].filter(x => !x.closest('.pod-archive'));
       const rows = deskRows.length;
@@ -554,7 +554,7 @@ const chk = (name, ok, detail = '') => {
       launchBothShows: before.rows === Podcast.ON_AIR.length,
       launchIsPilots: before.titles.every(t => /Season Preview|SEASON PREVIEW/.test(t)),
       // ...and once the draft has happened the desk moves on with the Gazette
-      deskHeading: /Media Desk|Cunthanger|wireless/i.test(after.head),
+      deskHeading: /Media Desk|Cunthanger|wireless|in the group/i.test(after.head),
       deskBothShows: after.rows === Podcast.ON_AIR.length,
       deskNotPilots: after.titles.every(t => !/edition zero/.test(t)),
       // ...showing whatever the schedule says is CURRENT for each show. This

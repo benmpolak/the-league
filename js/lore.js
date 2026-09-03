@@ -423,7 +423,28 @@ const POD_ADS = {
     { brand: 'DRIVE-THRU CAR VALET', read: 'YOUR MOTOR, IMMACULATE, IN ELEVEN MINUTES. We do the alloys. We do them PROPERLY. Twenty-two pounds, cash, no appointment, no nonsense.' },
     { brand: 'BIG RON’S PATIO WORLD', read: 'SLABS. THOUSANDS OF THEM. Laid by men who have never once discussed their feelings and are, frankly, THRIVING.' },
   ],
+  /* House ads. Ian, 3 Sep: "can we have adverts on the pod for other
+     cunthanger content". From the takeover on, the second slot in every
+     break is the group selling itself to itself. Both hosts read them in
+     their own register; the copy is written to survive either. */
+  house: [
+    { brand: 'Cunthanger Media', read: 'this programme is brought to you by Cunthanger Media, which now owns it. And the paper. And the feed. Ownership of Cunthanger itself remains undisclosed, and we are asked not to speculate.' },
+    { brand: 'The Rest Is Scienza', read: 'coming soon from Cunthanger: The Rest Is Scienza, the Southampton podcast nobody asked for, hosted by two men who were there. Wherever you get your podcasts, and several places you do not.' },
+    { brand: 'The Cunthanger feed', read: 'the feed. Twelve clubs, two supporters each, one of them calm. Live on matchdays, wrong within seconds. Open the app. It is already there. It has always been there.' },
+    { brand: 'The League Gazette', read: 'the League Gazette, a Cunthanger title. Printed nowhere, read everywhere, and still asking where the vidiprinter went. It did not go anywhere. It is next to the paper.' },
+    { brand: 'Cunthanger Alerts', read: 'have you tested your Cunthanger alert? Marc has. His mother was fine. The stairs were not involved. Do not push anyone down them to check.' },
+    { brand: 'Matt Le Tus', read: 'Matt Le Tus, exclusively on the Cunthanger feed. One thread a round. Forty-seven parts. Nobody has reached part two. Do your own research.' },
+  ],
 };
+
+/* The pipeline. Everything the chat commissioned that is not built yet lives
+   on the card as "in due cunt", so it is a joke rather than a to-do list. */
+const CUNTHANGER_SOON = [
+  { n: 'The Rest Is Scienza', d: 'Cunthanger’s Southampton FC podcast. Two hosts, one relegation, no agenda.' },
+  { n: 'Press conferences', d: 'Post-match, in your own voice, from a ten-second sample. A question from our reporter in Kenya. Recording sessions to be arranged with the talent.' },
+  { n: 'The League: A Sanitised Documentary', d: 'Eight parts. Slow-motion walking. Everyone comes across well, which is how you know it is fiction.' },
+  { n: 'Brand ambassadors', d: 'Jack Cork, Kelechi Iheanacho and Ross Barkley have been approached to front the campaign. Two have replied. One was Jack Cork.' },
+];
 
 /* ================= Cunthanger =================
    The League's own social network (Ric, 3 Sep 2026: "Cunthanger. Done.").
@@ -493,4 +514,7 @@ const CUNTHANGER_LETUS = [
   'The Gazette is printed. Where. Where is it printed. Show me the printer. You can’t.',
   'They rebranded the vidiprinter and nobody noticed. What else have they rebranded. What else.',
   'A man once told me the playoffs decide the title. The table decides the title. The man was from the Committee.',
+  'Somebody is building a rival app on the side to sell for millions. I know who. I have seen the pitch deck. It was in Comic Sans.',
+  'The prize fund has not been spent on bells and whistles. Ask yourself why not. Ask yourself who has the bells.',
+  'Cunthanger Media is owned by nobody you know. Or by somebody you know. That is exactly what they want you to think about.',
 ];

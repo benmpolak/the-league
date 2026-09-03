@@ -866,6 +866,8 @@ const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}"
   document.addEventListener('click', e => { if (e.target.closest('[data-gazette]')) gazetteSheet(); });
   // any [data-chopen] button opens the Cunthanger feed, whatever view rendered it
   document.addEventListener('click', e => { if (e.target.closest('[data-chopen]')) cunthangerSheet(); });
+  // and the wireless rows on the Cunthanger card (the reading room binds its own)
+  document.addEventListener('click', e => { const b = e.target.closest('[data-podopen]'); if (b && !b.closest('.overlay')) podcastSheet(b.dataset.podopen); });
 }
 document.addEventListener('error', e => {
   const img = e.target;
@@ -4157,7 +4159,7 @@ function cunthangerSheet() {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
     <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
-    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once. Ownership undisclosed.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once. Ownership undisclosed.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
     <div class="ch-timeline">${posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
     <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
       ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
@@ -4174,6 +4176,9 @@ function cunthangerSheet() {
    and never in the demo. */
 function cunthangerTakeover() {
   if (state.phase !== 'season' || demoMode || typeof Cunthanger === 'undefined' || window._chAlertShown) return;
+  // a live league only: the ?nosync rehearsal modes and the test harnesses
+  // (which set __autoConfirm) must never find a government alert over the pitch
+  if (!syncOn() || window.__autoConfirm) return;
   const KEY = `${LS_NS}-ch-takeover`;
   try { if (localStorage.getItem(KEY)) return; } catch { return; }
   if (document.querySelector('.overlay')) return; // it will try again next render
@@ -9190,22 +9195,28 @@ function gazetteShareText() {
 }
 function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
+  /* The Cunthanger card. Ben, 3 Sep: "Cunthanger is the overall thing and
+     then within that you've got the Gazette, the feed, talkTROUGH, and all
+     the other different media assets." So the paper is one title in a
+     group, not the card itself: masthead of the group up top, then the
+     Gazette, the feed, the wireless, and a dashed tile for whatever is
+     launched in due cunt. The app around it is untouched. */
   const today = progTodays();
+  const ch = typeof Cunthanger !== 'undefined';
+  // the paper
+  let paper;
   if (!today) {
-    return `<div class="card prog-card">
-      <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
-  }
-  // the lead's headline + first sentence, lifted from the article itself so
-  // the teaser can never disagree with the paper
-  const scratch = document.createElement('div');
-  scratch.innerHTML = today.article;
-  const head = scratch.querySelector('.prog-head')?.textContent || '';
-  const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
-  const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
-  const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
-  return `<div class="card prog-card">
-    ${progMasthead(today.edition, today.gwN)}
-    <div class="prog-front">
+    paper = `<p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p>`;
+  } else {
+    // the lead's headline + first sentence, lifted from the article itself so
+    // the teaser can never disagree with the paper
+    const scratch = document.createElement('div');
+    scratch.innerHTML = today.article;
+    const head = scratch.querySelector('.prog-head')?.textContent || '';
+    const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
+    const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
+    const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
+    paper = `<div class="prog-front">
       <div class="prog-front-copy">
         <div class="prog-front-label">LEAD STORY</div>
         ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
@@ -9214,11 +9225,48 @@ function programmeCard() {
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
-        ${typeof Cunthanger !== 'undefined' ? `<button class="btn ghost small" data-chopen title="The feed. Ownership undisclosed."><span class="ch-logo" style="width:16px;height:16px;font-size:11px;margin-right:4px;vertical-align:-3px">c</span>Cunthanger${(() => { const n = cunthangerPosts().length; return n ? ` <span class="tag" style="margin-left:2px">${n}</span>` : ''; })()}</button>` : ''}
         <button class="btn ghost small" id="progShare" title="Copy the front page for the group chat">&#128203; Share</button>
       </div>
+    </div>`;
+  }
+  // the feed
+  const posts = ch ? cunthangerPosts() : [];
+  const live = posts.some(p => p.live);
+  const top = posts[0];
+  const feed = ch ? `<div class="ch-tile">
+    <div class="ch-tile-label">The feed${live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}</div>
+    ${top ? chPostHtml(top) : '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}
+    <button class="btn ghost small" data-chopen>Open the feed${posts.length ? ` <span class="tag">${posts.length}</span>` : ''}</button>
+  </div>` : '';
+  // the wireless
+  const eps = typeof Podcast !== 'undefined' ? Podcast.ON_AIR.map(id => Podcast.latest(id)).filter(Boolean) : [];
+  const wireless = eps.length ? `<div class="ch-tile">
+    <div class="ch-tile-label">On the wireless</div>
+    ${eps.map(ep => `<div class="pod-row ch-pod-row" data-podopen="${esc(ep.id)}">
+      <div class="pod-badge pod-${esc(ep.show.id)}">${Podcast.logoSvg(ep.show.id, 30)}</div>
+      <div class="pod-main"><b style="font-size:12.5px">${esc(ep.show.name)}</b><span class="muted" style="font-size:11.5px">${esc(ep.title)}</span></div>
+      <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
+    </div>`).join('')}
+  </div>` : '';
+  return `<div class="card prog-card ch-card">
+    <div class="ch-card-mast">
+      <span class="ch-logo ch-logo-lg">c</span>
+      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s social media threat. Ownership undisclosed.</div></div>
+      ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
     </div>
-    ${gazetteUnread() ? '<span class="prog-new" aria-label="New edition">NEW EDITION</span>' : ''}
+    <div class="ch-grid">
+      <div class="ch-tile ch-tile-paper">
+        <div class="ch-tile-label ch-tile-label-paper"><span>The League Gazette${today ? ` &middot; ${esc(today.edition)}${today.gwN != null ? ` &middot; Gameweek ${today.gwN}` : ''}` : ''}</span>${today && gazetteUnread() ? '<span class="prog-new ch-new" aria-label="New edition">NEW EDITION</span>' : ''}</div>
+        ${paper}
+      </div>
+      ${feed}
+      ${wireless}
+      <div class="ch-tile ch-tile-soon">
+        <div class="ch-tile-label">In due cunt</div>
+        ${(typeof CUNTHANGER_SOON !== 'undefined' ? CUNTHANGER_SOON : []).map(x => `<div class="ch-soon"><b>${esc(x.n)}</b> <span class="muted">${esc(x.d)}</span></div>`).join('')}
+        <p class="muted" style="font-size:11.5px;margin:4px 0 0">The group does not comment on speculation, or on anything.</p>
+      </div>
+    </div>
   </div>`;
 }
 /* Everything the paper has ever printed, newest first (Ben, GW1 night:
@@ -9411,8 +9459,8 @@ function mediaSection() {
     ? `<div class="prog-sec">Also in edition zero: the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
       ${rows}${archive}`
-    : `<div class="prog-sec ch-sec">Cunthanger</div>
-      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette, both stations and the feed, under one roof since the takeover. Ownership undisclosed.</p>
+    : `<div class="prog-sec ch-sec">Elsewhere in the group</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette is a Cunthanger title. So is everything below it.</p>
       ${feed}
       ${rows.trim() ? `<div class="ch-sub">On the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>

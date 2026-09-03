@@ -48,7 +48,7 @@ chk('an unknown club still gets a supporter', a.some(p => p.key === 'f1' && /Bra
 chk('team names reach the copy unescaped (app escapes at render)', a.some(p => /Dog’s Polaks|Polaks/.test(p.text)));
 chk('the roster covers two fans per club plus the press', C.accounts([{ id: 1 }, { id: 2 }], id => teams[id] || 'X').length === 4 + C.accounts([], () => '').length);
 chk('every bank line resolves its placeholders to known keys', Object.values(C.BANKS).flat().every(t =>
-  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'team', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
+  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'wor', 'team', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
 chk('the takeover copy is intact', C.TAKEOVER.lines.some(l => /due cunt/.test(l)) && /Cunthanger Alert System/.test(C.TAKEOVER.head));
 console.log(`\n[cunthanger] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

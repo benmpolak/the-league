@@ -373,7 +373,18 @@ window.Podcast = (() => {
 
   /* ---------- episode assembly ---------- */
   const theme = show => ({ t: 'theme', show, text: show === 'tt' ? '[BRASS STING. AIRHORN. A MAN SHOUTING OVER BOTH]' : '[SPARSE PIANO. A SINGLE CELLO. SOMEBODY SIGHS]' });
+  // the takeover (3 Sep 2026): from GW3's episodes on, the second ad in every
+  // break is a Cunthanger house ad (Ian: "adverts on the pod for other
+  // cunthanger content"). Earlier episodes keep their ads word for word —
+  // that audio is already cut, and a transcript is immutable once printed.
+  const HOUSE_FROM_GW = 2; // gameweek INDEX (0-based) — GW3
   function adBreak(show, key, n) {
+    const gw = +key.split(':')[2];
+    const house = (typeof POD_ADS !== 'undefined' && POD_ADS.house) || [];
+    if (n === 2 && house.length && Number.isFinite(gw) && gw >= HOUSE_FROM_GW) {
+      const ad = house[hash(key + ':house') % house.length];
+      return { t: 'ad', show, brand: ad.brand, text: ad.read };
+    }
     const inv = (typeof POD_ADS !== 'undefined' && POD_ADS[SHOWS[show].ads]) || [];
     if (!inv.length) return null;
     const ad = inv[hash(key + ':ad' + n) % inv.length];

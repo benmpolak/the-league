@@ -35,7 +35,7 @@ window.Cunthanger = (() => {
       'More media assets to be launched in due cunt.',
       'Ownership of Cunthanger remains undisclosed.',
     ],
-    foot: 'No action is required. You may return to your squad.',
+    foot: 'No action is required. Do not push your mum down the stairs to test it.',
   };
 
   /* ---------- accounts ---------- */
@@ -64,7 +64,7 @@ window.Cunthanger = (() => {
   }
 
   /* ---------- phrase banks ----------
-     {P} player, {club} his PL club, {team} the fantasy club's full name,
+     {P} player, {club} his PL club, {wor} 'wor ' for a Newcastle man, {team} the fantasy club's full name,
      {short} what the fan calls it, {mgr} manager's first name, {opp} opponent
      fantasy club, {n} count, {pts} points, {gw} gameweek number. */
   const B = {
@@ -163,9 +163,10 @@ window.Cunthanger = (() => {
       '{pts} for {P}. The model had 9. The model is broken, and so is everyone else.',
     ],
     injury_press: [
-      '{P} ({club}). Club line: “{news}.” Our understanding: {diag}. Return: {ret}.',
-      'Update on {P} ({club}) — {news}. Sources close to the physio: {diag}. Timescale: {ret}.',
-      '{P} ({club}). Official: {news}. Unofficial: {diag}. Back {ret}.',
+      '{wor}{P} ({club}). Club line: “{news}.” Our understanding: {diag}. Return: {ret}.',
+      'Update on {wor}{P} ({club}) — {news}. Sources close to the physio: {diag}. Timescale: {ret}.',
+      '{wor}{P} ({club}). Official: {news}. Unofficial: {diag}. Back {ret}.',
+      '{wor}{P} out {ret} with {diag}. Club say “{news}”. Club would.',
     ],
     injury_melt: [
       '{P} injured. {short}’s season over in week {gw}. Every year. EVERY YEAR.',
@@ -263,7 +264,8 @@ window.Cunthanger = (() => {
     const vars = (e, extra = {}) => {
       const mid = e.mid;
       const t = mid != null ? teamName(mid) : '';
-      return { P: e.player || '', club: e.club || '', team: cleanTeam(t), short: mid != null ? shortName(mid, t) : '',
+      // Ben Suppery is a Newcastle man (Ian: "wor Joelinton out for 2-4 weeks")
+      return { P: e.player || '', club: e.club || '', wor: e.club === 'NEW' ? 'wor ' : '', team: cleanTeam(t), short: mid != null ? shortName(mid, t) : '',
         mgr: mid != null ? firstName(managerName(mid)) : '', opp: e.oppMid != null ? cleanTeam(teamName(e.oppMid)) : '',
         n: e.n ?? '', pts: e.pts ?? '', gw: e.gwN ?? '', my: e.my ?? '', their: e.their ?? '', ...extra };
     };
