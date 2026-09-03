@@ -9214,6 +9214,7 @@ function programmeCard() {
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
+        ${typeof Cunthanger !== 'undefined' ? `<button class="btn ghost small" data-chopen title="The feed. Ownership undisclosed."><span class="ch-logo" style="width:16px;height:16px;font-size:11px;margin-right:4px;vertical-align:-3px">c</span>Cunthanger${(() => { const n = cunthangerPosts().length; return n ? ` <span class="tag" style="margin-left:2px">${n}</span>` : ''; })()}</button>` : ''}
         <button class="btn ghost small" id="progShare" title="Copy the front page for the group chat">&#128203; Share</button>
       </div>
     </div>
