@@ -192,6 +192,12 @@ window.Cunthanger = (() => {
       '{P} ➡️ {team}. Here we go. Personal terms agreed in the Trough. Medical waived, as tradition. 🤝',
       'EXCL: {P} to {team}. Confirmed. {mgr} personally drove him there. Here we go 🤝',
     ],
+    // Jacobean does not say here we go. Jacobean can reveal.
+    signing_jacobean: [
+      'EXCLUSIVE: {P} to {team}. Deal done in the Trough overnight. Understand {mgr} led the talks personally. More soon.',
+      'Can reveal {P} has joined {team}. Told the move came together fast. {mgr} pushed hard. Story developing.',
+      '{P} ➡️ {team}. Confirmed by sources on both sides, one of which is {mgr}, the other of which is also {mgr}.',
+    ],
     signing_melt: [
       '{P} IN. {mgr} has FINALLY listened. Title on.',
       '{P}. Signed. {short} mean business. Stop laughing.',
@@ -406,7 +412,7 @@ window.Cunthanger = (() => {
           break;
         }
         case 'signing': {
-          add(press('transfers', k), k, pick(B.signing_transfers, k), vars(e), { ...meta, w: 4 });
+          { const who = press('transfers', k); add(who, k, pick(who.h === 'BenJacobean' ? B.signing_jacobean : B.signing_transfers, k), vars(e), { ...meta, w: 4 }); }
           if (hash(k + ':fan') % 2 === 0) add(who, k + ':fan', pick(voice === 'sage' ? B.signing_sage : B.signing_melt, k), vars(e), { ...meta, w: 3 });
           break;
         }
