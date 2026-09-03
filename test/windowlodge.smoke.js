@@ -67,8 +67,19 @@ const chk = (name, ok, detail = '') => {
     const pen = lockedArrivals();
     ok('three men are in the pen to lodge for', pen.length >= 3, String(pen.length));
 
-    // lodge two of them, with the desk accepting
-    const list = pen.slice(0, 2).map((p, k) => ({ in: p.id, out: squad[k].id }));
+    /* Build lines the DESK would take: swap like for like, so the squad shape
+       survives. The old setup paired pen[k] with squad[k] regardless of
+       position and only passed because serverAct was stubbed to accept
+       everything — the real desk refuses a swap that leaves an illegal squad,
+       and so does wcAdd in the app, so no manager could ever create one. */
+    const dropFor = (p, used = []) => (squadAt(mid, gw)
+      .find(x => x.pos === p.pos && !used.includes(x.id)) || {}).id;
+    const usedOut = [];
+    const list = pen.slice(0, 2).map(p => {
+      const o = dropFor(p, usedOut); usedOut.push(o); return { in: p.id, out: o };
+    });
+    ok('(setup) both opening lines are shape-legal, or the desk would refuse them',
+      list.every(c => c.out != null && !deadWindowClaim(c, mid)), JSON.stringify(list));
     const realAct = window.serverAct;
     let asked = null;
     window.serverAct = (action, data) => { asked = { action, n: (data.claims || []).length }; return Promise.resolve({ ok: true }); };
@@ -121,7 +132,10 @@ const chk = (name, ok, detail = '') => {
 
     // ...and an accepted one still lands, so the roll-back is not just "never save"
     window.serverAct = () => Promise.resolve({ ok: true });
-    setWindowClaims(mid, pen.slice(0, 3).map((p, k) => ({ in: p.id, out: squad[k].id })));
+    const used3 = [];
+    setWindowClaims(mid, pen.slice(0, 3).map(p => {
+      const o = dropFor(p, used3); used3.push(o); return { in: p.id, out: o };
+    }));
     await new Promise(r => setTimeout(r, 60));
     /* ---- what an ordinary manager sees of the pen ----
        Marc, 31 Aug 2026: "is the view amended so i can see who else has been
@@ -157,6 +171,58 @@ const chk = (name, ok, detail = '') => {
 
     ok('(control: a list the desk accepts still lands)', myWindowClaims(mid).length === 3,
       String(myWindowClaims(mid).length));
+
+    /* ---- Toby's lockout, 2 Sept 2026 22:08 ----
+       "when I try and add a player to the transfer waiver list it's saying
+       'the drop player is not in your squad'... I also can't delete from the
+       list either."
+
+       One stale line — its DROP man moved out of his squad on Tuesday's waiver
+       — and the desk refuses the WHOLE list for it. Every edit sends the whole
+       list, so he could not add, could not delete, and the refusal named a
+       player he was not touching. No way out from inside the app. */
+    state.draftPool = { at: Date.now(), ids: wide };
+    const pen3 = lockedArrivals();
+    const sq = squadAt(mid, transferGw());
+    const goneMan = sq[3];
+    const live = [{ in: pen3[0].id, out: sq[0].id }];
+    const stale = { in: pen3[1].id, out: goneMan.id };
+    state.windowClaims = { [mid]: [...live, stale] };
+    // now take that drop man off his squad, the way a waiver would
+    state.transfers = [...toArr(state.transfers),
+      { managerId: mid, inId: pen3[2].id, outId: goneMan.id, gw: transferGw(), waiver: true, t: Date.now() }];
+    ok('(setup) the drop man on one line has left his squad',
+      !squadAt(mid, transferGw()).some(x => x.id === goneMan.id), goneMan.name);
+    ok('the stale line is now recognised as dead', !!deadWindowClaim(stale, mid), deadWindowClaim(stale, mid));
+    ok('and it says WHICH man and WHY, not a generic refusal',
+      /no longer in your squad/.test(deadWindowClaim(stale, mid)), deadWindowClaim(stale, mid));
+    ok('(control: the healthy line is not called dead)', !deadWindowClaim(live[0], mid), deadWindowClaim(live[0], mid));
+
+    transfersView.tab = 'window'; render();
+    ok('the dead line is struck through on the row, before he tries anything',
+      document.querySelectorAll('.claim-row.claim-dead').length === 1,
+      String(document.querySelectorAll('.claim-row.claim-dead').length));
+    ok('and tagged so he can read the reason',
+      !!document.querySelector('.claim-dead-tag'));
+
+    // HE DELETES the other line — the operation that did nothing before
+    let sent = null;
+    window.serverAct = (a2, d2) => { sent = (d2.claims || []).length; return Promise.resolve({ ok: true }); };
+    const keep = myWindowClaims(mid);
+    setWindowClaims(mid, keep.filter((_, i) => i !== 0));
+    await new Promise(r => setTimeout(r, 40));
+    ok('deleting now actually deletes instead of silently reverting',
+      myWindowClaims(mid).length === 0, JSON.stringify(myWindowClaims(mid).map(c => c.in)));
+    ok('and the doomed line went with it rather than blocking the save',
+      sent === 0, `desk was sent ${sent} line(s)`);
+
+    // and ADDING works again from a list that held a dead line
+    state.windowClaims = { [mid]: [stale] };
+    setWindowClaims(mid, [stale, { in: pen3[0].id, out: squadAt(mid, transferGw())[0].id }]);
+    await new Promise(r => setTimeout(r, 40));
+    ok('adding a good line succeeds even though a dead one was on the list',
+      myWindowClaims(mid).length === 1 && myWindowClaims(mid)[0].in === pen3[0].id,
+      JSON.stringify(myWindowClaims(mid).map(c => c.in)));
 
     window.serverAct = realAct;
     return out.join('\n');

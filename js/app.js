@@ -2533,9 +2533,57 @@ function windowSlots() {
 const windowPickNos = mid => windowSlots().map((m, i) => (m === mid ? i + 1 : 0)).filter(Boolean);
 const windowWaiverDone = () => Date.now() >= WINDOW_WAIVER_AT;
 const myWindowClaims = mid => toArr(state.windowClaims?.[mid]);
+/* Why a lodged window line can no longer land — the SAME four questions the
+   desk asks in windowClaimSet, in the same order, so this can never call a
+   line dead that the server would take (or alive that it would refuse).
+
+   Toby, 2 Sept 2026 22:08, the night before the run: "when I try and add a
+   player to the transfer waiver list it's saying 'the drop player is not in
+   your squad'... I also can't delete from the list either."
+
+   Both symptoms, one cause. His list held a line whose DROP man had left his
+   squad — Tuesday's waiver moved him out from under it. Every save sends the
+   whole list, the desk refuses the whole list for that one stale line, and the
+   refusal names a player he was not touching. He could not add, because the
+   save carried the bad line along. He could not delete, because the delete was
+   a save too. Locked out of his own list on the eve of the waiver, by a line
+   he had no way of seeing was dead: the weekly list has flagged this since
+   30 Aug and the window list never got it. */
+function deadWindowClaim(c, mid) {
+  const p = PLAYER_BY_ID[c.in], out = PLAYER_BY_ID[c.out];
+  if (!p) return 'that player is no longer in the feed';
+  if (!isArrival(p)) return `${p.name} is not in the holding pen any more`;
+  if (ownedIdsAt(transferGw()).has(c.in)) return `${p.name} has already been signed`;
+  const squad = squadAt(mid, transferGw());
+  if (!squad.some(x => x.id === c.out)) {
+    return `${out ? out.name : 'the man you were dropping'} is no longer in your squad — pick someone else to make way`;
+  }
+  if (!squadShapeOk([...squad.filter(x => x.id !== c.out), p])) {
+    return `${p.name} for ${out ? out.name : 'that drop'} would leave an illegal squad`;
+  }
+  return '';
+}
 function setWindowClaims(mid, arr) {
   // codes ride along so a lodged list survives a feed id shift (Desk §3b)
   arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
+  /* One dead line must not hold the whole list hostage (Toby, 2 Sept 2026,
+     22:08). The desk refuses the WHOLE list if a single line is doomed, and
+     every edit — adding, deleting, reordering — sends the whole list. So a man
+     whose drop player had left his squad could not add, could not delete, and
+     was told about a player he was not touching. There was no way out from
+     inside the app.
+
+     A doomed line cannot land under any circumstance: the run would skip it on
+     Thursday exactly as the desk refuses it now. So drop it rather than let it
+     lock the list — and SAY SO, by name and by reason. Quietly editing a man's
+     list would be the worse fault of the two. */
+  const dead = arr.map(c => ({ c, why: deadWindowClaim(c, mid) })).filter(x => x.why);
+  if (dead.length) {
+    arr = arr.filter(c => !dead.some(d => d.c === c));
+    toast(dead.length === 1
+      ? `Dropped a line that can no longer land — ${dead[0].why}.`
+      : `Dropped ${dead.length} lines that can no longer land — ${dead[0].why}, and ${dead.length - 1} more.`);
+  }
   const before = myWindowClaims(mid);
   (state.windowClaims = state.windowClaims || {})[mid] = arr;
   save(); render();
@@ -7561,11 +7609,15 @@ function viewTransfers() {
       const wlist = myWindowClaims(mid);
       const mySquad = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a));
       const shut = windowWaiverDone();
+      // a line that cannot land says so on the row, exactly as the weekly list
+      // has since 30 Aug — Toby found out it was dead only by being refused
+      const wDead = c => deadWindowClaim(c, mid);
       const wrows = wlist.map((c, k) => `
-        <div class="lrow claim-row" style="font-size:12.5px">
+        <div class="lrow claim-row${wDead(c) ? ' claim-dead' : ''}" style="font-size:12.5px">
           ${shut ? `<span class="muted">#${k + 1}</span>` : `<input class="auto-rank" type="number" min="1" max="${wlist.length}" value="${k + 1}" data-wcrank="${k}" draggable="false"
             title="Type a number to move him there" aria-label="${esc(PLAYER_BY_ID[c.in]?.name || 'this claim')} is number ${k + 1}. Type a number to move him.">`} <span class="pos-badge pos-${PLAYER_BY_ID[c.in]?.pos}">${PLAYER_BY_ID[c.in]?.pos || '?'}</span> <b>${pname(PLAYER_BY_ID[c.in])}</b>
           <span class="muted">in, ${esc(PLAYER_BY_ID[c.out]?.name || '?')} out</span>
+          ${wDead(c) ? `<span class="tag claim-dead-tag" title="${esc(wDead(c))}">will not land</span>` : ''}
           ${shut ? '' : `<span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
             <button class="btn ghost small icon-btn" data-wcup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
             <button class="btn ghost small icon-btn" data-wcdn="${k}" title="Lower priority" ${k === wlist.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
@@ -7916,11 +7968,14 @@ function bindTransfers() {
     const inId = +($('#wcIn')?.value || 0), outId = +($('#wcOut')?.value || 0);
     if (!inId || !outId) { toast('Pick a man to sign and a man to drop'); return; }
     const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
-    // the same squad law the run itself applies, so a doomed line is refused
-    // at the desk rather than silently skipped on Thursday morning
-    const after = [...squadAt(mid, transferGw()).filter(x => x.id !== outId), inP];
-    if (!squadShapeOk(after)) {
-      toast(`${inP.name} for ${outP.name} would leave an illegal squad — check your ${inP.pos} and ${outP.pos} counts`);
+    // every question the desk asks, asked here first, so the refusal names the
+    // line you are actually adding (Toby, 2 Sept 2026: the desk refused the
+    // WHOLE list and told him about a player he was not touching)
+    const why = deadWindowClaim({ in: inId, out: outId }, mid);
+    if (why) {
+      toast(!squadShapeOk([...squadAt(mid, transferGw()).filter(x => x.id !== outId), inP])
+        ? `${inP.name} for ${outP.name} would leave an illegal squad — check your ${inP.pos} and ${outP.pos} counts`
+        : why);
       return;
     }
     const arr = [...myWindowClaims(mid)];
