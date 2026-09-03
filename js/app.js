@@ -864,6 +864,8 @@ const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}"
   }
   // any [data-gazette] button opens the paper, whatever view rendered it
   document.addEventListener('click', e => { if (e.target.closest('[data-gazette]')) gazetteSheet(); });
+  // any [data-chopen] button opens the Cunthanger feed, whatever view rendered it
+  document.addEventListener('click', e => { if (e.target.closest('[data-chopen]')) cunthangerSheet(); });
 }
 document.addEventListener('error', e => {
   const img = e.target;
@@ -4024,6 +4026,180 @@ function vidiCard(compact = false) {
   </div>`;
 }
 
+/* ================= Cunthanger =================
+   The League's own social network (group chat, 3 Sep 2026). Fan accounts and
+   a spoof press, posting off the same public state the Vidiprinter reads —
+   so the timeline is DERIVED on every render, identical on every phone, and
+   complete from the moment you open it. Copy lives in js/cunthanger.js; this
+   half only builds the events. The Vidiprinter stays (Ben: "this is
+   separate"). Manager posts are phase two and go through the server. */
+function cunthangerEvents() {
+  const ev = [];
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return ev;
+  const gwIdx = vidiRound() ?? Math.min(currentGwIndex(), REGULAR_GWS - 1);
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return ev;
+  const sh = t => TEAM_BY_NAME[t]?.short || t;
+  // who owns whom this round — the same credit rule as the tape
+  const starterOf = {}, benchOf = {};
+  for (const m of state.managers) {
+    for (const pid of effectiveXI(m.id, gwIdx).xi) starterOf[pid] = m.id;
+    for (const p of squadAt(m.id, gwIdx)) if (starterOf[p.id] == null) benchOf[p.id] = m.id;
+  }
+  const oppOf = {};
+  for (const pr of pairingsFor(gwIdx)) { oppOf[pr[0]] = pr[1]; oppOf[pr[1]] = pr[0]; }
+  // match events, from cumulative counters
+  const ps = gwEvent(gwIdx)?.playerStats || {};
+  for (const [pid, s] of Object.entries(ps)) {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) continue;
+    const mid = starterOf[p.id] ?? benchOf[p.id] ?? null;
+    const role = starterOf[p.id] != null ? 'xi' : benchOf[p.id] != null ? 'bench' : 'trough';
+    const fxs = teamFixturesInGw(p.team, gwN);
+    const fx = fxs.find(f => f.started) || fxs[0] || null;
+    const live = !!(fx && fx.started && !fxOver(fx));
+    const at = fx && fx.hs != null ? `${sh(fx.home)} ${fx.hs}–${fx.as} ${sh(fx.away)}` : fx ? `${sh(fx.home)} v ${sh(fx.away)}` : `GW${gwN}`;
+    const sortKick = fx && fx.date ? Date.parse(fx.date) : 0;
+    const pts = statPoints(p, s);
+    const base = { player: p.name, club: p.club, mid, oppMid: mid != null ? oppOf[mid] ?? null : null, role, pts, at, live, sortKick, gwN };
+    const push = (type, n) => ev.push({ ...base, type, n, key: `${gwN}:${p.id}:${type}` });
+    if (s.g) push('goal', s.g);
+    if (s.a) push('assist', s.a);
+    if (s.ps) push('pensave', s.ps);
+    if (s.pm) push('penmiss', s.pm);
+    if (s.og) push('owngoal', s.og);
+    if (s.rc) push('red', s.rc); else if (s.yc) push('yellow', s.yc);
+    if (pts >= 10 && role !== 'trough') push('haul', 1);
+  }
+  // the fantasy ties: one supporter per pairing speaks (24 a round is a
+  // timeline nobody scrolls), chosen by hash so it is the same one everywhere
+  const started = gwHasStarted(gwIdx), final = gwStatus(gwIdx) === 'final';
+  const st = final ? 'over' : started ? 'live' : 'pre';
+  // results ride alongside the round's LAST match rather than above the lot,
+  // so the goals still lead the timeline once a round has settled
+  const lastKick = Math.max(0, ...state.fixtures.filter(f => f.gw === gwN && f.date).map(f => Date.parse(f.date)));
+  const tieAt = st === 'pre' ? Date.parse(gwFrom(gwIdx)) - 1 : (lastKick || Date.parse(GAMEWEEKS[gwIdx].to) - 1);
+  for (const pr of pairingsFor(gwIdx)) {
+    const side = Cunthanger.hash(`${gwN}:tie:${pr[0]}:${pr[1]}`) % 2;
+    const mid = pr[side], opp = pr[1 - side];
+    ev.push({ type: 'fixture', key: `${gwN}:tie:${mid}`, mid, oppMid: opp, gwN, state: st,
+      my: gwManagerPoints(mid, gwIdx), their: gwManagerPoints(opp, gwIdx), at: `GW${gwN}`, live: false, sortKick: tieAt });
+  }
+  // team news, spoofed: real status from the feed, invented second opinion
+  const now = Date.now();
+  const seenP = new Set();
+  for (const m of state.managers) for (const p of squadAt(m.id, gwIdx)) {
+    // doubts and injuries only — a man who has "joined Como on loan" is not a
+    // physio story, and the feed carries those under the same status
+    if (seenP.has(p.id) || !(p.status === 'd' || p.status === 'i') || !p.news) continue;
+    if (/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news)) continue;
+    const t = p.newsAdded ? Date.parse(p.newsAdded) : NaN;
+    if (!(t > now - 10 * 864e5)) continue;
+    seenP.add(p.id);
+    ev.push({ type: 'injury', key: `news:${p.id}:${p.newsAdded}`, player: p.name, club: p.club, mid: m.id, news: p.news, gwN, at: 'Team news', live: false, sortKick: t });
+  }
+  // the ledger: signings in the last week, announced as only Fabrizio can
+  const recent = (state.transfers || []).filter(r => r.inId && !r.trade && (+r.t || 0) > now - 7 * 864e5).slice(-8);
+  for (const r of recent) {
+    const p = PLAYER_BY_ID[r.inId];
+    if (!p) continue;
+    ev.push({ type: 'signing', key: `tr:${r.n}:${r.inId}`, player: p.name, club: p.club, mid: r.managerId, gwN: GAMEWEEKS[r.gw]?.n ?? gwN, at: r.waiver ? 'Waivers' : 'The Trough', live: false, sortKick: +r.t || 0 });
+  }
+  // Matt Le Tus, once a round, whether or not anyone asked
+  ev.push({ type: 'letus', key: `letus:${gwN}`, gwN, at: 'Thread', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 3600e3 });
+  return ev;
+}
+let _chCache = null;
+function cunthangerPosts() {
+  // built at most once per render pass (render() clears the cache)
+  if (_chCache) return _chCache;
+  if (typeof Cunthanger === 'undefined') return [];
+  _chCache = Cunthanger.compose(cunthangerEvents(), { teamName, managerName });
+  return _chCache;
+}
+function chAvatar(who) {
+  if (who.kind === 'fan' && who.mid != null) return `<span class="ch-av ch-av-kit">${kitSvg(who.mid, 34)}</span>`;
+  const ini = String(who.n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return `<span class="ch-av ch-av-${esc(who.beat || 'press')}">${esc(ini)}</span>`;
+}
+function chPostHtml(p) {
+  // engagement numbers are as real as everything else on here
+  const h = Cunthanger.hash(p.key);
+  const n1 = h % 47, n2 = (h >>> 8) % 23, n3 = (h >>> 16) % 311;
+  return `<div class="ch-post">
+    ${chAvatar(p.who)}
+    <div class="ch-main">
+      <div class="ch-who"><b>${esc(p.who.n)}</b>${p.who.kind === 'press' ? ' <span class="ch-tick" title="Verified, allegedly">&#10004;</span>' : ''} <span class="ch-h">@${esc(p.who.h)}</span> <span class="ch-at">&middot; ${esc(p.at)}</span>${p.live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}</div>
+      <div class="ch-txt">${esc(p.text)}</div>
+      <div class="ch-acts"><span>&#128172; ${n1}</span><span>&#128257; ${n2}</span><span>&#9829; ${n3}</span></div>
+    </div>
+  </div>`;
+}
+// the feed's slot in the reading room: the top of the timeline and a door
+function cunthangerBlock() {
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
+  const posts = cunthangerPosts();
+  const live = posts.some(p => p.live);
+  const top = posts.slice(0, 4).map(chPostHtml).join('');
+  return `<div class="ch-block">
+    <div class="ch-head"><span class="ch-logo">c</span><b>The feed</b>${live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}<span class="muted" style="font-size:11px;margin-left:auto">${posts.length} posts</span></div>
+    ${top || '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}
+    <button class="btn ghost small" data-chopen style="width:100%;margin-top:6px">Open Cunthanger ${posts.length > 4 ? `(${posts.length - 4} more)` : ''}</button>
+  </div>`;
+}
+function cunthangerSheet() {
+  if (typeof Cunthanger === 'undefined') return;
+  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+  const posts = cunthangerPosts();
+  const live = posts.some(p => p.live);
+  const who = Cunthanger.accounts(state.managers, teamName);
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
+    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
+    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once. Ownership undisclosed.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+    <div class="ch-timeline">${posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
+    <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
+      ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
+    </details>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#chClose').onclick = () => closeOv(ov);
+}
+/* The takeover. Ben, 3 Sep: "be great if I could get that to flash up on
+   everyone's phones when they next open the app — like that stupid test thing
+   the govt did." Once per device, in season, never on top of another sheet
+   and never in the demo. */
+function cunthangerTakeover() {
+  if (state.phase !== 'season' || demoMode || typeof Cunthanger === 'undefined' || window._chAlertShown) return;
+  const KEY = `${LS_NS}-ch-takeover`;
+  try { if (localStorage.getItem(KEY)) return; } catch { return; }
+  if (document.querySelector('.overlay')) return; // it will try again next render
+  window._chAlertShown = true;
+  const T = Cunthanger.TAKEOVER;
+  const ov = document.createElement('div');
+  ov.className = 'overlay ch-alert-ov';
+  ov.innerHTML = `<div class="ch-alert" role="alertdialog" aria-label="Emergency alert">
+    <div class="ch-alert-head"><span class="ch-alert-ico" aria-hidden="true">&#9888;</span> ${esc(T.tag)}</div>
+    <div class="ch-alert-body">
+      <b>${esc(T.head)}</b>
+      ${T.lines.map(l => `<p>${esc(l)}</p>`).join('')}
+      <p class="ch-alert-foot">${esc(T.foot)}</p>
+    </div>
+    <button class="ch-alert-ok" id="chAlertOk">OK</button>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  playSound('alert');
+  try { navigator.vibrate?.([400, 150, 400, 150, 400]); } catch {}
+  ov.querySelector('#chAlertOk').onclick = () => {
+    try { localStorage.setItem(KEY, '1'); } catch {}
+    closeOv(ov);
+  };
+}
+
 async function syncNow(manual = false) {
   if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
@@ -4288,6 +4464,7 @@ const SETUP_NAV = new Set(['draft', 'club', 'directory', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
+  _chCache = null; // Cunthanger rebuilds its timeline once per pass
   applyMock(); // sandbox Simulation Chamber overlay — no-op everywhere else
   applyLiveStats(); // real-league live-match fast lane — no-op everywhere else
   // the standing acting-as pen dies the moment the Chairman leaves the
@@ -4374,6 +4551,7 @@ function render() {
   broadcastOnPick();
   renderHeckles();
   renderKlaxons();
+  cunthangerTakeover();
   if (typeof manageWakeLock === 'function') manageWakeLock(); // acquire/release as the draft starts/ends
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -5417,6 +5595,10 @@ function playSound(kind) {
       tone(c, 466, 0, 0.4, { type: 'sawtooth', gain: 0.07 });
       tone(c, 370, 0.42, 0.55, { type: 'sawtooth', gain: 0.07 });
       tone(c, 466, 1.05, 0.7, { type: 'sawtooth', gain: 0.06 });
+    } else if (kind === 'alert') {
+      // the Cunthanger Alert System: the government test tone, shortened,
+      // because the real one goes on for ten seconds and so did Marc's mum
+      for (let i = 0; i < 6; i++) tone(c, i % 2 ? 740 : 1046, i * 0.34, 0.3, { type: 'square', gain: 0.05 });
     } else if (kind === 'trombone') {
       // the universal sound of a bad decision
       tone(c, 466, 0, 0.25, { type: 'sawtooth', gain: 0.06, slideTo: 440 });
@@ -8580,6 +8762,16 @@ function viewDash() {
         })()}</span>
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
+      ${(() => {
+        // Cunthanger on a matchday: the latest melt, one tap from the feed
+        if (!anyMatchLive() || typeof Cunthanger === 'undefined') return '';
+        const top = cunthangerPosts().find(p => p.live) || cunthangerPosts()[0];
+        return top ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
+          <span class="gz-nudge-tag ch-tag">CUNTHANGER</span>
+          <span class="gz-nudge-copy"><b>@${esc(top.who.h)}</b> ${esc(top.text)}</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>` : '';
+      })()}
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} <span id="wvClock">${waiverClockLine()}</span></p>
@@ -9190,7 +9382,8 @@ function mediaSection() {
       <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
     </div>`;
   }).join('');
-  if (!rows.trim()) return '';
+  const feed = launch ? '' : cunthangerBlock();
+  if (!rows.trim() && !feed) return '';
   /* The back catalogue (Ben, 21 Aug: "we should file the old eps somewhere").
      The desk only ever carries what is current, so the moment the GW1 previews
      published, draft night became unreachable — recordings we had paid to cut,
@@ -9217,9 +9410,12 @@ function mediaSection() {
     ? `<div class="prog-sec">Also in edition zero: the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
       ${rows}${archive}`
-    : `<div class="prog-sec">The Media Desk</div>
+    : `<div class="prog-sec ch-sec">Cunthanger</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette, both stations and the feed, under one roof since the takeover. Ownership undisclosed.</p>
+      ${feed}
+      ${rows.trim() ? `<div class="ch-sub">On the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
-      ${rows}${archive}`;
+      ${rows}${archive}` : ''}`;
 }
 // id → the episode object, without trusting the id string
 function podById(id) {

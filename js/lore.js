@@ -424,3 +424,73 @@ const POD_ADS = {
     { brand: 'BIG RON’S PATIO WORLD', read: 'SLABS. THOUSANDS OF THEM. Laid by men who have never once discussed their feelings and are, frankly, THRIVING.' },
   ],
 };
+
+/* ================= Cunthanger =================
+   The League's own social network (Ric, 3 Sep 2026: "Cunthanger. Done.").
+   Marc wanted "a live matchday twitter feed full of nonsense characters
+   tweeting the sort of things melty fans tweet — 'class that, from a Benfield
+   fan'". Two invented supporters per club: one who melts, one who explains
+   calmly why everyone else is wrong. Handles are lore about the manager, not
+   the manager, so they survive a club rename. `short` is what the fan calls
+   the club in a tweet. Ownership of the network itself is undisclosed. */
+const CUNTHANGER_FANS = {
+  1:  { short: 'Polaks',      melt: { h: 'PolaksTilIDie', n: 'Big Kev' },          sage: { h: 'DogsPolaksData', n: 'Polaks Analytics' } },
+  2:  { short: 'Mao',         melt: { h: 'ChairmanMaoUltras', n: 'Little Red Booker' }, sage: { h: 'PeoplesDailyFPL', n: 'The People’s Daily' } },
+  3:  { short: 'Benfield',    melt: { h: 'BenfieldBarmy', n: 'Deano' },            sage: { h: 'VamosBenfield', n: 'Atlético Insider' } },
+  4:  { short: 'Inter',       melt: { h: 'CurvaJacksonale', n: 'Ultra Gaz' },      sage: { h: 'NerazzurriJax', n: 'Interjacksonale Watch' } },
+  5:  { short: 'Khusanova',   melt: { h: 'KhusanovaKop', n: 'Blue Moon Baz' },     sage: { h: 'ChampagneSocialist', n: 'Champagne Analysis' } },
+  6:  { short: 'Spartans',    melt: { h: 'SpartanHelmet', n: 'Big Leon' },         sage: { h: 'ThisIsSparta300', n: 'Spartan Scout' } },
+  7:  { short: 'Asterick',    melt: { h: 'AsterickUltras', n: 'Footnote Phil' },   sage: { h: 'AsteriskAndSpan', n: 'Asterick Insider' } },
+  8:  { short: '101011101',   melt: { h: 'BinaryBarmy', n: 'Nige (1 of 12)' },      sage: { h: 'OneZeroOneXG', n: '101011101 xG' } },
+  9:  { short: 'the Ducks',   melt: { h: 'QuackAttackFPL', n: 'Duck Dave' },       sage: { h: 'MightyDuckSage', n: 'Pond Life' } },
+  10: { short: 'Celta',       melt: { h: 'CeltaLeighGoLoco', n: 'Tony from Leigh' }, sage: { h: 'BalaidosLeigh', n: 'Celta Leigh-Go Watch' } },
+  11: { short: 'Geldog',      melt: { h: 'GeldogDawgs', n: 'Dawg Pound Del' },      sage: { h: 'GeldogPatrol', n: 'Geldog Patrol' } },
+  12: { short: 'WA',          melt: { h: 'WAWanderersWay', n: 'Wanderer Wayne' },  sage: { h: 'WanderersWisdom', n: 'Wanderers Wisdom' } },
+};
+
+/* The spoof press. Parodies of the accounts the lads actually follow (Ian,
+   3 Sep: "a few favourites in the feed but spoof versions"). Real injury news
+   from the FPL feed, invented diagnosis. Real signings from the ledger,
+   invented lasagne. */
+const CUNTHANGER_PRESS = [
+  { h: 'BenSuppery', n: 'Ben Suppery', beat: 'injury', bio: 'Premier Injuries. Not a doctor. Not even close.' },
+  { h: 'FabrizioRotondo', n: 'Fabrizio Rotondo', beat: 'transfers', bio: 'Here we go. 🤝 Always here we go.' },
+  { h: 'DavidOrnsteak', n: 'David Ornsteak', beat: 'wire', bio: 'Understand things. Can confirm other things. More to follow.' },
+  { h: 'MattLeTus', n: 'Matt Le Tus', beat: 'conspiracy', bio: 'Former footballer. Current thinker. Do your own research.' },
+];
+
+// Ben Suppery's second opinions. Ian, 3 Sep: "wor Joelinton out for 2-4
+// weeks with a sprained vagina". The bar was set; these clear it.
+const CUNTHANGER_DIAGNOSES = [
+  'sprained vagina', 'a tight groin, emotionally', 'ligament damage to the ego',
+  'a pulled hamstring sustained walking to the ice bath', 'concussion from reading his own ratings',
+  'a knock picked up in the tunnel, from a door', 'fractured confidence, non-displaced',
+  'a stress reaction to the manager’s tactics', 'a dead leg from the physio’s stool',
+  'mild whiplash, celebrating', 'a bruised heel and a bruised heart', 'rolled ankle stepping off a treadmill that was not on',
+  'tonsillitis, but a bad one', 'inflammation of the everything', 'a hip flexor strain — the other hip',
+  'illness. The club says illness. Our understanding: illness.',
+];
+const CUNTHANGER_RETURNS = [
+  '2–4 weeks', '3–5 days, or never', 'after the international break, which is his favourite', 'Tuesday, probably', 'to be assessed by someone who knows what they are looking at',
+  'when the swelling goes down, and the swelling is his pride', 'no timescale. He is not that kind of player', 'in time for the Trough window, conveniently',
+];
+
+/* Matt Le Tus. Ian, 3 Sep: "just spreading conspiracy theories... Michael and
+   Janet Jackson are the same person or Princess Di and Elvis are still alive".
+   One thread per gameweek. Nobody has ever reached tweet 2. */
+const CUNTHANGER_LETUS = [
+  'Thread 🧵 1/47. Michael and Janet Jackson are the same person. Look at the footage. Nobody in the media will say it.',
+  'Not saying Princess Di and Elvis are alive. Just saying nobody has shown me a photo of them NOT alive. Think about it.',
+  'The Premier League fixture list is “random”. Funny how every club plays 38 games. Do your own research.',
+  'They tell you VAR is in Stockley Park. Have you been to Stockley Park? Have you? Exactly.',
+  'Clean sheets were introduced in 1992. Before that, sheets were filthy and nobody died. Wake up.',
+  'A “double gameweek” is when they double the games. Ask yourself who benefits. Ask yourself who’s counting.',
+  'The waiver run is at 10am “London time”. London doesn’t have a time. Time is a construct. I’ve said this since 2004.',
+  'The Trough is a real place. I have seen it. They keep it behind the Data Room and they do not want you to know.',
+  'They say the Committee is one man. I have it on good authority the Committee is three men in a coat.',
+  'Expected goals are not goals. They are expectations. Since when do we score expectations. Since 2016, apparently. Convenient.',
+  'Every league table in the country updates at the same moment. The same MOMENT. Nobody asks how.',
+  'The Gazette is printed. Where. Where is it printed. Show me the printer. You can’t.',
+  'They rebranded the vidiprinter and nobody noticed. What else have they rebranded. What else.',
+  'A man once told me the playoffs decide the title. The table decides the title. The man was from the Committee.',
+];
