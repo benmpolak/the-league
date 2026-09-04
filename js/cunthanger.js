@@ -63,10 +63,10 @@ window.Cunthanger = (() => {
   }
   // the managers themselves, under the club handle: the only accounts on
   // here that a real person types into
-  function manager(mid, teamName, managerName) {
+  function manager(mid, teamName, managerName, handle) {
     const clean = cleanTeam(teamName);
     const stem = clean.replace(/[^A-Za-z0-9]/g, '') || `Club${mid}`;
-    return { h: `${stem}Official`, n: String(managerName || `Manager ${mid}`), kind: 'manager', mid, short: shortName(mid, teamName) };
+    return { h: String(handle || '').replace(/[^A-Za-z0-9_]/g, '') || `${stem}Official`, n: String(managerName || `Manager ${mid}`), kind: 'manager', mid, short: shortName(mid, teamName) };
   }
   function press(beat, key = '') {
     const pool = PRESS().filter(x => x.beat === beat);
@@ -363,6 +363,7 @@ window.Cunthanger = (() => {
   function compose(events, ctx = {}) {
     const teamName = ctx.teamName || (mid => `Club ${mid}`);
     const managerName = ctx.managerName || (mid => `Manager ${mid}`);
+    const handleOf = ctx.handleOf || (() => '');
     const out = [];
     const add = (acct, key, tpl, vars, meta) => {
       if (!tpl) return;
@@ -433,7 +434,7 @@ window.Cunthanger = (() => {
         case 'letus': add(press('conspiracy'), k, pick(LETUS(), k), vars(e), { ...meta, w: 2 }); break;
         case 'manager': {
           // a real person's words, verbatim, under the club handle
-          const acct = manager(e.mid, tn, e.mgrName);
+          const acct = manager(e.mid, tn, e.mgrName, handleOf(e.mid));
           if (e.text) add(acct, k, '{text}', { text: e.text }, { ...meta, at: e.oppMid != null && e.aimed ? `→ ${cleanTeam(teamName(e.oppMid))}` : meta.at, w: 6 });
           // a post (not a press conference) gets picked up on the wire — by
           // a different desk each time, with a different mix of reactions
@@ -628,10 +629,11 @@ window.Cunthanger = (() => {
   ];
 
   // the roster, for the bio strip: every fan account plus the press
-  function accounts(managers, teamName) {
+  function accounts(managers, teamName, managerName, handleOf) {
     const rows = [];
     for (const m of managers || []) {
       const t = teamName ? teamName(m.id) : m.team;
+      if (managerName) rows.push({ ...manager(m.id, t, managerName(m.id), handleOf ? handleOf(m.id) : ''), bio: `Official account of ${cleanTeam(t)}. Views are the manager’s own, regrettably.` });
       rows.push(fan(m.id, 'melt', t), fan(m.id, 'sage', t));
     }
     for (const p of PRESS()) rows.push({ h: p.h, n: p.n, kind: 'press', beat: p.beat, bio: p.bio });

@@ -1344,6 +1344,14 @@ ACTIONS.clubSet = async ({ league, a, data, state }) => {
     up.rivals = data.rival === null ? null : [data.rival];
   }
   if (data.stadium !== undefined) up.stadium = cleanStadium(data.stadium);
+  if (data.handle !== undefined) {
+    // the official club handle on Cunthanger (Ian, 4 Sep): letters, digits,
+    // underscores, up to 20, unique across the twelve; null clears it
+    if (data.handle !== null && typeof data.handle !== 'string') throw new HttpsError('invalid-argument', 'handle is text');
+    const h = data.handle === null ? '' : String(data.handle).replace(/^@+/, '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 20);
+    if (h && toArr(state.managers).some(m => m.id !== mid && String(m.handle || '').toLowerCase() === h.toLowerCase())) throw new HttpsError('already-exists', 'that handle is taken');
+    up.handle = h || null;
+  }
   if (data.gaffer !== undefined) up.gaffer = cleanGaffer(data.gaffer);
   if (data.assistant !== undefined) up.assistant = cleanAssistant(data.assistant);
   if (data.boards !== undefined) up.boards = cleanBoards(data.boards);
@@ -2076,7 +2084,7 @@ ACTIONS.importState = async ({ league, a, data, ctx }) => {
     // (sol club-office P0.2: rejecting "boards" here wedged the draft start)
     // 'crest' was missing from this list while the block below validated it —
     // backups taken after a College of Arms visit refused to restore (sol P2, 14 Aug)
-    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards', 'crest'].includes(k)) importError(`manager key "${k}"`);
+    for (const k of Object.keys(m)) if (!['id', 'name', 'team', 'stadium', 'kit', 'sponsor', 'rival', 'rivals', 'gaffer', 'assistant', 'boards', 'crest', 'handle'].includes(k)) importError(`manager key "${k}"`);
     if (typeof m.name !== 'string' || m.name.length > 60) importError('manager name');
     if (typeof m.team !== 'string' || m.team.length > 80) importError('manager team');
     // stadium shares the office's 40-char contract; old longer backups are

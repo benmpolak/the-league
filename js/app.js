@@ -1632,7 +1632,7 @@ function clubEditor(mid) {
   const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
   const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
   const savedAssistant = typeof m?.assistant === 'number' && !ASSISTANTS[m.assistant] ? null : (m?.assistant ?? null);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
+  const draft = { team: teamName(mid), handle: m?.handle || '', kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
   const stock = AD_BOARDS.map(b => b.t);
   const allSp = [...stock, ...RETRO_SPONSORS]; // a saved classic must not present as "Make one up"
   const ov = document.createElement('div');
@@ -1660,6 +1660,8 @@ function clubEditor(mid) {
       <div style="flex:1;min-width:0">
         <label class="muted" style="font-size:11px">TEAM NAME</label>
         <input id="clubName" maxlength="30" value="${esc(draft.team)}" style="width:100%" />
+        <label class="muted" style="font-size:11px;margin-top:8px;display:block">OFFICIAL CLUB HANDLE — on Cunthanger, under everything you say</label>
+        <div style="display:flex;align-items:center;gap:4px"><span class="muted">@</span><input id="clubHandle" maxlength="20" value="${esc(draft.handle || '')}" placeholder="${esc(defaultHandle(mid))}" style="flex:1;min-width:0" spellcheck="false" autocapitalize="off" /></div>
         <label class="muted" style="font-size:11px;margin-top:8px;display:block">SPONSOR — off the hoardings, or make one up</label>
         <select id="clubSpSel" style="width:100%">
           <option value="">No sponsor</option>
@@ -1760,6 +1762,7 @@ function clubEditor(mid) {
   const touched = new Set();
   const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'assistant', 'stadium', 'crest'].filter(f => !savedCustom[f] && !touched.has(f));
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
+  ov.querySelector('#clubHandle').oninput = e => { draft.handle = cleanHandle(e.target.value); if (e.target.value !== draft.handle) e.target.value = draft.handle; };
   ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { touched.add('kit'); draft.kit.pattern = b.dataset.pat; paint(); });
   ov.querySelector('#clubC1').oninput = e => { touched.add('kit'); draft.kit.c1 = e.target.value; paint(); };
   ov.querySelector('#clubC2').oninput = e => { touched.add('kit'); draft.kit.c2 = e.target.value; paint(); };
@@ -1898,7 +1901,7 @@ function clubEditor(mid) {
       const cnl = ov.querySelector('#clubCancel');
       saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
-        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest, ...(mid !== whoami && { asManager: mid }) });
+        await serverAct('clubSet', { team, handle: draft.handle || null, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest, ...(mid !== whoami && { asManager: mid }) });
       } catch {
         saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
         return; // serverAct already toasted why
@@ -1909,7 +1912,7 @@ function clubEditor(mid) {
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest ? { ...draft.crest } : null };
+    state.managers[idx] = { ...state.managers[idx], team, handle: draft.handle || null, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest ? { ...draft.crest } : null };
     localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
@@ -4246,6 +4249,11 @@ function cunthangerEvents() {
    it — the pre-game edition prints the press conference, the review brings
    the receipts. Stored under pressers[mid]['gwIndex:pre'|'gwIndex:post']. */
 function presserKey(gwIdx, phase) { return `${gwIdx}:${phase}`; }
+// handles: letters, digits, underscores, up to 20 — a manager's own if he set one
+// in the club office, otherwise the team name squashed into one
+const cleanHandle = v => String(v || '').replace(/^@+/, '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 20);
+function defaultHandle(mid) { return `${cleanTeamName(teamName(mid)).replace(/[^A-Za-z0-9]/g, '') || `Club${mid}`}Official`; }
+function handleOf(mid) { const m = state.managers.find(x => x.id === mid); return cleanHandle(m?.handle) || defaultHandle(mid); }
 // the manager at the keyboard, by the dashboard's rule (demo/offline = #1)
 function meId() {
   if (whoami && whoami !== -1) return whoami;
@@ -4476,7 +4484,7 @@ function cunthangerPosts() {
   // built at most once per render pass (render() clears the cache)
   if (_chCache) return _chCache;
   if (typeof Cunthanger === 'undefined') return [];
-  _chCache = Cunthanger.compose(cunthangerEvents(), { teamName, managerName });
+  _chCache = Cunthanger.compose(cunthangerEvents(), { teamName, managerName, handleOf });
   return _chCache;
 }
 function chAvatar(who) {
@@ -4514,7 +4522,7 @@ function cunthangerSheet() {
   document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
   const posts = cunthangerPosts();
   const live = posts.some(p => p.live);
-  const who = Cunthanger.accounts(state.managers, teamName);
+  const who = Cunthanger.accounts(state.managers, teamName, managerName, handleOf);
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
