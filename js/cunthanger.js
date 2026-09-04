@@ -393,14 +393,35 @@ window.Cunthanger = (() => {
             add(press(beat, k), k, pick(B[beat === 'wire' ? 'goal_trough_wire' : 'goal_trough_transfers'], k), vars(e), { ...meta, w: 3 });
             break;
           }
-          if (e.role === 'bench') { add(who, k, pick(voice === 'sage' ? B.goal_bench_sage : B.goal_bench_melt, k), vars(e), { ...meta, w: 7 }); break; }
+          if (e.role === 'bench') {
+            add(who, k, pick(voice === 'sage' ? B.goal_bench_sage : B.goal_bench_melt, k), vars(e), { ...meta, w: 7 });
+            const r = hash(k + ':colour') % 3;
+            if (r === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            else if (r === 1) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            break;
+          }
           const multi = (e.n || 1) > 1 && voice === 'melt';
           add(who, k, pick(multi ? B.goal_xi_multi_melt : voice === 'sage' ? B.goal_xi_sage : B.goal_xi_melt, k), vars(e), { ...meta, w: 8 });
+          // Piers on an Arsenal goal, one time in two, whether or not asked
+          if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.goal, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
           break;
         }
-        case 'haul': add(who, k, pick(voice === 'sage' ? B.haul_sage : B.haul_melt, k), vars(e), { ...meta, w: 9 }); break;
+        case 'haul': {
+          add(who, k, pick(voice === 'sage' ? B.haul_sage : B.haul_melt, k), vars(e), { ...meta, w: 9 });
+          { const r = hash(k + ':colour') % 4;
+            if (r === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            else if (r === 1) add(colour('HenryWanton'), k + ':colour', pick(WANTON.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 }); }
+          break;
+        }
         case 'assist': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.assist_sage : B.assist_melt, k), vars(e), { ...meta, w: 5 }); break;
-        case 'red': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.red_sage : B.red_melt, k), vars(e), { ...meta, w: 7 }); break;
+        case 'red': {
+          if (e.role === 'trough') break;
+          add(who, k, pick(voice === 'sage' ? B.red_sage : B.red_melt, k), vars(e), { ...meta, w: 7 });
+          if (hash(k + ':crafty') % 2 === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+          if (e.club === 'ARS') add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 });
+          break;
+        }
         case 'penmiss': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.penmiss_sage : B.penmiss_melt, k), vars(e), { ...meta, w: 6 }); break;
         case 'owngoal': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.owngoal_sage : B.owngoal_melt, k), vars(e), { ...meta, w: 6 }); break;
         case 'pensave': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.pensave_sage : B.pensave_melt, k), vars(e), { ...meta, w: 6 }); break;
@@ -408,18 +429,22 @@ window.Cunthanger = (() => {
         case 'injury': {
           const diag = pick(DX(), k + ':dx'), ret = pick(RET(), k + ':ret');
           const news = String(e.news || 'unavailable').replace(/\.\s*$/, '');
-          add(press('injury'), k, pick(B.injury_press, k), vars(e, { news, diag, ret }), { ...meta, w: 4 });
+          { const who2 = press('injury', k); add(who2, k, pick(who2.h === 'RobDawdle' ? DAWDLE.injury : B.injury_press, k), vars(e, { news, diag, ret }), { ...meta, w: 4 }); }
+          if (hash(k + ':unrudd') % 4 === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.injury, k), vars(e, { news }), { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
           if (e.mid != null && hash(k + ':fan') % 2 === 0) add(who, k + ':fan', pick(voice === 'sage' ? B.injury_sage : B.injury_melt, k), vars(e), { ...meta, w: 3 });
           break;
         }
         case 'signing': {
-          { const who = press('transfers', k); add(who, k, pick(who.h === 'BenJacobean' ? B.signing_jacobean : B.signing_transfers, k), vars(e), { ...meta, w: 4 }); }
+          { const who = press('transfers', k); add(who, k, pick(who.h === 'BenJacobean' ? B.signing_jacobean : who.h === 'GianlucaDiMarzipan' ? DIMARZIPAN.signing : B.signing_transfers, k), vars(e), { ...meta, w: 4 }); }
           if (hash(k + ':fan') % 2 === 0) add(who, k + ':fan', pick(voice === 'sage' ? B.signing_sage : B.signing_melt, k), vars(e), { ...meta, w: 3 });
           break;
         }
         case 'fixture': {
           const v = vars(e);
-          if (e.state === 'pre') add(who, k, pick(voice === 'sage' ? B.pre_sage : B.pre_melt, k), v, { ...meta, w: 2 });
+          if (e.state === 'pre') {
+            add(who, k, pick(voice === 'sage' ? B.pre_sage : B.pre_melt, k), v, { ...meta, w: 2 });
+            if (hash(k + ':unrudd') % 4 === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.pre, k), v, { ...meta, w: 2, sortKick: (meta.sortKick || 0) + 1 });
+          }
           else if (e.state === 'live') {
             const my = +e.my || 0, th = +e.their || 0;
             const tpl = voice === 'sage' ? pick(B.live_sage, k) : pick(my > th ? B.live_up_melt : my < th ? B.live_down_melt : B.live_level_melt, k);
@@ -428,6 +453,12 @@ window.Cunthanger = (() => {
             const my = +e.my || 0, th = +e.their || 0;
             const res = my > th ? 'won' : my < th ? 'lost' : 'drew';
             add(who, k, pick(B[`${res}_${voice}`], k), v, { ...meta, w: 5 });
+            const r = hash(k + ':colour') % 4;
+            if (res === 'drew' && r === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'drew' && r === 1) add(colour('JonathanLieu'), k + ':colour', pick(LIEU.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 1) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 2) add(colour('SimonJordon'), k + ':colour', pick(JORDON.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
           }
           break;
         }
@@ -598,14 +629,98 @@ window.Cunthanger = (() => {
     ],
     BenJacobean: ['Can reveal {mgr} said this today: “{quote}” Told it was unprompted. Told it was not the first time.'],
     FabrizioRotondo: ['🚨 {mgr}: “{quote}” No club named. Every club informed. 🤝'],
+    AdamCrafty: ['{mgr} said something today. “{quote}” Not to anyone. To all of us. I have been sitting with that.'],
+    AlysonUnrudd: ['{mgr} has posted “{quote}” to nobody in particular, which is at least an honest description of his audience.'],
   };
+  const colour = (h) => { const p = PRESS().find(x => x.h === h); return p ? { h: p.h, n: p.n, kind: 'press', beat: p.beat, bio: p.bio } : press('wire', h); };
+  // the colour writers. Crafty (Ben, 4 Sep: "a melty Adam Crafton style
+  // journo") feels everything and files it at length; Unrudd watches the
+  // same thing with the family and is not having any of it.
+  const CRAFTY = {
+    haul: [
+      'What {P} did today was not about points. It was about a man, a Saturday, and everything he has carried to get here. {pts} of them. I am not ashamed to say I stood up.',
+      'Thread. {P}, {pts} points, and why it matters more than the scoreline suggests. 1/19',
+      'I have written about {P} before. I was wrong about him, and today, watching him, I felt that. {pts}. Football.',
+    ],
+    bench: [
+      '{P} scored today and nobody in {team} colours saw it count. I keep thinking about him, sitting there. Somebody should ask how he is.',
+      'A goal from the bench is still a goal. Nobody will remember it. I will. {P}, I will.',
+    ],
+    red: [
+      'A red card is a story about pressure. {P} did not wake up this morning intending this. None of us do. We should talk about that more.',
+      '{P}, sent off. I think about the walk. The long walk. Nobody ever writes about the walk.',
+    ],
+    lost: [
+      '{team} lost, {my}–{their}. But there is a bigger picture here about a manager, a project, and what it means to keep going. I spoke to nobody. I felt it anyway.',
+      'Defeat for {team}. I sat with it. I think {mgr} will too. This is the part of the game we do not show.',
+    ],
+    pickup: [
+      'A manager said this about another manager today. “{quote}” I have thought about it all afternoon. About {mgr}. About {oppMgr}. About what we are becoming.',
+      'Thread: {mgr}, {opp}, and the words we use. “{quote}” It is easy to laugh. I did not. 1/22',
+    ],
+  };
+  const UNRUDD = {
+    bench: [
+      '{P} scored for {team} from the bench, which my son tells me is “rotten luck” and my daughter tells me is “literally the manager’s fault”. I have raised them well.',
+      'On the bench: {P}, a goal, and a manager who will explain on Monday that it was tactical. It was not tactical.',
+    ],
+    drew: [
+      '{team} drew with {opp}, the football equivalent of being told your haircut is fine.',
+      'A draw. Everyone at the ground behaved as though something had happened.',
+    ],
+    lost: [
+      '{team} lost {my}–{their}, and {mgr} will spend the week explaining that the numbers were good. The numbers were {my} and {their}.',
+      'I watched {team} lose from the sofa, which is where their manager appeared to have picked the side.',
+    ],
+    pre: [
+      '{team} play {opp} this weekend. Both managers are “quietly confident”, a phrase that has never once been said quietly.',
+      'This week {short} face {opp}. I have looked at the two squads and can confirm one of them will win, possibly.',
+    ],
+    injury: [
+      '{P} is a doubt. The club say “{news}”. The club would say that. The club would say anything.',
+    ],
+    pickup: [
+      '{mgr} has said this about {opp}: “{quote}” He typed it, read it, and pressed post, which is three more decisions than he made on Saturday.',
+      'A manager has spoken. “{quote}” It is not clear to whom, or why, or whether he has a lineup in. He has not.',
+    ],
+  };
+  // the rest of the roster (Ben, 4 Sep: "a roster of 10-15")
+  const WANTON = {
+    pickup: ['English football deserves better than this. “{quote}” {mgr}, {team}, and a game that once meant something. It still does. It must.', '“{quote}” — {mgr}. The Corinthian spirit is not dead. It is, however, unwell.'],
+    haul: ['{P}. {pts} points. Bobby Moore would have understood. Bobby Moore understood everything.', 'A performance from {P} to stir the blood and stiffen the sinew. {pts} points of pure Englishness, regardless of where he is from.'],
+  };
+  const LIEU = {
+    pickup: ['“{quote}” The interesting thing about {mgr}’s remark is not what it says about {opp}. It is what it says about the sort of person who says it, which is everything.', '{mgr} on {opp}: “{quote}” A sentence that contains a whole worldview, and the worldview is losing.'],
+    drew: ['{team} and {opp} drew, which is to say two sets of errors cancelled each other out and everyone went home having learned nothing. Football.', 'A draw between {team} and {opp}. Nobody deserved to win, and in a rare moment of justice, nobody did.'],
+  };
+  const JORDON = {
+    pickup: ['{mgr} says “{quote}”. Right. Let me tell you something. I OWNED a football club. You don’t say that. You don’t SAY that. Take responsibility.', 'This is what I mean about {mgr}. “{quote}” Where’s the accountability? Where’s the LEADERSHIP? I’ve run a club. This isn’t running a club.'],
+    lost: ['{team} lost {my}–{their} and {mgr} will blame the fixtures. I’ve been in that dressing room. Not that one. One like it. It’s on HIM.'],
+  };
+  const MOREGONE = {
+    goal: ['{P}!!! THAT is why I never doubted him. Never. Ignore my tweets from August.', '{P} scores. Arsenal are BACK. I said it. I always say it.'],
+    red: ['{P} sent off. ABSOLUTE DISGRACE. This league has it in for Arsenal and always has.', 'Red card for {P}. I am DONE with referees. Done. Until Saturday.'],
+    haul: ['{P}. {pts} points. Best player in the world, and I will be blocking anyone who disagrees.'],
+  };
+  const DIMARZIPAN = {
+    signing: ['{P} to {team}: done. Agreement reached in the Trough this morning. The Italian way. 🇮🇹', '{P} → {team}. Contracts signed, documents exchanged, {mgr} very happy. He is coming. He has come.'],
+  };
+  const DAWDLE = {
+    injury: ['Worse than feared for {P} ({club}). “{news}.” Understand the club fear the worst, and the club are right to.', '{P} ({club}): {news}. Told it is not good. Told it is never good.'],
+  };
+  const desks = { AdamCrafty: CRAFTY, AlysonUnrudd: UNRUDD, HenryWanton: WANTON, JonathanLieu: LIEU, SimonJordon: JORDON };
+  for (const [h, bank] of Object.entries(desks)) if (bank.pickup) PICKUP[h] = bank.pickup;
+  PICKUP_ALL.HenryWanton = ['{mgr}, unprompted: “{quote}” The game has lost its way. The game has, admittedly, been losing its way since 1966.'];
+  PICKUP_ALL.JonathanLieu = ['{mgr} has posted “{quote}” at nobody, which is at least an honest account of who is listening.'];
+  PICKUP_ALL.SimonJordon = ['“{quote}” says {mgr}. To who? To WHO? I’ve run a club. You address the ROOM.'];
   // which desk picks a post up: the wire by default; transfer talk goes to the transfer men
   function pickupDesk(text, key) {
     const t = String(text || '').toLowerCase();
     if (/\b(trade|trough|waiver|sign|signing|swap|offer)\b/.test(t)) return hash(key + ':desk') % 2 ? 'FabrizioRotondo' : 'BenJacobean';
-    // one time in five a transfer man grabs a story that is not his
-    if (hash(key + ':desk') % 5 === 0) return 'BenJacobean';
-    return hash(key + ':desk2') % 2 ? 'DavidOrnsteak' : 'SimonScone';
+    // one time in five a transfer man grabs a story that is not his; one in
+    // four it is a colour writer's turn to have feelings about it
+    const d = hash(key + ':desk') % 10;
+    return ['DavidOrnsteak', 'SimonScone', 'AdamCrafty', 'AlysonUnrudd', 'HenryWanton', 'JonathanLieu', 'SimonJordon', 'BenJacobean', 'DavidOrnsteak', 'SimonScone'][d];
   }
   // the target club's official line, when it bothers to issue one
   const STATEMENT = [

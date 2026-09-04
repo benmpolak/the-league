@@ -459,6 +459,14 @@ const CUNTHANGER_PRESS = [
   { h: 'BenJacobean', n: 'Ben Jacobean', beat: 'transfers', bio: 'Exclusive. Understand. Can reveal. Told. More soon.' },
   { h: 'DavidOrnsteak', n: 'David Ornsteak', beat: 'wire', bio: 'Understand things. Can confirm other things. More to follow.' },
   { h: 'SimonScone', n: 'Simon Scone', beat: 'wire', bio: 'BBC Sport. Measured. Sources. A cup of tea.' },
+  { h: 'GianlucaDiMarzipan', n: 'Gianluca Di Marzipan', beat: 'transfers', bio: 'Calciomercato. Sky Italia. He is coming. He is always coming.' },
+  { h: 'RobDawdle', n: 'Rob Dawdle', beat: 'injury', bio: 'Bad news, early. Worse news, confirmed.' },
+  { h: 'AdamCrafty', n: 'Adam Crafty', beat: 'colour', bio: 'The Athletic. Long reads. Longer feelings. This matters, actually.' },
+  { h: 'AlysonUnrudd', n: 'Alyson Unrudd', beat: 'colour', bio: 'The Times. Watches it with the family. Not impressed by any of you.' },
+  { h: 'HenryWanton', n: 'Henry Wanton', beat: 'colour', bio: 'Chief football writer. English football’s soul, on deadline.' },
+  { h: 'JonathanLieu', n: 'Jonathan Lieu', beat: 'colour', bio: 'Guardian. Has a theory. The theory is about you.' },
+  { h: 'PiersMoregone', n: 'Piers Moregone', beat: 'pundit', bio: 'Arsenal. Unfortunately. Views entirely his own, loudly.' },
+  { h: 'SimonJordon', n: 'Simon Jordon', beat: 'pundit', bio: 'talkSPORT. Owned a club once. Will tell you.' },
   { h: 'MattLeTus', n: 'Matt Le Tus', beat: 'conspiracy', bio: 'Former footballer. Current thinker. Do your own research.' },
 ];
 
