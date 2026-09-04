@@ -49,6 +49,8 @@ function stubMissingPlayers(s) {
 // snapshot the cloud sends while we're sitting here
 function showStaleBar() {
   if (document.querySelector('.stale-bar')) return;
+  // the demo builds its own state; a stale sandbox save on the device is not its business
+  if (new URLSearchParams(location.search).has('demo')) return;
   const bar = document.createElement('div');
   bar.className = 'stale-bar';
   bar.innerHTML = `<span>&#9888; This device's saved game doesn't match the current player feed — some players show as unknown.</span>
@@ -283,7 +285,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'windowClaims', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'windowClaims', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats', 'pressers', 'posts'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -579,6 +581,8 @@ function freshState() {
     windowClaims: {},      // {mid: [{in, out}]} — the Window Waiver's blind lists (Marc, 30 Aug 2026)
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
     heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
+    pressers: {},          // managerId -> { 'gwIndex:pre'|'gwIndex:post': {t, answers: [{id, tone, text}]} } — the press room (Cunthanger)
+    posts: [],             // [{mid, to, text, gw, t}] — managers' own posts on the Cunthanger feed
     suggestions: [],       // the Suggestion Box — feature requests from the floor, ruled on by the Committee
     liveStats: null,       // live-match fast lane {n, t, playerStats} — CI-written, display-only overlay
     benchOrders: {},       // managerId -> { gwIndex: [pid] } — auto-sub priority, leftmost first
@@ -748,9 +752,51 @@ async function enterDemo() {
       if (!GAMEWEEKS[i]) continue;
       state.matchStats[`gw${gwN}`] = { gw: i, label: GAMEWEEKS[i].label, date: GAMEWEEKS[i].from, final: !!gw.finished, playerStats: gw.stats || {} };
     }
+    seedDemoPress();
     render();
     toast('Demo loaded a full season of real stats — click around, everything is live.');
   } catch { /* offline demo still works with its fictional GW1 */ }
+}
+/* The demo's press room comes pre-populated: most managers have faced the
+   press for the settled rounds, in a spread of tones, and a few have posted.
+   Canned answers only — the same text the real press room offers — so the
+   feed and the paper show what the feature does. Deterministic. */
+function seedDemoPress() {
+  if (typeof Cunthanger === 'undefined' || !demoMode) return;
+  try { seedDemoPressInner(); } catch (e) { console.warn('[cunthanger] demo seed failed', e); }
+}
+function seedDemoPressInner() {
+  const pressers = {}, posts = [];
+  const tones = ['humble', 'confident', 'dismissive', 'unhinged'];
+  const finals = [];
+  for (let g = 0; g < REGULAR_GWS; g++) if (gwEvent(g)?.final) finals.push(g);
+  const base = Date.now() - 8 * 864e5;
+  for (const g of finals) {
+    for (const m of state.managers) {
+      if (m.id === meId()) continue; // the visitor faces their own
+      for (const phase of ['pre', 'post']) {
+        const h = Cunthanger.hash(`demo:${g}:${m.id}:${phase}`);
+        if (h % 3 !== 0) continue; // not everyone turns up
+        const ctx = presserCtx(m.id, g, phase);
+        const qs = Cunthanger.questions(ctx, phase);
+        const answers = qs.map((q, i) => { const tone = tones[(h >>> (i * 3)) % 4]; const o = q.options.find(x => x.tone === tone); return { id: q.id, tone, text: o ? o.text : 'No comment.' }; });
+        (pressers[m.id] = pressers[m.id] || {})[presserKey(g, phase)] = { t: base + g * 2 * 864e5 + (phase === 'post' ? 2.5 * 864e5 : 0) + (h % 3600) * 1000, answers };
+      }
+    }
+  }
+  const lines = [
+    'Squad’s set. Lineup’s in. If anyone from {opp} wants to discuss it, my door is open. My door is a wall.',
+    'Just checked the projections. Deleted the app. Reinstalled the app. We go.',
+    '{opp} this week. I have nothing to say and I will be saying it all weekend.',
+    'For the record I offered a trade on Tuesday and was ignored. Noted. Everything is noted.',
+  ];
+  const g = finals.length ? finals[finals.length - 1] : 0;
+  pairingsFor(g).slice(0, 4).forEach(([a, b], i) => {
+    const mid = i % 2 ? b : a, to = i % 2 ? a : b;
+    if (mid === meId()) return;
+    posts.push({ mid, to, text: lines[i % lines.length].replace("{opp}", cleanTeamName(teamName(to))), gw: g, t: base + g * 2 * 864e5 + i * 3600e3 + 900e3 });
+  });
+  state.pressers = pressers; state.posts = posts;
 }
 function exitDemo() {
   state = demoBackup || load() || freshState();
@@ -786,6 +832,8 @@ function load() {
     if (s && s.windowClaims === undefined) s.windowClaims = {};
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.heckles) s.heckles = {};
+    if (s && !s.pressers) s.pressers = {};
+    if (s && !Array.isArray(s.posts)) s.posts = [];
     if (s && !s.suggestions) s.suggestions = [];
     if (s && s.adjustments) for (const k of Object.keys(s.adjustments)) {
       if (s.adjustments[k] != null && typeof s.adjustments[k] !== 'object') delete s.adjustments[k]; // retired flat shape
@@ -864,6 +912,12 @@ const photoImg = p => `<img class="headshot" loading="lazy" data-pcard="${p.id}"
   }
   // any [data-gazette] button opens the paper, whatever view rendered it
   document.addEventListener('click', e => { if (e.target.closest('[data-gazette]')) gazetteSheet(); });
+  // any [data-chopen] button opens the Cunthanger feed, whatever view rendered it
+  document.addEventListener('click', e => { if (e.target.closest('[data-chopen]')) cunthangerSheet(); });
+  // the press room, from the card or the feed
+  document.addEventListener('click', e => { const b = e.target.closest('[data-presser]'); if (b) pressRoomSheet(b.dataset.presser); });
+  // and the wireless rows on the Cunthanger card (the reading room binds its own)
+  document.addEventListener('click', e => { const b = e.target.closest('[data-podopen]'); if (b && !b.closest('.overlay')) podcastSheet(b.dataset.podopen); });
 }
 document.addEventListener('error', e => {
   const img = e.target;
@@ -1578,7 +1632,7 @@ function clubEditor(mid) {
   const savedBoards = [...(m?.boards || [])].filter(i => Number.isInteger(i) && i >= 0 && i < AD_BOARDS.length);
   const savedGaffer = typeof m?.gaffer === 'number' && !GAFFERS[m.gaffer] ? null : (m?.gaffer ?? null);
   const savedAssistant = typeof m?.assistant === 'number' && !ASSISTANTS[m.assistant] ? null : (m?.assistant ?? null);
-  const draft = { team: teamName(mid), kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
+  const draft = { team: teamName(mid), handle: m?.handle || '', kit: { ...kitFor(mid) }, sponsor: sponsorFor(mid), rivals: [...rivalsOf(mid)], stadium: stadium(mid), boards: savedBoards, gaffer: savedGaffer, assistant: savedAssistant, crest: m?.crest ? { ...m.crest } : null };
   const stock = AD_BOARDS.map(b => b.t);
   const allSp = [...stock, ...RETRO_SPONSORS]; // a saved classic must not present as "Make one up"
   const ov = document.createElement('div');
@@ -1606,6 +1660,8 @@ function clubEditor(mid) {
       <div style="flex:1;min-width:0">
         <label class="muted" style="font-size:11px">TEAM NAME</label>
         <input id="clubName" maxlength="30" value="${esc(draft.team)}" style="width:100%" />
+        <label class="muted" style="font-size:11px;margin-top:8px;display:block">OFFICIAL CLUB HANDLE — on Cunthanger, under everything you say</label>
+        <div style="display:flex;align-items:center;gap:4px"><span class="muted">@</span><input id="clubHandle" maxlength="20" value="${esc(draft.handle || '')}" placeholder="${esc(defaultHandle(mid))}" style="flex:1;min-width:0" spellcheck="false" autocapitalize="off" /></div>
         <label class="muted" style="font-size:11px;margin-top:8px;display:block">SPONSOR — off the hoardings, or make one up</label>
         <select id="clubSpSel" style="width:100%">
           <option value="">No sponsor</option>
@@ -1706,6 +1762,7 @@ function clubEditor(mid) {
   const touched = new Set();
   const luckEligible = () => ['kit', 'sponsor', 'boards', 'gaffer', 'assistant', 'stadium', 'crest'].filter(f => !savedCustom[f] && !touched.has(f));
   ov.querySelector('#clubName').oninput = e => { draft.team = e.target.value; };
+  ov.querySelector('#clubHandle').oninput = e => { draft.handle = cleanHandle(e.target.value); if (e.target.value !== draft.handle) e.target.value = draft.handle; };
   ov.querySelectorAll('[data-pat]').forEach(b => b.onclick = () => { touched.add('kit'); draft.kit.pattern = b.dataset.pat; paint(); });
   ov.querySelector('#clubC1').oninput = e => { touched.add('kit'); draft.kit.c1 = e.target.value; paint(); };
   ov.querySelector('#clubC2').oninput = e => { touched.add('kit'); draft.kit.c2 = e.target.value; paint(); };
@@ -1844,7 +1901,7 @@ function clubEditor(mid) {
       const cnl = ov.querySelector('#clubCancel');
       saving = true; btn.disabled = true; btn.textContent = 'Saving…'; cnl.disabled = true;
       try {
-        await serverAct('clubSet', { team, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest, ...(mid !== whoami && { asManager: mid }) });
+        await serverAct('clubSet', { team, handle: draft.handle || null, kit: draft.kit, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? draft.rivals : null, stadium: stadiumName, boards: draft.boards.length ? draft.boards : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest, ...(mid !== whoami && { asManager: mid }) });
       } catch {
         saving = false; btn.disabled = false; btn.textContent = 'Save the lot'; cnl.disabled = false;
         return; // serverAct already toasted why
@@ -1855,7 +1912,7 @@ function clubEditor(mid) {
       return;
     }
     const idx = state.managers.findIndex(x => x.id === mid);
-    state.managers[idx] = { ...state.managers[idx], team, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest ? { ...draft.crest } : null };
+    state.managers[idx] = { ...state.managers[idx], team, handle: draft.handle || null, kit: { ...draft.kit }, sponsor: draft.sponsor || null, rivals: draft.rivals.length ? [...draft.rivals] : null, rival: draft.rivals[0] || null, stadium: stadiumName, boards: draft.boards.length ? [...draft.boards] : null, gaffer: draft.gaffer, assistant: draft.assistant, crest: draft.crest ? { ...draft.crest } : null };
     localStorage.setItem(`${LS_NS}-founded-${mid}`, '1');
     save(); render();
     closeOv(ov);
@@ -4072,6 +4129,482 @@ function vidiCard(compact = false) {
   </div>`;
 }
 
+/* ================= Cunthanger =================
+   The League's own social network (group chat, 3 Sep 2026). Fan accounts and
+   a spoof press, posting off the same public state the Vidiprinter reads —
+   so the timeline is DERIVED on every render, identical on every phone, and
+   complete from the moment you open it. Copy lives in js/cunthanger.js; this
+   half only builds the events. The Vidiprinter stays (Ben: "this is
+   separate"). Manager posts are phase two and go through the server. */
+function cunthangerEvents() {
+  const ev = [];
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return ev;
+  // the demo seeds its press room lazily too, in case the stats landed before the engine loaded
+  if (demoMode && !window._chDemoSeeded && Object.keys(state.matchStats).length > 1) { window._chDemoSeeded = true; seedDemoPress(); }
+  const gwIdx = vidiRound() ?? Math.min(currentGwIndex(), REGULAR_GWS - 1);
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (gwN == null) return ev;
+  const sh = t => TEAM_BY_NAME[t]?.short || t;
+  // who owns whom this round — the same credit rule as the tape
+  const starterOf = {}, benchOf = {};
+  for (const m of state.managers) {
+    for (const pid of effectiveXI(m.id, gwIdx).xi) starterOf[pid] = m.id;
+    for (const p of squadAt(m.id, gwIdx)) if (starterOf[p.id] == null) benchOf[p.id] = m.id;
+  }
+  const oppOf = {};
+  for (const pr of pairingsFor(gwIdx)) { oppOf[pr[0]] = pr[1]; oppOf[pr[1]] = pr[0]; }
+  // match events, from cumulative counters
+  const ps = gwEvent(gwIdx)?.playerStats || {};
+  for (const [pid, s] of Object.entries(ps)) {
+    const p = PLAYER_BY_ID[pid];
+    if (!p) continue;
+    const mid = starterOf[p.id] ?? benchOf[p.id] ?? null;
+    const role = starterOf[p.id] != null ? 'xi' : benchOf[p.id] != null ? 'bench' : 'trough';
+    const fxs = teamFixturesInGw(p.team, gwN);
+    const fx = fxs.find(f => f.started) || fxs[0] || null;
+    const live = !!(fx && fx.started && !fxOver(fx));
+    const at = fx && fx.hs != null ? `${sh(fx.home)} ${fx.hs}–${fx.as} ${sh(fx.away)}` : fx ? `${sh(fx.home)} v ${sh(fx.away)}` : `GW${gwN}`;
+    const sortKick = fx && fx.date ? Date.parse(fx.date) : 0;
+    const pts = statPoints(p, s);
+    const base = { player: p.name, club: p.club, mid, oppMid: mid != null ? oppOf[mid] ?? null : null, role, pts, at, live, sortKick, gwN };
+    const push = (type, n) => ev.push({ ...base, type, n, key: `${gwN}:${p.id}:${type}` });
+    if (s.g) push('goal', s.g);
+    if (s.a) push('assist', s.a);
+    if (s.ps) push('pensave', s.ps);
+    if (s.pm) push('penmiss', s.pm);
+    if (s.og) push('owngoal', s.og);
+    if (s.rc) push('red', s.rc); else if (s.yc) push('yellow', s.yc);
+    if (pts >= 10 && role !== 'trough') push('haul', 1);
+  }
+  // the fantasy ties: one supporter per pairing speaks (24 a round is a
+  // timeline nobody scrolls), chosen by hash so it is the same one everywhere
+  const started = gwHasStarted(gwIdx), final = gwStatus(gwIdx) === 'final';
+  const st = final ? 'over' : started ? 'live' : 'pre';
+  // results ride alongside the round's LAST match rather than above the lot,
+  // so the goals still lead the timeline once a round has settled
+  const lastKick = Math.max(0, ...state.fixtures.filter(f => f.gw === gwN && f.date).map(f => Date.parse(f.date)));
+  const tieAt = st === 'pre' ? Date.parse(gwFrom(gwIdx)) - 1 : (lastKick || Date.parse(GAMEWEEKS[gwIdx].to) - 1);
+  for (const pr of pairingsFor(gwIdx)) {
+    const side = Cunthanger.hash(`${gwN}:tie:${pr[0]}:${pr[1]}`) % 2;
+    const mid = pr[side], opp = pr[1 - side];
+    ev.push({ type: 'fixture', key: `${gwN}:tie:${mid}`, mid, oppMid: opp, gwN, state: st,
+      my: gwManagerPoints(mid, gwIdx), their: gwManagerPoints(opp, gwIdx), at: `GW${gwN}`, live: false, sortKick: tieAt });
+  }
+  // team news, spoofed: real status from the feed, invented second opinion
+  const now = Date.now();
+  const seenP = new Set();
+  for (const m of state.managers) for (const p of squadAt(m.id, gwIdx)) {
+    // doubts and injuries only — a man who has "joined Como on loan" is not a
+    // physio story, and the feed carries those under the same status
+    if (seenP.has(p.id) || !(p.status === 'd' || p.status === 'i') || !p.news) continue;
+    if (/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news)) continue;
+    const t = p.newsAdded ? Date.parse(p.newsAdded) : NaN;
+    if (!(t > now - 10 * 864e5)) continue;
+    seenP.add(p.id);
+    ev.push({ type: 'injury', key: `news:${p.id}:${p.newsAdded}`, player: p.name, club: p.club, mid: m.id, news: p.news, gwN, at: 'Team news', live: false, sortKick: t });
+  }
+  // the ledger: signings in the last week, announced as only Fabrizio can
+  const recent = (state.transfers || []).filter(r => r.inId && !r.trade && (+r.t || 0) > now - 7 * 864e5).slice(-8);
+  for (const r of recent) {
+    const p = PLAYER_BY_ID[r.inId];
+    if (!p) continue;
+    ev.push({ type: 'signing', key: `tr:${r.n}:${r.inId}`, player: p.name, club: p.club, mid: r.managerId, gwN: GAMEWEEKS[r.gw]?.n ?? gwN, at: r.waiver ? 'Waivers' : 'The Trough', live: false, sortKick: +r.t || 0 });
+  }
+  // Matt Le Tus, once a round, whether or not anyone asked
+  ev.push({ type: 'letus', key: `letus:${gwN}`, gwN, at: 'Thread', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 3600e3 });
+  // the managers' own words: press conferences and posts, last ten days
+  const oppIn = (mid, gi) => { const pr = pairingsFor(gi).find(x => x.includes(mid)); return pr ? (pr[0] === mid ? pr[1] : pr[0]) : null; };
+  const posAt = (mid, gi) => { const t = h2hStandings(false, gi + 1); const k = t.findIndex(r => r.id === mid); return k >= 0 ? k + 1 : null; };
+  for (const [midS, rounds] of Object.entries(state.pressers || {})) {
+    const mid = +midS;
+    for (const [rk, rec] of Object.entries(rounds || {})) {
+      const [giS, phase] = rk.split(':'); const gi = +giS;
+      if (!rec || !Array.isArray(rec.answers) || !GAMEWEEKS[gi] || !((+rec.t || 0) > now - 10 * 864e5)) continue;
+      const opp = oppIn(mid, gi);
+      // one post per press conference: the loudest thing said. The paper
+      // prints the rest; the feed is not the transcript.
+      const rank = { unhinged: 4, confident: 3, dismissive: 2, humble: 1 };
+      const said = rec.answers.map((ans, i) => ({ ans, i })).filter(x => x.ans && x.ans.text)
+        .sort((x, y) => ((y.ans.own ? 5 : rank[y.ans.tone] || 0) - (x.ans.own ? 5 : rank[x.ans.tone] || 0)) || (x.i - y.i))[0];
+      if (!said) continue;
+      const { ans, i } = said;
+      ev.push({ type: 'manager', key: `pr:${gi}:${mid}:${phase}:${ans.id || i}`, mid, oppMid: opp, oppPos: opp != null ? posAt(opp, gi) : null,
+        mgrName: managerName(mid), text: String(ans.text).slice(0, 280), tone: ans.own ? 'unhinged' : (ans.tone || 'unhinged'), gwN: GAMEWEEKS[gi].n,
+        at: phase === 'post' ? 'Post-match' : 'Press conference', live: false, sortKick: (+rec.t || 0) + i });
+    }
+  }
+  for (const p of (state.posts || []).filter(p => p && p.text && (+p.t || 0) > now - 10 * 864e5).slice(-40)) {
+    const gi = Number.isInteger(p.gw) ? p.gw : gwIdx;
+    ev.push({ type: 'manager', key: `post:${p.mid}:${p.t}`, mid: p.mid, aimed: true, oppMid: p.to ?? null, oppPos: p.to != null ? posAt(p.to, gi) : null,
+      mgrName: managerName(p.mid), text: String(p.text).slice(0, 280), tone: 'unhinged', gwN: GAMEWEEKS[gi]?.n ?? gwN, at: `GW${GAMEWEEKS[gi]?.n ?? gwN}`, live: false, sortKick: +p.t || 0 });
+  }
+  return ev;
+}
+
+/* ================= the press room =================
+   Ben, 3 Sep: "Football Manager style". Three questions before a round from
+   the Gazette's press corps, two after, each built from real facts about
+   the manager's week. Four canned answers by tone, or your own words. Every
+   answer is a post on the feed under the club handle, and the paper quotes
+   it — the pre-game edition prints the press conference, the review brings
+   the receipts. Stored under pressers[mid]['gwIndex:pre'|'gwIndex:post']. */
+function presserKey(gwIdx, phase) { return `${gwIdx}:${phase}`; }
+// handles: letters, digits, underscores, up to 20 — a manager's own if he set one
+// in the club office, otherwise the team name squashed into one
+const cleanHandle = v => String(v || '').replace(/^@+/, '').replace(/[^A-Za-z0-9_]/g, '').slice(0, 20);
+function defaultHandle(mid) { return `${cleanTeamName(teamName(mid)).replace(/[^A-Za-z0-9]/g, '') || `Club${mid}`}Official`; }
+function handleOf(mid) { const m = state.managers.find(x => x.id === mid); return cleanHandle(m?.handle) || defaultHandle(mid); }
+// the manager at the keyboard, by the dashboard's rule (demo/offline = #1)
+function meId() {
+  if (whoami && whoami !== -1) return whoami;
+  return (demoMode || !netOn()) ? state.managers[0]?.id ?? null : null;
+}
+function presserOf(mid, gwIdx, phase) { return state.pressers?.[mid]?.[presserKey(gwIdx, phase)] || null; }
+// the facts a manager gets asked about
+function presserCtx(mid, gwIdx, phase) {
+  const pr = pairingsFor(gwIdx).find(x => x.includes(mid));
+  const opp = pr ? (pr[0] === mid ? pr[1] : pr[0]) : null;
+  const table = h2hStandings(false, gwIdx);
+  const posOf = id => { const k = table.findIndex(r => r.id === id); return k >= 0 ? k + 1 : null; };
+  let last = null;
+  for (let k = gwIdx - 1; k >= 0; k--) {
+    if (gwStatus(k) !== 'final') continue;
+    const p2 = pairingsFor(k).find(x => x.includes(mid)); if (!p2) continue;
+    const o2 = p2[0] === mid ? p2[1] : p2[0];
+    const my = gwManagerPoints(mid, k), th = gwManagerPoints(o2, k);
+    last = { r: my > th ? 'W' : my < th ? 'L' : 'D', my, th, opp: teamName(o2) }; break;
+  }
+  const squad = squadAt(mid, gwIdx);
+  const doubt = squad.find(p => (p.status === 'd' || p.status === 'i') && p.news && !/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news));
+  let star = null;
+  for (const p of squad) { const pts = p.pts || 0; if (!star || pts > star.pts) star = { name: p.name, pts }; }
+  // the ledger and the team sheet: who came in, who went, who sits, who's back
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  const deals = (state.transfers || []).filter(r => r.managerId === mid && !r.trade && (r.gw === gwIdx || r.gw === gwN));
+  const lastDeal = deals[deals.length - 1];
+  const signed = lastDeal && PLAYER_BY_ID[lastDeal.inId] ? { name: PLAYER_BY_ID[lastDeal.inId].name, from: lastDeal.waiver ? 'waivers' : lastDeal.windowDraft ? 'the Window Waiver' : 'the Trough' } : null;
+  const dropped = lastDeal && PLAYER_BY_ID[lastDeal.outId] ? { name: PLAYER_BY_ID[lastDeal.outId].name } : null;
+  const xiNow = new Set(lineupFor(mid, gwIdx));
+  const xiPrev = gwIdx > 0 ? new Set(lineupFor(mid, gwIdx - 1)) : new Set();
+  const squadIds = new Set(squad.map(p => p.id));
+  const byPts = (x, y) => (y.pts || 0) - (x.pts || 0);
+  const benchedP = squad.filter(p => !xiNow.has(p.id) && p.pos !== 'GK').sort(byPts)[0];
+  const axedP = squad.filter(p => xiPrev.has(p.id) && !xiNow.has(p.id) && p.pos !== 'GK').sort(byPts)[0];
+  const recalledP = squad.filter(p => xiNow.has(p.id) && !xiPrev.has(p.id) && xiPrev.size && p.id !== lastDeal?.inId).sort(byPts)[0];
+  void squadIds;
+  const ctx = { mid, gw: gwIdx, mgr: managerName(mid), team: teamName(mid), short: Cunthanger.shortName(mid, teamName(mid)),
+    signed, dropped, benched: benchedP && (benchedP.pts || 0) >= 8 ? { name: benchedP.name } : null,
+    axed: axedP ? { name: axedP.name } : null, recalled: recalledP ? { name: recalledP.name } : null,
+    opp: opp != null ? teamName(opp) : null, oppMgr: opp != null ? managerName(opp) : null, pos: posOf(mid), oppPos: opp != null ? posOf(opp) : null,
+    last, doubt: doubt ? { name: doubt.name, news: doubt.news } : null, star: star && star.pts > 0 ? star : null };
+  if (phase === 'post' && opp != null && gwStatus(gwIdx) === 'final') {
+    ctx.result = { my: gwManagerPoints(mid, gwIdx), th: gwManagerPoints(opp, gwIdx) };
+    let best = null, worst = null;
+    for (const pid of lineupFor(mid, gwIdx)) {
+      const p = PLAYER_BY_ID[pid]; if (!p) continue;
+      const pts = gwPlayerPoints(pid, gwIdx);
+      if (!best || pts > best.pts) best = { name: p.name, pts };
+      if (!worst || pts < worst.pts) worst = { name: p.name, pts };
+    }
+    ctx.best = best; ctx.worst = worst;
+    // points left on the bench
+    let burn = null;
+    for (const pid of benchFor(mid, gwIdx)) {
+      const p = PLAYER_BY_ID[pid]; if (!p) continue;
+      const pts = gwPlayerPoints(pid, gwIdx);
+      if (!burn || pts > burn.pts) burn = { name: p.name, pts };
+    }
+    ctx.benchBurn = burn && burn.pts >= 6 ? burn : null;
+  }
+  return ctx;
+}
+// which press conferences are open for a manager right now
+function pressersOpen(mid) {
+  const out = [];
+  if (state.phase !== 'season' || mid == null || mid === -1) return out;
+  const cur = currentGwIndex();
+  // before a round: the next one that hasn't kicked off, once its pairings exist
+  for (let g = cur; g < Math.min(cur + 2, REGULAR_GWS); g++) {
+    if (gwHasStarted(g)) continue;
+    if (pairingsFor(g).some(x => x.includes(mid))) { out.push({ gw: g, phase: 'pre', done: !!presserOf(mid, g, 'pre') }); break; }
+  }
+  const last = lastFinalGw();
+  if (last >= 0 && last < REGULAR_GWS && pairingsFor(last).some(x => x.includes(mid))) out.push({ gw: last, phase: 'post', done: !!presserOf(mid, last, 'post') });
+  return out;
+}
+function sendPresser(gwIdx, phase, answers) {
+  const mid = meId();
+  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return; }
+  const rec = { t: Date.now(), answers };
+  if (netOn()) { serverAct('presser', { gw: gwIdx, phase, answers }).catch(() => {}); return; }
+  state.pressers = { ...(state.pressers || {}), [mid]: { ...(state.pressers?.[mid] || {}), [presserKey(gwIdx, phase)]: rec } };
+  save(); render();
+}
+function sendPost(text, to) {
+  const mid = meId();
+  if (mid == null || mid === -1) { toast('Sign in as a manager to post.'); return; }
+  const t = String(text || '').trim().slice(0, 280);
+  if (!t) { toast('An empty post is just staring.'); return; }
+  const gw = currentGwIndex();
+  if (netOn()) { serverAct('post', { text: t, to: to ?? null, gw }).catch(() => {}); return; }
+  state.posts = [...(state.posts || []), { mid, to: to ?? null, text: t, gw, t: Date.now() }];
+  save(); render();
+}
+function pressRoomSheet(spec) {
+  if (typeof Cunthanger === 'undefined') return;
+  const mid = meId();
+  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return; }
+  const [gS, phase] = String(spec || '').split(':');
+  const gwIdx = +gS;
+  if (!GAMEWEEKS[gwIdx]) return;
+  const ctx = presserCtx(mid, gwIdx, phase);
+  const qs = Cunthanger.questions(ctx, phase);
+  const done = presserOf(mid, gwIdx, phase);
+  document.querySelectorAll('.ch-presser').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card ch-room ch-presser" role="dialog" aria-label="Press conference">
+    <button class="btn ghost small icon-btn gz-close" id="prClose" aria-label="Leave the room">&#10005;</button>
+    <div class="ch-tile-label">${phase === 'post' ? 'Post-match' : 'Pre-match'} press conference &middot; Gameweek ${GAMEWEEKS[gwIdx].n}</div>
+    <h2 style="margin:4px 0 2px">${esc(teamName(mid))}</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:12px">${ctx.opp ? `${phase === 'post' ? 'After' : 'Before'} ${esc(cleanTeamName(ctx.opp))}. ` : ''}Pick an answer or say it in your own words. Everything you say is on the record, on the feed, and in Friday’s paper.</p>
+    ${qs.map((q, i) => `<div class="ch-q">
+      <div class="ch-q-by">${esc(q.by)}, The League Gazette</div>
+      <div class="ch-q-text">${esc(q.q)}</div>
+      ${done ? `<p class="ch-q-done">&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;</p>` : `<div class="ch-q-opts">
+        ${q.options.map(o => `<button type="button" class="ch-opt" data-q="${i}" data-tone="${esc(o.tone)}" title="${esc(o.label)}"><span class="ch-opt-tone">${esc(o.label)}</span>${esc(o.text)}</button>`).join('')}
+        <textarea class="ch-own" data-q="${i}" maxlength="280" rows="2" placeholder="Or in your own words…"></textarea>
+      </div>`}
+    </div>`).join('')}
+    ${done ? `<p class="muted" style="font-size:12px">You faced the press on ${new Date(done.t).toLocaleDateString('en-GB', { weekday: 'long' })}. What’s said is said.</p>`
+      : `<button class="btn" id="prSend" style="width:100%;margin-top:6px">End the press conference</button>`}
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const close = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) close(); };
+  ov.querySelector('#prClose').onclick = close;
+  const chosen = {};
+  ov.querySelectorAll('.ch-opt').forEach(b => b.onclick = () => {
+    const i = +b.dataset.q; chosen[i] = { tone: b.dataset.tone, text: b.textContent.replace(/^\S+\s*/, '').trim() };
+    // the label span is the first word; take the option text from the data instead
+    chosen[i].text = qs[i].options.find(o => o.tone === b.dataset.tone)?.text || chosen[i].text;
+    ov.querySelectorAll(`.ch-opt[data-q="${i}"]`).forEach(x => x.classList.toggle('on', x === b));
+    const ta = ov.querySelector(`.ch-own[data-q="${i}"]`); if (ta) ta.value = '';
+  });
+  ov.querySelectorAll('.ch-own').forEach(ta => ta.oninput = () => {
+    const i = +ta.dataset.q;
+    if (ta.value.trim()) { chosen[i] = { tone: 'own', text: ta.value.trim().slice(0, 280) }; ov.querySelectorAll(`.ch-opt[data-q="${i}"]`).forEach(x => x.classList.remove('on')); }
+    else delete chosen[i];
+  });
+  const send = ov.querySelector('#prSend');
+  if (send) send.onclick = () => {
+    const answers = qs.map((q, i) => chosen[i] ? { id: q.id, tone: chosen[i].tone === 'own' ? 'unhinged' : chosen[i].tone, own: chosen[i].tone === 'own', text: chosen[i].text } : null);
+    if (!answers.some(Boolean)) { toast('Say something. Anything. A “no comment” counts.'); return; }
+    sendPresser(gwIdx, phase, answers.map((x, i) => x || { id: qs[i].id, tone: 'dismissive', text: 'No comment.' }));
+    close();
+    toast('On the record. It’s on the feed, and it’s in the paper.');
+  };
+}
+const cleanTeamName = t => String(t || '').replace(/[*°]/g, '').replace(/\s+/g, ' ').trim();
+// the press room tile on the Cunthanger card
+function pressRoomTile() {
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
+  const mid = meId();
+  const open = pressersOpen(mid);
+  const mine = mid != null && mid !== -1;
+  const oppNow = (() => { const g = currentGwIndex(); const pr = mine ? pairingsFor(g).find(x => x.includes(mid)) : null; return pr ? (pr[0] === mid ? pr[1] : pr[0]) : null; })();
+  const rows = open.map(o => `<div class="ch-pr-row">
+    <div class="ch-main"><b>${o.phase === 'post' ? 'Post-match' : 'Pre-match'}, GW${GAMEWEEKS[o.gw].n}</b><span class="muted" style="font-size:11.5px">${o.done ? 'Done. On the record.' : `${o.phase === 'post' ? 'Two' : 'Three'} questions waiting.`}</span></div>
+    <button class="btn ${o.done ? 'ghost ' : ''}small" data-presser="${o.gw}:${o.phase}">${o.done ? 'Read back' : 'Face the press'}</button>
+  </div>`).join('');
+  return `<div class="ch-tile ch-tile-press">
+    <div class="ch-tile-label">The press room</div>
+    ${mine ? (rows || '<p class="muted" style="font-size:12px;margin:0">No press conference scheduled. Enjoy the silence.</p>')
+      : '<p class="muted" style="font-size:12px;margin:0">Managers face the press before and after every round. Sign in to face yours.</p>'}
+    ${mine ? `<div class="ch-say">
+      <input type="text" id="chSay" maxlength="280" placeholder="${oppNow != null ? `Say it to ${esc(cleanTeamName(teamName(oppNow)))}…` : 'Say something to the league…'}">
+      <button class="btn ghost small" id="chSayBtn" data-to="${oppNow ?? ''}">Post</button>
+    </div>` : ''}
+  </div>`;
+}
+// the paper: the pre-game edition prints the press conferences
+function pressConferenceSection(gwIdx) {
+  if (typeof Cunthanger === 'undefined') return '';
+  const rows = [];
+  for (const [a, b] of pairingsFor(gwIdx)) {
+    const qa = [a, b].map(mid => {
+      const rec = presserOf(mid, gwIdx, 'pre');
+      if (!rec || !rec.answers?.length) return null;
+      const qs = Cunthanger.questions(presserCtx(mid, gwIdx, 'pre'), 'pre');
+      const best = rec.answers.map((an, i) => an && an.text ? { q: qs[i]?.q || '', a: an.text, tone: an.tone } : null).filter(Boolean);
+      return best.length ? { mid, best } : null;
+    }).filter(Boolean);
+    if (!qa.length) continue;
+    rows.push(`<div class="prog-presser">
+      <div class="prog-presser-tie">${esc(cleanTeamName(teamName(a)))} v ${esc(cleanTeamName(teamName(b)))}</div>
+      ${qa.map(x => x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
+    </div>`);
+  }
+  // and what was said outside the room: posts aimed at this week's opponent
+  const words = [];
+  const oppOf = {}; for (const pr of pairingsFor(gwIdx)) { oppOf[pr[0]] = pr[1]; oppOf[pr[1]] = pr[0]; }
+  for (const p of (state.posts || []).filter(p => p && p.text && p.gw === gwIdx && p.to != null && oppOf[p.mid] === p.to).slice(-8))
+    words.push(`<p><b>${esc(managerName(p.mid))}</b>, to ${esc(cleanTeamName(teamName(p.to)))}: &ldquo;${esc(p.text)}&rdquo;</p>`);
+  const war = words.length ? `<div class="prog-sec">War of words</div>${words.join('')}` : '';
+  if (!rows.length && !war) return '';
+  if (!rows.length) return war;
+  return `${war}<div class="prog-sec">The press conferences</div>
+    <p class="muted" style="font-size:12px">Managers faced the Gazette’s press corps ahead of the round. The answers are reproduced as given, which is the only way they could be reproduced.</p>
+    ${rows.join('')}`;
+}
+// and the review edition brings the receipts
+function pressReceipts(gwIdx) {
+  if (typeof Cunthanger === 'undefined') return '';
+  const out = [];
+  for (const [a, b] of pairingsFor(gwIdx)) {
+    for (const [mid, opp] of [[a, b], [b, a]]) {
+      const rec = presserOf(mid, gwIdx, 'pre');
+      const said = rec?.answers?.find(x => x && x.text && (x.tone === 'confident' || x.tone === 'unhinged' || x.own)) || rec?.answers?.find(x => x && x.text);
+      if (!said) continue;
+      const my = gwManagerPoints(mid, gwIdx), th = gwManagerPoints(opp, gwIdx);
+      const r = my > th ? 'won' : my < th ? 'lost' : 'drew';
+      const verdict = r === 'won' ? pick2([`${cleanTeamName(teamName(mid))} won ${my}–${th}.`, `It held up: ${my}–${th}.`, `Insufferable, and correct, ${my}–${th}.`], `${gwIdx}:${mid}:v`)
+        : r === 'lost' ? pick2([`${cleanTeamName(teamName(opp))} won ${th}–${my}.`, 'The scoreboard was consulted and disagreed.', `Final score: ${my}–${th}. No further questions were taken.`], `${gwIdx}:${mid}:v`)
+        : ['A draw. Nobody was right, which is the worst outcome for a quote.'][0];
+      out.push(`<p><b>${esc(managerName(mid))}</b>, before the round: &ldquo;${esc(said.text)}&rdquo; ${esc(verdict)}</p>`);
+    }
+  }
+  if (!out.length) return '';
+  return `<div class="prog-sec">The receipts</div>${out.join('')}`;
+}
+const pick2 = (arr, key) => arr[Cunthanger.hash(String(key)) % arr.length];
+let _chCache = null;
+function cunthangerPosts() {
+  // built at most once per render pass (render() clears the cache)
+  if (_chCache) return _chCache;
+  if (typeof Cunthanger === 'undefined') return [];
+  _chCache = Cunthanger.compose(cunthangerEvents(), { teamName, managerName, handleOf });
+  return _chCache;
+}
+function chAvatar(who) {
+  if ((who.kind === 'fan' || who.kind === 'manager') && who.mid != null) return `<span class="ch-av ch-av-kit">${kitSvg(who.mid, 34)}</span>`;
+  const ini = String(who.n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return `<span class="ch-av ch-av-${esc(who.beat || 'press')}">${esc(ini)}</span>`;
+}
+function chPostHtml(p) {
+  // engagement numbers are as real as everything else on here
+  const h = Cunthanger.hash(p.key);
+  const n1 = h % 47, n2 = (h >>> 8) % 23, n3 = (h >>> 16) % 311;
+  return `<div class="ch-post">
+    ${chAvatar(p.who)}
+    <div class="ch-main">
+      <div class="ch-who"><b>${esc(p.who.n)}</b>${p.who.kind === 'press' ? ' <span class="ch-tick" title="Verified, allegedly">&#10004;</span>' : ''} <span class="ch-h">@${esc(p.who.h)}</span> <span class="ch-at">&middot; ${esc(p.at)}</span>${p.live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}</div>
+      <div class="ch-txt">${esc(p.text)}</div>
+      <div class="ch-acts"><span>&#128172; ${n1}</span><span>&#128257; ${n2}</span><span>&#9829; ${n3}</span></div>
+    </div>
+  </div>`;
+}
+// the feed's slot in the reading room: the top of the timeline and a door
+function cunthangerBlock() {
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
+  const posts = cunthangerPosts();
+  const live = posts.some(p => p.live);
+  const top = posts.slice(0, 4).map(chPostHtml).join('');
+  return `<div class="ch-block">
+    <div class="ch-head"><span class="ch-logo">c</span><b>The feed</b>${live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}<span class="muted" style="font-size:11px;margin-left:auto">${posts.length} posts</span></div>
+    ${top || '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}
+    <button class="btn ghost small" data-chopen style="width:100%;margin-top:6px">Open Cunthanger ${posts.length > 4 ? `(${posts.length - 4} more)` : ''}</button>
+  </div>`;
+}
+function cunthangerSheet() {
+  if (typeof Cunthanger === 'undefined') return;
+  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+  const posts = cunthangerPosts();
+  const live = posts.some(p => p.live);
+  const who = Cunthanger.accounts(state.managers, teamName, managerName, handleOf);
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
+    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
+    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+    ${(() => {
+      // Marc, 3 Sep: "abuse in all formats should be encouraged". A manager
+      // posts under the club handle, aimed at this week's opponent by
+      // default or at anyone in the league. It goes on the feed, the other
+      // lot's supporter bites, and the paper quotes it.
+      const mid = meId();
+      if (mid == null) return '';
+      const g = currentGwIndex();
+      const pr = pairingsFor(g).find(x => x.includes(mid));
+      const opp = pr ? (pr[0] === mid ? pr[1] : pr[0]) : null;
+      return `<div class="ch-compose">
+        <span class="ch-av ch-av-kit">${kitSvg(mid, 34)}</span>
+        <div class="ch-main">
+          <textarea id="chComposeText" maxlength="280" rows="2" placeholder="What’s happening, ${esc(cleanTeamName(teamName(mid)))}?"></textarea>
+          <div class="ch-compose-row">
+            <select id="chComposeTo" title="Aimed at">
+              ${opp != null ? `<option value="${opp}">→ ${esc(cleanTeamName(teamName(opp)))} (this week)</option>` : ''}
+              <option value="">→ the whole league</option>
+              ${state.managers.filter(m => m.id !== mid && m.id !== opp).map(m => `<option value="${m.id}">→ ${esc(cleanTeamName(teamName(m.id)))}</option>`).join('')}
+            </select>
+            <button class="btn small" id="chComposeSend">Post</button>
+          </div>
+        </div>
+      </div>`;
+    })()}
+    <div class="ch-timeline">${posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
+    <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
+      ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
+    </details>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  ov.onclick = e => { if (e.target === ov) closeOv(ov); };
+  ov.querySelector('#chClose').onclick = () => closeOv(ov);
+  const send = ov.querySelector('#chComposeSend');
+  if (send) send.onclick = () => {
+    const ta = ov.querySelector('#chComposeText'), to = ov.querySelector('#chComposeTo')?.value;
+    if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
+    sendPost(ta.value, to ? +to : null);
+    closeOv(ov); cunthangerSheet();
+  };
+}
+/* The takeover. Ben, 3 Sep: "be great if I could get that to flash up on
+   everyone's phones when they next open the app — like that stupid test thing
+   the govt did." Once per device, in season, never on top of another sheet
+   and never in the demo. */
+function cunthangerTakeover() {
+  if (state.phase !== 'season' || demoMode || typeof Cunthanger === 'undefined' || window._chAlertShown) return;
+  // a live league only: the ?nosync rehearsal modes and the test harnesses
+  // (which set __autoConfirm) must never find a government alert over the pitch
+  if (!syncOn() || window.__autoConfirm) return;
+  const KEY = `${LS_NS}-ch-takeover`;
+  try { if (localStorage.getItem(KEY)) return; } catch { return; }
+  if (document.querySelector('.overlay')) return; // it will try again next render
+  window._chAlertShown = true;
+  const T = Cunthanger.TAKEOVER;
+  const ov = document.createElement('div');
+  ov.className = 'overlay ch-alert-ov';
+  ov.innerHTML = `<div class="ch-alert" role="alertdialog" aria-label="Emergency alert">
+    <div class="ch-alert-head"><span class="ch-alert-ico" aria-hidden="true">&#9888;</span> ${esc(T.tag)}</div>
+    <div class="ch-alert-body">
+      <b>${esc(T.head)}</b>
+      ${T.lines.map(l => `<p>${esc(l)}</p>`).join('')}
+      <p class="ch-alert-foot">${esc(T.foot)}</p>
+    </div>
+    <button class="ch-alert-ok" id="chAlertOk">OK</button>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  playSound('alert');
+  try { navigator.vibrate?.([400, 150, 400, 150, 400]); } catch {}
+  ov.querySelector('#chAlertOk').onclick = () => {
+    try { localStorage.setItem(KEY, '1'); } catch {}
+    closeOv(ov);
+  };
+}
+
 async function syncNow(manual = false) {
   if (demoMode) { if (manual) toast('Demo mode — the results are fictional, like Blanky’s title chances post GW10'); return; }
   const btn = $('#syncBtn');
@@ -4336,6 +4869,7 @@ const SETUP_NAV = new Set(['draft', 'club', 'directory', 'rules', 'settings']);
 
 let lastRenderedView = null;
 function render() {
+  _chCache = null; // Cunthanger rebuilds its timeline once per pass
   applyMock(); // sandbox Simulation Chamber overlay — no-op everywhere else
   applyLiveStats(); // real-league live-match fast lane — no-op everywhere else
   // the standing acting-as pen dies the moment the Chairman leaves the
@@ -4422,6 +4956,7 @@ function render() {
   broadcastOnPick();
   renderHeckles();
   renderKlaxons();
+  cunthangerTakeover();
   if (typeof manageWakeLock === 'function') manageWakeLock(); // acquire/release as the draft starts/ends
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -5465,6 +6000,10 @@ function playSound(kind) {
       tone(c, 466, 0, 0.4, { type: 'sawtooth', gain: 0.07 });
       tone(c, 370, 0.42, 0.55, { type: 'sawtooth', gain: 0.07 });
       tone(c, 466, 1.05, 0.7, { type: 'sawtooth', gain: 0.06 });
+    } else if (kind === 'alert') {
+      // the Cunthanger Alert System: the government test tone, shortened,
+      // because the real one goes on for ten seconds and so did Marc's mum
+      for (let i = 0; i < 6; i++) tone(c, i % 2 ? 740 : 1046, i * 0.34, 0.3, { type: 'square', gain: 0.05 });
     } else if (kind === 'trombone') {
       // the universal sound of a bad decision
       tone(c, 466, 0, 0.25, { type: 'sawtooth', gain: 0.06, slideTo: 440 });
@@ -8666,6 +9205,28 @@ function viewDash() {
         })()}</span>
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
+      ${(() => {
+        // somebody said something about you, in public (Ben, 3 Sep: "that's the fun")
+        if (typeof Cunthanger === 'undefined') return '';
+        const me = meId();
+        const aimed = (state.posts || []).filter(p => p && p.text && p.to === me && p.mid !== me && (+p.t || 0) > Date.now() - 7 * 864e5);
+        const last = aimed[aimed.length - 1];
+        return last ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
+          <span class="gz-nudge-tag ch-tag">SAID ABOUT YOU</span>
+          <span class="gz-nudge-copy"><b>${esc(managerName(last.mid))}</b>: ${esc(last.text)}</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>` : '';
+      })()}
+      ${(() => {
+        // Cunthanger on a matchday: the latest melt, one tap from the feed
+        if (!anyMatchLive() || typeof Cunthanger === 'undefined') return '';
+        const top = cunthangerPosts().find(p => p.live) || cunthangerPosts()[0];
+        return top ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
+          <span class="gz-nudge-tag ch-tag">CUNTHANGER</span>
+          <span class="gz-nudge-copy"><b>@${esc(top.who.h)}</b> ${esc(top.text)}</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>` : '';
+      })()}
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} <span id="wvClock">${waiverClockLine()}</span></p>
@@ -9084,34 +9645,76 @@ function gazetteShareText() {
 }
 function programmeCard() {
   if (state.phase !== 'season' || !state.draft.picks.length) return '';
+  /* The Cunthanger card. Ben, 3 Sep: "Cunthanger is the overall thing and
+     then within that you've got the Gazette, the feed, talkTROUGH, and all
+     the other different media assets." So the paper is one title in a
+     group, not the card itself: masthead of the group up top, then the
+     Gazette, the feed, the wireless, and a dashed tile for whatever is
+     launched in due cunt. The app around it is untouched. */
   const today = progTodays();
+  const ch = typeof Cunthanger !== 'undefined';
+  // the paper
+  let paper;
   if (!today) {
-    return `<div class="card prog-card">
-      <p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p></div>`;
-  }
-  // the lead's headline + first sentence, lifted from the article itself so
-  // the teaser can never disagree with the paper
-  const scratch = document.createElement('div');
-  scratch.innerHTML = today.article;
-  const head = scratch.querySelector('.prog-head')?.textContent || '';
-  const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
-  const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
-  const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
-  return `<div class="card prog-card">
-    ${progMasthead(today.edition, today.gwN)}
-    <div class="prog-front">
+    paper = `<p class="muted" style="font-size:12.5px">First edition goes to print when GW1's teams are locked. The presses are warm; the takes are warmer.</p>`;
+  } else {
+    // the lead's headline + first sentence, lifted from the article itself so
+    // the teaser can never disagree with the paper
+    const scratch = document.createElement('div');
+    scratch.innerHTML = today.article;
+    const head = scratch.querySelector('.prog-head')?.textContent || '';
+    const firstP = scratch.querySelector('.prog-story p, p')?.textContent || '';
+    const byline = scratch.querySelector('.prog-by')?.textContent || 'The League Gazette football desk';
+    const standfirst = firstP.split(/(?<=[.!?])\s/)[0] || '';
+    // and the next two stories, as the paper's own "also inside"
+    const others = [...scratch.querySelectorAll('.prog-lead-story .prog-head')].slice(1, 3).map(h => h.textContent.trim()).filter(Boolean);
+    paper = `<div class="prog-front">
       <div class="prog-front-copy">
         <div class="prog-front-label">LEAD STORY</div>
         ${head ? `<div class="prog-head prog-head-lead">${esc(head)}</div>` : ''}
         ${standfirst ? `<p class="prog-standfirst">${esc(standfirst)}</p>` : ''}
         <div class="prog-front-by">${esc(byline)}</div>
+        ${others.length ? `<div class="ch-also">${others.map(h => `<div class="ch-also-row"><span class="ch-also-tag">Also inside</span> ${esc(h)}</div>`).join('')}</div>` : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <button class="btn prog-read" id="progRead">READ FULL EDITION <span aria-hidden="true">&rarr;</span></button>
         <button class="btn ghost small" id="progShare" title="Copy the front page for the group chat">&#128203; Share</button>
       </div>
+    </div>`;
+  }
+  // the feed
+  const posts = ch ? cunthangerPosts() : [];
+  const live = posts.some(p => p.live);
+  const feed = ch ? `<div class="ch-tile">
+    <div class="ch-tile-label">The feed${live ? ' <span class="ch-live"><span class="rec"></span>LIVE</span>' : ''}</div>
+    <div class="ch-tile-feed">${posts.length ? posts.slice(0, 6).map(chPostHtml).join('') : '<p class="muted" style="font-size:12px">Nothing has happened yet. The accounts are refreshing anyway.</p>'}</div>
+    <button class="btn ghost small" data-chopen>Open the feed${posts.length ? ` <span class="tag">${posts.length}</span>` : ''}</button>
+  </div>` : '';
+  // the wireless
+  const eps = typeof Podcast !== 'undefined' ? Podcast.ON_AIR.map(id => Podcast.latest(id)).filter(Boolean) : [];
+  const wireless = eps.length ? `<div class="ch-tile">
+    <div class="ch-tile-label">On the wireless</div>
+    ${eps.map(ep => `<div class="pod-row ch-pod-row" data-podopen="${esc(ep.id)}">
+      <div class="pod-badge pod-${esc(ep.show.id)}">${Podcast.logoSvg(ep.show.id, 30)}</div>
+      <div class="pod-main"><b style="font-size:12.5px">${esc(ep.show.name)}</b><span class="muted" style="font-size:11.5px">${esc(ep.title)}</span></div>
+      <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
+    </div>`).join('')}
+  </div>` : '';
+  return `<div class="card prog-card ch-card">
+    <div class="ch-card-mast">
+      <span class="ch-logo ch-logo-lg">c</span>
+      <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div>
+      ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
     </div>
-    ${gazetteUnread() ? '<span class="prog-new" aria-label="New edition">NEW EDITION</span>' : ''}
+    <div class="ch-grid">
+      <div class="ch-tile ch-tile-paper">
+        <div class="ch-tile-label ch-tile-label-paper"><span>The League Gazette${today ? ` &middot; ${esc(today.edition)}${today.gwN != null ? ` &middot; Gameweek ${today.gwN}` : ''}` : ''}</span>${today && gazetteUnread() ? '<span class="prog-new ch-new" aria-label="New edition">NEW EDITION</span>' : ''}</div>
+        ${paper}
+      </div>
+      ${pressRoomTile()}
+      ${feed}
+      ${wireless}
+    </div>
   </div>`;
 }
 /* Everything the paper has ever printed, newest first (Ben, GW1 night:
@@ -9276,7 +9879,8 @@ function mediaSection() {
       <button class="btn ghost small" data-podopen="${esc(ep.id)}">Open</button>
     </div>`;
   }).join('');
-  if (!rows.trim()) return '';
+  const feed = launch ? '' : cunthangerBlock();
+  if (!rows.trim() && !feed) return '';
   /* The back catalogue (Ben, 21 Aug: "we should file the old eps somewhere").
      The desk only ever carries what is current, so the moment the GW1 previews
      published, draft night became unreachable — recordings we had paid to cut,
@@ -9303,9 +9907,12 @@ function mediaSection() {
     ? `<div class="prog-sec">Also in edition zero: the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Both stations open their season the same afternoon. Neither has heard the other, and it shows.</p>
       ${rows}${archive}`
-    : `<div class="prog-sec">The Media Desk</div>
+    : `<div class="prog-sec ch-sec">Elsewhere in the group</div>
+      <p class="muted" style="font-size:11.5px;margin-bottom:8px">The Gazette is a Cunthanger Media title. So is everything below it.</p>
+      ${feed}
+      ${rows.trim() ? `<div class="ch-sub">On the wireless</div>
       <p class="muted" style="font-size:11.5px;margin-bottom:8px">Two shows, the same gameweek, no agreement of any kind.</p>
-      ${rows}${archive}`;
+      ${rows}${archive}` : ''}`;
 }
 // id → the episode object, without trusting the id string
 function podById(id) {
@@ -9795,6 +10402,7 @@ function previewArticle(i, pick) {
     ${motwNotes ? `<p>${esc(motwNotes)} ${esc(chantFor(motw.a, motw.b, i))}</p>` : `<p>${esc(chantFor(motw.a, motw.b, i))}</p>`}
     <div class="prog-sec">Around the grounds</div><p>${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     ${sitdown}
+    ${typeof pressConferenceSection === 'function' ? pressConferenceSection(i) : ''}
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }
@@ -10618,6 +11226,12 @@ function dashMiniPitch(mid, gw) {
 }
 function bindDash() {
   bindInstall();
+  const say = $('#chSayBtn');
+  if (say) {
+    const go = () => { const inp = $('#chSay'); sendPost(inp?.value, say.dataset.to ? +say.dataset.to : null); if (inp) inp.value = ''; };
+    say.onclick = go;
+    const inp = $('#chSay'); if (inp) inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  }
   const pr = $('#progRead');
   if (pr) pr.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
   const gzn = $('#gzNudge');

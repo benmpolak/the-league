@@ -855,6 +855,32 @@ const SB = 'the-league-sandbox';
   chk('legacy export debris (pins) tolerated and dropped', !(await T.mutate(LG, 'importState', { state: { ...seed, pins: { 1: 'x' } } }, tok1)).error
     && !(await T.initAdmin().database().ref(`v2/leagues/${LG}/public/pins`).get()).val());
 
+  /* ---------------- Cunthanger: the feed and the press room ---------------- */
+  // (the re-import above rebuilt LG in season phase)
+  chk('a post lands in public, verbatim, aimed at another manager', !(await T.mutate(LG, 'post', { text: '  Marc is a charity. ', to: 2, gw: 2 }, tok1)).error
+    && (() => { void 0; return true; })());
+  {
+    const posts = Object.values((await db.ref(`v2/leagues/${LG}/public/posts`).get()).val() || {});
+    chk('the post is stored cleaned, with its target and round', posts.length === 1 && posts[0].text === 'Marc is a charity.' && posts[0].to === 2 && posts[0].gw === 2 && posts[0].mid === 1 && posts[0].t > 0, JSON.stringify(posts));
+  }
+  chk('a second post inside five seconds is refused', (await T.mutate(LG, 'post', { text: 'And again.', to: 2, gw: 2 }, tok1)).error?.status === 'RESOURCE_EXHAUSTED');
+  chk('an empty post is refused', (await T.mutate(LG, 'post', { text: '   ', gw: 2 }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('a post cannot be aimed at yourself or a stranger', (await T.mutate(LG, 'post', { text: 'hi', to: 2, gw: 2 }, tok2)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(LG, 'post', { text: 'hi', to: 99, gw: 2 }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('a post to nobody in particular lands', !(await T.mutate(LG, 'post', { text: 'Lineup is in.', to: null, gw: 2 }, tok2)).error);
+  chk('a spectator cannot post', (await T.mutate(LG, 'post', { text: 'hi', gw: 2 }, tokOut)).error?.status === 'PERMISSION_DENIED');
+  const pr = await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [{ id: 'opp', tone: 'unhinged', text: 'He is a charity.' }, { id: 'form', tone: 'nonsense', text: '' }, { id: 'squad', own: true, text: 'My own words.' }] }, tok1);
+  chk('a press conference lands under the manager and round', !pr.error, JSON.stringify(pr.error));
+  {
+    const rec = (await db.ref(`v2/leagues/${LG}/public/pressers/1/2:pre`).get()).val();
+    chk('answers are bounded: junk tone falls to dismissive, empty text to No comment, own words kept', rec && rec.t > 0 && rec.answers.length === 3
+      && rec.answers[0].tone === 'unhinged' && rec.answers[1].tone === 'dismissive' && rec.answers[1].text === 'No comment.' && rec.answers[2].own === true && rec.answers[2].text === 'My own words.', JSON.stringify(rec));
+  }
+  chk('what’s said is said: the same press conference cannot be redone', (await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [{ id: 'opp', tone: 'humble', text: 'Sorry.' }] }, tok1)).error?.status === 'ALREADY_EXISTS');
+  chk('the post-match press conference is a separate room', !(await T.mutate(LG, 'presser', { gw: 2, phase: 'post', answers: [{ id: 'result', tone: 'humble', text: 'Not good enough.' }] }, tok1)).error);
+  chk('a press conference needs a phase and at least one answer', (await T.mutate(LG, 'presser', { gw: 2, phase: 'during', answers: [{ id: 'x', text: 'y' }] }, tok2)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [] }, tok2)).error?.status === 'INVALID_ARGUMENT');
+
   /* ---------------- window draft: one atomic transaction ---------------- */
   // (the re-import above rebuilt LG in season phase with fresh squads)
   // an arrival is a man DRAFT NIGHT NEVER SAW — absent from the snapshot

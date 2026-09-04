@@ -4,7 +4,8 @@
 // External file because the page CSP rightly forbids inline scripts.
 (function () {
   var params = new URLSearchParams(location.search);
-  var onBeta = location.pathname.includes('the-league-beta');
+  // the preview site (Cunthanger builds for the lads to look at) is the same deal
+  var onBeta = location.pathname.includes('the-league-beta') || location.pathname.includes('the-league-preview');
   if (onBeta && !params.has('sandbox')) {
     // keep whatever else is on the URL (?demo, ?emu=...) — only append sandbox
     var q = location.search ? location.search + '&sandbox' : '?sandbox';

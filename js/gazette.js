@@ -1030,6 +1030,7 @@ window.Gazette = (() => {
       <div class="prog-cols">${lead}${second}</div>
       ${nibBlock}
       ${stakes}
+      ${typeof pressReceipts === 'function' ? pressReceipts(gwIdx) : ''}
       ${interview(gwIdx)}
       ${departments(gwIdx, facts, used)}
     </div>`;
