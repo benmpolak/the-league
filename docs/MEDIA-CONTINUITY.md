@@ -56,3 +56,10 @@ Tests: `club-media.test.js`, `club-media.server.test.js` and
 `club-media.smoke.js`, included in the normal offline, emulator and browser
 suites. The browser smoke checks phone widths, escaped quotes, next-week
 follow-ups and preservation of the selected response after a failed send.
+
+The release check also exposed draft-podcast score drift: players without a
+previous-season record fell back to their changing current-season points.
+They now contribute zero previous-season evidence. The outdated top-four
+grade line (`gfw-draft/vvk35w`) is retired from the active audio manifest;
+the original MP3 remains on disk and in Git. The corrected 159-character
+line uses the existing speech fallback until a future recording.

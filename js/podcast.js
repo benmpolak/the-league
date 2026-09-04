@@ -265,7 +265,9 @@ window.Podcast = (() => {
 
   /* ---------- fact desk ---------- */
   const squadOf = mid => (typeof managerSquad === 'function' ? managerSquad(mid) : []);
-  const lastSeasonPts = p => { const ls = typeof lastSeasonOf === 'function' ? lastSeasonOf(p) : null; return ls ? (ls.pts || 0) : (p.pts || 0); };
+  // A new arrival has no previous-season evidence. Current FPL points must
+  // never rewrite a recorded draft verdict as the live feed advances.
+  const lastSeasonPts = p => { const ls = typeof lastSeasonOf === 'function' ? lastSeasonOf(p) : null; return ls ? (ls.pts || 0) : 0; };
   // squad strength on last season's evidence — the only measure that exists
   // before a ball is kicked, and the one the grades rest on
   const squadScore = mid => squadOf(mid).reduce((t, p) => t + lastSeasonPts(p), 0);

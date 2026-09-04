@@ -111,6 +111,15 @@ const chk = (name, ok, detail = '') => {
   if (p13.outstanding.length) {
     console.log(`      note: ${p13.outstanding.length} line(s) awaiting a render (~${p13.chars} chars) — ${[...new Set(p13.outstanding)].join(', ')}`);
   }
+  const stableDraft = await audioPage.evaluate(() => {
+    const scripts = () => ['gfw', 'tt'].map(show => JSON.stringify(Podcast.episode(show, 'draft', null)));
+    const before = scripts(), saved = PLAYERS.map(p => p.pts);
+    try {
+      PLAYERS.forEach(p => { p.pts = (p.pts || 0) + 10000; });
+      return scripts().every((s, i) => s === before[i]);
+    } finally { PLAYERS.forEach((p, i) => { p.pts = saved[i]; }); }
+  });
+  chk('draft recordings cannot be rewritten by current-season points', stableDraft);
 
   // ...and the files the manifest names are really there and really audio
   const p13b = await page.evaluate(async () => {
