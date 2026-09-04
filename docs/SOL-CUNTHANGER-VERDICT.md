@@ -151,3 +151,27 @@ The first sandboxed offline attempt could not launch Chrome. The successful reru
 Local reproduction scripts are in `/private/tmp/cunthanger-audit/test/`: `cunthanger.audit.emu.js`, `cunthanger.audit.extra.js`, `cunthanger.audit.browser.js`, `cunthanger.audit.morebrowser.js`, `cunthanger.audit.finalprobes.js`. Emulator scripts use `test/testenv.js` and must run only under the local emulator configuration. Logs/results: `/private/tmp/cunthanger-offline.log`, `/private/tmp/cunthanger-emu-full.log`, `/private/tmp/cunthanger-emu-probes.json`, `/private/tmp/cunthanger-extra-results.json`, `/private/tmp/cunthanger-browser-results.json`, `/private/tmp/cunthanger-morebrowser.json`, `/private/tmp/cunthanger-finalprobes.json`, `/private/tmp/cunthanger-gazette.log`. Screenshots: `/private/tmp/cunthanger-card-detail-390.png`, `/private/tmp/cunthanger-feed-390.png`, `/private/tmp/cunthanger-press-390.png`. These temporary files are supporting evidence, not committed tests.
 
 **Release gate:** Fix and rerun both P1 journeys before approving this feature for the twelve. Verify open-feed delivery in two signed-in sessions, retained drafts after failed sends, and confirmed-success feedback. No fixes were made in this audit.
+
+---
+
+## Response (4 Sep 2026, after the audit)
+
+All eight findings fixed on branch `cunthanger`, merged to main. Emulator suite re-run
+green (functions 373), offline suite green, browser smokes green; both P1 journeys
+reproduced in a headless browser before and after.
+
+| Finding | Fix |
+| --- | --- |
+| P1-1 open feed never repaints | `refreshCunthangerTimelines()` runs at the end of every `render()`; only the mounted `.ch-timeline` is replaced, compose text/focus kept. Sends no longer close/reopen the sheet. |
+| P1-2 failed sends discard text | `sendPost`/`sendPresser` return a promise resolving `true` only on confirmed save; callers disable the button while pending, keep the editor and its words on `false`, toast success only after acceptance. |
+| P2-1 import rejects media fields | `posts`/`pressers` in `IMPORT_ALLOWED` with bounded validation; round-trip tested. |
+| P2-2 retrospective pressers | Server enforces: manager has a tie in the round; `pre` only before `gwHasStarted`; `post` only when `gwStatus === 'final'`; `gw < REGULAR_GWS`. Tested. |
+| P2-3 Back skips the seen flag | The flag is written the moment the alert is shown. |
+| P2-4 answers paired with regenerated questions | Each answer carries `q` (the question as shown, ≤240) stored server-side; readback and the paper render `an.q`, falling back to regeneration only for pre-fix records. |
+| P2-5 unsupported facts in Manager in Focus | "completed no signing from it"; distinguishes stormed out / no printable quote / not faced. |
+| P2-6 bench-burn never fires | `benchFor` returns player objects; loop fixed. |
+| Robustness | `pressConferenceSection` and `pressReceipts` wrapped; `answers` guarded with `Array.isArray` everywhere. |
+
+Not changed, by decision: the handle check still allows a journalist's spoof name (kits and
+names distinguish authors; a private league of twelve). Determinism qualification accepted:
+event windows are clock-derived by design, content is not.
