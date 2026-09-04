@@ -90,7 +90,7 @@ async function main() {
   }
   if (state !== 'ready') throw Error(`Refusing release: matching test run ${run.id} did not pass both suites`);
   validateFeed();
-  const serverFiles = ['functions/index.js', 'functions/feedcheck.js', 'js/engine.js', 'functions/package.json', 'functions/package-lock.json'];
+  const serverFiles = ['functions/index.js', 'functions/feedcheck.js', 'js/engine.js', 'js/club-media.js', 'functions/package.json', 'functions/package-lock.json'];
   const release = {
     siteCommit: head, sourceFingerprint: fingerprint(head), testedCommit: run.head_sha,
     testRun: run.html_url,

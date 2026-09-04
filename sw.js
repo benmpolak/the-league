@@ -9,12 +9,12 @@
 // only ever touches that prefix, so the beta can't wipe the real site's cache
 // (or the DJ archive's, or anyone else's).
 const PREFIX = 'tl-shell:' + new URL(self.registration.scope).pathname + ':';
-const CACHE = PREFIX + 'v5';
+const CACHE = PREFIX + 'v6';
 const LEGACY = ['the-league-shell-v1', 'the-league-shell-v2']; // pre-prefix names from this worker's earlier builds
 const SHELL = [
   './', './index.html', './css/style.css',
   './js/hostguard.js', './js/data.js', './js/history25.js', './js/lore.js',
-  './js/engine.js', './js/app.js', './js/gazette.js', './js/podcast.js', './js/sync.js',
+  './js/engine.js', './js/club-media.js', './js/cunthanger.js', './js/app.js', './js/gazette.js', './js/podcast.js', './js/sync.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png',
   // the sandbox's own name and crest, so the practice app is still telling
   // itself apart from the real one on a dead train

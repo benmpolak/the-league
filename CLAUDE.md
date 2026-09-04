@@ -44,6 +44,7 @@ Landmarks (all in app.js unless noted):
 - `bracketCard` / `playoffState` / `qfHandicap` — playoffs: GW34 handicap QFs, GW35 semis, GW36–38 three-legged final
 - `viewH2H`, `viewData`, `viewCup` (Palwin Ham Cup), `viewRules`, `viewSettings`
 - `engine.js` — scoring engine (shared with functions/), `sync.js` — Firebase auth + realtime, `functions/` — server-authoritative mutations
+- `club-media.js` — shared Club Inbox, assistant voices and cross-round media receipts; `docs/MEDIA-CONTINUITY.md` explains the triggers and release contract
 - CSS: single `css/style.css` (~1k lines)
 
 ## Running it locally

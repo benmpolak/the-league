@@ -635,7 +635,10 @@ window.Gazette = (() => {
     // Assistant Manager's Notebook — the lead story's beaten No. 2 speaks
     if (lead && typeof assistantFor === 'function') {
       const asst = assistantFor(lead.l);
-      if (asst) out.push(`<div class="prog-sec">From the Dressing Room</div><p><b>${esc(asst.t)} (${esc(teamName(lead.l))}):</b> ${esc(dressingRoomQuote(lead, gwIdx))}</p>`);
+      if (asst) {
+        const quote = typeof ClubMedia !== 'undefined' ? `“${ClubMedia.voice(asst.t, `dressing:${gwIdx}:${lead.kind}`)}”` : dressingRoomQuote(lead, gwIdx);
+        out.push(`<div class="prog-sec">From the Dressing Room</div><p><b>${esc(asst.t)} (${esc(teamName(lead.l))}):</b> ${esc(quote)}</p>`);
+      }
     }
     // The Treatment Table — owned players the feed flags, worst first
     const flagged = [];
@@ -1120,6 +1123,7 @@ window.Gazette = (() => {
       ${nibBlock}
       ${stakes}
       ${typeof pressReceipts === 'function' ? pressReceipts(gwIdx) : ''}
+      ${typeof clubMediaPaper === 'function' ? clubMediaPaper(gwIdx) : ''}
       ${interview(gwIdx)}
       ${departments(gwIdx, facts, used)}
     </div>`;

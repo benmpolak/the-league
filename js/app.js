@@ -285,7 +285,7 @@ function actGuard(mid, what = 'team') {
 
 // pins are gone — identity is real sign-in now. claims/autolists stay in local
 // state but arrive via the OWNER's private node online (blind to everyone else).
-const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'windowClaims', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats', 'pressers', 'posts'];
+const SHARED_KEYS = ['phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades', 'covenants', 'claims', 'waiverMeta', 'autolists', 'watchlists', 'adjustments', 'shirtNums', 'draftPool', 'windowDraft', 'windowClaims', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup', 'ready', 'mock', 'heckles', 'suggestions', 'liveStats', 'pressers', 'posts', 'mediaCases'];
 function sharedSnapshot() {
   const o = {};
   for (const k of SHARED_KEYS) o[k] = state[k];
@@ -581,6 +581,7 @@ function freshState() {
     windowClaims: {},      // {mid: [{in, out}]} — the Window Waiver's blind lists (Marc, 30 Aug 2026)
     tradeBlock: {},        // managerId -> [pid] players publicly listed as available to trade
     heckles: {},           // managerId -> {line, t} — draft-night barbs, indexes into HECKLES
+    mediaCases: {},       // weekly Club Inbox responses, public and on the record
     pressers: {},          // managerId -> { 'gwIndex:pre'|'gwIndex:post': {t, answers: [{id, tone, text}]} } — the press room (Cunthanger)
     posts: [],             // [{mid, to, text, gw, t}] — managers' own posts on the Cunthanger feed
     suggestions: [],       // the Suggestion Box — feature requests from the floor, ruled on by the Committee
@@ -833,6 +834,7 @@ function load() {
     if (s && !s.tradeBlock) s.tradeBlock = {};
     if (s && !s.heckles) s.heckles = {};
     if (s && !s.pressers) s.pressers = {};
+    if (s && !s.mediaCases) s.mediaCases = {};
     if (s && !Array.isArray(s.posts)) s.posts = [];
     if (s && !s.suggestions) s.suggestions = [];
     if (s && s.adjustments) for (const k of Object.keys(s.adjustments)) {
@@ -4258,6 +4260,15 @@ function cunthangerEvents() {
     ev.push({ type: 'manager', key: `post:${p.mid}:${p.t}`, mid: p.mid, aimed: true, oppMid: p.to ?? null, oppPos: p.to != null ? posAt(p.to, gi) : null,
       mgrName: managerName(p.mid), text: String(p.text).slice(0, 280), tone: 'unhinged', gwN: GAMEWEEKS[gi]?.n ?? gwN, at: `GW${GAMEWEEKS[gi]?.n ?? gwN}`, live: false, sortKick: +p.t || 0 });
   }
+  if (typeof ClubMedia !== 'undefined') {
+    for (const m of state.managers) for (const r of Object.values(state.mediaCases?.[m.id] || {})) {
+      if (!r || r.gw > gwIdx || r.gw < gwIdx - 1) continue;
+      ev.push({ type: 'clubcase', key: `clubcase:${m.id}:${r.gw}`, mid: m.id,
+        text: `${cleanTeamName(teamName(m.id))}: “${r.line}” ${r.report}`, at: `Club statement · GW${r.gw + 1}`, sortKick: r.t, live: false });
+    }
+    const echoes = ClubMedia.echoes(state, gwIdx, clubMediaApi()).sort((a, b) => ClubMedia.hash(`${gwIdx}:${a.mid}`) - ClubMedia.hash(`${gwIdx}:${b.mid}`)).slice(0, 3);
+    for (const r of echoes) ev.push({ type: 'clubcase', key: `long-memory:${r.mid}:${gwIdx}`, mid: r.mid, text: r.text, at: 'The cuttings file', sortKick: Date.parse(gwFrom(gwIdx)) - 1800e3, live: false });
+  }
   return ev;
 }
 
@@ -4396,6 +4407,7 @@ function pressRoomSheet(spec) {
     <div class="ch-tile-label">${phase === 'post' ? 'Post-match' : 'Pre-match'} press conference &middot; Gameweek ${GAMEWEEKS[gwIdx].n}</div>
     <h2 style="margin:4px 0 2px">${esc(teamName(mid))}</h2>
     <p class="muted" style="font-size:12px;margin-bottom:12px">${ctx.opp ? `${phase === 'post' ? 'After' : 'Before'} ${esc(cleanTeamName(ctx.opp))}. ` : ''}Pick an answer or say it in your own words. Everything you say is on the record, on the feed, and in Friday’s paper.</p>
+    ${clubPressMemory(mid, gwIdx)}
     ${qs.map((q, i) => `<div class="ch-q">
       <div class="ch-q-by">${esc(q.by)}, The League Gazette</div>
       <div class="ch-q-text">${esc(done ? answerQ(done.answers?.[i], qs, i) : q.q)}</div>
@@ -4679,6 +4691,99 @@ function pressConferencesRoom() {
    a place to view all. And then maybe below that have the feed." So: your
    press room and every press conference first, the feed second, the paper
    and the wireless third. The dashboard keeps its card. */
+// Ben, 4 Sept: a small club-office story each week, carried by the existing
+// press and assistant cast. Same fact adapter as the server's shared module.
+function clubMediaApi() {
+  return { REGULAR_GWS, gwStatus: (_, g) => gwStatus(g), pairingsFor: (_, g) => pairingsFor(g), gwManagerPoints: (_, mid, g) => gwManagerPoints(mid, g) };
+}
+function clubInboxItem(mid = meId(), gw = currentGwIndex()) {
+  if (typeof ClubMedia === 'undefined' || mid == null || mid === -1) return null;
+  return state.mediaCases?.[mid]?.[gw] || ClubMedia.incident(state, mid, gw, clubMediaApi());
+}
+function clubInboxNudge() {
+  const item = clubInboxItem();
+  if (!item || item.choice) return '';
+  return `<button type="button" class="gz-nudge" data-goto="media"><span class="gz-nudge-tag ch-tag">CLUB INBOX</span><span class="gz-nudge-copy"><b>${esc(item.title)}</b> &mdash; optional correspondence. The press will manage without you.</span><span class="gz-nudge-go" aria-hidden="true">&rarr;</span></button>`;
+}
+let mediaDraft = null, mediaSending = false;
+function clubInboxCard() {
+  const mid = meId(), item = clubInboxItem(mid);
+  if (!item) {
+    const old = Object.values(state.mediaCases?.[mid] || {}).filter(r => r && r.gw < currentGwIndex()).sort((a, b) => b.gw - a.gw);
+    return old.length ? `<section class="card club-inbox"><details class="club-correspondence"><summary>Club Inbox — previous correspondence (${old.length})</summary>${old.map(r => `<article><b>GW${r.gw + 1}: ${esc(r.title)}</b><p>${esc(r.line)}</p><p class="muted">${esc(r.replyBy)}: ${esc(r.reply)}</p></article>`).join('')}</details></section>` : '';
+  }
+  const done = !!item.choice;
+  const selected = mediaDraft?.key === `${mid}:${item.key}` ? mediaDraft.choice : null;
+  const archived = Object.values(state.mediaCases?.[mid] || {}).filter(r => r && r.gw < item.gw).sort((a, b) => b.gw - a.gw);
+  return `<section class="card club-inbox" aria-label="Club Inbox">
+    <div class="club-inbox-top"><span class="ch-tile-label">Club Inbox &middot; GW${item.gw + 1}</span><span class="tag">${done ? 'On the record' : 'One item'}</span></div>
+    <h2>${esc(item.title)}</h2><p class="club-letter">${esc(item.body)}</p>
+    ${done ? `<blockquote><span class="ch-tile-label">Your response</span><p>${esc(item.line)}</p></blockquote>
+      <div class="club-reply"><b>${esc(item.replyBy)}</b><p>${esc(item.reply)}</p></div>
+      <p class="club-inbox-foot">Filed. Next week’s correspondence will find you.</p>`
+      : `<fieldset class="club-options"><legend>Your response</legend>${item.choices.map(c => `<label class="club-option${selected === c ? ' on' : ''}"><input type="radio" name="club-response" value="${c}" ${selected === c ? 'checked' : ''} ${mediaSending ? 'disabled' : ''}><span><b>${esc(ClubMedia.OPTIONS[c].label)}</b><span>${esc(ClubMedia.OPTIONS[c].line)}</span></span></label>`).join('')}</fieldset>
+      <div class="club-inbox-send"><button class="btn" id="clubMediaSend" ${!selected || mediaSending ? 'disabled' : ''}>${mediaSending ? 'Filing…' : 'Put it on record'}</button><span>Your answer goes on the feed and in the paper.</span></div><p id="clubMediaError" role="status"></p>`}
+    ${archived.length ? `<details class="club-correspondence"><summary>Previous correspondence (${archived.length})</summary>${archived.map(r => `<article><span class="ch-tile-label">GW${r.gw + 1}</span><b>${esc(r.title)}</b><p>${esc(r.line)}</p><p class="muted">${esc(r.replyBy)}: ${esc(r.reply)}</p></article>`).join('')}</details>` : ''}
+  </section>`;
+}
+function bindClubInbox() {
+  const box = document.querySelector('.club-inbox'); if (!box) return;
+  const mid = meId(), item = clubInboxItem(mid);
+  if (!item || item.choice) return;
+  const send = box.querySelector('#clubMediaSend');
+  box.querySelectorAll('input[name="club-response"]').forEach(input => input.onchange = () => {
+    mediaDraft = { key: `${mid}:${item.key}`, choice: input.value };
+    box.querySelectorAll('.club-option').forEach(l => l.classList.toggle('on', l.contains(input)));
+    if (send) send.disabled = mediaSending;
+  });
+  if (send) send.onclick = async () => {
+    if (mediaSending || mediaDraft?.key !== `${mid}:${item.key}` || meId() !== mid) return;
+    const choice = mediaDraft.choice;
+    mediaSending = true; send.disabled = true; send.textContent = 'Filing…';
+    box.querySelectorAll('input').forEach(i => i.disabled = true);
+    try {
+      if (netOn()) {
+        const res = await serverAct('mediaRespond', { gw: item.gw, key: item.key, choice });
+        if (!res?.record) throw new Error('The press office did not confirm receipt. Try again.');
+        // The server acknowledgement is enough even if the realtime event
+        // arrives a moment later. Never save a shared snapshot back online.
+        state.mediaCases = { ...(state.mediaCases || {}), [mid]: { ...(state.mediaCases?.[mid] || {}), [item.gw]: res.record } };
+      } else {
+        const current = clubInboxItem(mid);
+        if (!current || current.key !== item.key || current.choice) throw new Error('The story has moved on. Reopen the Club Inbox.');
+        const record = ClubMedia.decide(state, mid, item, choice, Date.now());
+        if (!record) throw new Error('Choose a response.');
+        state.mediaCases = { ...(state.mediaCases || {}), [mid]: { ...(state.mediaCases?.[mid] || {}), [item.gw]: record } };
+        save();
+      }
+      mediaDraft = null; mediaSending = false; render(); toast('On the record. Ornsteak has a copy.');
+    } catch (err) {
+      mediaSending = false;
+      // A sync render can replace the card during a request; rebind its
+      // replacement, retaining the selected answer for a safe retry.
+      const liveBox = document.querySelector('.club-inbox');
+      if (liveBox) {
+        const button = liveBox.querySelector('#clubMediaSend');
+        if (button) { button.disabled = mediaDraft?.key !== `${meId()}:${clubInboxItem()?.key}`; button.textContent = 'Put it on record'; }
+        liveBox.querySelectorAll('input').forEach(i => i.disabled = false);
+        const message = liveBox.querySelector('#clubMediaError'); if (message) message.textContent = err.message || 'Not filed. Your answer is still here.';
+      }
+    }
+  };
+}
+function clubPressMemory(mid, gw) {
+  if (typeof ClubMedia === 'undefined') return '';
+  const echo = ClubMedia.echoes(state, gw, clubMediaApi()).find(r => r.mid === mid);
+  return echo ? `<aside class="club-press-memory"><b>The press have kept the cutting</b><p>${esc(echo.text)}</p></aside>` : '';
+}
+function clubMediaPaper(gw) {
+  if (typeof ClubMedia === 'undefined') return '';
+  const cases = state.managers.map(m => ({ mid: m.id, r: state.mediaCases?.[m.id]?.[gw] })).filter(x => x.r);
+  const echoes = ClubMedia.echoes(state, gw, clubMediaApi()).sort((a, b) => ClubMedia.hash(`${gw}:${a.mid}`) - ClubMedia.hash(`${gw}:${b.mid}`)).slice(0, 3);
+  if (!cases.length && !echoes.length) return '';
+  return `<div class="prog-sec">The Correspondence Desk</div>${cases.map(({ mid, r }) => `<p><b>${esc(teamName(mid))}</b>: &ldquo;${esc(r.line)}&rdquo; ${esc(r.report)}</p>`).join('')}
+    ${echoes.map(r => `<p>${esc(r.text)}</p>`).join('')}`;
+}
 function viewMedia() {
   if (state.phase !== 'season') return `<div class="card"><h2>Cunthanger Media</h2><p class="muted">The presses roll when the season does.</p></div>`;
   return `<div class="card ch-card">
@@ -4688,6 +4793,7 @@ function viewMedia() {
     <p class="muted" style="font-size:12.5px;margin-bottom:6px">Every manager, every round, on the record. Yours opens first.</p>
     ${pressConferencesRoom()}
   </div>
+  ${clubInboxCard()}
   <div class="card ch-room-inline" style="margin-top:14px">
     ${typeof Cunthanger !== 'undefined' ? cunthangerFeedHtml(120) : ''}
   </div>
@@ -7882,9 +7988,10 @@ function assistantCard(mid, gw) {
   const notMine = netOn() && !demoMode && !signedOut && whoami !== mid;
   if (notMine) return ''; // he works for YOU; other clubs have their own staff
   const asst = assistantFor(mid);
+  const aside = typeof ClubMedia !== 'undefined' ? `<p class="club-aside">${esc(ClubMedia.voice(asst.t, `${mid}:${gw}`))}</p>` : '';
   const head = body => `<div class="card assistant-card">
     <div class="assistant-pop" aria-hidden="true"><span class="assistant-person">&#129489;&#8205;&#128188;</span><small>${asst.e}</small></div>
-    <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">Assistant Manager${gafferFor(mid) ? ` — No. 2 to ${esc(titleish(gafferFor(mid).t))}` : ''}</span></h2>${body}</div>
+    <div class="assistant-copy"><h2>${esc(asst.t)} <span class="tag" title="${esc(asst.bio)}">Assistant Manager${gafferFor(mid) ? ` — No. 2 to ${esc(titleish(gafferFor(mid).t))}` : ''}</span></h2>${body}${signedOut ? '' : aside}</div>
   </div>`;
   if (signedOut) {
     return head(`<p class="muted" style="font-size:12.5px;opacity:.75">He has opinions on the XI and the Trough, but he only briefs his own manager. Sign in (top right) and he's yours.</p>`);
@@ -9313,6 +9420,7 @@ function viewDash() {
     <div class="dash-side-stack">
     <div class="card dash-attention">
       <h2>Needs your attention</h2>
+      ${clubInboxNudge()}
       ${offersIn.length ? `<button type="button" class="gz-nudge offer-nudge" id="offerNudge">
         <span class="gz-nudge-tag">OFFER IN</span>
         <span class="gz-nudge-copy">${offersIn.length === 1
@@ -10541,6 +10649,7 @@ function previewArticle(i, pick) {
     <div class="prog-sec">Around the grounds</div><p>${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     ${sitdown}
     ${typeof pressConferenceSection === 'function' ? pressConferenceSection(i) : ''}
+    ${typeof clubMediaPaper === 'function' ? clubMediaPaper(i) : ''}
     ${(typeof Gazette !== 'undefined' && Gazette.sackRace) ? Gazette.sackRace(i) : ''}
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
@@ -11365,6 +11474,7 @@ function dashMiniPitch(mid, gw) {
 }
 // the Cunthanger Media card's buttons, wherever the card is printed
 function bindCunthangerCard() {
+  bindClubInbox();
   const say = $('#chSayBtn');
   if (say) {
     const go = async () => {

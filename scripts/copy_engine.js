@@ -7,3 +7,6 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 fs.copyFileSync(path.join(ROOT, 'js', 'engine.js'), path.join(ROOT, 'functions', 'engine.js'));
 console.log('functions/engine.js refreshed from js/engine.js');
+
+fs.copyFileSync(path.join(ROOT, 'js', 'club-media.js'), path.join(ROOT, 'functions', 'club-media.js'));
+console.log('functions/club-media.js refreshed from js/club-media.js');

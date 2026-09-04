@@ -28,6 +28,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const admin = require('firebase-admin');
 const Engine = require('./engine.js');
 const Feed = require('./feedcheck.js');
+const ClubMedia = require('./club-media.js');
 
 setGlobalOptions({ region: 'europe-west1', maxInstances: 5 });
 // explicit databaseURL: the emulator redirects the transport, but the
@@ -1299,6 +1300,40 @@ ACTIONS.presser = async ({ league, a, data, state, eng }) => {
   return { ok: true };
 };
 
+// Ben, 4 Sept: one optional club-office decision per round. Rebuild the
+// offered incident against the committing public snapshot: fabricated cases,
+// somebody else's identity and two conflicting answers cannot get through.
+ACTIONS.mediaRespond = async ({ league, a, data, ctx, eng }) => {
+  const mid = a.managerId, gw = data.gw;
+  if (!Number.isInteger(gw) || gw !== eng.currentGwIndex() || gw >= eng.REGULAR_GWS)
+    throw new HttpsError('failed-precondition', 'that week’s inbox is closed');
+  if (typeof data.key !== 'string' || typeof data.choice !== 'string') throw new HttpsError('invalid-argument', 'choose a response');
+  const ref = db().ref(`${leagueBase(league)}/public`);
+  const seedSnap = (await ref.get()).val();
+  let result = null, reason = 'the story has moved on — reopen your Club Inbox';
+  const res = await ref.transaction(seededObj(seedSnap, pub => {
+    result = null;
+    if (gw !== eng.currentGwIndex() || pub.phase !== 'season' || !toArr(pub.managers).some(m => m.id === mid)) return;
+    const existing = pub.mediaCases?.[mid]?.[gw];
+    if (existing) {
+      if (existing.key === data.key && existing.choice === data.choice) result = existing;
+      else reason = 'your response is already on the record';
+      return;
+    }
+    const snapshot = normalizeState(JSON.parse(JSON.stringify(pub)), ctx);
+    const item = ClubMedia.incident(snapshot, mid, gw, eng);
+    if (!item || item.key !== data.key) return;
+    const record = ClubMedia.decide(snapshot, mid, item, data.choice, Date.now());
+    if (!record) return;
+    pub.mediaCases = pub.mediaCases || {};
+    pub.mediaCases[mid] = { ...(pub.mediaCases[mid] || {}), [gw]: record };
+    result = record;
+    return pub;
+  }));
+  if (!res.committed && !result) throw new HttpsError('failed-precondition', reason);
+  return { ok: true, record: result };
+};
+
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
   if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
@@ -2083,7 +2118,7 @@ const IMPORT_ALLOWED = new Set([
   'phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades',
   'covenants', 'waiverMeta', 'adjustments', 'shirtNums', 'draftPool',
   'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup',
-  'claims', 'autolists', 'watchlists', 'posts', 'pressers',
+  'claims', 'autolists', 'watchlists', 'posts', 'pressers', 'mediaCases',
 ]);
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
@@ -2164,7 +2199,27 @@ ACTIONS.importState = async ({ league, a, data, ctx }) => {
     }
     s.posts = posts;
   }
+  if (s.mediaCases !== undefined) {
+    // RTDB may coerce densely numbered manager/week maps to sparse arrays.
+    const objectMap = v => Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, r]) => r != null)) : v;
+    s.mediaCases = objectMap(s.mediaCases);
+    if (!isPlainObj(s.mediaCases) || Object.keys(s.mediaCases).length > 12) importError('mediaCases');
+    for (const [mid, value] of Object.entries(s.mediaCases)) {
+      const cases = s.mediaCases[mid] = objectMap(value);
+      if (!toArr(s.managers).some(m => String(m.id) === mid) || !isPlainObj(cases) || Object.keys(cases).length > 33) importError('mediaCases');
+      for (const [g, r] of Object.entries(cases)) {
+        if (!isPlainObj(r) || !Number.isInteger(r.gw) || r.gw < 0 || r.gw >= 33 || String(r.gw) !== g
+          || !Number.isFinite(r.t) || !Object.hasOwn(ClubMedia.OPTIONS, r.choice) || !['', 'ban', 'assistant'].includes(r.grudge)
+          || !Array.isArray(r.choices) || r.choices.length > 3 || !r.choices.every(c => Object.hasOwn(ClubMedia.OPTIONS, c))
+          || !r.choices.includes(r.choice)) importError('mediaCases');
+        const fields = ['kind', 'title', 'body', 'evidence', 'speaker', 'key', 'line', 'reply', 'replyBy', 'report'];
+        if (fields.some(k => typeof r[k] !== 'string' || r[k].length > 700)
+          || Object.keys(r).some(k => ![...fields, 'gw', 't', 'choice', 'choices', 'grudge'].includes(k))) importError('mediaCases');
+      }
+    }
+  }
   if (s.pressers !== undefined) {
+    if (Array.isArray(s.pressers)) s.pressers = Object.fromEntries(Object.entries(s.pressers).filter(([, r]) => r != null));
     if (!isPlainObj(s.pressers)) importError('pressers');
     for (const [mid, rounds] of Object.entries(s.pressers)) {
       if (!/^\d+$/.test(mid) || !isPlainObj(rounds)) importError('pressers');

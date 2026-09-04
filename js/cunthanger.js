@@ -387,6 +387,9 @@ window.Cunthanger = (() => {
       const voice = hash(k + ':voice') % 3 === 0 ? 'sage' : 'melt';
       const who = voice === 'sage' ? sage : melt;
       switch (e.type) {
+        case 'clubcase':
+          add(colour('DavidOrnsteak'), k, '{text}', { text: e.text }, { ...meta, w: 5 });
+          break;
         case 'goal': {
           if (e.role === 'trough') {
             const beat = hash(k) % 2 ? 'wire' : 'transfers';
