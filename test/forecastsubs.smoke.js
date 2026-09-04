@@ -252,9 +252,16 @@ let pass = 0, fail = 0;
         const ev = state.matchStats['gw' + GAMEWEEKS[GW].n];
         ev.playerStats[rep.id] = { ...played(), g: 1 }; // he has been on, and scored
         for (const f of state.fixtures) if (f.gw === GAMEWEEKS[GW].n && (f.home === rep.team || f.away === rep.team)) { f.started = true; f.fp = true; }
-        const after = forecastSubs(s.mid, GW).find(x => x.out === s.out.id);
+        const subsAfter = forecastSubs(s.mid, GW);
+        const after = subsAfter.find(x => x.out === s.out.id);
+        // Finishing his club's fixture finishes it for his OPPONENT too, and
+        // with today's feed the demo XI carries a man from that side — so the
+        // forecast, walking the XI in order, may spend him on THAT slot before
+        // it reaches ours and name the next bench man for us. He is still the
+        // man the forecast names; just not necessarily for this hole.
+        const usedAnywhere = subsAfter.some(x => x.in === rep.id) || effectiveXI(s.mid, GW).xi.includes(rep.id);
         t('a bench man who has already played is still the one the forecast names',
-          !!after && after.in === rep.id,
+          usedAnywhere,
           after ? `named ${PLAYER_BY_ID[after.in].name}, expected ${rep.name}` : 'no forecast at all');
         t('and the projected XI carries him',
           liveXI(s.mid, GW).xi.includes(rep.id));
