@@ -1219,6 +1219,67 @@ ACTIONS.heckle = async ({ league, a, data, state }) => {
   return { ok: true };
 };
 
+/* ---- Cunthanger: the press room and the feed (Ben, 3-4 Sep 2026) ----
+   Two writes a manager can make to the League's own social network. Both
+   are public by design — a post is meant to be picked up on the wire and
+   read out to everyone — so they live under public/ like heckles. Text is
+   the manager's own words, bounded and stored verbatim; the app escapes at
+   render. A press conference is once per round per manager: what's said
+   is said. */
+const PRESSER_TONES = new Set(['humble', 'confident', 'dismissive', 'unhinged']);
+ACTIONS.post = async ({ league, a, data, state }) => {
+  const mid = a.managerId;
+  if (!Number.isInteger(mid) || mid < 0) throw new HttpsError('permission-denied', 'sign in as a manager to post');
+  if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'the feed opens with the season');
+  if (typeof data.text !== 'string') throw new HttpsError('invalid-argument', 'a post is text');
+  const text = cleanText(data.text, 280).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim();
+  if (!text) throw new HttpsError('invalid-argument', 'an empty post is just staring');
+  let to = null;
+  if (data.to !== undefined && data.to !== null) {
+    to = Number(data.to);
+    if (!Number.isInteger(to) || to === mid || !toArr(state.managers).some(m => m.id === to)) throw new HttpsError('invalid-argument', 'aim it at another of the twelve, or at nobody');
+  }
+  const gw = Number(data.gw);
+  if (!Number.isInteger(gw) || gw < 0 || gw > 40) throw new HttpsError('invalid-argument', 'bad gameweek');
+  const ref = db().ref(`${leagueBase(league)}/public/posts`);
+  const seedSnap = (await ref.get()).val();
+  const res = await ref.transaction(seededObj(seedSnap, cur => {
+    const arr = toArr(cur);
+    const last = [...arr].reverse().find(p => p && p.mid === mid);
+    if (last && Date.now() - (+last.t || 0) < 5000) return; // abort — one every five seconds is plenty
+    const next = [...arr, { mid, to, text, gw, t: Date.now() }];
+    return next.length > 400 ? next.slice(-400) : next; // the feed keeps the last four hundred; the paper keeps the rest
+  }));
+  if (!res.committed) throw new HttpsError('resource-exhausted', 'one post every five seconds — let it land');
+  return { ok: true };
+};
+ACTIONS.presser = async ({ league, a, data, state }) => {
+  const mid = a.managerId;
+  if (!Number.isInteger(mid) || mid < 0) throw new HttpsError('permission-denied', 'sign in as a manager to face the press');
+  if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'the press room opens with the season');
+  const gw = Number(data.gw);
+  if (!Number.isInteger(gw) || gw < 0 || gw > 40) throw new HttpsError('invalid-argument', 'bad gameweek');
+  const phase = data.phase === 'post' ? 'post' : data.phase === 'pre' ? 'pre' : null;
+  if (!phase) throw new HttpsError('invalid-argument', 'before or after, not during');
+  const answers = toArr(data.answers);
+  if (!answers.length || answers.length > 5) throw new HttpsError('invalid-argument', 'between one and five answers');
+  const clean = answers.map(ans => {
+    if (!ans || typeof ans !== 'object') throw new HttpsError('invalid-argument', 'bad answer');
+    const id = cleanText(ans.id, 20).replace(/[^a-z]/g, '');
+    const tone = PRESSER_TONES.has(ans.tone) ? ans.tone : 'dismissive';
+    const text = cleanText(ans.text, 280).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim() || 'No comment.';
+    return { id, tone, own: !!ans.own, text };
+  });
+  const ref = db().ref(`${leagueBase(league)}/public/pressers/${mid}/${gw}:${phase}`);
+  const seedSnap = (await ref.get()).val();
+  const res = await ref.transaction(seededObj(seedSnap, cur => {
+    if (cur && cur.t) return; // abort — what's said is said
+    return { t: Date.now(), answers: clean };
+  }));
+  if (!res.committed) throw new HttpsError('already-exists', 'you have faced the press for this round. What’s said is said.');
+  return { ok: true };
+};
+
 ACTIONS.stadiumSet = async ({ league, a, data, state }) => {
   const mid = actingManager(a, data);
   if (!toArr(state.managers).some(m => m.id === mid)) throw new HttpsError('not-found', 'no such manager');
