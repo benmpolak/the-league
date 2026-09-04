@@ -473,12 +473,14 @@ const chk = (name, ok, detail = '') => {
     const room = document.querySelector('.gazette-room');
     const art = room?.querySelector('.prog-art');
     const out = {
-      card: !!card, mast: !!card?.querySelector('.prog-plate .prog-title'),
+      // the paper is a Cunthanger Media title now (4 Sep): the card carries the
+      // group's wordmark and the Gazette tile's label, not the old nameplate
+      card: !!card, mast: !!card?.querySelector('.ch-tile-label-paper') && /Gazette/i.test(card.querySelector('.ch-tile-label-paper').textContent),
       teaser: !!card?.querySelector('.prog-head-lead'), room: !!room,
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
       edition: room?.querySelector('.prog-date')?.textContent || '',
       noPriceGag: !/your dignity|price:/i.test(room?.querySelector('.prog-date')?.textContent || ''),
-      frontDesign: !!card?.querySelector('.prog-seal[src="icons/icon-192.png"]') && !!card?.querySelector('.prog-flag')
+      frontDesign: !!card?.querySelector('.ch-wordmark') && /CUNTHANGER MEDIA/.test(card.querySelector('.ch-wordmark').textContent)
         && !!card?.querySelector('.prog-front-by') && !!card?.querySelector('.prog-read'),
       order: follows(attention, business) && business?.parentElement?.classList.contains('dash-side-stack'),
       compact: business?.classList.contains('business-compact'),
