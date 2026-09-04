@@ -1746,3 +1746,7 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .ch-compose textarea { width: 100%; resize: none; font: inherit; font-size: 14px; }
 .ch-compose-row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .ch-compose-row select { flex: 1; min-width: 0; font-size: 12px; }
+.prog-odds { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 18px; margin: 6px 0 8px; }
+.prog-odds-row { font-size: 13px; line-height: 1.5; }
+.prog-odds-price { display: inline-block; min-width: 46px; font-family: Inter, system-ui, sans-serif; font-weight: 800; font-size: 11.5px; color: var(--gold); }
+@media (max-width: 700px) { .prog-odds { grid-template-columns: 1fr; } }

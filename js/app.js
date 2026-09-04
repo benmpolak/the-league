@@ -10403,6 +10403,7 @@ function previewArticle(i, pick) {
     <div class="prog-sec">Around the grounds</div><p>${esc(grounds.join('; '))}.${esc(troughLine)}${esc(draftLine)}</p>
     ${sitdown}
     ${typeof pressConferenceSection === 'function' ? pressConferenceSection(i) : ''}
+    ${(typeof Gazette !== 'undefined' && Gazette.sackRace) ? Gazette.sackRace(i) : ''}
     <p class="muted" style="font-size:12px">${esc(closer)}</p>
   </div>`;
 }

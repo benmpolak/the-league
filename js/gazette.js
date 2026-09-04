@@ -994,8 +994,93 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
+  /* ---------- Manager in Focus (Ben, 4 Sep: "has singer lost 2 from 2?
+     ... pile the pressure on the cunt") ----------
+     Whoever is winless and lowest going into the round, from the table and
+     the ledger: his record, what he did in the window, who he faces, and
+     what he told the press if he faced it. Prints when there is such a man,
+     which after two rounds there usually is. */
+  function managerInFocus(gwIdx) {
+    try {
+      const table = h2hStandings(false, gwIdx);
+      const played = table.filter(r => r.p >= 2);
+      if (!played.length) return '';
+      const winless = played.filter(r => r.w === 0);
+      if (!winless.length) return '';
+      // the man under most pressure is not the worst winless side but the
+      // best one: scoring plenty and winning nothing is the story (Ben, 4 Sep:
+      // Singer, 73 scored, nought from two — "he NEEDS a win")
+      const row = [...winless].sort((a, b) => b.pf - a.pf || a.id - b.id)[0];
+      const mid = row.id;
+      const pos = table.findIndex(r => r.id === mid) + 1;
+      const name = managerName(mid), team = teamName(mid);
+      const surname = name.trim().split(/\s+/).slice(-1)[0];
+      const pr = pairingsFor(gwIdx).find(x => x.includes(mid));
+      const opp = pr ? (pr[0] === mid ? pr[1] : pr[0]) : null;
+      const oppRow = opp != null ? table.find(r => r.id === opp) : null;
+      const oppPos = opp != null ? table.findIndex(r => r.id === opp) + 1 : null;
+      // the window: what he let go, what he took
+      const window = state.transfers.filter(t => t.windowDraft && t.managerId === mid);
+      const swaps = window.map(t => ({ out: PLAYER_BY_ID[t.outId], inn: PLAYER_BY_ID[t.inId] })).filter(x => x.out && x.inn);
+      // where the points went: his XI's totals versus the round's average
+      let scored = 0, conceded = 0, n = 0;
+      for (let i = 0; i < gwIdx; i++) {
+        if (gwStatus(i) !== 'final') continue;
+        const p2 = pairingsFor(i).find(x => x.includes(mid)); if (!p2) continue;
+        const o2 = p2[0] === mid ? p2[1] : p2[0];
+        scored += gwManagerPoints(mid, i); conceded += gwManagerPoints(o2, i); n++;
+      }
+      const bench = benchWasteOf(mid, gwIdx - 1);
+      const said = (typeof presserOf === 'function') ? presserOf(mid, gwIdx, 'pre') : null;
+      const quote = said?.answers?.find(a => a && a.text && a.text !== 'No comment.')?.text || null;
+      const by = press(['colour', 'match'], `focus:${gwIdx}:${mid}`).n;
+      const record = `${word(row.p).replace(/^./, c => c.toUpperCase())} played, none won, ${row.d ? `${word(row.d)} drawn, ` : ''}${word(row.l)} lost`;
+      const head = pick2([`${surname.toUpperCase()} NEEDS A WIN`, `NO PRESSURE, ${surname.toUpperCase()}`, `${surname.toUpperCase()}: THE WALLS ARE CLOSING IN`], `focus-head:${gwIdx}:${mid}`);
+      const paras = [];
+      const others = winless.filter(r => r.id !== mid);
+      paras.push(`${name} is ${nth(pos)} of twelve. ${record}${n ? `, ${scored} scored and ${conceded} conceded across ${word(n)} round${n === 1 ? '' : 's'}` : ''}.${others.length ? ` ${word(others.length)} other club${others.length === 1 ? ' is' : 's are'} also winless, and none of them has scored as many as ${team}, which is the whole problem: this is a side doing everything except the thing.` : ''} Nobody at ${team} has used the word crisis. Nobody at ${team} has needed to; everybody else has.`);
+      if (swaps.length) {
+        const sw = swaps.map(x => `${x.out.name} out, ${x.inn.name} in`).join('; ');
+        paras.push(`The window was an opportunity to change something. ${team} changed this: ${sw}. The Committee's stats desk declines to grade the exchange, on the grounds that grading is for people who might learn something.`);
+      } else {
+        paras.push(`The window was an opportunity to change something. ${team} lodged nothing, which the manager will describe as faith in the squad and the squad will describe as being left to it.`);
+      }
+      if (bench >= 8) paras.push(`Last round ${word(bench)} points sat on the bench, which is not a selection issue so much as a selection.`);
+      if (opp != null) paras.push(`This week it is ${teamName(opp)}, ${nth(oppPos)} in the table${oppRow && oppRow.w ? ` with ${word(oppRow.w)} win${oppRow.w === 1 ? '' : 's'}` : ''}. ${pick2([`Win, and the season starts. Lose, and the group chat has already drafted the statement.`, `A win is not required. A win is merely the only thing that would stop the conversation.`, `The fixture list does not know it is doing this. The fixture list is doing this.`], `focus-tail:${gwIdx}:${mid}`)}`);
+      if (quote) paras.push(`Asked about it, ${name} said: “${quote}”`);
+      else paras.push(`${name} has not yet faced the press this week. The press has noticed.`);
+      return `<div class="prog-story prog-lead-story prog-focus">
+        <div class="prog-story-kicker">MANAGER IN FOCUS</div>
+        <div class="prog-head">${esc(head)}</div>
+        <div class="prog-by">By ${esc(by)}</div>
+        ${paras.map(p => `<p>${esc(p)}</p>`).join('')}
+      </div>`;
+    } catch (e) { return ''; }
+  }
+  /* ---------- the sack race (Ian, 4 Sep: "can we have an odds section? eg
+     next manager to be sacked") ----------
+     Nobody can be sacked. The market is open anyway. Pressure is wins, then
+     table Points, then fantasy points, then last round's bench; the odds are
+     a ladder, so the copy never claims a number it cannot back. */
+  const ODDS = ['4/6', 'Evens', '6/4', '5/2', '4/1', '6/1', '8/1', '12/1', '16/1', '25/1', '33/1', '66/1'];
+  function sackRace(gwIdx) {
+    try {
+      const table = h2hStandings(false, gwIdx);
+      if (!table.some(r => r.p > 0)) return '';
+      const rows = table.map(r => ({ ...r, bench: benchWasteOf(r.id, gwIdx - 1) }))
+        .sort((a, b) => a.w - b.w || a.pts - b.pts || a.pf - b.pf || b.bench - a.bench || a.id - b.id);
+      const line = rows.map((r, k) => `<div class="prog-odds-row"><span class="prog-odds-price">${ODDS[Math.min(k, ODDS.length - 1)]}</span> <b>${esc(managerName(r.id))}</b> <span class="muted">${esc(teamName(r.id))}</span></div>`).join('');
+      const fav = rows[0];
+      return `<div class="prog-sec">The Sack Race</div>
+        <p class="prog-deck">Next manager to leave his post. No manager can leave his post. The market is open regardless, and ${esc(managerName(fav.id))} is the favourite at ${ODDS[0]}.</p>
+        <div class="prog-odds">${line}</div>
+        <p class="muted" style="font-size:11px">Prices by the Gazette’s trading desk from wins, Points, points and last round’s bench. Not a bookmaker. Not advice. Not wrong.</p>`;
+    } catch (e) { return ''; }
+  }
+  const pick2 = (arr, key) => arr[hash(key) % arr.length];
+
   const COMMISSIONS = {
-    3: gwIdx => luckStory(gwIdx) + lettersPage(gwIdx),
+    3: gwIdx => luckStory(gwIdx) + managerInFocus(gwIdx) + lettersPage(gwIdx),
   };
   /* the commissioned front page for a matchday edition, or '' — app.js
      previewArticle prints it above the fixtures, so its .prog-head is the
@@ -1363,5 +1448,5 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
-  return { review, preview, draftSpecial, interview, frontPage, windowSpecial, windowSpecialLive, windowRun, WINDOW_SPECIAL_FROM, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
+  return { review, preview, draftSpecial, interview, frontPage, managerInFocus, sackRace, windowSpecial, windowSpecialLive, windowRun, WINDOW_SPECIAL_FROM, _classify: classify, _facts: factsFor, _editionLineIds: editionLineIds };
 })();
