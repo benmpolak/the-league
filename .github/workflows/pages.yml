@@ -9,7 +9,7 @@
 # site.
 #
 # Two triggers, both needed (the mirror.yml lesson, same shape):
-#  - push: human commits deploy immediately
+#  - push: releases wait for the same code to pass the test workflow
 #  - workflow_run: the FPL bot commits with GITHUB_TOKEN, and GitHub
 #    deliberately never fires push workflows off such pushes — so the deploy
 #    chains off the refresh workflow completing instead. A gate step skips
@@ -21,12 +21,14 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Refresh FPL data"]
+    workflows: ["Refresh FPL data", "Test game engine"]
     types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -50,9 +52,10 @@ jobs:
           # workflow_run's own sha is the commit the refresh STARTED on —
           # before the bot's data commit. Always deploy the tip of main.
           ref: main
+          fetch-depth: 0
       - name: Stand down when the refresh pushed nothing and nothing else moved
         id: gate
-        if: github.event_name == 'workflow_run'
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Refresh FPL data'
         run: |
           # The refresh's head_sha is the commit it STARTED on: if main still
           # points there, it committed nothing and nobody else pushed, so the
@@ -67,8 +70,18 @@ jobs:
             echo "skip=1" >> "$GITHUB_OUTPUT"
           fi
       - if: ${{ !steps.gate.outputs.skip }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require passing tests for this code and validate the current feed
+        id: checks
+        if: ${{ !steps.gate.outputs.skip }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release_gate.js
+      - if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}
         uses: actions/configure-pages@v5
-      - if: ${{ !steps.gate.outputs.skip }}
+      - if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
@@ -78,7 +91,7 @@ jobs:
       # occasionally lands in the gap and dies (three failure emails on
       # draft night alone). One paced retry absorbs the race; a genuine
       # failure fails the retry too and the run still goes red.
-      - if: ${{ !steps.gate.outputs.skip }}
+      - if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}
         id: deployment
         uses: actions/deploy-pages@v4
         continue-on-error: true

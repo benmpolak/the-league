@@ -1,14 +1,15 @@
 seed.html
+/release.json
 data/squads_raw.json
 .DS_Store
 firebase-debug.log
-node_modules/
+node_modules
 data/backups/*.json
 # auth hardening — never commit these
 managers.local.json
 service-account*.json
 functions/engine.js
-functions/node_modules/
+functions/node_modules
 *.secret.json
 emulator-data/
 firebase-export-*

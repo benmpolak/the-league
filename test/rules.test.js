@@ -22,7 +22,11 @@ const T = require('./testenv.js');
   await db.ref(`v2/leagues/${LG}/public`).set({ phase: 'season', managers: [{ id: 1, name: 'A', team: 'TA' }] });
   await db.ref(`v2/leagues/${LG}/private/${members[1].uid}/autolist`).set([101, 102]);
   await db.ref(`v2/leagues/${LG}/private/${members[2].uid}/claims/2`).set([{ in: 103, out: 104 }]);
-  await db.ref(`v2/leagues/${LG}/server/waiverRuns/r1`).set({ status: 'done' });
+  // Include an old recovery plan: tightening the rules must protect records
+  // already written, not just plans made by the new function.
+  await db.ref(`v2/leagues/${LG}/server/waiverRuns/r1`).set({
+    status: 'done', plan: { consumed: { 2: { 2: [{ in: 103, out: 104 }] } } },
+  });
   await db.ref('leagues/legacy-test').set({ phase: 'season', managers: [{ id: 1 }] });
 
   /* ---- anonymous ---- */
@@ -42,7 +46,12 @@ const T = require('./testenv.js');
   chk('A cannot read B private (blind claims stay blind)', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/private/${members[2].uid}`, { token: tokA })).status));
   chk('A reads own membership', (await T.rest('GET', `v2/leagues/${LG}/server/membership/${members[1].uid}`, { token: tokA })).status === 200);
   chk('A cannot read B membership', [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/server/membership/${members[2].uid}`, { token: tokA })).status));
-  chk('A reads waiverRuns (transparency)', (await T.rest('GET', `v2/leagues/${LG}/server/waiverRuns`, { token: tokA })).status === 200);
+  for (const [label, token] of [['anon', null], ['commissioner', tokA], ['manager', tokB]]) {
+    for (const suffix of ['', '/r1', '/r1/plan/consumed/2/2']) {
+      chk(`${label} cannot read recovery ledger${suffix} (including historical claims)`,
+        [401, 403].includes((await T.rest('GET', `v2/leagues/${LG}/server/waiverRuns${suffix}`, { token })).status));
+    }
+  }
 
   /* ---- no client writes, even as the commissioner's own uid ---- */
   chk('A (commissioner) cannot write public', [401, 403].includes((await T.rest('PUT', `v2/leagues/${LG}/public/phase`, { token: tokA, body: 'setup' })).status));

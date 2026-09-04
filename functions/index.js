@@ -215,7 +215,14 @@ async function appendTransfers(league, state, eng, records, tgw) {
   const res = await ref.transaction(seeded(state.transfers, out => {
     for (const r of records) {
       const owned = eng.ownedIdsGiven(state, out, tgw);
-      if (owned.has(r.inId) || !owned.has(r.outId)) return; // sniped — abort whole txn
+      // Ben, reliability pass, 4 Sept: two tabs can both validate against the
+      // old squad. Judge each move against the ledger this transaction will
+      // actually commit, including moves that won a concurrent transaction.
+      const current = { ...state, transfers: out };
+      const squad = eng.squadAt(current, r.managerId, tgw);
+      if (owned.has(r.inId) || !squad.some(p => p.id === r.outId)) return;
+      const next = [...out, r];
+      if (!eng.squadShapeOk(current, eng.squadAt({ ...state, transfers: next }, r.managerId, tgw))) return;
       out.push({ ...r, n: out.length + 1 });
     }
     return out;
@@ -225,9 +232,11 @@ async function appendTransfers(league, state, eng, records, tgw) {
 }
 // strip a departing player from the target GW's stored lineup, if one exists
 async function stripLineup(league, state, mid, tgw, outId) {
-  const lu = state.lineups[mid]?.[tgw];
-  if (!lu) return;
-  await db().ref(`${leagueBase(league)}/public/lineups/${mid}/${tgw}`).set(toArr(lu).filter(id => id !== outId));
+  // Two compatible signings must remove BOTH departing men, without writing
+  // either request's old team sheet over the other's update. Return null on
+  // the empty-cache pass (not undefined, which aborts instead of retrying).
+  await db().ref(`${leagueBase(league)}/public/lineups/${mid}/${tgw}`).transaction(cur =>
+    cur === null ? null : toArr(cur).filter(id => id !== outId));
 }
 
 /* ---------------- the waiver core (shared by schedule + run-now) ----------------
@@ -364,7 +373,9 @@ async function runWaivers(league, runId, trigger, failAt) {
         records: res.records.map(r => ({ ...r, runId })), executed: res.executed,
         buckets: res.buckets, stampedMeta: res.stampedMeta,
         strippedLineups: res.strippedLineups, tgw: res.tgw,
-        consumed: state.claims || {}, // exactly what this run adjudicated — a claim lodged AFTER planning must survive the apply
+        // Only adjudicated buckets belong in the recovery plan. Future
+        // claims remain solely in private/, untouched by this run.
+        consumed: Object.fromEntries(res.buckets.map(g => [g, state.claims?.[g] || {}])),
       };
       await runRef.update({ status: 'applying', plan });
     }
@@ -2711,6 +2722,9 @@ exports.liveRefresh = onCall(async req => {
  * process can walk through window/no-window scenarios. Inert in production —
  * the DB-emulator gate covers the suites that require this module in-process. */
 if (EMULATED || process.env.FIREBASE_DATABASE_EMULATOR_HOST) {
+  // Exercise two already-validated requests with the same stale snapshot,
+  // deterministically, through the real database transaction.
+  exports._transferTest = { appendTransfers, stripLineup };
   exports._liveTest = {
     reset() { _fxCache = null; },
     pushLiveOnce,

@@ -96,7 +96,7 @@
               }
             },
             "waiverRuns": {
-              ".read": true
+              ".read": false
             },
             "maintenance": {
               ".read": true
