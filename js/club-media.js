@@ -129,8 +129,9 @@
     const out = [];
     for (const m of arr(state.managers)) {
       const last = history(state, m.id, gw)[0];
+      const current = state.mediaCases?.[m.id]?.[gw];
       const rs = results(state, m.id, gw, api);
-      if (last && last.grudge && gw - last.gw <= 4) {
+      if (last && last.grudge && (!current || current.grudge === last.grudge) && gw - last.gw <= 4) {
         const since = rs.filter(r => r.gw >= last.gw);
         if (!since.length) continue;
         const wins = since.filter(r => r.scored > r.conceded).length;

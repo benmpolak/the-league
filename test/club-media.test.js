@@ -43,7 +43,10 @@ check('banning creates a continuing dispute; clearing the air ends it', () => {
   const next = M.incident(s, 1, 2, api); assert.equal(next.kind, 'carpark');
   s.mediaCases[1][2] = M.decide(s, 1, next, 'double', 200);
   assert.equal(M.incident(s, 1, 3, api).kind, 'carpark');
+  s.scores = [[30, 20], [20, 30], [30, 20]];
+  assert.match(M.echoes(s, 3, api)[0].text, /reporter is still outside/);
   s.mediaCases[1][3] = M.decide(s, 1, M.incident(s, 1, 3, api), 'apologise', 300);
+  assert.ok(M.echoes(s, 3, api).every(r => !r.text.includes('reporter is still outside')));
   assert.equal(M.incident(s, 1, 4, api), null);
 });
 check('blaming Phil Neal produces Phil Neal, then a meeting', () => {
