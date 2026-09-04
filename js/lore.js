@@ -467,7 +467,8 @@ const CUNTHANGER_PRESS = [
   { h: 'JonathanLieu', n: 'Jonathan Lieu', beat: 'colour', bio: 'Guardian. Has a theory. The theory is about you.' },
   { h: 'PiersMoregone', n: 'Piers Moregone', beat: 'pundit', bio: 'Arsenal. Unfortunately. Views entirely his own, loudly.' },
   { h: 'SimonJordon', n: 'Simon Jordon', beat: 'pundit', bio: 'talkSPORT. Owned a club once. Will tell you.' },
-  { h: 'MattLeTus', n: 'Matt Le Tus', beat: 'conspiracy', bio: 'Former footballer. Current thinker. Do your own research.' },
+  { h: 'MattLeTus', n: 'Matt Le Tus', beat: 'conspiracy', bio: 'Former footballer. Current thinker. Do your own research. Code LETUS20.' },
+  { h: 'HowardPrestwich', n: 'Howard', beat: 'caller', bio: 'Long-time listener. First-time tweeter. Prestwich.' },
 ];
 
 // Ben Suppery's second opinions. Ian, 3 Sep: "wor Joelinton out for 2-4
@@ -504,4 +505,24 @@ const CUNTHANGER_LETUS = [
   'The Gazette is printed. Where. Where is it printed. Show me the printer. You can’t.',
   'They rebranded the vidiprinter and nobody noticed. What else have they rebranded. What else.',
   'A man once told me the playoffs decide the title. The table decides the title. The man was from the Committee.',
+  // Marc, 4 Sep: "the odd tweet about covid vaccines would be good. Make it more real." Ian: "CBD promotions"
+  'Ask yourself why every player who had the jab is now “a doubt”. Ask yourself why nobody in the media will say it. I will say it. Code LETUS20.',
+  'Sponsored: 20% off CBD oil with code LETUS20. It sorted my hamstring in 2009 and it will sort your bench. Not medical advice. Better than medical advice.',
+  'Asked about the vaccine again today. I have said everything I am going to say on it, which was four hundred tweets.',
+  'CBD gummies. Not sponsored. Sponsored. LETUS20 at checkout. Do your own research, then use the code.',
+  'They say “trust the science”. I trusted the science in 1996 and it put me in a Southampton shirt. Never again.',
 ];
+/* Howard, off talkTROUGH, now with a phone that does the internet (Ben, 4 Sep:
+   "howard from talktrough too should tweet from time to time"). Same shape as
+   the call: he was doing something dull somewhere specific when he thought of
+   it, and then he gets off the line. Prestwich and the roads around it, said
+   fondly — keep it that way. */
+const CUNTHANGER_HOWARD = {
+  open: ['Long-time listener, first-time tweeter.', 'Howard, Prestwich. First time on here.', 'First-time poster, long-time listener, so go easy.', 'Hello. Howard. Prestwich. Not sure this is the right place for this.'],
+  doing: [
+    'I was in the queue at the Tesco on Bury New Road', 'I was defrosting the chest freezer', 'I was waiting for the 135 outside the Longfield', 'I was doing the kerb weeds on Scholes Lane',
+    'I was in the car park at Heaton Park, not going in', 'I was descaling the kettle', 'I was at the tip on Cemetery Road with a broken dehumidifier', 'I was walking the dog round Sedgley Park in the rain',
+    'I was on hold to the gas', 'I was in the big Aldi on the Bury road for the middle aisle', 'I was topping up the screenwash', 'I was waiting for the Sunday papers at the Costcutter',
+  ],
+  close: ['Anyway. I’ll get off.', 'That’s all it was. I’ll leave it there.', 'Not asking anyone to do anything about it. I’ll go.', 'I’ll take my answer in the replies. Don’t reply.', 'Right. Off now. Big shop.'],
+};

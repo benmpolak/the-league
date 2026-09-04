@@ -4212,6 +4212,22 @@ function cunthangerEvents() {
   }
   // Matt Le Tus, once a round, whether or not anyone asked
   ev.push({ type: 'letus', key: `letus:${gwN}`, gwN, at: 'Thread', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 3600e3 });
+  // Howard, once a round, about something true that nobody asked about
+  {
+    const facts = [];
+    const lastG = lastFinalGw();
+    if (lastG >= 0) {
+      let lo = null, hi = null;
+      for (const m of state.managers) { const p = gwManagerPoints(m.id, lastG); if (!lo || p < lo.p) lo = { m, p }; if (!hi || p > hi.p) hi = { m, p }; }
+      if (lo) facts.push(`${cleanTeamName(teamName(lo.m.id))} only got ${lo.p} last week and nobody on that show has mentioned it once.`);
+      if (hi) facts.push(`${hi.p} points, ${cleanTeamName(teamName(hi.m.id))}. That is a lot of points. Nobody said that.`);
+      const tab = h2hStandings(false, lastG + 1);
+      if (tab.length) facts.push(`${cleanTeamName(teamName(tab[tab.length - 1].id))} are bottom and I do not think they know.`);
+    }
+    const tw = troughWindow();
+    if (tw && !tw.open) facts.push('the Trough is shut and I had a man I wanted.');
+    if (facts.length) ev.push({ type: 'howard', key: `howard:${gwN}`, gwN, fact: facts[Cunthanger.hash(`howard:${gwN}`) % facts.length], at: 'Prestwich', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 7200e3 });
+  }
   // the managers' own words: press conferences and posts, last ten days
   const oppIn = (mid, gi) => { const pr = pairingsFor(gi).find(x => x.includes(mid)); return pr ? (pr[0] === mid ? pr[1] : pr[0]) : null; };
   const posAt = (mid, gi) => { const t = h2hStandings(false, gi + 1); const k = t.findIndex(r => r.id === mid); return k >= 0 ? k + 1 : null; };
@@ -4422,6 +4438,7 @@ function pressRoomTile() {
     <div class="ch-tile-label">The press room</div>
     ${mine ? (rows || '<p class="muted" style="font-size:12px;margin:0">No press conference scheduled. Enjoy the silence.</p>')
       : '<p class="muted" style="font-size:12px;margin:0">Managers face the press before and after every round. Sign in to face yours.</p>'}
+    ${state.view !== 'media' ? `<button class="btn ghost small" data-goto="media" style="align-self:flex-start">Every press conference &rarr;</button>` : ''}
     ${mine ? `<div class="ch-say">
       <input type="text" id="chSay" maxlength="280" placeholder="${oppNow != null ? `Say it to ${esc(cleanTeamName(teamName(oppNow)))}…` : 'Say something to the league…'}">
       <button class="btn ghost small" id="chSayBtn" data-to="${oppNow ?? ''}">Post</button>
@@ -4517,17 +4534,11 @@ function cunthangerBlock() {
     <button class="btn ghost small" data-chopen style="width:100%;margin-top:6px">Open Cunthanger ${posts.length > 4 ? `(${posts.length - 4} more)` : ''}</button>
   </div>`;
 }
-function cunthangerSheet() {
-  if (typeof Cunthanger === 'undefined') return;
-  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+function cunthangerFeedHtml(limit = 80) {
   const posts = cunthangerPosts();
   const live = posts.some(p => p.live);
   const who = Cunthanger.accounts(state.managers, teamName, managerName, handleOf);
-  const ov = document.createElement('div');
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
-    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
-    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+  return `<div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
     ${(() => {
       // Marc, 3 Sep: "abuse in all formats should be encouraged". A manager
       // posts under the club handle, aimed at this week's opponent by
@@ -4553,10 +4564,19 @@ function cunthangerSheet() {
         </div>
       </div>`;
     })()}
-    <div class="ch-timeline">${posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
+    <div class="ch-timeline">${posts.length ? posts.slice(0, limit).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
     <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
       ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
-    </details>
+    </details>`;
+}
+function cunthangerSheet() {
+  if (typeof Cunthanger === 'undefined') return;
+  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
+    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
+    ${cunthangerFeedHtml(80)}
   </div>`;
   document.body.appendChild(ov);
   pushOvState();
@@ -4570,6 +4590,56 @@ function cunthangerSheet() {
     closeOv(ov); cunthangerSheet();
   };
 }
+/* ================= the Media page =================
+   Marc, 4 Sep: "Should cunthanger media live in its own section? Rather than
+   at the bottom of the dashcunt." Ian: "I'd like to be able to see all the
+   press conferences in one space... can I see Mark's anywhere?" So: a tab.
+   The group's card up top, every press conference in the league beneath it,
+   the whole feed under that. The dashboard keeps the card. */
+function pressConferencesRoom() {
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
+  const cur = currentGwIndex();
+  const rounds = [];
+  for (let g = cur; g < Math.min(cur + 2, REGULAR_GWS); g++) if (!gwHasStarted(g)) { rounds.push({ gw: g, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[g].n}` }); break; }
+  const last = lastFinalGw();
+  if (last >= 0 && last < REGULAR_GWS) rounds.push({ gw: last, phase: 'post', label: `After Gameweek ${GAMEWEEKS[last].n}` });
+  if (last >= 1) rounds.push({ gw: last, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[last].n}` });
+  const blocks = rounds.map(r => {
+    const rows = state.managers.map(m => ({ m, rec: presserOf(m.id, r.gw, r.phase) })).filter(x => x.rec && x.rec.answers?.length);
+    const missing = state.managers.filter(m => !presserOf(m.id, r.gw, r.phase));
+    if (!rows.length) return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}</div><p class="muted" style="font-size:12.5px">Nobody has faced the press for this round yet.</p></div>`;
+    return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)} <span class="tag">${rows.length} of ${state.managers.length}</span></div>
+      ${rows.map(({ m, rec }) => {
+        const qs = Cunthanger.questions(presserCtx(m.id, r.gw, r.phase), r.phase);
+        return `<details class="ch-pc"${m.id === meId() ? ' open' : ''}>
+          <summary>${kitSvg(m.id, 18)} <b>${esc(managerName(m.id))}</b> <span class="muted">${esc(cleanTeamName(teamName(m.id)))}</span> <span class="ch-h">@${esc(handleOf(m.id))}</span></summary>
+          ${rec.answers.map((an, i) => an && an.text ? `<div class="prog-int-q">${esc(qs[i]?.q || 'The press asked.')}</div><p class="prog-int-a">&ldquo;${esc(an.text)}&rdquo;${an.own ? ' <span class="muted" style="font-size:11px">— in his own words</span>' : ''}</p>` : '').join('')}
+        </details>`;
+      }).join('')}
+      ${missing.length ? `<p class="muted" style="font-size:11.5px;margin-top:6px">Not yet faced the press: ${esc(missing.map(m => managerName(m.id).split(' ')[0]).join(', '))}.</p>` : ''}
+    </div>`;
+  });
+  return blocks.join('');
+}
+/* Ian, 4 Sep: "At the top have press conferences - pre and post etc. and then
+   a place to view all. And then maybe below that have the feed." So: your
+   press room and every press conference first, the feed second, the paper
+   and the wireless third. The dashboard keeps its card. */
+function viewMedia() {
+  if (state.phase !== 'season') return `<div class="card"><h2>Cunthanger Media</h2><p class="muted">The presses roll when the season does.</p></div>`;
+  return `<div class="card ch-card">
+    <div class="ch-card-mast"><span class="ch-logo ch-logo-lg">c</span><div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div></div>
+    <div class="ch-grid">${pressRoomTile()}</div>
+    <h3 style="margin-top:14px">Every press conference</h3>
+    <p class="muted" style="font-size:12.5px;margin-bottom:6px">Every manager, every round, on the record. Yours opens first.</p>
+    ${pressConferencesRoom()}
+  </div>
+  <div class="card ch-room-inline" style="margin-top:14px">
+    ${typeof Cunthanger !== 'undefined' ? cunthangerFeedHtml(120) : ''}
+  </div>
+  ${programmeCard()}`;
+}
+function bindMedia() { bindCunthangerCard(); }
 /* The takeover. Ben, 3 Sep: "be great if I could get that to flash up on
    everyone's phones when they next open the app — like that stupid test thing
    the govt did." Once per device, in season, never on top of another sheet
@@ -4830,6 +4900,7 @@ const NAV_ITEMS = [
   ['squads', 'All Squads', 'Squads'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Matches', 'Matches'],
+  ['media', 'Cunthanger Media', 'Media'],
   ['cup', 'Cup Competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
@@ -4848,6 +4919,7 @@ const NAV_ICONS = {
   squads: navSvg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
+  media: navSvg('<path d="M4 6h13v12H4z"/><path d="M17 9h3v9h-3"/><path d="M7 9h7M7 12h7M7 15h4"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
   table: navSvg('<path d="M6 20v-8M12 20V5M18 20v-5"/><path d="M4 20h16"/>'),
   data: navSvg('<path d="M4 19l5-6 4 3 7-9"/><path d="M4 21h16"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="16" r="1.2" fill="currentColor" stroke="none"/>'),
@@ -4947,6 +5019,7 @@ function render() {
     case 'table': main.innerHTML = viewTable(); bindTable(); break;
     case 'data': main.innerHTML = viewData(); bindData(); break;
     case 'fixtures': main.innerHTML = viewFixtures(); bindFixtures(); break;
+    case 'media': main.innerHTML = viewMedia(); bindMedia(); break;
     case 'rules': main.innerHTML = viewRules(); break;
     case 'settings': main.innerHTML = viewSettings(); bindSettings(); break;
     default: state.view = 'draft'; render();
@@ -9711,8 +9784,8 @@ function programmeCard() {
         <div class="ch-tile-label ch-tile-label-paper"><span>The League Gazette${today ? ` &middot; ${esc(today.edition)}${today.gwN != null ? ` &middot; Gameweek ${today.gwN}` : ''}` : ''}</span>${today && gazetteUnread() ? '<span class="prog-new ch-new" aria-label="New edition">NEW EDITION</span>' : ''}</div>
         ${paper}
       </div>
-      ${pressRoomTile()}
-      ${feed}
+      ${state.view === 'media' ? '' : pressRoomTile()}
+      ${state.view === 'media' ? '' : feed}
       ${wireless}
     </div>
   </div>`;
@@ -11225,8 +11298,8 @@ function dashMiniPitch(mid, gw) {
       </div>`).join('')}
   </div>` : ''}</div>`;
 }
-function bindDash() {
-  bindInstall();
+// the Cunthanger Media card's buttons, wherever the card is printed
+function bindCunthangerCard() {
   const say = $('#chSayBtn');
   if (say) {
     const go = () => { const inp = $('#chSay'); sendPost(inp?.value, say.dataset.to ? +say.dataset.to : null); if (inp) inp.value = ''; };
@@ -11235,12 +11308,6 @@ function bindDash() {
   }
   const pr = $('#progRead');
   if (pr) pr.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
-  const gzn = $('#gzNudge');
-  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
-  const ofn = $('#offerNudge');
-  if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
-  const dmu = $('#dashMu');
-  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const psh = $('#progShare');
   if (psh) psh.onclick = () => {
     const txt = gazetteShareText();
@@ -11249,6 +11316,22 @@ function bindDash() {
       () => toast('Front page copied — paste it into the group chat.'),
       () => { window.prompt('Copy the front page:', txt); });
   };
+  const send = $('#chComposeSend');
+  if (send) send.onclick = () => {
+    const ta = $('#chComposeText'), to = $('#chComposeTo')?.value;
+    if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
+    sendPost(ta.value, to ? +to : null);
+  };
+}
+function bindDash() {
+  bindInstall();
+  bindCunthangerCard();
+  const gzn = $('#gzNudge');
+  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const ofn = $('#offerNudge');
+  if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
+  const dmu = $('#dashMu');
+  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');

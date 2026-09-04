@@ -463,6 +463,13 @@ window.Cunthanger = (() => {
           break;
         }
         case 'letus': add(press('conspiracy'), k, pick(LETUS(), k), vars(e), { ...meta, w: 2 }); break;
+        case 'howard': {
+          const H = typeof CUNTHANGER_HOWARD !== 'undefined' ? CUNTHANGER_HOWARD : null;
+          if (!H || !e.fact) break;
+          const text = `${pick(H.open, k + ':o')} ${pick(H.doing, k + ':d')} when I thought: ${e.fact} ${pick(H.close, k + ':c')}`;
+          add(press('caller', k), k, '{text}', { text }, { ...meta, w: 2 });
+          break;
+        }
         case 'manager': {
           // a real person's words, verbatim, under the club handle
           const acct = manager(e.mid, tn, e.mgrName, handleOf(e.mid));
