@@ -43,6 +43,7 @@ chk('the Trough goal goes to the press, not a fan', a.filter(p => p.key === 'g3'
 chk('the injury goes to the injury desk with a second opinion', a.some(p => p.key === 'n1' && (p.who.h === 'BenSuppery' || p.who.h === 'RobDawdle') && /Our understanding|physio|Unofficial|Club say|Worse than feared|not good/.test(p.text)));
 chk('the signing gets a here we go, or a can reveal', a.some(p => p.key === 't1' && /here we go|can reveal|exclusive|confirmed by sources/i.test(p.text)));
 chk('Le Tus posts a conspiracy', a.some(p => p.key === 'l1' && p.who.h === 'MattLeTus'));
+chk('Howard posts, in his shape', (() => { const h = C.compose([{ type: 'howard', key: 'hw1', gwN: 3, fact: 'the Trough is shut.', at: 'Prestwich', sortKick: 1 }], opts); return h.length === 1 && h[0].who.h === 'HowardPrestwich' && /when I thought: the Trough is shut\./.test(h[0].text); })());
 chk('live posts sort first', a.findIndex(p => !p.live) >= a.filter(p => p.live).length);
 chk('an unknown club still gets a supporter', a.some(p => p.key === 'f1' && /Brand New Club|New Club/.test(p.who.n + p.who.h + p.text)));
 chk('team names reach the copy unescaped (app escapes at render)', a.some(p => /Dog’s Polaks|Polaks/.test(p.text)));

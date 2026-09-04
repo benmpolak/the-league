@@ -4212,6 +4212,22 @@ function cunthangerEvents() {
   }
   // Matt Le Tus, once a round, whether or not anyone asked
   ev.push({ type: 'letus', key: `letus:${gwN}`, gwN, at: 'Thread', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 3600e3 });
+  // Howard, once a round, about something true that nobody asked about
+  {
+    const facts = [];
+    const lastG = lastFinalGw();
+    if (lastG >= 0) {
+      let lo = null, hi = null;
+      for (const m of state.managers) { const p = gwManagerPoints(m.id, lastG); if (!lo || p < lo.p) lo = { m, p }; if (!hi || p > hi.p) hi = { m, p }; }
+      if (lo) facts.push(`${cleanTeamName(teamName(lo.m.id))} only got ${lo.p} last week and nobody on that show has mentioned it once.`);
+      if (hi) facts.push(`${hi.p} points, ${cleanTeamName(teamName(hi.m.id))}. That is a lot of points. Nobody said that.`);
+      const tab = h2hStandings(false, lastG + 1);
+      if (tab.length) facts.push(`${cleanTeamName(teamName(tab[tab.length - 1].id))} are bottom and I do not think they know.`);
+    }
+    const tw = troughWindow();
+    if (tw && !tw.open) facts.push('the Trough is shut and I had a man I wanted.');
+    if (facts.length) ev.push({ type: 'howard', key: `howard:${gwN}`, gwN, fact: facts[Cunthanger.hash(`howard:${gwN}`) % facts.length], at: 'Prestwich', live: false, sortKick: Date.parse(gwFrom(gwIdx)) - 7200e3 });
+  }
   // the managers' own words: press conferences and posts, last ten days
   const oppIn = (mid, gi) => { const pr = pairingsFor(gi).find(x => x.includes(mid)); return pr ? (pr[0] === mid ? pr[1] : pr[0]) : null; };
   const posAt = (mid, gi) => { const t = h2hStandings(false, gi + 1); const k = t.findIndex(r => r.id === mid); return k >= 0 ? k + 1 : null; };
@@ -4221,6 +4237,10 @@ function cunthangerEvents() {
       const [giS, phase] = rk.split(':'); const gi = +giS;
       if (!rec || !Array.isArray(rec.answers) || !GAMEWEEKS[gi] || !((+rec.t || 0) > now - 10 * 864e5)) continue;
       const opp = oppIn(mid, gi);
+      if (rec.answers.some(x => x && x.storm)) {
+        ev.push({ type: 'storm', key: `pr:${gi}:${mid}:${phase}:storm`, mid, oppMid: opp, mgrName: managerName(mid), gwN: GAMEWEEKS[gi].n, phase, at: phase === 'post' ? 'Post-match' : 'Press conference', live: false, sortKick: +rec.t || 0 });
+        continue;
+      }
       // one post per press conference: the loudest thing said. The paper
       // prints the rest; the feed is not the transcript.
       const rank = { unhinged: 4, confident: 3, dismissive: 2, humble: 1 };
@@ -4309,9 +4329,9 @@ function presserCtx(mid, gwIdx, phase) {
     ctx.best = best; ctx.worst = worst;
     // points left on the bench
     let burn = null;
-    for (const pid of benchFor(mid, gwIdx)) {
-      const p = PLAYER_BY_ID[pid]; if (!p) continue;
-      const pts = gwPlayerPoints(pid, gwIdx);
+    for (const bp of benchFor(mid, gwIdx)) {
+      const p = bp && typeof bp === 'object' ? bp : PLAYER_BY_ID[bp]; if (!p) continue;
+      const pts = gwPlayerPoints(p.id, gwIdx);
       if (!burn || pts > burn.pts) burn = { name: p.name, pts };
     }
     ctx.benchBurn = burn && burn.pts >= 6 ? burn : null;
@@ -4332,24 +4352,32 @@ function pressersOpen(mid) {
   if (last >= 0 && last < REGULAR_GWS && pairingsFor(last).some(x => x.includes(mid))) out.push({ gw: last, phase: 'post', done: !!presserOf(mid, last, 'post') });
   return out;
 }
+// both resolve true only once the words are SAVED — on the server for the real
+// league, locally otherwise. Callers keep the editor open on false (sol
+// verdict P1-2: a failed send used to close the room and lose the writing).
 function sendPresser(gwIdx, phase, answers) {
   const mid = meId();
-  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return; }
+  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return Promise.resolve(false); }
   const rec = { t: Date.now(), answers };
-  if (netOn()) { serverAct('presser', { gw: gwIdx, phase, answers }).catch(() => {}); return; }
+  if (netOn()) return serverAct('presser', { gw: gwIdx, phase, answers }).then(() => true, () => false);
   state.pressers = { ...(state.pressers || {}), [mid]: { ...(state.pressers?.[mid] || {}), [presserKey(gwIdx, phase)]: rec } };
   save(); render();
+  return Promise.resolve(true);
 }
 function sendPost(text, to) {
   const mid = meId();
-  if (mid == null || mid === -1) { toast('Sign in as a manager to post.'); return; }
+  if (mid == null || mid === -1) { toast('Sign in as a manager to post.'); return Promise.resolve(false); }
   const t = String(text || '').trim().slice(0, 280);
-  if (!t) { toast('An empty post is just staring.'); return; }
+  if (!t) { toast('An empty post is just staring.'); return Promise.resolve(false); }
   const gw = currentGwIndex();
-  if (netOn()) { serverAct('post', { text: t, to: to ?? null, gw }).catch(() => {}); return; }
+  if (netOn()) return serverAct('post', { text: t, to: to ?? null, gw }).then(() => true, () => false);
   state.posts = [...(state.posts || []), { mid, to: to ?? null, text: t, gw, t: Date.now() }];
   save(); render();
+  return Promise.resolve(true);
 }
+// the words are what the manager saw (sol P2-4): each answer carries its
+// question, so readback and the paper never pair an old answer with a new question
+const answerQ = (an, qs, i) => (an && an.q) || qs[i]?.q || 'The press asked.';
 function pressRoomSheet(spec) {
   if (typeof Cunthanger === 'undefined') return;
   const mid = meId();
@@ -4370,14 +4398,15 @@ function pressRoomSheet(spec) {
     <p class="muted" style="font-size:12px;margin-bottom:12px">${ctx.opp ? `${phase === 'post' ? 'After' : 'Before'} ${esc(cleanTeamName(ctx.opp))}. ` : ''}Pick an answer or say it in your own words. Everything you say is on the record, on the feed, and in Friday’s paper.</p>
     ${qs.map((q, i) => `<div class="ch-q">
       <div class="ch-q-by">${esc(q.by)}, The League Gazette</div>
-      <div class="ch-q-text">${esc(q.q)}</div>
-      ${done ? `<p class="ch-q-done">&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;</p>` : `<div class="ch-q-opts">
+      <div class="ch-q-text">${esc(done ? answerQ(done.answers?.[i], qs, i) : q.q)}</div>
+      ${done ? `<p class="ch-q-done">${done.answers?.[i]?.storm ? '<i>— left the room —</i>' : `&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;`}</p>` : `<div class="ch-q-opts">
         ${q.options.map(o => `<button type="button" class="ch-opt" data-q="${i}" data-tone="${esc(o.tone)}" title="${esc(o.label)}"><span class="ch-opt-tone">${esc(o.label)}</span>${esc(o.text)}</button>`).join('')}
         <textarea class="ch-own" data-q="${i}" maxlength="280" rows="2" placeholder="Or in your own words…"></textarea>
       </div>`}
     </div>`).join('')}
-    ${done ? `<p class="muted" style="font-size:12px">You faced the press on ${new Date(done.t).toLocaleDateString('en-GB', { weekday: 'long' })}. What’s said is said.</p>`
-      : `<button class="btn" id="prSend" style="width:100%;margin-top:6px">End the press conference</button>`}
+    ${done ? `<p class="muted" style="font-size:12px">${done.answers?.some(x => x && x.storm) ? 'You stormed out. The room is still talking about it.' : `You faced the press on ${new Date(done.t).toLocaleDateString('en-GB', { weekday: 'long' })}. What’s said is said.`}</p>`
+      : `<button class="btn" id="prSend" style="width:100%;margin-top:6px">End the press conference</button>
+         <button class="btn ghost small" id="prStorm" style="width:100%;margin-top:6px" title="Answer nothing. Leave. Let them write it up.">Storm out</button>`}
   </div>`;
   document.body.appendChild(ov);
   pushOvState();
@@ -4397,13 +4426,25 @@ function pressRoomSheet(spec) {
     if (ta.value.trim()) { chosen[i] = { tone: 'own', text: ta.value.trim().slice(0, 280) }; ov.querySelectorAll(`.ch-opt[data-q="${i}"]`).forEach(x => x.classList.remove('on')); }
     else delete chosen[i];
   });
-  const send = ov.querySelector('#prSend');
-  if (send) send.onclick = () => {
-    const answers = qs.map((q, i) => chosen[i] ? { id: q.id, tone: chosen[i].tone === 'own' ? 'unhinged' : chosen[i].tone, own: chosen[i].tone === 'own', text: chosen[i].text } : null);
+  const send = ov.querySelector('#prSend'), storm = ov.querySelector('#prStorm');
+  const busy = on => { for (const b of [send, storm]) if (b) b.disabled = on; if (send) send.textContent = on ? 'Sending…' : 'End the press conference'; };
+  if (send) send.onclick = async () => {
+    const answers = qs.map((q, i) => chosen[i] ? { id: q.id, q: q.q, tone: chosen[i].tone === 'own' ? 'unhinged' : chosen[i].tone, own: chosen[i].tone === 'own', text: chosen[i].text } : null);
     if (!answers.some(Boolean)) { toast('Say something. Anything. A “no comment” counts.'); return; }
-    sendPresser(gwIdx, phase, answers.map((x, i) => x || { id: qs[i].id, tone: 'dismissive', text: 'No comment.' }));
+    busy(true);
+    const ok = await sendPresser(gwIdx, phase, answers.map((x, i) => x || { id: qs[i].id, q: qs[i].q, tone: 'dismissive', text: 'No comment.' }));
+    if (!ok) { busy(false); return; } // serverAct said why; the words are still on screen
     close();
     toast('On the record. It’s on the feed, and it’s in the paper.');
+  };
+  // Ben, 4 Sep: "you can have option to storm out the presser"
+  if (storm) storm.onclick = async () => {
+    if (!(await confirmSheet({ title: 'Storm out?', body: 'You answer nothing, you leave, and the press write it up exactly as it looked. This counts as your press conference.', yes: 'Storm out' }))) return;
+    busy(true);
+    const ok = await sendPresser(gwIdx, phase, qs.map(q => ({ id: q.id, q: q.q, tone: 'unhinged', storm: true, text: 'Stormed out.' })));
+    if (!ok) { busy(false); return; }
+    close();
+    toast('You left. They noticed.');
   };
 }
 const cleanTeamName = t => String(t || '').replace(/[*°]/g, '').replace(/\s+/g, ' ').trim();
@@ -4422,6 +4463,7 @@ function pressRoomTile() {
     <div class="ch-tile-label">The press room</div>
     ${mine ? (rows || '<p class="muted" style="font-size:12px;margin:0">No press conference scheduled. Enjoy the silence.</p>')
       : '<p class="muted" style="font-size:12px;margin:0">Managers face the press before and after every round. Sign in to face yours.</p>'}
+    ${state.view !== 'media' ? `<button class="btn ghost small" data-goto="media" style="align-self:flex-start">Every press conference &rarr;</button>` : ''}
     ${mine ? `<div class="ch-say">
       <input type="text" id="chSay" maxlength="280" placeholder="${oppNow != null ? `Say it to ${esc(cleanTeamName(teamName(oppNow)))}…` : 'Say something to the league…'}">
       <button class="btn ghost small" id="chSayBtn" data-to="${oppNow ?? ''}">Post</button>
@@ -4430,20 +4472,24 @@ function pressRoomTile() {
 }
 // the paper: the pre-game edition prints the press conferences
 function pressConferenceSection(gwIdx) {
+  try { return pressConferenceSectionInner(gwIdx); } catch (e) { return ''; }
+}
+function pressConferenceSectionInner(gwIdx) {
   if (typeof Cunthanger === 'undefined') return '';
   const rows = [];
   for (const [a, b] of pairingsFor(gwIdx)) {
     const qa = [a, b].map(mid => {
       const rec = presserOf(mid, gwIdx, 'pre');
-      if (!rec || !rec.answers?.length) return null;
+      if (!rec || !Array.isArray(rec.answers) || !rec.answers.length) return null;
       const qs = Cunthanger.questions(presserCtx(mid, gwIdx, 'pre'), 'pre');
-      const best = rec.answers.map((an, i) => an && an.text ? { q: qs[i]?.q || '', a: an.text, tone: an.tone } : null).filter(Boolean);
+      if (rec.answers.some(x => x && x.storm)) return { mid, storm: true, best: [] };
+      const best = rec.answers.map((an, i) => an && an.text ? { q: answerQ(an, qs, i), a: an.text, tone: an.tone } : null).filter(Boolean);
       return best.length ? { mid, best } : null;
     }).filter(Boolean);
     if (!qa.length) continue;
     rows.push(`<div class="prog-presser">
       <div class="prog-presser-tie">${esc(cleanTeamName(teamName(a)))} v ${esc(cleanTeamName(teamName(b)))}</div>
-      ${qa.map(x => x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
+      ${qa.map(x => x.storm ? `<p class="prog-int-a">${esc(managerName(x.mid))} took his seat, heard the first question, and left. The Gazette’s reporter describes the door as “firm”.</p>` : x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
     </div>`);
   }
   // and what was said outside the room: posts aimed at this week's opponent
@@ -4460,12 +4506,21 @@ function pressConferenceSection(gwIdx) {
 }
 // and the review edition brings the receipts
 function pressReceipts(gwIdx) {
+  try { return pressReceiptsInner(gwIdx); } catch (e) { return ''; }
+}
+function pressReceiptsInner(gwIdx) {
   if (typeof Cunthanger === 'undefined') return '';
   const out = [];
   for (const [a, b] of pairingsFor(gwIdx)) {
     for (const [mid, opp] of [[a, b], [b, a]]) {
       const rec = presserOf(mid, gwIdx, 'pre');
-      const said = rec?.answers?.find(x => x && x.text && (x.tone === 'confident' || x.tone === 'unhinged' || x.own)) || rec?.answers?.find(x => x && x.text);
+      const answers = Array.isArray(rec?.answers) ? rec.answers : [];
+      if (answers.some(x => x && x.storm)) {
+        const my0 = gwManagerPoints(mid, gwIdx), th0 = gwManagerPoints(opp, gwIdx);
+        out.push(`<p><b>${esc(managerName(mid))}</b> stormed out of Thursday’s press conference. ${esc(my0 > th0 ? `He then won ${my0}–${th0}, which is the worst possible outcome for everyone who wrote it up.` : my0 < th0 ? `He then lost ${my0}–${th0}. The door was the highlight.` : `A ${my0}–${th0} draw followed. Nobody stormed anywhere afterwards.`)}</p>`);
+        continue;
+      }
+      const said = answers.find(x => x && x.text && x.text !== 'No comment.' && (x.tone === 'confident' || x.tone === 'unhinged' || x.own)) || answers.find(x => x && x.text && x.text !== 'No comment.');
       if (!said) continue;
       const my = gwManagerPoints(mid, gwIdx), th = gwManagerPoints(opp, gwIdx);
       const r = my > th ? 'won' : my < th ? 'lost' : 'drew';
@@ -4517,17 +4572,11 @@ function cunthangerBlock() {
     <button class="btn ghost small" data-chopen style="width:100%;margin-top:6px">Open Cunthanger ${posts.length > 4 ? `(${posts.length - 4} more)` : ''}</button>
   </div>`;
 }
-function cunthangerSheet() {
-  if (typeof Cunthanger === 'undefined') return;
-  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+function cunthangerFeedHtml(limit = 80) {
   const posts = cunthangerPosts();
   const live = posts.some(p => p.live);
   const who = Cunthanger.accounts(state.managers, teamName, managerName, handleOf);
-  const ov = document.createElement('div');
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
-    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
-    <div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
+  return `<div class="ch-mast"><span class="ch-logo ch-logo-lg">c</span><div><b>Cunthanger</b> <span class="muted" style="font-size:11px">a Cunthanger Media title</span><div class="muted" style="font-size:11px">What’s happening, to twelve clubs, at once.</div></div>${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}</div>
     ${(() => {
       // Marc, 3 Sep: "abuse in all formats should be encouraged". A manager
       // posts under the club handle, aimed at this week's opponent by
@@ -4553,23 +4602,98 @@ function cunthangerSheet() {
         </div>
       </div>`;
     })()}
-    <div class="ch-timeline">${posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
+    <div class="ch-timeline">${posts.length ? posts.slice(0, limit).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
     <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
       ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
-    </details>
+    </details>`;
+}
+// the feed sheet is an overlay outside <main>, so a render (a snapshot from
+// another phone, say) used to leave it stale (sol P1-1). Repaint only the
+// timeline: the compose box, its text and focus are left alone.
+function refreshCunthangerTimelines() {
+  if (typeof Cunthanger === 'undefined') return;
+  const tls = document.querySelectorAll('.overlay .ch-timeline');
+  if (!tls.length) return;
+  const posts = cunthangerPosts();
+  const html = posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>';
+  for (const tl of tls) if (tl.innerHTML !== html) tl.innerHTML = html;
+}
+function cunthangerSheet() {
+  if (typeof Cunthanger === 'undefined') return;
+  document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card ch-room" role="dialog" aria-label="Cunthanger">
+    <button class="btn ghost small icon-btn gz-close" id="chClose" title="Log off" aria-label="Log off">&#10005;</button>
+    ${cunthangerFeedHtml(80)}
   </div>`;
   document.body.appendChild(ov);
   pushOvState();
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   ov.querySelector('#chClose').onclick = () => closeOv(ov);
   const send = ov.querySelector('#chComposeSend');
-  if (send) send.onclick = () => {
+  if (send) send.onclick = async () => {
     const ta = ov.querySelector('#chComposeText'), to = ov.querySelector('#chComposeTo')?.value;
     if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
-    sendPost(ta.value, to ? +to : null);
-    closeOv(ov); cunthangerSheet();
+    send.disabled = true; send.textContent = 'Posting…';
+    const ok = await sendPost(ta.value, to ? +to : null);
+    send.disabled = false; send.textContent = 'Post';
+    if (!ok) return; // the words stay in the box
+    ta.value = '';
+    refreshCunthangerTimelines();
+    toast('Posted. The wire has it.');
   };
 }
+/* ================= the Media page =================
+   Marc, 4 Sep: "Should cunthanger media live in its own section? Rather than
+   at the bottom of the dashcunt." Ian: "I'd like to be able to see all the
+   press conferences in one space... can I see Mark's anywhere?" So: a tab.
+   The group's card up top, every press conference in the league beneath it,
+   the whole feed under that. The dashboard keeps the card. */
+function pressConferencesRoom() {
+  if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
+  const cur = currentGwIndex();
+  const rounds = [];
+  for (let g = cur; g < Math.min(cur + 2, REGULAR_GWS); g++) if (!gwHasStarted(g)) { rounds.push({ gw: g, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[g].n}` }); break; }
+  const last = lastFinalGw();
+  if (last >= 0 && last < REGULAR_GWS) rounds.push({ gw: last, phase: 'post', label: `After Gameweek ${GAMEWEEKS[last].n}` });
+  if (last >= 1) rounds.push({ gw: last, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[last].n}` });
+  const blocks = rounds.map(r => {
+    const rows = state.managers.map(m => ({ m, rec: presserOf(m.id, r.gw, r.phase) })).filter(x => x.rec && Array.isArray(x.rec.answers) && x.rec.answers.length);
+    const missing = state.managers.filter(m => !presserOf(m.id, r.gw, r.phase));
+    if (!rows.length) return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}</div><p class="muted" style="font-size:12.5px">Nobody has faced the press for this round yet.</p></div>`;
+    return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)} <span class="tag">${rows.length} of ${state.managers.length}</span></div>
+      ${rows.map(({ m, rec }) => {
+        const qs = Cunthanger.questions(presserCtx(m.id, r.gw, r.phase), r.phase);
+        return `<details class="ch-pc"${m.id === meId() ? ' open' : ''}>
+          <summary>${kitSvg(m.id, 18)} <b>${esc(managerName(m.id))}</b> <span class="muted">${esc(cleanTeamName(teamName(m.id)))}</span> <span class="ch-h">@${esc(handleOf(m.id))}</span></summary>
+          ${rec.answers.some(x => x && x.storm) ? `<p class="prog-int-a"><i>Stormed out after ${rec.answers.length === 1 ? 'the first question' : 'the questions were read'}. Answered nothing.</i></p>` : rec.answers.map((an, i) => an && an.text ? `<div class="prog-int-q">${esc(answerQ(an, qs, i))}</div><p class="prog-int-a">&ldquo;${esc(an.text)}&rdquo;${an.own ? ' <span class="muted" style="font-size:11px">— in his own words</span>' : ''}</p>` : '').join('')}
+        </details>`;
+      }).join('')}
+      ${missing.length ? `<p class="muted" style="font-size:11.5px;margin-top:6px">Not yet faced the press: ${esc(missing.map(m => managerName(m.id).split(' ')[0]).join(', '))}.</p>` : ''}
+    </div>`;
+  });
+  return blocks.join('');
+}
+/* Ian, 4 Sep: "At the top have press conferences - pre and post etc. and then
+   a place to view all. And then maybe below that have the feed." So: your
+   press room and every press conference first, the feed second, the paper
+   and the wireless third. The dashboard keeps its card. */
+function viewMedia() {
+  if (state.phase !== 'season') return `<div class="card"><h2>Cunthanger Media</h2><p class="muted">The presses roll when the season does.</p></div>`;
+  return `<div class="card ch-card">
+    <div class="ch-card-mast"><span class="ch-logo ch-logo-lg">c</span><div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div></div>
+    <div class="ch-grid">${pressRoomTile()}</div>
+    <h3 style="margin-top:14px">Every press conference</h3>
+    <p class="muted" style="font-size:12.5px;margin-bottom:6px">Every manager, every round, on the record. Yours opens first.</p>
+    ${pressConferencesRoom()}
+  </div>
+  <div class="card ch-room-inline" style="margin-top:14px">
+    ${typeof Cunthanger !== 'undefined' ? cunthangerFeedHtml(120) : ''}
+  </div>
+  ${programmeCard()}`;
+}
+function bindMedia() { bindCunthangerCard(); }
 /* The takeover. Ben, 3 Sep: "be great if I could get that to flash up on
    everyone's phones when they next open the app — like that stupid test thing
    the govt did." Once per device, in season, never on top of another sheet
@@ -4583,6 +4707,7 @@ function cunthangerTakeover() {
   try { if (localStorage.getItem(KEY)) return; } catch { return; }
   if (document.querySelector('.overlay')) return; // it will try again next render
   window._chAlertShown = true;
+  try { localStorage.setItem(KEY, '1'); } catch {} // shown = seen, whichever way it is dismissed (sol P2-3)
   const T = Cunthanger.TAKEOVER;
   const ov = document.createElement('div');
   ov.className = 'overlay ch-alert-ov';
@@ -4599,10 +4724,7 @@ function cunthangerTakeover() {
   pushOvState();
   playSound('alert');
   try { navigator.vibrate?.([400, 150, 400, 150, 400]); } catch {}
-  ov.querySelector('#chAlertOk').onclick = () => {
-    try { localStorage.setItem(KEY, '1'); } catch {}
-    closeOv(ov);
-  };
+  ov.querySelector('#chAlertOk').onclick = () => closeOv(ov);
 }
 
 async function syncNow(manual = false) {
@@ -4830,6 +4952,7 @@ const NAV_ITEMS = [
   ['squads', 'All Squads', 'Squads'],
   ['transfers', 'Transfers', 'Transfers'],
   ['h2h', 'Matches', 'Matches'],
+  ['media', 'Cunthanger Media', 'Media'],
   ['cup', 'Cup Competitions', 'Cups'],
   ['table', 'League Table', 'Table'],
   ['data', 'The Data Room', 'Data'],
@@ -4848,6 +4971,7 @@ const NAV_ICONS = {
   squads: navSvg('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h8M8 15h5"/>'),
   transfers: navSvg('<path d="M4 7h13"/><path d="m14 3 4 4-4 4"/><path d="M20 17H7"/><path d="m10 21-4-4 4-4"/>'),
   h2h: navSvg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M12 6v13"/><path d="M7 12h2M15 12h2"/>'),
+  media: navSvg('<path d="M4 6h13v12H4z"/><path d="M17 9h3v9h-3"/><path d="M7 9h7M7 12h7M7 15h4"/>'),
   cup: navSvg('<path d="M8 4h8v6a4 4 0 0 1-8 0Z"/><path d="M8 5H4a4 4 0 0 0 4 5M16 5h4a4 4 0 0 1-4 5"/><path d="M12 14v4M8 21h8M9 18h6"/>'),
   table: navSvg('<path d="M6 20v-8M12 20V5M18 20v-5"/><path d="M4 20h16"/>'),
   data: navSvg('<path d="M4 19l5-6 4 3 7-9"/><path d="M4 21h16"/><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="13" cy="16" r="1.2" fill="currentColor" stroke="none"/>'),
@@ -4947,6 +5071,7 @@ function render() {
     case 'table': main.innerHTML = viewTable(); bindTable(); break;
     case 'data': main.innerHTML = viewData(); bindData(); break;
     case 'fixtures': main.innerHTML = viewFixtures(); bindFixtures(); break;
+    case 'media': main.innerHTML = viewMedia(); bindMedia(); break;
     case 'rules': main.innerHTML = viewRules(); break;
     case 'settings': main.innerHTML = viewSettings(); bindSettings(); break;
     default: state.view = 'draft'; render();
@@ -4957,6 +5082,7 @@ function render() {
   renderHeckles();
   renderKlaxons();
   cunthangerTakeover();
+  refreshCunthangerTimelines();
   if (typeof manageWakeLock === 'function') manageWakeLock(); // acquire/release as the draft starts/ends
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -9206,6 +9332,17 @@ function viewDash() {
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
       ${(() => {
+        // the press are waiting (Ben, 4 Sep: "it should flash up before game
+        // week and after game week to do the pressers, not obligatory")
+        if (typeof Cunthanger === 'undefined') return '';
+        const waiting = pressersOpen(meId()).filter(o => !o.done);
+        return waiting.map(o => `<button type="button" class="gz-nudge ch-nudge" data-presser="${o.gw}:${o.phase}">
+          <span class="gz-nudge-tag ch-tag">PRESS ROOM</span>
+          <span class="gz-nudge-copy"><b>${o.phase === 'post' ? 'Post-match' : 'Pre-match'} press conference</b>, GW${GAMEWEEKS[o.gw].n}. ${o.phase === 'post' ? 'Two' : 'Three'} questions. Or storm out.</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>`).join('');
+      })()}
+      ${(() => {
         // somebody said something about you, in public (Ben, 3 Sep: "that's the fun")
         if (typeof Cunthanger === 'undefined') return '';
         const me = meId();
@@ -9705,14 +9842,15 @@ function programmeCard() {
       <span class="ch-logo ch-logo-lg">c</span>
       <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div>
       ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
+      ${state.view !== 'media' ? `<button class="btn ghost small" data-goto="media" style="margin-left:${live ? '8px' : 'auto'}">Open Media &rarr;</button>` : ''}
     </div>
     <div class="ch-grid">
       <div class="ch-tile ch-tile-paper">
         <div class="ch-tile-label ch-tile-label-paper"><span>The League Gazette${today ? ` &middot; ${esc(today.edition)}${today.gwN != null ? ` &middot; Gameweek ${today.gwN}` : ''}` : ''}</span>${today && gazetteUnread() ? '<span class="prog-new ch-new" aria-label="New edition">NEW EDITION</span>' : ''}</div>
         ${paper}
       </div>
-      ${pressRoomTile()}
-      ${feed}
+      ${state.view === 'media' ? '' : pressRoomTile()}
+      ${state.view === 'media' ? '' : feed}
       ${wireless}
     </div>
   </div>`;
@@ -11225,22 +11363,22 @@ function dashMiniPitch(mid, gw) {
       </div>`).join('')}
   </div>` : ''}</div>`;
 }
-function bindDash() {
-  bindInstall();
+// the Cunthanger Media card's buttons, wherever the card is printed
+function bindCunthangerCard() {
   const say = $('#chSayBtn');
   if (say) {
-    const go = () => { const inp = $('#chSay'); sendPost(inp?.value, say.dataset.to ? +say.dataset.to : null); if (inp) inp.value = ''; };
+    const go = async () => {
+      const inp = $('#chSay'); if (!inp || !inp.value.trim()) { toast('An empty post is just staring.'); return; }
+      say.disabled = true;
+      const ok = await sendPost(inp.value, say.dataset.to ? +say.dataset.to : null);
+      say.disabled = false;
+      if (ok) { inp.value = ''; toast('Posted. The wire has it.'); }
+    };
     say.onclick = go;
     const inp = $('#chSay'); if (inp) inp.onkeydown = e => { if (e.key === 'Enter') go(); };
   }
   const pr = $('#progRead');
   if (pr) pr.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
-  const gzn = $('#gzNudge');
-  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
-  const ofn = $('#offerNudge');
-  if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
-  const dmu = $('#dashMu');
-  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const psh = $('#progShare');
   if (psh) psh.onclick = () => {
     const txt = gazetteShareText();
@@ -11249,6 +11387,25 @@ function bindDash() {
       () => toast('Front page copied — paste it into the group chat.'),
       () => { window.prompt('Copy the front page:', txt); });
   };
+  const send = $('#chComposeSend');
+  if (send) send.onclick = async () => {
+    const ta = $('#chComposeText'), to = $('#chComposeTo')?.value;
+    if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
+    send.disabled = true; send.textContent = 'Posting…';
+    const ok = await sendPost(ta.value, to ? +to : null);
+    send.disabled = false; send.textContent = 'Post';
+    if (ok) { ta.value = ''; toast('Posted. The wire has it.'); }
+  };
+}
+function bindDash() {
+  bindInstall();
+  bindCunthangerCard();
+  const gzn = $('#gzNudge');
+  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const ofn = $('#offerNudge');
+  if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
+  const dmu = $('#dashMu');
+  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');

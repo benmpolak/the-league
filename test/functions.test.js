@@ -852,6 +852,10 @@ const SB = 'the-league-sandbox';
     JSON.stringify({ legacyRulesImport, migratedRules }));
   chk('import with oversized section rejected', (await T.mutate(LG, 'importState', { state: { ...seed, transfers: Array.from({ length: 5001 }, () => ({ x: 1 })) } }, tok1)).error?.status === 'INVALID_ARGUMENT');
   chk('import with junk manager entry rejected', (await T.mutate(LG, 'importState', { state: { ...seed, managers: [{ id: 1, name: 'A', team: 'B', pin: '1234' }, { id: 2, name: 'C', team: 'D' }] } }, tok1)).error?.status === 'INVALID_ARGUMENT');
+  // Cunthanger's nodes round-trip through an export (sol verdict P2-1)
+  chk('an export carrying posts and pressers imports', !(await T.mutate(LG, 'importState', { state: { ...seed, posts: [{ mid: 1, to: 2, text: 'hello', gw: 1, t: 1 }], pressers: { 1: { '1:pre': { t: 1, answers: [{ id: 'opp', q: 'Q?', tone: 'humble', text: 'A.' }] } } } } }, tok1)).error);
+  chk('junk posts or pressers in an export are refused', (await T.mutate(LG, 'importState', { state: { ...seed, posts: [{ mid: 'x', text: 1 }] } }, tok1)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(LG, 'importState', { state: { ...seed, pressers: { 1: { 'sometime': { t: 1, answers: [] } } } } }, tok1)).error?.status === 'INVALID_ARGUMENT');
   chk('legacy export debris (pins) tolerated and dropped', !(await T.mutate(LG, 'importState', { state: { ...seed, pins: { 1: 'x' } } }, tok1)).error
     && !(await T.initAdmin().database().ref(`v2/leagues/${LG}/public/pins`).get()).val());
 
@@ -869,17 +873,31 @@ const SB = 'the-league-sandbox';
     && (await T.mutate(LG, 'post', { text: 'hi', to: 99, gw: 2 }, tok2)).error?.status === 'INVALID_ARGUMENT');
   chk('a post to nobody in particular lands', !(await T.mutate(LG, 'post', { text: 'Lineup is in.', to: null, gw: 2 }, tok2)).error);
   chk('a spectator cannot post', (await T.mutate(LG, 'post', { text: 'hi', gw: 2 }, tokOut)).error?.status === 'PERMISSION_DENIED');
-  const pr = await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [{ id: 'opp', tone: 'unhinged', text: 'He is a charity.' }, { id: 'form', tone: 'nonsense', text: '' }, { id: 'squad', own: true, text: 'My own words.' }] }, tok1);
+  // the room is only open when it should be (sol verdict P2-2): a pre-match
+  // conference needs a round that has not kicked off, a post-match one a round
+  // that is settled. Round index 0 is finished in this harness; 30 is future.
+  chk('no pre-match press conference after the round has kicked off', (await T.mutate(LG, 'presser', { gw: 0, phase: 'pre', answers: [{ id: 'opp', tone: 'confident', text: 'We will win.' }] }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  chk('no post-match press conference before the round is settled', (await T.mutate(LG, 'presser', { gw: 30, phase: 'post', answers: [{ id: 'result', tone: 'humble', text: 'We lost.' }] }, tok1)).error?.status === 'FAILED_PRECONDITION');
+  const pr = await T.mutate(LG, 'presser', { gw: 30, phase: 'pre', answers: [{ id: 'opp', q: 'Who are they?', tone: 'unhinged', text: 'He is a charity.' }, { id: 'form', tone: 'nonsense', text: '' }, { id: 'squad', own: true, text: 'My own words.' }] }, tok1);
   chk('a press conference lands under the manager and round', !pr.error, JSON.stringify(pr.error));
   {
-    const rec = (await db.ref(`v2/leagues/${LG}/public/pressers/1/2:pre`).get()).val();
-    chk('answers are bounded: junk tone falls to dismissive, empty text to No comment, own words kept', rec && rec.t > 0 && rec.answers.length === 3
-      && rec.answers[0].tone === 'unhinged' && rec.answers[1].tone === 'dismissive' && rec.answers[1].text === 'No comment.' && rec.answers[2].own === true && rec.answers[2].text === 'My own words.', JSON.stringify(rec));
+    const rec = (await db.ref(`v2/leagues/${LG}/public/pressers/1/30:pre`).get()).val();
+    chk('answers are bounded: junk tone falls to dismissive, empty text to No comment, own words kept, the question travels', rec && rec.t > 0 && rec.answers.length === 3
+      && rec.answers[0].tone === 'unhinged' && rec.answers[0].q === 'Who are they?' && rec.answers[1].tone === 'dismissive' && rec.answers[1].text === 'No comment.' && rec.answers[2].own === true && rec.answers[2].text === 'My own words.', JSON.stringify(rec));
   }
-  chk('what’s said is said: the same press conference cannot be redone', (await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [{ id: 'opp', tone: 'humble', text: 'Sorry.' }] }, tok1)).error?.status === 'ALREADY_EXISTS');
-  chk('the post-match press conference is a separate room', !(await T.mutate(LG, 'presser', { gw: 2, phase: 'post', answers: [{ id: 'result', tone: 'humble', text: 'Not good enough.' }] }, tok1)).error);
-  chk('a press conference needs a phase and at least one answer', (await T.mutate(LG, 'presser', { gw: 2, phase: 'during', answers: [{ id: 'x', text: 'y' }] }, tok2)).error?.status === 'INVALID_ARGUMENT'
-    && (await T.mutate(LG, 'presser', { gw: 2, phase: 'pre', answers: [] }, tok2)).error?.status === 'INVALID_ARGUMENT');
+  chk('what’s said is said: the same press conference cannot be redone', (await T.mutate(LG, 'presser', { gw: 30, phase: 'pre', answers: [{ id: 'opp', tone: 'humble', text: 'Sorry.' }] }, tok1)).error?.status === 'ALREADY_EXISTS');
+  chk('the post-match press conference is a separate room, open once the round is settled', !(await T.mutate(LG, 'presser', { gw: 0, phase: 'post', answers: [{ id: 'result', tone: 'humble', text: 'Not good enough.' }] }, tok1)).error);
+  // with an odd number of managers somebody sits a round out: find manager 2 a
+  // future round he actually has a tie in (an empty answer list on a tie says
+  // INVALID_ARGUMENT; no tie says FAILED_PRECONDITION first)
+  let g2 = 30;
+  for (; g2 < 33; g2++) if ((await T.mutate(LG, 'presser', { gw: g2, phase: 'pre', answers: [] }, tok2)).error?.status === 'INVALID_ARGUMENT') break;
+  chk('a manager without a tie in the round is turned away', (await T.mutate(LG, 'presser', { gw: [30, 31, 32].find(g => g !== g2), phase: 'pre', answers: [{ id: 'opp', text: 'x' }] }, tok2)).error?.status === 'FAILED_PRECONDITION'
+    || (await T.mutate(LG, 'presser', { gw: [30, 31, 32].find(g => g !== g2), phase: 'pre', answers: [{ id: 'opp', text: 'x' }] }, tok2)).error?.status === 'ALREADY_EXISTS');
+  chk('storming out is a press conference', !(await T.mutate(LG, 'presser', { gw: g2, phase: 'pre', answers: [{ id: 'opp', tone: 'unhinged', storm: true, text: 'Stormed out.' }] }, tok2)).error
+    && (await db.ref(`v2/leagues/${LG}/public/pressers/2/${g2}:pre/answers/0/storm`).get()).val() === true);
+  chk('a press conference needs a phase and at least one answer', (await T.mutate(LG, 'presser', { gw: g2, phase: 'during', answers: [{ id: 'x', text: 'y' }] }, tok3)).error?.status === 'INVALID_ARGUMENT'
+    && (await T.mutate(LG, 'presser', { gw: 30, phase: 'pre', answers: [] }, tok1)).error?.status === 'INVALID_ARGUMENT');
 
   /* ---------------- window draft: one atomic transaction ---------------- */
   // (the re-import above rebuilt LG in season phase with fresh squads)
