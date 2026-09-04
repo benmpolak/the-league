@@ -236,6 +236,14 @@ let pass = 0, fail = 0;
         (marks[s.out.id] || '') + ' | ' + (rep ? marks[rep.id] || '' : ''));
       t('and it names who it expects to come on',
         rep && (marks[s.out.id] || '').includes(rep.name), marks[s.out.id] || '');
+      const mini = document.createElement('div');
+      const score = gwManagerPoints(s.mid, GW);
+      mini.innerHTML = dashMiniPitch(s.mid, GW);
+      t('dashboard shows named forecast arrows on the starter and replacement',
+        rep && mini.querySelector(`.pitch [data-pcard="${s.out.id}"] .sub-arrow.out.fc .sub-for`)?.textContent === rep.name &&
+        mini.querySelector(`.bench-strip [data-pcard="${rep.id}"] .sub-arrow.in.fc .sub-for`)?.textContent === s.out.name);
+      t('dashboard forecasts leave shirts and awarded points unchanged',
+        rep && !mini.querySelector(`.pitch [data-pcard="${rep.id}"]`) && gwManagerPoints(s.mid, GW) === score);
     })();
 
     /* ----- Toby's case (29 Aug): the bench man ahead has ALREADY played -----

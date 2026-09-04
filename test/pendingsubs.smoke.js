@@ -237,6 +237,25 @@ const chk = (name, ok, detail = '') => {
       liveScoreHtml(M.mid, GW) === `${gwManagerPoints(M.mid, GW)} <span class="pend-pts" title="Auto-subs already certain — awarded at the final whistle of the last game">+2</span>`,
       liveScoreHtml(M.mid, GW));
 
+    // The dashboard must expose the same substitution truth as the matchup.
+    const mini = document.createElement('div');
+    mini.innerHTML = dashMiniPitch(M.mid, GW);
+    t('dashboard names the pending replacement on both starter and bench chips',
+      mini.querySelector(`.pitch [data-pcard="${M.dead.id}"] .sub-arrow.out.pend .sub-for`)?.textContent === M.sub.name &&
+      mini.querySelector(`.bench-strip [data-pcard="${M.sub.id}"] .sub-arrow.in.pend .sub-for`)?.textContent === M.dead.name);
+    t('pending dashboard shirts stay put and rendering never awards points',
+      !mini.querySelector(`.pitch [data-pcard="${M.sub.id}"]`) && gwManagerPoints(M.mid, GW) === 20);
+    state.fixtures.forEach(f => { f.finished = true; f.minutes = 90; });
+    M.ev.final = true;
+    mini.innerHTML = dashMiniPitch(M.mid, GW);
+    t('settled dashboard moves the replacement onto the pitch with a solid arrow',
+      !!mini.querySelector(`.pitch [data-pcard="${M.sub.id}"] .sub-arrow.in:not(.pend):not(.fc)`) &&
+      !mini.querySelector(`.pitch [data-pcard="${M.dead.id}"]`));
+    t('settled dashboard shows the outgoing man below and never duplicates the incoming man',
+      !!mini.querySelector(`.bench-strip [data-pcard="${M.dead.id}"] .sub-arrow.out`) &&
+      mini.querySelectorAll(`[data-pcard="${M.sub.id}"]`).length === 1 &&
+      mini.querySelectorAll('.pitch .pitch-chip').length === 11);
+
     /* ----- nobody else's numbers moved ----- */
     (() => {
       const ev = baseline();

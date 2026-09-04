@@ -724,6 +724,31 @@ const SEED_SEASON = `(() => {
     JSON.stringify(g18));
   await g320.close();
 
+  // Ben, 4 Sept: both dashboard lineups stay visible, including devices
+  // that previously remembered the mobile panel as closed.
+  const lineupPage = await newPage(dCtx, baseUrl + '?demo');
+  for (const width of [320, 390, 1280]) {
+    await lineupPage.setViewport({ width, height: 844 });
+    const lineups = await lineupPage.evaluate(() => {
+      localStorage.setItem(`${LS_NS}-dashmu-open`, '0');
+      state.view = 'dash'; render();
+      const grid = document.querySelector('.dash-mu');
+      return {
+        pitches: grid?.querySelectorAll('.pitch').length,
+        players: grid?.querySelectorAll('.pitch .pitch-chip').length,
+        benches: grid?.querySelectorAll('.bench-strip').length,
+        visible: !!grid && grid.getBoundingClientRect().height > 0 && !grid.closest('details:not([open])'),
+        overflow: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    chk(`Dashboard: both lineups and benches visible at ${width}px despite old collapsed preference`,
+      lineups.pitches === 2 && lineups.players === 22 && lineups.benches === 2 && lineups.visible && !lineups.overflow,
+      JSON.stringify(lineups));
+  }
+  await lineupPage.click('.dash-mu [data-pcard]');
+  chk('Dashboard: restored lineup still opens player details', !!(await lineupPage.$('.overlay')));
+  await lineupPage.close();
+
   /* G17 — no uncaught page errors anywhere */
   chk('G17: no uncaught page errors across all pages', allErrors.length === 0, allErrors.join(' | ').slice(0, 200));
 

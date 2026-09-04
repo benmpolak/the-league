@@ -8057,7 +8057,6 @@ function assistantCard(mid, gw) {
    no planning state, no hypotheticals, no crystal ball. Reads the calendar
    through teamFixturesInGw like everything else. ----- */
 const NEXT6_KEY = `${LS_NS}-next6-open`;
-const DASHMU_KEY = `${LS_NS}-dashmu-open`; // the dashboard's two lineup shots
 function nextSixCard(mid) {
   // the runway is a PLANNING surface on My Team, so it rolls with My Team —
   // at settlement, past every finished round (Ian, 25 Aug: the table still
@@ -9374,6 +9373,7 @@ function viewDash() {
   const table = h2hStandings(false);
   const myPos = mid == null ? 0 : table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
+  // Ben, 4 Sept: both pitches stay visible directly on the mobile dashboard.
   return `
   ${foundingCard()}
   <div class="settings-grid">
@@ -9393,23 +9393,13 @@ function viewDash() {
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
-      ${(() => {
-        // the two lineup shots collapse behind a summary on phones — Ian,
-        // 24 Aug: "your team takes over" the dashboard. Same pattern as
-        // Next Six: closed by default under 700px, open on desktop, and the
-        // reader's choice is remembered.
-        const savedMu = localStorage.getItem(DASHMU_KEY);
-        const muOpen = savedMu != null ? savedMu === '1' : !window.matchMedia('(max-width: 700px)').matches;
-        return `<details id="dashMu"${muOpen ? ' open' : ''} style="margin-top:10px">
-        <summary class="n6-summary muted" style="font-size:12px">Both line-ups</summary>
-        <div class="mu-grid dash-mu" style="margin-top:8px">
+        <div class="mu-grid dash-mu" style="margin-top:10px">
         ${pair.map(pmid => `<div>
           <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
           ${dashMiniPitch(pmid, cur)}
         </div>`).join('')}
         </div>
-      </details>`;
-      })()}` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
+      ` : '<p class="muted">No fixture this week — playoffs or the off-season.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">${started ? 'Lineups are locked.' : `Lineup locks ${deadline.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`} You sit <b style="color:var(--text)">${myPos}${['th','st','nd','rd'][((myPos%100>10&&myPos%100<14)?0:Math.min(myPos%10,4))] || 'th'}</b>.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
         <button class="btn small" data-goto="team">Set my lineup</button>
@@ -11450,25 +11440,34 @@ function committeeMinutes(last) {
 // the cheeky lineup shot on the dashboard matchup card (Ben, 1 Aug): both
 // XIs as mini pitches, chips open player cards, points live once started
 function dashMiniPitch(mid, gw) {
-  const xi = lineupFor(mid, gw);
+  // Ben, 4 Sept: the dashboard must show the same subs as the full matchup.
+  // Pending/forecast subs are marked; shirts move only once they are awarded.
+  const started = gwStatus(gw) !== 'upcoming';
+  const eff = started ? effectiveXI(mid, gw) : { xi: lineupFor(mid, gw), subs: [] };
+  const xi = eff.xi;
+  const marks = started ? subMarks(mid, gw) : {};
   // subs ride under the XI in queue order (Toby, GW1 eve: "on homepage it
   // doesn't show subs — it does everywhere else")
-  const bench = benchFor(mid, gw);
+  const outs = new Set(eff.subs.map(s => s.out));
+  const bench = [...benchFor(mid, gw).filter(p => !xi.includes(p.id)), ...squadAt(mid, gw).filter(p => outs.has(p.id))];
+  const priority = new Map(benchFor(mid, gw).map((p, i) => [p.id, i + 1]));
   return `<div style="overflow-x:auto"><div class="pitch mu-pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${
     xi.map(pid => PLAYER_BY_ID[pid]).filter(p => p && p.pos === pos).map(p => `
       <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
-        ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${marks[p.id] || ''}
       </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div>
   ${bench.length ? `<div class="bench-strip">
     <span class="muted" style="font-size:10px;font-weight:700;align-self:center">BENCH</span>
-    ${bench.map((p, bi) => `
+    ${bench.map(p => `
       <div class="pitch-chip mu-chip benched ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
-        <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
+        <span class="tag" style="font-size:9px;padding:1px 5px">${outs.has(p.id) ? 'Off' : priority.get(p.id)}</span>
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
-        ${gwUnderway(gw) ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${marks[p.id] || ''}
       </div>`).join('')}
   </div>` : ''}</div>`;
 }
@@ -11514,8 +11513,6 @@ function bindDash() {
   if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
   const ofn = $('#offerNudge');
   if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
-  const dmu = $('#dashMu');
-  if (dmu) dmu.ontoggle = () => localStorage.setItem(DASHMU_KEY, dmu.open ? '1' : '0');
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');
