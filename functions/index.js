@@ -1253,14 +1253,20 @@ ACTIONS.post = async ({ league, a, data, state }) => {
   if (!res.committed) throw new HttpsError('resource-exhausted', 'one post every five seconds — let it land');
   return { ok: true };
 };
-ACTIONS.presser = async ({ league, a, data, state }) => {
+ACTIONS.presser = async ({ league, a, data, state, eng }) => {
   const mid = a.managerId;
   if (!Number.isInteger(mid) || mid < 0) throw new HttpsError('permission-denied', 'sign in as a manager to face the press');
   if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'the press room opens with the season');
   const gw = Number(data.gw);
-  if (!Number.isInteger(gw) || gw < 0 || gw > 40) throw new HttpsError('invalid-argument', 'bad gameweek');
+  if (!Number.isInteger(gw) || gw < 0 || gw >= eng.REGULAR_GWS) throw new HttpsError('invalid-argument', 'bad gameweek');
   const phase = data.phase === 'post' ? 'post' : data.phase === 'pre' ? 'pre' : null;
   if (!phase) throw new HttpsError('invalid-argument', 'before or after, not during');
+  // the room is only open when the UI says it is (sol verdict P2-2): a
+  // pre-match conference before the round kicks off, a post-match one once
+  // the round is settled, and only for a manager who has a tie in it
+  if (!eng.pairingsFor(state, gw).some(pr => pr.includes(mid))) throw new HttpsError('failed-precondition', 'you have no tie in that round');
+  if (phase === 'pre' && eng.gwHasStarted(gw)) throw new HttpsError('failed-precondition', 'that round has kicked off — the pre-match press conference is over');
+  if (phase === 'post' && eng.gwStatus(state, gw) !== 'final') throw new HttpsError('failed-precondition', 'that round is not settled — no post-match press conference yet');
   const answers = toArr(data.answers);
   if (!answers.length || answers.length > 5) throw new HttpsError('invalid-argument', 'between one and five answers');
   const clean = answers.map(ans => {
@@ -1268,7 +1274,9 @@ ACTIONS.presser = async ({ league, a, data, state }) => {
     const id = cleanText(ans.id, 20).replace(/[^a-z]/g, '');
     const tone = PRESSER_TONES.has(ans.tone) ? ans.tone : 'dismissive';
     const text = cleanText(ans.text, 280).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim() || 'No comment.';
-    return { id, tone, own: !!ans.own, text };
+    // the question as the manager saw it, kept with the answer (sol P2-4)
+    const q = cleanText(ans.q, 240).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').trim();
+    return { id, tone, own: !!ans.own, text, ...(q ? { q } : {}), ...(ans.storm ? { storm: true } : {}) };
   });
   const ref = db().ref(`${leagueBase(league)}/public/pressers/${mid}/${gw}:${phase}`);
   const seedSnap = (await ref.get()).val();
@@ -2064,7 +2072,7 @@ const IMPORT_ALLOWED = new Set([
   'phase', 'managers', 'settings', 'draft', 'lineups', 'transfers', 'trades',
   'covenants', 'waiverMeta', 'adjustments', 'shirtNums', 'draftPool',
   'windowDraft', 'tradeBlock', 'benchOrders', 'lobus', 'hamCup',
-  'claims', 'autolists', 'watchlists',
+  'claims', 'autolists', 'watchlists', 'posts', 'pressers',
 ]);
 // legacy-export debris: silently dropped, never imported ('mock' = the
 // sandbox Simulation Chamber flag — a pretend matchday must never ride an
@@ -2134,6 +2142,29 @@ ACTIONS.importState = async ({ league, a, data, ctx }) => {
     if (!IMPORT_ALLOWED.has(k) && !IMPORT_DROPPED.has(k)) importError(`unknown key "${k}"`);
   }
   if (!['setup', 'draft', 'season'].includes(s.phase)) importError('bad phase');
+  // Cunthanger's two nodes travel with an export (sol verdict P2-1): bounded
+  // like the actions that write them
+  if (s.posts !== undefined) {
+    const posts = toArr(s.posts);
+    if (posts.length > 400) importError('posts');
+    for (const p of posts) {
+      if (!isPlainObj(p) || !Number.isInteger(p.mid) || typeof p.text !== 'string' || !p.text.trim() || p.text.length > 280
+        || !Number.isInteger(p.gw) || typeof p.t !== 'number' || (p.to != null && !Number.isInteger(p.to))) importError('posts');
+    }
+    s.posts = posts;
+  }
+  if (s.pressers !== undefined) {
+    if (!isPlainObj(s.pressers)) importError('pressers');
+    for (const [mid, rounds] of Object.entries(s.pressers)) {
+      if (!/^\d+$/.test(mid) || !isPlainObj(rounds)) importError('pressers');
+      for (const [k, rec] of Object.entries(rounds)) {
+        if (!/^\d+:(pre|post)$/.test(k) || !isPlainObj(rec) || typeof rec.t !== 'number') importError('pressers');
+        const answers = toArr(rec.answers);
+        if (!answers.length || answers.length > 5 || answers.some(an => !isPlainObj(an) || typeof an.text !== 'string' || an.text.length > 280 || (an.q != null && (typeof an.q !== 'string' || an.q.length > 240)))) importError('pressers');
+        rec.answers = answers;
+      }
+    }
+  }
   const managers = toArr(s.managers);
   if (managers.length < 2 || managers.length > 20) importError('managers');
   const midSeen = new Set();

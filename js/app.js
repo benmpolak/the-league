@@ -4237,6 +4237,10 @@ function cunthangerEvents() {
       const [giS, phase] = rk.split(':'); const gi = +giS;
       if (!rec || !Array.isArray(rec.answers) || !GAMEWEEKS[gi] || !((+rec.t || 0) > now - 10 * 864e5)) continue;
       const opp = oppIn(mid, gi);
+      if (rec.answers.some(x => x && x.storm)) {
+        ev.push({ type: 'storm', key: `pr:${gi}:${mid}:${phase}:storm`, mid, oppMid: opp, mgrName: managerName(mid), gwN: GAMEWEEKS[gi].n, phase, at: phase === 'post' ? 'Post-match' : 'Press conference', live: false, sortKick: +rec.t || 0 });
+        continue;
+      }
       // one post per press conference: the loudest thing said. The paper
       // prints the rest; the feed is not the transcript.
       const rank = { unhinged: 4, confident: 3, dismissive: 2, humble: 1 };
@@ -4325,9 +4329,9 @@ function presserCtx(mid, gwIdx, phase) {
     ctx.best = best; ctx.worst = worst;
     // points left on the bench
     let burn = null;
-    for (const pid of benchFor(mid, gwIdx)) {
-      const p = PLAYER_BY_ID[pid]; if (!p) continue;
-      const pts = gwPlayerPoints(pid, gwIdx);
+    for (const bp of benchFor(mid, gwIdx)) {
+      const p = bp && typeof bp === 'object' ? bp : PLAYER_BY_ID[bp]; if (!p) continue;
+      const pts = gwPlayerPoints(p.id, gwIdx);
       if (!burn || pts > burn.pts) burn = { name: p.name, pts };
     }
     ctx.benchBurn = burn && burn.pts >= 6 ? burn : null;
@@ -4348,24 +4352,32 @@ function pressersOpen(mid) {
   if (last >= 0 && last < REGULAR_GWS && pairingsFor(last).some(x => x.includes(mid))) out.push({ gw: last, phase: 'post', done: !!presserOf(mid, last, 'post') });
   return out;
 }
+// both resolve true only once the words are SAVED — on the server for the real
+// league, locally otherwise. Callers keep the editor open on false (sol
+// verdict P1-2: a failed send used to close the room and lose the writing).
 function sendPresser(gwIdx, phase, answers) {
   const mid = meId();
-  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return; }
+  if (mid == null || mid === -1) { toast('Sign in as a manager to face the press.'); return Promise.resolve(false); }
   const rec = { t: Date.now(), answers };
-  if (netOn()) { serverAct('presser', { gw: gwIdx, phase, answers }).catch(() => {}); return; }
+  if (netOn()) return serverAct('presser', { gw: gwIdx, phase, answers }).then(() => true, () => false);
   state.pressers = { ...(state.pressers || {}), [mid]: { ...(state.pressers?.[mid] || {}), [presserKey(gwIdx, phase)]: rec } };
   save(); render();
+  return Promise.resolve(true);
 }
 function sendPost(text, to) {
   const mid = meId();
-  if (mid == null || mid === -1) { toast('Sign in as a manager to post.'); return; }
+  if (mid == null || mid === -1) { toast('Sign in as a manager to post.'); return Promise.resolve(false); }
   const t = String(text || '').trim().slice(0, 280);
-  if (!t) { toast('An empty post is just staring.'); return; }
+  if (!t) { toast('An empty post is just staring.'); return Promise.resolve(false); }
   const gw = currentGwIndex();
-  if (netOn()) { serverAct('post', { text: t, to: to ?? null, gw }).catch(() => {}); return; }
+  if (netOn()) return serverAct('post', { text: t, to: to ?? null, gw }).then(() => true, () => false);
   state.posts = [...(state.posts || []), { mid, to: to ?? null, text: t, gw, t: Date.now() }];
   save(); render();
+  return Promise.resolve(true);
 }
+// the words are what the manager saw (sol P2-4): each answer carries its
+// question, so readback and the paper never pair an old answer with a new question
+const answerQ = (an, qs, i) => (an && an.q) || qs[i]?.q || 'The press asked.';
 function pressRoomSheet(spec) {
   if (typeof Cunthanger === 'undefined') return;
   const mid = meId();
@@ -4386,14 +4398,15 @@ function pressRoomSheet(spec) {
     <p class="muted" style="font-size:12px;margin-bottom:12px">${ctx.opp ? `${phase === 'post' ? 'After' : 'Before'} ${esc(cleanTeamName(ctx.opp))}. ` : ''}Pick an answer or say it in your own words. Everything you say is on the record, on the feed, and in Friday’s paper.</p>
     ${qs.map((q, i) => `<div class="ch-q">
       <div class="ch-q-by">${esc(q.by)}, The League Gazette</div>
-      <div class="ch-q-text">${esc(q.q)}</div>
-      ${done ? `<p class="ch-q-done">&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;</p>` : `<div class="ch-q-opts">
+      <div class="ch-q-text">${esc(done ? answerQ(done.answers?.[i], qs, i) : q.q)}</div>
+      ${done ? `<p class="ch-q-done">${done.answers?.[i]?.storm ? '<i>— left the room —</i>' : `&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;`}</p>` : `<div class="ch-q-opts">
         ${q.options.map(o => `<button type="button" class="ch-opt" data-q="${i}" data-tone="${esc(o.tone)}" title="${esc(o.label)}"><span class="ch-opt-tone">${esc(o.label)}</span>${esc(o.text)}</button>`).join('')}
         <textarea class="ch-own" data-q="${i}" maxlength="280" rows="2" placeholder="Or in your own words…"></textarea>
       </div>`}
     </div>`).join('')}
-    ${done ? `<p class="muted" style="font-size:12px">You faced the press on ${new Date(done.t).toLocaleDateString('en-GB', { weekday: 'long' })}. What’s said is said.</p>`
-      : `<button class="btn" id="prSend" style="width:100%;margin-top:6px">End the press conference</button>`}
+    ${done ? `<p class="muted" style="font-size:12px">${done.answers?.some(x => x && x.storm) ? 'You stormed out. The room is still talking about it.' : `You faced the press on ${new Date(done.t).toLocaleDateString('en-GB', { weekday: 'long' })}. What’s said is said.`}</p>`
+      : `<button class="btn" id="prSend" style="width:100%;margin-top:6px">End the press conference</button>
+         <button class="btn ghost small" id="prStorm" style="width:100%;margin-top:6px" title="Answer nothing. Leave. Let them write it up.">Storm out</button>`}
   </div>`;
   document.body.appendChild(ov);
   pushOvState();
@@ -4413,13 +4426,25 @@ function pressRoomSheet(spec) {
     if (ta.value.trim()) { chosen[i] = { tone: 'own', text: ta.value.trim().slice(0, 280) }; ov.querySelectorAll(`.ch-opt[data-q="${i}"]`).forEach(x => x.classList.remove('on')); }
     else delete chosen[i];
   });
-  const send = ov.querySelector('#prSend');
-  if (send) send.onclick = () => {
-    const answers = qs.map((q, i) => chosen[i] ? { id: q.id, tone: chosen[i].tone === 'own' ? 'unhinged' : chosen[i].tone, own: chosen[i].tone === 'own', text: chosen[i].text } : null);
+  const send = ov.querySelector('#prSend'), storm = ov.querySelector('#prStorm');
+  const busy = on => { for (const b of [send, storm]) if (b) b.disabled = on; if (send) send.textContent = on ? 'Sending…' : 'End the press conference'; };
+  if (send) send.onclick = async () => {
+    const answers = qs.map((q, i) => chosen[i] ? { id: q.id, q: q.q, tone: chosen[i].tone === 'own' ? 'unhinged' : chosen[i].tone, own: chosen[i].tone === 'own', text: chosen[i].text } : null);
     if (!answers.some(Boolean)) { toast('Say something. Anything. A “no comment” counts.'); return; }
-    sendPresser(gwIdx, phase, answers.map((x, i) => x || { id: qs[i].id, tone: 'dismissive', text: 'No comment.' }));
+    busy(true);
+    const ok = await sendPresser(gwIdx, phase, answers.map((x, i) => x || { id: qs[i].id, q: qs[i].q, tone: 'dismissive', text: 'No comment.' }));
+    if (!ok) { busy(false); return; } // serverAct said why; the words are still on screen
     close();
     toast('On the record. It’s on the feed, and it’s in the paper.');
+  };
+  // Ben, 4 Sep: "you can have option to storm out the presser"
+  if (storm) storm.onclick = async () => {
+    if (!(await confirmSheet({ title: 'Storm out?', body: 'You answer nothing, you leave, and the press write it up exactly as it looked. This counts as your press conference.', yes: 'Storm out' }))) return;
+    busy(true);
+    const ok = await sendPresser(gwIdx, phase, qs.map(q => ({ id: q.id, q: q.q, tone: 'unhinged', storm: true, text: 'Stormed out.' })));
+    if (!ok) { busy(false); return; }
+    close();
+    toast('You left. They noticed.');
   };
 }
 const cleanTeamName = t => String(t || '').replace(/[*°]/g, '').replace(/\s+/g, ' ').trim();
@@ -4447,20 +4472,24 @@ function pressRoomTile() {
 }
 // the paper: the pre-game edition prints the press conferences
 function pressConferenceSection(gwIdx) {
+  try { return pressConferenceSectionInner(gwIdx); } catch (e) { return ''; }
+}
+function pressConferenceSectionInner(gwIdx) {
   if (typeof Cunthanger === 'undefined') return '';
   const rows = [];
   for (const [a, b] of pairingsFor(gwIdx)) {
     const qa = [a, b].map(mid => {
       const rec = presserOf(mid, gwIdx, 'pre');
-      if (!rec || !rec.answers?.length) return null;
+      if (!rec || !Array.isArray(rec.answers) || !rec.answers.length) return null;
       const qs = Cunthanger.questions(presserCtx(mid, gwIdx, 'pre'), 'pre');
-      const best = rec.answers.map((an, i) => an && an.text ? { q: qs[i]?.q || '', a: an.text, tone: an.tone } : null).filter(Boolean);
+      if (rec.answers.some(x => x && x.storm)) return { mid, storm: true, best: [] };
+      const best = rec.answers.map((an, i) => an && an.text ? { q: answerQ(an, qs, i), a: an.text, tone: an.tone } : null).filter(Boolean);
       return best.length ? { mid, best } : null;
     }).filter(Boolean);
     if (!qa.length) continue;
     rows.push(`<div class="prog-presser">
       <div class="prog-presser-tie">${esc(cleanTeamName(teamName(a)))} v ${esc(cleanTeamName(teamName(b)))}</div>
-      ${qa.map(x => x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
+      ${qa.map(x => x.storm ? `<p class="prog-int-a">${esc(managerName(x.mid))} took his seat, heard the first question, and left. The Gazette’s reporter describes the door as “firm”.</p>` : x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
     </div>`);
   }
   // and what was said outside the room: posts aimed at this week's opponent
@@ -4477,12 +4506,21 @@ function pressConferenceSection(gwIdx) {
 }
 // and the review edition brings the receipts
 function pressReceipts(gwIdx) {
+  try { return pressReceiptsInner(gwIdx); } catch (e) { return ''; }
+}
+function pressReceiptsInner(gwIdx) {
   if (typeof Cunthanger === 'undefined') return '';
   const out = [];
   for (const [a, b] of pairingsFor(gwIdx)) {
     for (const [mid, opp] of [[a, b], [b, a]]) {
       const rec = presserOf(mid, gwIdx, 'pre');
-      const said = rec?.answers?.find(x => x && x.text && (x.tone === 'confident' || x.tone === 'unhinged' || x.own)) || rec?.answers?.find(x => x && x.text);
+      const answers = Array.isArray(rec?.answers) ? rec.answers : [];
+      if (answers.some(x => x && x.storm)) {
+        const my0 = gwManagerPoints(mid, gwIdx), th0 = gwManagerPoints(opp, gwIdx);
+        out.push(`<p><b>${esc(managerName(mid))}</b> stormed out of Thursday’s press conference. ${esc(my0 > th0 ? `He then won ${my0}–${th0}, which is the worst possible outcome for everyone who wrote it up.` : my0 < th0 ? `He then lost ${my0}–${th0}. The door was the highlight.` : `A ${my0}–${th0} draw followed. Nobody stormed anywhere afterwards.`)}</p>`);
+        continue;
+      }
+      const said = answers.find(x => x && x.text && x.text !== 'No comment.' && (x.tone === 'confident' || x.tone === 'unhinged' || x.own)) || answers.find(x => x && x.text && x.text !== 'No comment.');
       if (!said) continue;
       const my = gwManagerPoints(mid, gwIdx), th = gwManagerPoints(opp, gwIdx);
       const r = my > th ? 'won' : my < th ? 'lost' : 'drew';
@@ -4569,6 +4607,17 @@ function cunthangerFeedHtml(limit = 80) {
       ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
     </details>`;
 }
+// the feed sheet is an overlay outside <main>, so a render (a snapshot from
+// another phone, say) used to leave it stale (sol P1-1). Repaint only the
+// timeline: the compose box, its text and focus are left alone.
+function refreshCunthangerTimelines() {
+  if (typeof Cunthanger === 'undefined') return;
+  const tls = document.querySelectorAll('.overlay .ch-timeline');
+  if (!tls.length) return;
+  const posts = cunthangerPosts();
+  const html = posts.length ? posts.slice(0, 80).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>';
+  for (const tl of tls) if (tl.innerHTML !== html) tl.innerHTML = html;
+}
 function cunthangerSheet() {
   if (typeof Cunthanger === 'undefined') return;
   document.querySelectorAll('.ch-room').forEach(x => x.closest('.overlay')?.remove());
@@ -4583,11 +4632,16 @@ function cunthangerSheet() {
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   ov.querySelector('#chClose').onclick = () => closeOv(ov);
   const send = ov.querySelector('#chComposeSend');
-  if (send) send.onclick = () => {
+  if (send) send.onclick = async () => {
     const ta = ov.querySelector('#chComposeText'), to = ov.querySelector('#chComposeTo')?.value;
     if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
-    sendPost(ta.value, to ? +to : null);
-    closeOv(ov); cunthangerSheet();
+    send.disabled = true; send.textContent = 'Posting…';
+    const ok = await sendPost(ta.value, to ? +to : null);
+    send.disabled = false; send.textContent = 'Post';
+    if (!ok) return; // the words stay in the box
+    ta.value = '';
+    refreshCunthangerTimelines();
+    toast('Posted. The wire has it.');
   };
 }
 /* ================= the Media page =================
@@ -4605,7 +4659,7 @@ function pressConferencesRoom() {
   if (last >= 0 && last < REGULAR_GWS) rounds.push({ gw: last, phase: 'post', label: `After Gameweek ${GAMEWEEKS[last].n}` });
   if (last >= 1) rounds.push({ gw: last, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[last].n}` });
   const blocks = rounds.map(r => {
-    const rows = state.managers.map(m => ({ m, rec: presserOf(m.id, r.gw, r.phase) })).filter(x => x.rec && x.rec.answers?.length);
+    const rows = state.managers.map(m => ({ m, rec: presserOf(m.id, r.gw, r.phase) })).filter(x => x.rec && Array.isArray(x.rec.answers) && x.rec.answers.length);
     const missing = state.managers.filter(m => !presserOf(m.id, r.gw, r.phase));
     if (!rows.length) return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}</div><p class="muted" style="font-size:12.5px">Nobody has faced the press for this round yet.</p></div>`;
     return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)} <span class="tag">${rows.length} of ${state.managers.length}</span></div>
@@ -4613,7 +4667,7 @@ function pressConferencesRoom() {
         const qs = Cunthanger.questions(presserCtx(m.id, r.gw, r.phase), r.phase);
         return `<details class="ch-pc"${m.id === meId() ? ' open' : ''}>
           <summary>${kitSvg(m.id, 18)} <b>${esc(managerName(m.id))}</b> <span class="muted">${esc(cleanTeamName(teamName(m.id)))}</span> <span class="ch-h">@${esc(handleOf(m.id))}</span></summary>
-          ${rec.answers.map((an, i) => an && an.text ? `<div class="prog-int-q">${esc(qs[i]?.q || 'The press asked.')}</div><p class="prog-int-a">&ldquo;${esc(an.text)}&rdquo;${an.own ? ' <span class="muted" style="font-size:11px">— in his own words</span>' : ''}</p>` : '').join('')}
+          ${rec.answers.some(x => x && x.storm) ? `<p class="prog-int-a"><i>Stormed out after ${rec.answers.length === 1 ? 'the first question' : 'the questions were read'}. Answered nothing.</i></p>` : rec.answers.map((an, i) => an && an.text ? `<div class="prog-int-q">${esc(answerQ(an, qs, i))}</div><p class="prog-int-a">&ldquo;${esc(an.text)}&rdquo;${an.own ? ' <span class="muted" style="font-size:11px">— in his own words</span>' : ''}</p>` : '').join('')}
         </details>`;
       }).join('')}
       ${missing.length ? `<p class="muted" style="font-size:11.5px;margin-top:6px">Not yet faced the press: ${esc(missing.map(m => managerName(m.id).split(' ')[0]).join(', '))}.</p>` : ''}
@@ -4653,6 +4707,7 @@ function cunthangerTakeover() {
   try { if (localStorage.getItem(KEY)) return; } catch { return; }
   if (document.querySelector('.overlay')) return; // it will try again next render
   window._chAlertShown = true;
+  try { localStorage.setItem(KEY, '1'); } catch {} // shown = seen, whichever way it is dismissed (sol P2-3)
   const T = Cunthanger.TAKEOVER;
   const ov = document.createElement('div');
   ov.className = 'overlay ch-alert-ov';
@@ -4669,10 +4724,7 @@ function cunthangerTakeover() {
   pushOvState();
   playSound('alert');
   try { navigator.vibrate?.([400, 150, 400, 150, 400]); } catch {}
-  ov.querySelector('#chAlertOk').onclick = () => {
-    try { localStorage.setItem(KEY, '1'); } catch {}
-    closeOv(ov);
-  };
+  ov.querySelector('#chAlertOk').onclick = () => closeOv(ov);
 }
 
 async function syncNow(manual = false) {
@@ -5030,6 +5082,7 @@ function render() {
   renderHeckles();
   renderKlaxons();
   cunthangerTakeover();
+  refreshCunthangerTimelines();
   if (typeof manageWakeLock === 'function') manageWakeLock(); // acquire/release as the draft starts/ends
   if (focusId) {
     const el = document.getElementById(focusId);
@@ -9279,6 +9332,17 @@ function viewDash() {
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
       ${(() => {
+        // the press are waiting (Ben, 4 Sep: "it should flash up before game
+        // week and after game week to do the pressers, not obligatory")
+        if (typeof Cunthanger === 'undefined') return '';
+        const waiting = pressersOpen(meId()).filter(o => !o.done);
+        return waiting.map(o => `<button type="button" class="gz-nudge ch-nudge" data-presser="${o.gw}:${o.phase}">
+          <span class="gz-nudge-tag ch-tag">PRESS ROOM</span>
+          <span class="gz-nudge-copy"><b>${o.phase === 'post' ? 'Post-match' : 'Pre-match'} press conference</b>, GW${GAMEWEEKS[o.gw].n}. ${o.phase === 'post' ? 'Two' : 'Three'} questions. Or storm out.</span>
+          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+        </button>`).join('');
+      })()}
+      ${(() => {
         // somebody said something about you, in public (Ben, 3 Sep: "that's the fun")
         if (typeof Cunthanger === 'undefined') return '';
         const me = meId();
@@ -9778,6 +9842,7 @@ function programmeCard() {
       <span class="ch-logo ch-logo-lg">c</span>
       <div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div>
       ${live ? '<span class="ch-live" style="margin-left:auto"><span class="rec"></span>LIVE</span>' : ''}
+      ${state.view !== 'media' ? `<button class="btn ghost small" data-goto="media" style="margin-left:${live ? '8px' : 'auto'}">Open Media &rarr;</button>` : ''}
     </div>
     <div class="ch-grid">
       <div class="ch-tile ch-tile-paper">
@@ -11302,7 +11367,13 @@ function dashMiniPitch(mid, gw) {
 function bindCunthangerCard() {
   const say = $('#chSayBtn');
   if (say) {
-    const go = () => { const inp = $('#chSay'); sendPost(inp?.value, say.dataset.to ? +say.dataset.to : null); if (inp) inp.value = ''; };
+    const go = async () => {
+      const inp = $('#chSay'); if (!inp || !inp.value.trim()) { toast('An empty post is just staring.'); return; }
+      say.disabled = true;
+      const ok = await sendPost(inp.value, say.dataset.to ? +say.dataset.to : null);
+      say.disabled = false;
+      if (ok) { inp.value = ''; toast('Posted. The wire has it.'); }
+    };
     say.onclick = go;
     const inp = $('#chSay'); if (inp) inp.onkeydown = e => { if (e.key === 'Enter') go(); };
   }
@@ -11317,10 +11388,13 @@ function bindCunthangerCard() {
       () => { window.prompt('Copy the front page:', txt); });
   };
   const send = $('#chComposeSend');
-  if (send) send.onclick = () => {
+  if (send) send.onclick = async () => {
     const ta = $('#chComposeText'), to = $('#chComposeTo')?.value;
     if (!ta || !ta.value.trim()) { toast('An empty post is just staring.'); return; }
-    sendPost(ta.value, to ? +to : null);
+    send.disabled = true; send.textContent = 'Posting…';
+    const ok = await sendPost(ta.value, to ? +to : null);
+    send.disabled = false; send.textContent = 'Post';
+    if (ok) { ta.value = ''; toast('Posted. The wire has it.'); }
   };
 }
 function bindDash() {

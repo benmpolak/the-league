@@ -463,6 +463,20 @@ window.Cunthanger = (() => {
           break;
         }
         case 'letus': add(press('conspiracy'), k, pick(LETUS(), k), vars(e), { ...meta, w: 2 }); break;
+        case 'storm': {
+          // he sat down, heard a question, and left. The wire writes it up;
+          // the other lot's supporter enjoys it; his own lot are split.
+          const pv = vars(e, { mgr: firstName(managerName(e.mid)), oppMgr: e.oppMid != null ? firstName(managerName(e.oppMid)) : '' });
+          const STORM = [
+            'Understand {mgr} ({team}) has walked out of his {when} press conference without answering a question. The door is described as “firm”. More to follow.',
+            'Can confirm {mgr} stormed out of the {when} press conference. Asked why, {mgr} was already in the car park.',
+            '{team} manager {mgr} has left his {when} press conference after one question. The question was about {opp}. It remains unanswered, and will now be answered on Saturday.',
+          ];
+          add(press('wire', k), k, pick(STORM, k), { ...pv, when: e.phase === 'post' ? 'post-match' : 'pre-match' }, { ...meta, at: 'The wire', w: 6 });
+          if (e.oppMid != null) add(fan(e.oppMid, 'melt', teamName(e.oppMid)), k + ':reply', pick(['He’s WALKED. Before we’ve even played. Rattled beyond belief.', 'Stormed out. Imagine. {mgr} has stormed out of a room that had biscuits in it.', 'Nothing to say and he still couldn’t manage it. Class from {mgr}.'], k + ':reply'), pv, { ...meta, at: meta.at, sortKick: (meta.sortKick || 0) + 1, w: 5 });
+          add(fan(e.mid, hash(k + ':own') % 2 ? 'melt' : 'sage', tn), k + ':own', pick(['Gaffer walked. GAFFER WALKED. That’s the energy. That’s the season.', 'Not sure walking out was the play. Also not sure it wasn’t.', 'He didn’t need to answer them. He answers on the pitch. He’d better.'], k + ':own'), pv, { ...meta, at: meta.at, sortKick: (meta.sortKick || 0) + 2, w: 4 });
+          break;
+        }
         case 'howard': {
           const H = typeof CUNTHANGER_HOWARD !== 'undefined' ? CUNTHANGER_HOWARD : null;
           if (!H || !e.fact) break;

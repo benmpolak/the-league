@@ -1032,7 +1032,9 @@ window.Gazette = (() => {
       }
       const bench = benchWasteOf(mid, gwIdx - 1);
       const said = (typeof presserOf === 'function') ? presserOf(mid, gwIdx, 'pre') : null;
-      const quote = said?.answers?.find(a => a && a.text && a.text !== 'No comment.')?.text || null;
+      const answers = Array.isArray(said?.answers) ? said.answers : [];
+      const stormed = answers.some(a => a && a.storm);
+      const quote = answers.find(a => a && a.text && !a.storm && a.text !== 'No comment.')?.text || null;
       const by = press(['colour', 'match'], `focus:${gwIdx}:${mid}`).n;
       const record = `${word(row.p).replace(/^./, c => c.toUpperCase())} played, none won, ${row.d ? `${word(row.d)} drawn, ` : ''}${word(row.l)} lost`;
       const head = pick2([`${surname.toUpperCase()} NEEDS A WIN`, `NO PRESSURE, ${surname.toUpperCase()}`, `${surname.toUpperCase()}: THE WALLS ARE CLOSING IN`], `focus-head:${gwIdx}:${mid}`);
@@ -1043,11 +1045,13 @@ window.Gazette = (() => {
         const sw = swaps.map(x => `${x.out.name} out, ${x.inn.name} in`).join('; ');
         paras.push(`The window was an opportunity to change something. ${team} changed this: ${sw}. The Committee's stats desk declines to grade the exchange, on the grounds that grading is for people who might learn something.`);
       } else {
-        paras.push(`The window was an opportunity to change something. ${team} lodged nothing, which the manager will describe as faith in the squad and the squad will describe as being left to it.`);
+        paras.push(`The window was an opportunity to change something. ${team} completed no signing from it, which the manager will describe as faith in the squad and the squad will describe as being left to it.`);
       }
       if (bench >= 8) paras.push(`Last round ${word(bench)} points sat on the bench, which is not a selection issue so much as a selection.`);
       if (opp != null) paras.push(`This week it is ${teamName(opp)}, ${nth(oppPos)} in the table${oppRow && oppRow.w ? ` with ${word(oppRow.w)} win${oppRow.w === 1 ? '' : 's'}` : ''}. ${pick2([`Win, and the season starts. Lose, and the group chat has already drafted the statement.`, `A win is not required. A win is merely the only thing that would stop the conversation.`, `The fixture list does not know it is doing this. The fixture list is doing this.`], `focus-tail:${gwIdx}:${mid}`)}`);
-      if (quote) paras.push(`Asked about it, ${name} said: “${quote}”`);
+      if (stormed) paras.push(`Asked about it, ${name} stood up and left the room. The Gazette prints the silence in full.`);
+      else if (quote) paras.push(`Asked about it, ${name} said: “${quote}”`);
+      else if (said) paras.push(`${name} faced the press this week and said nothing the Gazette could print, which took some doing.`);
       else paras.push(`${name} has not yet faced the press this week. The press has noticed.`);
       return `<div class="prog-story prog-lead-story prog-focus">
         <div class="prog-story-kicker">MANAGER IN FOCUS</div>
