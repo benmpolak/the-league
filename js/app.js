@@ -4480,7 +4480,7 @@ function cunthangerPosts() {
   return _chCache;
 }
 function chAvatar(who) {
-  if (who.kind === 'fan' && who.mid != null) return `<span class="ch-av ch-av-kit">${kitSvg(who.mid, 34)}</span>`;
+  if ((who.kind === 'fan' || who.kind === 'manager') && who.mid != null) return `<span class="ch-av ch-av-kit">${kitSvg(who.mid, 34)}</span>`;
   const ini = String(who.n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   return `<span class="ch-av ch-av-${esc(who.beat || 'press')}">${esc(ini)}</span>`;
 }

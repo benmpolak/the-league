@@ -63,7 +63,17 @@ const mp = C.compose([{ type: 'manager', key: 'm1', mid: 3, oppMid: 8, aimed: tr
 chk('a post shows who it is aimed at, and the wire picks it up', mp.some(p => p.who.kind === 'manager' && /→ 101011101/.test(p.at)) && mp.some(p => p.who.kind === 'press' && /Marc is a charity/.test(p.text) && /101011101/.test(p.text)));
 chk('the opponent’s supporter bites', mp.some(p => p.key === 'm1:reply' && p.who.mid === 8));
 chk('every bank line resolves its placeholders to known keys', Object.values(C.BANKS).flat().every(t =>
-  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'wor', 'team', 'text', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
+  [...t.matchAll(/\{(\w+)\}/g)].every(m => ['P', 'club', 'wor', 'team', 'text', 'quote', 'oppMgr', 'short', 'mgr', 'opp', 'n', 'pts', 'gw', 'my', 'their', 'news', 'diag', 'ret'].includes(m[1]))));
 chk('the takeover copy is intact', C.TAKEOVER.lines.some(l => /due cunt/.test(l)) && /Cunthanger Alert System/.test(C.TAKEOVER.head));
 console.log(`\n[cunthanger] ${pass} passed, ${fail} failed`);
+if (fail) process.exit(1);
+
+// variety: ten different posts should not all get the same treatment
+const many = Array.from({ length: 10 }, (_, i) => C.compose([{ type: 'manager', key: `v${i}`, mid: 3, oppMid: 8, aimed: true, mgrName: 'Ben Levy', text: `Post number ${i} about Marc.`, tone: 'unhinged', gwN: 3, at: 'GW3', sortKick: 5 }], opts));
+const desks = new Set(many.map(r => r.find(p => p.key.endsWith(':wire'))?.who.h));
+const shapes = new Set(many.map(r => r.map(p => p.key.split(':')[1] || 'post').sort().join('+')));
+chk('different journalists pick up different posts', desks.size >= 2, [...desks].join(','));
+chk('the reaction mix varies from post to post', shapes.size >= 3, [...shapes].join(' | '));
+chk('no reaction leaks a placeholder', many.flat().every(p => !/\{\w+\}/.test(p.text)), many.flat().filter(p => /\{\w+\}/.test(p.text)).map(p => p.text).join(' | '));
+console.log(`\n[cunthanger variety] ${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);

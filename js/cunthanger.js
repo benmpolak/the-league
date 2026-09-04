@@ -435,17 +435,36 @@ window.Cunthanger = (() => {
           // a real person's words, verbatim, under the club handle
           const acct = manager(e.mid, tn, e.mgrName);
           if (e.text) add(acct, k, '{text}', { text: e.text }, { ...meta, at: e.oppMid != null && e.aimed ? `→ ${cleanTeam(teamName(e.oppMid))}` : meta.at, w: 6 });
-          // a post (not a press conference) gets picked up on the wire
+          // a post (not a press conference) gets picked up on the wire — by
+          // a different desk each time, with a different mix of reactions
+          // (Ben, 4 Sep: "would be a shame if it is the same every single time")
           if (e.text && e.aimed) {
-            const tpl = e.oppMid != null ? pick(PICKUP, k + ':pickup') : pick(PICKUP_ALL, k + ':pickup');
-            add(press('wire', k), k + ':wire', tpl, vars(e, { mgr: firstName(managerName(e.mid)), oppMgr: e.oppMid != null ? firstName(managerName(e.oppMid)) : '', quote: e.text }), { ...meta, at: 'The wire', sortKick: (meta.sortKick || 0) + 2, w: 5 });
+            const pv = vars(e, { mgr: firstName(managerName(e.mid)), oppMgr: e.oppMid != null ? firstName(managerName(e.oppMid)) : '', quote: e.text });
+            const desk = pickupDesk(e.text, k);
+            const pool = e.oppMid != null ? PICKUP[desk] : PICKUP_ALL[desk];
+            const who = PRESS().find(p => p.h === desk);
+            const acct = who ? { h: who.h, n: who.n, kind: 'press', beat: who.beat, bio: who.bio } : press('wire', k);
+            const base = meta.sortKick || 0;
+            add(acct, k + ':wire', pick(pool, k + ':pickup'), pv, { ...meta, at: 'The wire', sortKick: base + 2, w: 5 });
+            if (e.oppMid != null) {
+              const r = hash(k + ':mix');
+              const oppTeam = teamName(e.oppMid);
+              // the club statement, two posts in five
+              if (r % 5 < 2) add(fan(e.oppMid, 'sage', oppTeam), k + ':stmt', pick(STATEMENT, k + ':stmt'), pv, { ...meta, at: 'Club statement', sortKick: base + 4, w: 5 });
+              // the calm supporter, one in three
+              else if (r % 3 === 0) add(fan(e.oppMid, 'sage', oppTeam), k + ':sage', pick(REPLY_SAGE, k + ':sage'), vars({ ...e, mid: e.oppMid, oppMid: e.mid }, { mgr: pv.mgr, oppMgr: pv.oppMgr, oppPos: e.oppPos ?? '' }), { ...meta, at: meta.at, sortKick: base + 3, w: 4 });
+              // the poster's own lot, one in two
+              if ((r >>> 3) % 2 === 0) add(fan(e.mid, (r >>> 5) % 4 === 0 ? 'sage' : 'melt', tn), k + ':back', pick((r >>> 5) % 4 === 0 ? BACKING_SAGE : BACKING, k + ':back'), pv, { ...meta, at: meta.at, sortKick: base + 5, w: 4 });
+              // the fringe, one in four
+              if ((r >>> 7) % 4 === 0) { const fh = (r >>> 9) % 2 ? 'MattLeTus' : 'BenSuppery'; const fp = PRESS().find(p => p.h === fh); if (fp) add({ h: fp.h, n: fp.n, kind: 'press', beat: fp.beat, bio: fp.bio }, k + ':fringe', pick(FRINGE[fh], k + ':fringe'), pv, { ...meta, at: fh === 'BenSuppery' ? 'Team news' : 'Thread', sortKick: base + 6, w: 3 }); }
+            }
           }
           // and the other lot's supporter, straight back — but only when
           // there is something to bite on; humility gets ignored, like life
           if (e.oppMid != null && e.text && e.tone !== 'humble' && e.tone !== 'dismissive') {
             const opp = fan(e.oppMid, 'melt', teamName(e.oppMid));
             const tone = REPLY[e.tone] ? e.tone : 'unhinged';
-            add(opp, k + ':reply', pick(REPLY[tone], k + ':reply'), vars({ ...e, oppMid: e.mid, mid: e.oppMid }, { mgr: firstName(managerName(e.mid)), oppPos: e.oppPos ?? '' }), { ...meta, at: meta.at, sortKick: (meta.sortKick || 0) + 1, w: 5 });
+            add(opp, k + ':reply', pick(REPLY[tone], k + ':reply'), vars({ ...e, oppMid: e.mid, mid: e.oppMid }, { mgr: firstName(managerName(e.mid)), oppMgr: firstName(managerName(e.oppMid)), oppPos: e.oppPos ?? '' }), { ...meta, at: meta.at, sortKick: (meta.sortKick || 0) + 1, w: 5 });
           }
           break;
         }
@@ -509,24 +528,103 @@ window.Cunthanger = (() => {
   // what the opponent's supporter fires back when a manager posts. Keyed by
   // the tone the manager chose; a free-text post reads as 'unhinged'.
   const REPLY = {
-    humble: ['Classy from {mgr}. Which is exactly what a man who is about to lose would say.', 'Very humble. Very nice. Very {oppPos}th in the table.'],
-    confident: ['Bookmarked. See you Monday, {mgr}.', '“Simple as that.” Screenshot taken. Framed.'],
-    dismissive: ['Rattled. Absolutely rattled.', 'That’s a man who has read the group chat and pretended he hasn’t.'],
-    unhinged: ['He’s lost it. He has actually lost it. Somebody check on {mgr}.', 'Print this. Frame it. Read it to him after the match.', 'This is the best thing that has ever been posted on here and I want him banned.'],
+    humble: ['Classy from {mgr}. Which is exactly what a man who is about to lose would say.', 'Very humble. Very nice. Very {oppPos}th in the table.', 'Humble. Because he knows.'],
+    confident: ['Bookmarked. See you Monday, {mgr}.', '“Simple as that.” Screenshot taken. Framed.', 'Confidence from {mgr}. Lovely. We collect those.'],
+    dismissive: ['Rattled. Absolutely rattled.', 'That’s a man who has read the group chat and pretended he hasn’t.', 'Doesn’t care. Posted about it. Doesn’t care.'],
+    unhinged: [
+      'He’s lost it. He has actually lost it. Somebody check on {mgr}.',
+      'Print this. Frame it. Read it to him after the match.',
+      'This is the best thing that has ever been posted on here and I want him banned.',
+      '{mgr} has posted this at a time when he should be doing his lineup. Says everything.',
+      'Imagine being {mgr}. Imagine typing that. Imagine pressing post. Incredible scenes.',
+      'Not reading that. Read it. Not reading it again. Reading it again.',
+      'Screenshot sent to the group. Screenshot sent to his mum. Screenshot sent to the Committee.',
+      'We have {oppMgr}. They have {mgr}. That is the whole tweet.',
+    ],
+  };
+  // the calmer supporter's view of the same post
+  const REPLY_SAGE = [
+    'Interesting from {mgr}. Underlying numbers say {short} should be fine. The underlying numbers have not read the post.',
+    'Noted. Filed. Will be revisited on Monday with the score attached.',
+    'Not going to engage with this. Engaging with this: he’s wrong.',
+    'Context: {mgr} is {oppPos}th. That is the context. That is all the context.',
+  ];
+  // the fringe, when it notices
+  const FRINGE = {
+    MattLeTus: [
+      'Notice how quickly the media picked that up. Minutes. Ask yourself who benefits.',
+      'They want you arguing about {mgr}. While you argue, they are moving the waiver deadline. Wake up.',
+    ],
+    BenSuppery: [
+      'Update: {oppMgr} ({opp}) — blood pressure. Our understanding: elevated, following a post. Return: to be assessed after he has read it once more.',
+      '{mgr} ({team}) — no injury concerns. Sources close to the physio say the thumbs are “in excellent shape”.',
+    ],
   };
 
   // when a manager posts about another, the wire picks it up — that is the
   // fun (Ben, 3 Sep: "it appears on everyone's feed"). The journalist quotes
   // it back, names the target, and the target's supporters find out.
-  const PICKUP = [
-    'Understand {mgr} ({team}) has said this of {opp} ahead of the weekend: “{quote}” {oppMgr} is aware. More to follow.',
-    'Can confirm {mgr} said the following, on the record, about {opp}: “{quote}” The {opp} camp has been made aware.',
-    '{mgr} on {opp}, this morning: “{quote}” Sources close to {oppMgr} describe him as “relaxed”. Sources close to the sources disagree.',
-    'Told {mgr} ({team}) has gone public on {opp}: “{quote}” No response yet from {oppMgr}. There will be.',
+  const PICKUP = {
+    DavidOrnsteak: [
+      'Understand {mgr} ({team}) has said this of {opp} ahead of the weekend: “{quote}” {oppMgr} is aware. More to follow.',
+      'Can confirm {mgr} said the following, on the record, about {opp}: “{quote}” The {opp} camp has been made aware.',
+      'Told {mgr} ({team}) has gone public on {opp}: “{quote}” No response yet from {oppMgr}. There will be.',
+      '{mgr} on {opp}: “{quote}” Understand this was not cleared with anyone. Understand nothing {mgr} says is.',
+      'Sources: {mgr} has been “very clear” about {opp} this week. Those sources quote him as follows. “{quote}”',
+    ],
+    SimonScone: [
+      '{mgr}, the {team} manager, has criticised {opp} ahead of Saturday. “{quote}” {opp} have not responded. BBC Sport has contacted {oppMgr} for comment and will update this page.',
+      'Comments attributed to {mgr} regarding {opp} — “{quote}” — are understood to be genuine. A spokesperson for {team} said the manager “stands by them”, before adding “unfortunately”.',
+      '{team} manager {mgr} on {opp}: “{quote}” Asked whether he regretted the remark, {mgr} is understood to have said no, then asked when it would be published.',
+      'Live: {mgr} has made remarks about {opp}. “{quote}” More as we get it. We will not be getting much.',
+    ],
+    BenJacobean: [
+      'EXCLUSIVE: {mgr} has told people close to him what he thinks of {opp}. Can reveal: “{quote}” Understand {oppMgr} has seen it. Story developing.',
+      'Can reveal {mgr} ({team}) said this about {opp} in the last hour: “{quote}” Told it was said “calmly”. Told that by {mgr}.',
+    ],
+    FabrizioRotondo: [
+      '🚨 {mgr} ({team}) on {opp}: “{quote}” Message sent. Message received. Here we go. 🤝',
+      '{mgr} has gone public. “{quote}” Understand {opp} are “monitoring the situation”, which is what clubs say when they have read a tweet.',
+    ],
+  };
+  const PICKUP_ALL = {
+    DavidOrnsteak: [
+      '{mgr} ({team}), on the record this morning: “{quote}” The league has been made aware.',
+      'Understand {mgr} has said this, to nobody in particular and therefore everybody: “{quote}”',
+    ],
+    SimonScone: [
+      '{team} manager {mgr} has issued a statement of sorts. “{quote}” It is not clear who it was aimed at. BBC Sport understands it was aimed at everyone.',
+    ],
+    BenJacobean: ['Can reveal {mgr} said this today: “{quote}” Told it was unprompted. Told it was not the first time.'],
+    FabrizioRotondo: ['🚨 {mgr}: “{quote}” No club named. Every club informed. 🤝'],
+  };
+  // which desk picks a post up: the wire by default; transfer talk goes to the transfer men
+  function pickupDesk(text, key) {
+    const t = String(text || '').toLowerCase();
+    if (/\b(trade|trough|waiver|sign|signing|swap|offer)\b/.test(t)) return hash(key + ':desk') % 2 ? 'FabrizioRotondo' : 'BenJacobean';
+    // one time in five a transfer man grabs a story that is not his
+    if (hash(key + ':desk') % 5 === 0) return 'BenJacobean';
+    return hash(key + ':desk2') % 2 ? 'DavidOrnsteak' : 'SimonScone';
+  }
+  // the target club's official line, when it bothers to issue one
+  const STATEMENT = [
+    '{opp} statement: The club is aware of comments made by {mgr} and will not be dignifying them with a response. This is the response.',
+    '{opp} statement: The club notes remarks attributed to the {team} manager. The club has nothing further to add, and has added it.',
+    '{opp} statement: We are aware of the comments. We are aware of the man. We will see him on Saturday.',
+    '{opp} statement: {oppMgr} has been made aware of the remarks and is “focused entirely on the weekend”. He has read them eleven times.',
+    '{opp} club statement: The club will be making no comment. The club has, however, screenshotted it.',
   ];
-  const PICKUP_ALL = [
-    '{mgr} ({team}), on the record this morning: “{quote}” The league has been made aware.',
-    'Understand {mgr} has said this, to nobody in particular and therefore everybody: “{quote}”',
+  // the poster's own supporters
+  const BACKING = [
+    'THAT is our manager. That is why we sing.',
+    '{mgr} said what we were all thinking and now {opp} are crying in the replies. Beautiful.',
+    'He’s not wrong though. {short} til I die.',
+    'Gaffer’s gone full send. Season’s on. Everything’s on.',
+    'Our manager: says it. Their manager: reads it. That’s the difference.',
+  ];
+  const BACKING_SAGE = [
+    'Not sure the gaffer needed to say that. He’s right, but he didn’t need to say it.',
+    'Statement from the gaffer. I’d have gone with silence and thirty points, but here we are.',
   ];
 
   // the roster, for the bio strip: every fan account plus the press
