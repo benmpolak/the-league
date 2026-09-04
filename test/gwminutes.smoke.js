@@ -67,8 +67,11 @@ const chk = (name, ok, detail = '') => {
       `${m(reg).min}/${m(dropped).min}/${m(risen).min}`);
     ok('(so the three columns genuinely disagree about the same man)',
       m(dropped).min !== m(dropped).minGw && m(risen).min !== m(risen).minPrev);
+    // PLAYERS[400] used to be a safe blank; the demo's GW1 carries real stats
+    // now, so find a man with genuinely no line in either round
+    const blank = PLAYERS.find(p => ![reg, dropped, risen].includes(p) && ![prev, cur].some(i => state.matchStats[`gw${GAMEWEEKS[i].n}`]?.playerStats?.[p.id]));
     ok('a man with no line in either round reads 0, not blank',
-      m(PLAYERS[400]).minPrev === 0 && m(PLAYERS[400]).minGw === 0);
+      !!blank && m(blank).minPrev === 0 && m(blank).minGw === 0, blank ? `${blank.name} ${m(blank).minPrev}/${m(blank).minGw}` : 'no blank man');
 
     // ---- the three columns, together and correctly labelled ----
     const cols = ALL_STAT_COLS(seasonHasStats());

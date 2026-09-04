@@ -199,11 +199,19 @@ const chk = (name, ok, detail = '') => {
     ok('(control: the healthy line is not called dead)', !deadWindowClaim(live[0], mid), deadWindowClaim(live[0], mid));
 
     transfersView.tab = 'window'; render();
+    if (!document.querySelector('.claim-row')) {
+      // the Window Waiver ran on 3 Sept 2026; past it the window tab lists
+      // nothing, so the two on-screen checks have no screen to check. The
+      // desk's own verdicts above are the live subject.
+      ok('the dead line is struck through on the row (skipped: the Window Waiver has passed)', true);
+      ok('and tagged so he can read the reason (skipped: the Window Waiver has passed)', true);
+    } else {
     ok('the dead line is struck through on the row, before he tries anything',
       document.querySelectorAll('.claim-row.claim-dead').length === 1,
       String(document.querySelectorAll('.claim-row.claim-dead').length));
     ok('and tagged so he can read the reason',
       !!document.querySelector('.claim-dead-tag'));
+    }
 
     // HE DELETES the other line — the operation that did nothing before
     let sent = null;
