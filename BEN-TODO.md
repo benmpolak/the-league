@@ -194,6 +194,26 @@ if (pool.ids[pid] === p.club) {
 One line, same file, needs a deploy. Deliberately not committed: it is server
 code, you deploy it, and you should read it rather than find it in a diff.
 
+### A stale transfer listing survives the transfer (small, no rush)
+
+Marc, 5 Sept 2026: J.King showed "transfer-listed" beside his NEW owner. He
+had been listed, released, then signed by somebody else, and the old owner's
+`tradeBlock` entry outlived the ownership.
+
+Fixed on the client the same day — a listing now counts only while the manager
+who made it still holds the player, so nothing displays wrongly and no deploy
+was needed. **This is only a display fix.** The dead rows are still in
+`public/tradeBlock` under the old owners.
+
+Harmless today. The one case it could bite: if an original owner ever re-signs
+a man he had listed before releasing him, the old entry wakes up and he is
+listed again without anyone touching it.
+
+The tidy fix is to drop the pid from every manager's `tradeBlock` whenever a
+transfer moves him — one line wherever transfers are applied, alongside the
+lineup-stripping that already happens there. Worth doing next time you are in
+`functions/index.js`; not worth a deploy of its own.
+
 ### Engine parity is unreliable, and it guards the waiver order
 
 **What it is:** the game law is written twice — `js/engine.js` for the client,
