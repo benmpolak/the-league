@@ -932,7 +932,28 @@ document.addEventListener('error', e => {
     img.src = PHOTO_MISSING;
   }
 }, true);
-// the actual kit artwork FPL uses (GK variant for keepers); pass p to make it clickable too
+/* The actual kit artwork FPL uses (GK variant for keepers); pass p to make it
+   clickable too.
+
+   HOME KITS ONLY, and that is not a choice — it is all there is. Marc, 5 Sept
+   2026, relaying a request for away kits on away days: "i want to know if its
+   possible." Probed from a runner with open internet, four clubs, eight URL
+   shapes. Everything but the two we already use is a 404:
+
+     standard/shirt_{code}-110.png      200  home outfield        (this)
+     standard/shirt_{code}_1-110.png    200  goalkeeper           (this)
+     standard/shirt_{code}_2,_3,_4      404
+     standard/shirt_{code}_away         404
+     away/shirt_{code}-110.png          404
+     special/shirt_{code}-110.png       200  but byte-identical to home
+
+   That last line is the trap: a status check alone would have called it a win.
+   The bodies hash the same, so "special" is the home shirt under another name.
+
+   Away kits would therefore mean hosting twenty of them ourselves and
+   redrawing the set every season — the artwork is the cost, not the code.
+   The app already knows who is home and away (teamFixturesInGw), so if the
+   pictures ever existed the switch would be small. */
 const kitImg = (team, gk = false, p = null) => {
   const t = TEAM_BY_NAME[team];
   // 110px asset: the 66px one upscales soft on retina pitch chips (Lee's kit love deserves better)
