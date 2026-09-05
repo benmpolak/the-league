@@ -74,10 +74,19 @@ const chk = (name, ok, detail = '') => {
        and so does wcAdd in the app, so no manager could ever create one. */
     const dropFor = (p, used = []) => (squadAt(mid, gw)
       .find(x => x.pos === p.pos && !used.includes(x.id)) || {}).id;
+    /* Take the first TWO penned men a legal drop exists for, rather than the
+       first two full stop. Two penned keepers and a squad carrying one left the
+       second line with no drop at all — the pen's shape is the live feed's
+       business, not this test's, so ask which pairs exist instead of assuming. */
     const usedOut = [];
-    const list = pen.slice(0, 2).map(p => {
-      const o = dropFor(p, usedOut); usedOut.push(o); return { in: p.id, out: o };
-    });
+    const pairFor = q => { const o = dropFor(q, usedOut); if (o != null) usedOut.push(o); return o; };
+    const list = [];
+    for (const q of pen) {
+      const o = pairFor(q);
+      if (o != null) list.push({ in: q.id, out: o });
+      if (list.length === 2) break;
+    }
+    ok('(setup) two penned men have a legal drop between them', list.length === 2, JSON.stringify(list));
     ok('(setup) both opening lines are shape-legal, or the desk would refuse them',
       list.every(c => c.out != null && !deadWindowClaim(c, mid)), JSON.stringify(list));
     const realAct = window.serverAct;
@@ -133,9 +142,14 @@ const chk = (name, ok, detail = '') => {
     // ...and an accepted one still lands, so the roll-back is not just "never save"
     window.serverAct = () => Promise.resolve({ ok: true });
     const used3 = [];
-    setWindowClaims(mid, pen.slice(0, 3).map(p => {
-      const o = dropFor(p, used3); used3.push(o); return { in: p.id, out: o };
-    }));
+    const three = [];
+    for (const q of pen) {
+      const o = dropFor(q, used3);
+      if (o == null) continue;
+      used3.push(o); three.push({ in: q.id, out: o });
+      if (three.length === 3) break;
+    }
+    setWindowClaims(mid, three);
     await new Promise(r => setTimeout(r, 60));
     /* ---- what an ordinary manager sees of the pen ----
        Marc, 31 Aug 2026: "is the view amended so i can see who else has been
@@ -169,8 +183,8 @@ const chk = (name, ok, detail = '') => {
       String(document.querySelectorAll('.pen-list [data-admit]').length));
     membership = { managerId: mid };
 
-    ok('(control: a list the desk accepts still lands)', myWindowClaims(mid).length === 3,
-      String(myWindowClaims(mid).length));
+    ok('(control: a list the desk accepts still lands)', myWindowClaims(mid).length === three.length && three.length >= 2,
+      `${myWindowClaims(mid).length} of ${three.length}`);
 
     /* ---- Toby's lockout, 2 Sept 2026 22:08 ----
        "when I try and add a player to the transfer waiver list it's saying
