@@ -3662,7 +3662,17 @@ function playoffOdds(runs = 1000) {
 }
 /* ---------------- the trade block ---------------- */
 const blockList = mid => toArr(state.tradeBlock?.[mid]);
-const onBlock = pid => state.managers.some(m => blockList(m.id).includes(pid));
+/* A listing belongs to the man who made it, and dies with his ownership.
+   Marc, 5 Sept 2026: J.King showed "transfer-listed" beside his NEW owner —
+   he had been listed, then released, then signed by somebody else, and the old
+   owner's entry outlived the ownership that gave it meaning. The pill is drawn
+   next to whoever owns him NOW, so a stale entry reads as that manager having
+   listed a player he has only just signed.
+
+   Checking the list first is the cheap half and almost always false, so
+   managerSquad only runs for a manager who really has listed him. */
+const onBlock = pid => state.managers.some(m =>
+  blockList(m.id).includes(pid) && managerSquad(m.id).some(x => x.id === pid));
 function toggleBlock(mid, pid) {
   if (netOn()) {
     serverAct('blockToggle', { pid, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
