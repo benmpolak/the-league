@@ -121,7 +121,7 @@ const chk = (name, ok, detail = '') => {
     // puts a man in the pen.
     const snap = Object.fromEntries(PLAYERS.map(p => [p.id, p.club]));
     for (const p of spare.slice(5, 8)) snap[p.id] = 'ZZZ';
-    state.draftPool = { at: Date.now(), ids: snap };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids: snap };
     const pen = lockedArrivals();
     if (pen.length >= 3) {
       // swap like for like: the desk refuses a line that would leave an illegal

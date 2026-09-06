@@ -410,6 +410,7 @@ const mkEngine = () => Engine.make({
   chk('the server declares one too', !!server, String(server));
   chk('and they are the SAME instant — the card cannot promise an hour the run ignores',
     !!client && client === server, `client ${client} / server ${server}`);
+  chk('shared lifecycle uses the same September run boundary', Engine.SUMMER_WINDOW_AT === Date.parse(server));
   // and it is the hour the Committee actually asked for
   chk('which is Thu 3 Sept 20:00 London (19:00Z, BST)',
     client === '2026-09-03T19:00:00Z', String(client));

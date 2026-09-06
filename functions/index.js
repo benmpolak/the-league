@@ -1772,7 +1772,7 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
     if (Number.isInteger(data.expectedTurn) && data.expectedTurn !== (wd.turn || 0)) { deny = { code: 'aborted', msg: 'the window moved on' }; return; }
     if (op === 'end') {
       pub.windowDraft = { ...pub.windowDraft, status: 'done' };
-      pub.draftPool = { at: Date.now(), ids: poolIds };
+      pub.draftPool = { at: Date.now(), ids: poolIds, closed: true, window: Engine.windowInfo(state).id };
       return pub;
     }
     const onClock = eng.wdActor(s);
@@ -1802,7 +1802,7 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
     wdRaw.turn = (wdRaw.turn || 0) + 1;
     if (wdRaw.passes >= wdRaw.order.length) {
       wdRaw.status = 'done'; // a full lap of passes ends the window in the same commit
-      pub.draftPool = { at: Date.now(), ids: poolIds };
+      pub.draftPool = { at: Date.now(), ids: poolIds, closed: true, window: Engine.windowInfo(state).id };
     }
     return pub;
   });
@@ -1833,8 +1833,41 @@ ACTIONS.windowDraft = async ({ league, a, data, ctx, state, eng }) => {
 const WINDOW_WAIVER_AT = Date.parse('2026-09-03T19:00:00Z');
 const WINDOW_WAIVER_SLOT = 'window-2026-09-03';
 
+// The same pool is the closed-season baseline and the next open window's
+// snapshot. Transaction retries re-check the phase so a tick cannot reopen a
+// window another request just finished.
+async function prepareWindowPool(league, ctx) {
+  const base = leagueBase(league);
+  const phase = (await db().ref(`${base}/public/phase`).get()).val();
+  const ref = db().ref(`${base}/public/draftPool`);
+  const seed = (await ref.get()).val();
+  await ref.transaction(seededObj(seed, pool => {
+    const next = Engine.prepareWindowPool({ phase, draftPool: pool }, ctx.PLAYERS);
+    return next || undefined;
+  }));
+}
+
+ACTIONS.windowScheduleSet = async ({ league, a, data, state }) => {
+  if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
+  if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'season not underway');
+  const runAt = Number(data.runAt);
+  if (!Number.isFinite(runAt) || runAt < Date.parse('2027-02-01T00:00:00Z')
+    || runAt >= Date.parse('2027-03-01T00:00:00Z') || runAt <= Date.now())
+    throw new HttpsError('invalid-argument', 'choose a future February date after the transfer window closes');
+  const res = await db().ref(`${leagueBase(league)}/public/draftPool`).transaction(seededObj(state.draftPool, pool => {
+    const w = Engine.windowInfo({ ...state, draftPool: pool });
+    if (!w.january || !w.open || (w.at && Date.now() >= w.at)) return;
+    return { ...pool, window: w.id, closed: false, runAt };
+  }));
+  if (!res.committed) throw new HttpsError('failed-precondition', 'January is not open for scheduling');
+  return { ok: true, runAt };
+};
+
 ACTIONS.windowClaimSet = async ({ league, a, data, eng, ctx, state }) => {
   if (state.phase !== 'season') throw new HttpsError('failed-precondition', 'season not underway');
+  const win = Engine.windowInfo(state);
+  if (!win.open || (win.january && win.at && Date.now() >= win.at))
+    throw new HttpsError('failed-precondition', 'the window list is closed');
   const raw = toArr(data.claims);
   if (raw.length > MAX_CLAIMS) throw new HttpsError('invalid-argument', `too many lines (max ${MAX_CLAIMS})`);
   const claims = raw.map(c => ({
@@ -1923,6 +1956,11 @@ async function runWindowWaiver(league, runId, trigger) {
     let plan = claim.snapshot.val()?.plan || null;
     if (!plan) {
       if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
+      const win = Engine.windowInfo(state);
+      if (!win.open || (win.january && (!win.at || Date.now() < win.at))) {
+        await runRef.update({ status: 'done', result: 'skipped: window not due', finishedAt: Date.now() });
+        return { skipped: 'window not due' };
+      }
       const runStart = Date.now() - 1;
       const res = eng.resolveWindowWaiver(state, runStart);
       plan = { records: res.records.map(r => ({ ...r, runId })), executed: res.executed, strippedLineups: res.strippedLineups, tgw: res.tgw };
@@ -1946,7 +1984,7 @@ async function runWindowWaiver(league, runId, trigger) {
     const mem = (await db().ref(`${base}/server/membership`).get()).val() || {};
     const upd = {};
     for (const uid of Object.keys(mem)) upd[`${base}/private/${uid}/windowClaims`] = null;
-    upd[`${base}/public/draftPool`] = { at: Date.now(), ids: Object.fromEntries(ctx.PLAYERS.map(p => [p.id, p.club])) };
+    upd[`${base}/public/draftPool`] = { at: Date.now(), ids: Object.fromEntries(ctx.PLAYERS.map(p => [p.id, p.club])), closed: true, window: Engine.windowInfo(state).id };
     upd[`${base}/server/waiverRuns/${runId}/status`] = 'done';
     upd[`${base}/server/waiverRuns/${runId}/finishedAt`] = Date.now();
     upd[`${base}/server/waiverRuns/${runId}/executed`] = executed;
@@ -1962,7 +2000,14 @@ async function runWindowWaiver(league, runId, trigger) {
 
 ACTIONS.windowWaiverRun = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
-  return runWindowWaiver(league, data.runId ? `window-${cleanText(data.runId, 40)}` : `window-manual-${Date.now()}`, `manual:${a.uid}`);
+  const ctx = await loadCtx();
+  const state = await loadState(league, ctx);
+  const win = Engine.windowInfo(state);
+  const runId = (EMULATED || league === 'the-league-sandbox') && data.runId
+    ? `window-${cleanText(data.runId, 40)}` : win.january ? 'window-january-2027' : WINDOW_WAIVER_SLOT;
+  if (win.january && (!win.at || Date.now() < win.at) && !win.done)
+    throw new HttpsError('failed-precondition', 'the January waiver has no due run date');
+  return runWindowWaiver(league, runId, `manual:${a.uid}`);
 };
 
 /* ----- reset / import (the nuclear desk) ----- */
@@ -2502,20 +2547,28 @@ exports.mutate = onCall(async req => {
 // live lease gets an error, not a hollow success.
 exports.waiverTick = onSchedule({ schedule: '7 * * * *', timeZone: 'Etc/UTC', retryCount: 3 }, async () => {
   const ctx = await loadCtx();
-  const due = ctx.eng.waiverSchedule();
   const errs = [];
+  for (const league of LEAGUES) await prepareWindowPool(league, ctx).catch(e => errs.push('window baseline: ' + String(e.message || e).slice(0, 80)));
+  const due = ctx.eng.waiverSchedule();
   for (const d of due) {
     await runWaivers('the-league-2627', `sched-${d.id}`, 'schedule').catch(e => {
       errs.push(d.id + ': ' + String(e.message || e).slice(0, 80));
     });
   }
-  // the one-off Window Waiver (Marc, 30 Aug): Thu 3 Sept 10:00 London. The
+  // the one-off Window Waiver (Marc, 30 Aug): Thu 3 Sept 20:00 London. The
   // deterministic id and the run ledger make it exactly-once; the 14-day tail
   // lets a scheduler outage on the morning still deliver it late rather than
   // never. Once done, every later tick returns 'already processed' for pence.
   if (Date.now() >= WINDOW_WAIVER_AT && Date.now() - WINDOW_WAIVER_AT < 14 * 864e5) {
     await runWindowWaiver('the-league-2627', WINDOW_WAIVER_SLOT, 'schedule').catch(e => {
       errs.push('window: ' + String(e.message || e).slice(0, 80));
+    });
+  }
+  const windowState = await loadState('the-league-2627', ctx);
+  const january = Engine.windowInfo(windowState);
+  if (january.january && january.at && Date.now() >= january.at && !january.done) {
+    await runWindowWaiver('the-league-2627', 'window-january-2027', 'schedule').catch(e => {
+      errs.push('january: ' + String(e.message || e).slice(0, 80));
     });
   }
   // freeze any drawn Ham Cup whose selection window has opened (idempotent —

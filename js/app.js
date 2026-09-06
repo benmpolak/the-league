@@ -2571,7 +2571,7 @@ function onWaivers(p) {
 
    Keep this identical to js/engine.js or the server will refuse an XI the
    client offered. */
-const isArrival = p => !!state.draftPool?.ids && p && state.draftPool.ids[p.id] !== p.club;
+const isArrival = p => Engine.windowInfo(state).open && !!p && state.draftPool.ids[p.id] !== p.club;
 // locked only while nobody owns him: an owned man is his owner's business, and
 // locking one is exactly the bug that stopped Konsa's owner fielding him
 const arrivalLocked = p => isArrival(p) && !ownedIdsAt(currentGwIndex()).has(p.id);
@@ -2597,21 +2597,21 @@ function lockedArrivals() {
 const WINDOW_WAIVER_AT = Date.parse('2026-09-03T19:00:00Z');
 // the hour, in the reader's own timezone, so prose about the run can never
 // drift from the constant the way a hardcoded "ten" just did
-const windowWaiverHour = () => new Date(WINDOW_WAIVER_AT)
+const windowWaiverHour = () => !Engine.windowInfo(state).at ? 'the February run (date to be confirmed)' : new Date(Engine.windowInfo(state).at)
   .toLocaleTimeString('en-GB', { hour: 'numeric', hour12: true }).replace(/\s/g, '').toLowerCase();
 // the whole thing, in the reader's own clock — for the Rules page and anywhere
 // else that has to say WHEN rather than just draw the card
-const windowWaiverWhen = () => new Date(WINDOW_WAIVER_AT)
+const windowWaiverWhen = () => !Engine.windowInfo(state).at ? 'February, after the January window closes — date to be confirmed' : new Date(Engine.windowInfo(state).at)
   .toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 const WINDOW_ROUNDS = 2;
-const windowOrder = () => [...toArr(state.draft?.order)].reverse();
+const windowOrder = () => Engine.windowInfo(state).january ? waiverBase() : [...toArr(state.draft?.order)].reverse();
 function windowSlots() {
   const ord = windowOrder(), out = [];
   for (let r = 0; r < WINDOW_ROUNDS; r++) out.push(...(r % 2 ? [...ord].reverse() : ord));
   return out;
 }
 const windowPickNos = mid => windowSlots().map((m, i) => (m === mid ? i + 1 : 0)).filter(Boolean);
-const windowWaiverDone = () => Date.now() >= WINDOW_WAIVER_AT;
+const windowWaiverDone = () => { const w = Engine.windowInfo(state); return !w.open || (!!w.at && Date.now() >= w.at); };
 const myWindowClaims = mid => toArr(state.windowClaims?.[mid]);
 /* Why a lodged window line can no longer land — the SAME four questions the
    desk asks in windowClaimSet, in the same order, so this can never call a
@@ -2683,6 +2683,8 @@ function setWindowClaims(mid, arr) {
 // Kept identical to resolveWindowWaiver in js/engine.js.
 function runWindowWaiver() {
   if (netOn() && !isCommissioner()) { toast('Only the Chairman runs the window waiver'); return; }
+  const win = Engine.windowInfo(state);
+  if (!win.open || (win.january && (!win.at || Date.now() < win.at))) { toast('The window waiver is not due.'); return; }
   if (netOn()) {
     serverAct('windowWaiverRun', {}).then(res => {
       const ex = toArr(res?.executed);
@@ -2770,11 +2772,11 @@ function admitArrival(pid) {
   toast(`${p.name} is loose in the Trough. He was never in the window.`);
 }
 function wdFinish() {
-  if (state.windowDraft?.status === 'done') return;
+  if (!Engine.windowInfo(state).open) return;
   const done = () => {
     if (state.windowDraft) state.windowDraft = { ...state.windowDraft, status: 'done' };
     // refresh the snapshot: every remaining arrival unlocks into the Trough
-    state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])) };
+    state.draftPool = { at: Date.now(), ids: Object.fromEntries(PLAYERS.map(p => [p.id, p.club])), closed: true, window: Engine.windowInfo(state).id };
     pushShared('draftPool', state.draftPool);
     save(); render();
     toast('The window business is done — anyone left is loose in the Trough.');
@@ -8332,13 +8334,14 @@ function viewTransfers() {
   // (Marc, 30 Aug 2026: "id make it a separate list with a button at the top
   // otherwise the window list and the normal list are one after another and
   // its a bit confusing"). Two lists that resolve on different days, by
-  // different rules, must not read as one scroll. It appears only while the
-  // pen holds somebody, and goes away again when it empties.
-  const penOpen = lockedArrivals().length > 0;
+  // different rules, must not read as one scroll. Hide between windows; the
+  // January desk opens on 1 January even before its first arrival.
+  const window = Engine.windowInfo(state);
+  const penOpen = window.open && (window.january || lockedArrivals().length > 0);
   const tabs = [['trough', 'The Trough & Waivers'], ['claims', 'Waiver list'],
-    ...(penOpen ? [['window', 'Window waiver']] : []),
+    ...(penOpen ? [['window', window.january ? 'January window waiver' : 'Window waiver']] : []),
     ['trades', 'Trade desk'], ['history', 'History'], ['order', 'Waiver order']];
-  const tab = transfersView.tab;
+  const tab = transfersView.tab === 'window' && !penOpen ? 'trough' : transfersView.tab;
   const pendingIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid).length;
   const nClaims = myClaims(mid).length;
   const nWindow = myWindowClaims(mid).length;
@@ -8461,7 +8464,7 @@ function viewTransfers() {
         </div>
         ${wd.picks?.length ? `<p class="muted" style="font-size:11.5px;margin-top:8px"><b style="color:var(--text)">So far:</b> ${wd.picks.map(k => `${esc(managerName(k.mid))} → ${esc(PLAYER_BY_ID[k.in]?.name || '?')}`).join(' · ')}</p>` : ''}
       </div>`;
-    } else if (arrivals.length) {
+    } else if (arrivals.length || (window.january && window.open)) {
       /* The Window Waiver (Marc, 30 Aug 2026): "everyone does a waiver list
          rather than a draft where everyone needs to be online". Lodge a list,
          go to work, find out when it runs. */
@@ -8485,9 +8488,12 @@ function viewTransfers() {
           </span>`}
         </div>`).join('');
       wdCard = `<div class="card" style="margin-bottom:14px">
-        <h2>The Window Waiver <span class="tag">&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked</span></h2>
-        <p class="muted" style="font-size:12.5px">Anyone who joined a Premier League club after draft night is locked until the transfer window shuts. They are then settled by <b>one blind waiver</b> — lodge a list, go to work, find out at ${windowWaiverHour()}. Nobody has to be at a keyboard. Two rounds, snaking, in the <b>reverse of draft night</b>: last on the night picks first. Leftovers spill into the Trough.</p>
-        <p style="font-size:12.5px"><b>One run: ${new Date(WINDOW_WAIVER_AT).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}.</b> ${shut ? '<span class="muted">The desk is shut — the run has been and gone.</span>' : `Your picks are <b class="gold">#${picks.join('</b> and <b class="gold">#')}</b> of ${windowSlots().length}. This does not touch Friday: a man signed here costs you no waiver take, and the regular run is unmoved.`}</p>
+        <h2>${window.january ? 'January Window Waiver' : 'The Window Waiver'} <span class="tag">${arrivals.length ? `&#128274; ${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''} locked` : 'Awaiting arrivals'}</span></h2>
+        <p class="muted" style="font-size:12.5px">${window.january
+          ? 'January arrivals wait here for one blind waiver in February, after the transfer window closes. Two rounds, snaking, starting at the bottom of the table. Leftovers go to the Trough. The order below is provisional until the run; ordinary waiver takes do not change it.'
+          : 'Post-draft arrivals are settled by one blind waiver. Two rounds, snaking, in the reverse of draft night. Leftovers spill into the Trough.'}</p>
+        <p style="font-size:12.5px"><b>${esc(windowWaiverWhen())}.</b> ${shut ? '<span class="muted">The desk is shut for this run.</span>' : `Your ${window.january ? 'provisional ' : ''}picks are <b class="gold">#${picks.join('</b> and <b class="gold">#')}</b> of ${windowSlots().length}. Window signings cost no weekly waiver take. The Tuesday and Friday runs are unmoved.`}</p>
+        ${window.january && !shut && (!netOn() || isCommissioner()) ? `<div class="lrow" style="gap:8px;flex-wrap:wrap"><label>February run (your local time) <input type="datetime-local" id="wwDate" aria-label="February window waiver date"></label><button class="btn small" id="wwSchedule">Set run date</button></div>` : ''}
         <div class="order-strip" style="margin:8px 0">${windowOrder().map(id => `<span class="order-chip ${id === mid ? 'now' : ''}">${esc(managerName(id))}</span>`).join('<span class="muted" style="align-self:center">&rsaquo;</span>')}<span class="tag" style="margin-left:10px">then back up</span></div>
         ${shut ? '' : `<h3 style="margin-top:10px">Your list <span class="muted" style="font-weight:400;font-size:12px">${wlist.length ? `${wlist.length} lodged &middot; highest first` : 'nothing lodged — you will sign nobody'}</span></h3>
         <div class="pick-log" style="max-height:240px">${wrows || '<span class="muted" style="font-size:12px">Empty. A blank list is a pass: you keep your fourteen and sign nobody.</span>'}</div>
@@ -8511,9 +8517,9 @@ function viewTransfers() {
              to be hidden behind that same "+3 more". -->
         <div class="pen-list">${[...arrivals].sort(metricSort('pts')).map(p => `<span class="pen-man"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="muted">(${esc(p.club)})</span>${!netOn() || isCommissioner() ? `<button class="btn ghost small pen-admit" data-admit="${p.id}" title="He never moved clubs — the feed just added him late. Admit him straight to the Trough, out of the Window Waiver.">&rarr; Trough</button>` : ''}</span>`).join('')}</div>
         ${netOn() && !isCommissioner() ? '' : `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-          <button class="btn small" id="wwRun">Run the window waiver now</button>
-          <button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>
-        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Thursday's run does this on its own; these are the fallbacks.</p>`}
+          <button class="btn small" id="wwRun" ${window.january && (!window.at || Date.now() < window.at) ? 'disabled' : ''}>Run the window waiver now</button>
+          ${window.january ? '' : '<button class="btn ghost small" id="wdRelease">Skip it — release all to the Trough</button>'}
+        </div><p class="muted" style="font-size:10.5px;margin-top:4px">Chairman's office. Lists close at the set time. The automatic run follows on the next hourly check.</p>`}
       </div>`;
     }
     const ctl = waiverControl();
@@ -8535,7 +8541,7 @@ function viewTransfers() {
     // and the Trough gets a signpost in its place, not the desk itself
     const wdSign = arrivals.length ? `<div class="card" style="margin-bottom:14px">
       <p style="font-size:12.5px;margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span>&#128274; <b>${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''}</b> locked in the holding pen — settled by the Window Waiver, ${esc(new Date(WINDOW_WAIVER_AT).toLocaleString('en-GB', { weekday: 'long', hour: '2-digit', minute: '2-digit' }))}. Separate list, separate run; nothing to do with the weekly one.</span>
+        <span>&#128274; <b>${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''}</b> locked in the holding pen — settled by the Window Waiver, ${esc(windowWaiverWhen())}. Separate list, separate run; nothing to do with the weekly one.</span>
         <button class="btn small" data-trtab="window" style="margin-left:auto">${nWindow ? `Your window list (${nWindow})` : 'Lodge a window list'}</button>
       </p></div>` : '';
     return `${head}${myPitchCard}${wdSign}<div class="card">
@@ -8820,6 +8826,16 @@ function bindTransfers() {
       .then(ok => toast(ok ? 'Recorded. It is now canon.' : 'Didn’t record — check connection and try again'));
   };
   // --- the Window Draft ---
+  const schedule = $('#wwSchedule');
+  if (schedule) schedule.onclick = () => {
+    const runAt = new Date($('#wwDate').value).getTime();
+    if (!Number.isFinite(runAt) || runAt < Date.parse('2027-02-01T00:00:00Z') || runAt >= Date.parse('2027-03-01T00:00:00Z') || runAt <= Date.now()) {
+      toast('Choose a future February date after the transfer window closes.'); return;
+    }
+    if (!confirm(`Set the January Window Waiver for ${new Date(runAt).toLocaleString('en-GB')}? Confirm the transfer window will have closed.`)) return;
+    if (netOn()) serverAct('windowScheduleSet', { runAt }).catch(() => {});
+    else { state.draftPool = { ...state.draftPool, window: 'january-2027', closed: false, runAt }; save(); render(); }
+  };
   const wwr = $('#wwRun');
   if (wwr) wwr.onclick = () => { if (confirm('Run the window waiver now? Every lodged list is resolved and the leftovers go to the Trough.')) runWindowWaiver(); };
   // --- the Window Waiver list (Marc, 30 Aug 2026) ---
@@ -13147,7 +13163,7 @@ function viewRules() {
       <h3 style="margin-top:16px">Waivers &amp; trades</h3>
       <p class="rules-p"><b>Waivers:</b> the market runs to a fixed clock. The Trough closes <b>90 minutes before a gameweek's first kick-off</b>; while the gameweek plays, everyone is claim-only. Waivers resolve at <b>10am every Tuesday and Friday</b> (reverse table order — win a claim, drop to the back); the first run after the gameweek's last fixture reopens the Trough. The Chairman can run waivers early, skip one run by exception (claims roll to the next), or open/close the Trough entirely.</p>
       <p class="rules-p"><b>The Trough:</b> whatever clears waivers is a free agent — first come, first served, instant. Squads stay at 14; someone always goes out.</p>
-      <p class="rules-p"><b>The Window:</b> anyone who joins a Premier League club after draft night is locked in the <b>holding pen</b> until the transfer window shuts. The pen is then settled by the <b>Window Waiver</b> — one blind run, not a live draft: everybody lodges a list, nobody has to be at a keyboard. Two rounds, snaking, in the reverse of draft night, so whoever picked last that night picks first here. A man signed this way costs you no waiver take and the regular Tuesday and Friday runs are unmoved. Whatever is left spills into the Trough.${windowWaiverDone() ? '' : ` <b>The next one runs ${esc(windowWaiverWhen())}.</b>`}</p>
+      <p class="rules-p"><b>The Window:</b> new arrivals go straight to the <b>Trough</b> between windows, under the usual signing and weekly waiver rules. The <b>January holding pen</b> opens on 1 January for a separate February run after the transfer window closes. The pen is then settled by the <b>Window Waiver</b> — one blind run, not a live draft: everybody lodges a list, nobody has to be at a keyboard. Two rounds, snaking. September uses reverse draft-night order; January starts at the bottom of the table as it stands when the run begins. A man signed this way costs you no waiver take and the regular Tuesday and Friday runs are unmoved. Whatever is left spills into the Trough.${windowWaiverDone() ? '' : ` <b>The next one runs ${esc(windowWaiverWhen())}.</b>`}</p>
       <p class="rules-p"><b>January:</b> new signings can't be taken until the window shuts — then it's bottom of the league up. Nitty-gritty confirmed nearer the time, as is tradition.</p>
       <p class="rules-p"><b>Trades:</b> player-for-player swaps between managers, agreed in the group, any time until the playoff lock. Doesn't use your waiver turn.</p>
       <p class="rules-p"><b>Playoff lock:</b> after GW33, non-playoff teams are frozen — no waivers, no trades, no passing players back.</p>
@@ -13405,7 +13421,7 @@ function viewSettings() {
       <p class="rules-p">&sect;2 Twelve managers, £50 a head, est. 2015. The waiting list is ten years deep and moving slowly.</p>
       <p class="rules-p">&sect;3 No club cap. Tussie's right to hoard the entire City squad is constitutionally protected.</p>
       <p class="rules-p">&sect;4 Waivers run 10am Tuesday and Friday, reverse table order. The Chairman may skip a run by exception. The Trough takes the rest.</p>
-      <p class="rules-p">&sect;5 New signings wait for the Window Waiver${windowWaiverDone() ? '' : ` &mdash; <b>${esc(windowWaiverWhen())}</b>`}. January is bottom-up, nitty-gritty nearer the time, as is tradition.</p>
+      <p class="rules-p">&sect;5 During a window, new signings wait for the Window Waiver${windowWaiverDone() ? '' : ` &mdash; <b>${esc(windowWaiverWhen())}</b>`}. Between windows, new players go straight to the Trough. The January pen opens on 1 January; its February run is bottom-up, with the date to be confirmed.</p>
       <p class="rules-p">&sect;6 Side deals belong in the Covenant Register, where they are timestamped, witnessed and mocked.</p>
       <p class="rules-p">&sect;7 The hydration break is inviolable.</p>
       <p class="rules-p muted" style="font-style:italic">Amendments require a Committee majority and will be ignored regardless. Full rules on the Rules page.</p>

@@ -47,7 +47,7 @@ const chk = (name, ok, detail = '') => {
     ids[unownedMover.id] = 'ZZZ';   // both were at another club on draft night
     ids[ownedMover.id] = 'ZZZ';
     delete ids[latecomer.id];        // and this one did not exist at all
-    state.draftPool = { at: Date.now(), ids };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids };
 
     ok('the late feed entry is in the pen', arrivalLocked(latecomer), latecomer.name);
     // Marc, 30 Aug 2026: "nico, disasi and pinnock all need to be in the
@@ -72,7 +72,7 @@ const chk = (name, ok, detail = '') => {
     const many = PLAYERS.filter(x => !ownedIdsAt(cur).has(x.id)).slice(0, 22);
     const wide = Object.fromEntries(PLAYERS.map(x => [x.id, x.club]));
     for (const x of many) wide[x.id] = 'ZZZ';
-    state.draftPool = { at: Date.now(), ids: wide };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids: wide };
     transfersView.tab = 'window';
     state.view = 'transfers'; render();
     const penned = lockedArrivals().length;
@@ -84,7 +84,7 @@ const chk = (name, ok, detail = '') => {
     ok('the Chairman gets a Trough button against every man, not just the first fifteen',
       document.querySelectorAll('.pen-list [data-admit]').length === penned,
       String(document.querySelectorAll('.pen-list [data-admit]').length));
-    state.draftPool = { at: Date.now(), ids };   // back to the three-man pen
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids };   // back to the three-man pen
 
     admitArrival(latecomer.id);
     ok('admitting the latecomer frees him', !arrivalLocked(latecomer));

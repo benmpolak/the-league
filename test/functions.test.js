@@ -904,6 +904,7 @@ const SB = 'the-league-sandbox';
   // an arrival is a man DRAFT NIGHT NEVER SAW — absent from the snapshot
   // entirely (Marc's holding-pen fix, 22 Aug: a club mismatch is just an
   // intra-PL transfer and stays with his owner)
+  await db.ref(`v2/leagues/${LG}/public/draftPool`).update({ at: Date.parse('2026-08-13T19:00:00Z'), closed: null, window: null });
   const mkArrival = async pid => T.initAdmin().database().ref(`v2/leagues/${LG}/public/draftPool/ids/${pid}`).set(null);
   const wdFree = freeOf('MF').slice(-4); // untouched by earlier signings
   await mkArrival(wdFree[0]); await mkArrival(wdFree[1]);
@@ -941,6 +942,7 @@ const SB = 'the-league-sandbox';
   chk('acting on a finished window rejected', (await T.mutate(LG, 'windowDraft', { op: 'pass' }, tok1)).error?.status === 'FAILED_PRECONDITION');
 
   /* ---------------- the Window Waiver: blind lists, one run ---------------- */
+  await db.ref(`v2/leagues/${LG}/public/draftPool`).update({ at: Date.parse('2026-08-13T19:00:00Z'), closed: null, window: null });
   // fresh pen: two arrivals untouched by the window draft above
   await mkArrival(wdFree[2]); await mkArrival(wdFree[3]);
   const wOut2 = byPos(await squadOf(2), 'MF')[0], wOut3 = byPos(await squadOf(3), 'MF')[0];
@@ -977,6 +979,19 @@ const SB = 'the-league-sandbox';
     (await db.ref(`v2/leagues/${LG}/public/draftPool/ids/${wdFree[2]}`).get()).val() != null);
   chk('re-running the same window run is a no-op skip',
     (await T.mutate(LG, 'windowWaiverRun', { runId: 'emuww' }, tok1)).result?.skipped === 'already processed');
+
+  // Regression: an FPL addition after the completed run is an ordinary free
+  // agent. Both list endpoints must agree without a per-player admission.
+  const lateId = freeOf('MF').find(id => id !== wdFree[2] && id !== wdFree[3]);
+  await mkArrival(lateId);
+  chk('completed window remains closed to new window claims',
+    (await T.mutate(LG, 'windowClaimSet', { claims: [{ in: lateId, out: byPos(await squadOf(2), 'MF')[0] }] }, tok2)).error?.status === 'FAILED_PRECONDITION');
+  chk('late addition is accepted by the ordinary weekly waiver desk',
+    !(await T.mutate(LG, 'claimSet', { gwIndex: curGw, claims: [{ in: lateId, out: byPos(await squadOf(2), 'MF')[0] }] }, tok2)).error);
+  chk('ordinary manager cannot schedule a window',
+    (await T.mutate(LG, 'windowScheduleSet', { runAt: Date.parse('2027-02-03T20:00:00Z') }, tok2)).error?.status === 'PERMISSION_DENIED');
+  chk('January cannot be scheduled from the closed September desk',
+    (await T.mutate(LG, 'windowScheduleSet', { runAt: Date.parse('2027-02-03T20:00:00Z') }, tok1)).error?.status === 'FAILED_PRECONDITION');
 
   /* ---------------- waivers: recoverable, effectively exactly-once ---------------- */
   const wFree = freeOf('FW');

@@ -35,6 +35,39 @@
     per2Conceded: -1,
   };
 
+  // Marc, 6 Sept: arrivals go to the Trough between windows; January
+  // reopens on 1 Jan. The February run stays unset until the Committee dates it.
+  const SUMMER_WINDOW_AT = Date.parse('2026-09-03T19:00:00Z');
+  const JANUARY_WINDOW_OPENS = Date.parse('2027-01-01T00:00:00Z');
+  function windowInfo(state, at = Date.now()) {
+    const pool = state.draftPool;
+    const summerDone = pool?.closed === true || Number(pool?.at) >= SUMMER_WINDOW_AT;
+    if (at >= JANUARY_WINDOW_OPENS && summerDone) {
+      const done = pool?.window === 'january-2027' && pool.closed === true;
+      return { id: 'january-2027', january: true, open: !!pool?.ids && !done,
+        at: pool?.window === 'january-2027' ? (pool.runAt || null) : null,
+        rounds: 2, done };
+    }
+    return { id: 'summer-2026', january: false, open: !!pool?.ids && !summerDone,
+      at: SUMMER_WINDOW_AT, rounds: 2, done: summerDone };
+  }
+  // While shut, keep a baseline for January. At the boundary freeze the LAST
+  // baseline, never today's feed: a new January player must not be admitted
+  // merely because the first scheduler tick saw him before the page did.
+  function prepareWindowPool(state, players, at = Date.now()) {
+    const pool = state.draftPool;
+    if (state.phase !== 'season' || !pool?.ids) return null;
+    const info = windowInfo(state, at);
+    if (info.january) {
+      if (pool.window === info.id) return null;
+      return { ...pool, window: info.id, closed: false, runAt: null };
+    }
+    if (!info.done) return null;
+    const ids = { ...pool.ids, ...Object.fromEntries(players.map(p => [p.id, p.club])) };
+    if (pool.window === 'between' && JSON.stringify(ids) === JSON.stringify(pool.ids)) return null;
+    return { at, ids, window: 'between', closed: true };
+  }
+
   const toArr = x => Array.isArray(x) ? x : (x ? Object.values(x) : []);
 
   /* ctx = {
@@ -227,7 +260,7 @@
        ("konsa was already on the game and drafted by somebody"), and locking an
        owned man is the §04 bug that stopped his owner fielding him.
        Kept identical to js/app.js. */
-    const isArrival = (state, p) => !!state.draftPool?.ids && !!p && state.draftPool.ids[p.id] !== p.club;
+    const isArrival = (state, p) => windowInfo(state, now()).open && !!p && state.draftPool.ids[p.id] !== p.club;
     const arrivalLocked = (state, p) => isArrival(state, p) && !ownedIdsAt(state, currentGwIndex()).has(p.id);
 
     /* ---- draft ---- */
@@ -826,8 +859,10 @@
         transfers: [...state.transfers],
         lineups: JSON.parse(JSON.stringify(state.lineups || {})),
       };
-      // reverse of draft night, and it stays that way for both rounds
-      const order = toArr(state.draft && state.draft.order).slice().reverse();
+      // Freeze this run's order: reverse draft night in summer, bottom-up
+      // table in January. Weekly waiver takes never influence this snake.
+      const order = windowInfo(state, now()).january
+        ? waiverBase(state) : toArr(state.draft && state.draft.order).slice().reverse();
       const slots = windowSnake(order, rounds || WINDOW_ROUNDS);
       const pen = penIds(state, tgw);
       const pending = {};
@@ -891,5 +926,5 @@
     };
   }
 
-  return { make, XI_RULES, SQUAD_RULES, REGULAR_GWS, RATING_HISTORY_WEIGHT, DEFAULT_SCORING };
+  return { make, windowInfo, prepareWindowPool, SUMMER_WINDOW_AT, JANUARY_WINDOW_OPENS, XI_RULES, SQUAD_RULES, REGULAR_GWS, RATING_HISTORY_WEIGHT, DEFAULT_SCORING };
 });

@@ -63,7 +63,7 @@ const chk = (name, ok, detail = '') => {
     const spare = PLAYERS.filter(p => !ownedIdsAt(gw).has(p.id));
     const snap = Object.fromEntries(PLAYERS.map(p => [p.id, p.club]));
     for (const p of spare.slice(0, 3)) snap[p.id] = 'ZZZ';
-    state.draftPool = { at: Date.now(), ids: snap };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids: snap };
     const pen = lockedArrivals();
     ok('three men are in the pen to lodge for', pen.length >= 3, String(pen.length));
 
@@ -161,7 +161,7 @@ const chk = (name, ok, detail = '') => {
     // proves nothing
     const wide = Object.fromEntries(PLAYERS.map(p => [p.id, p.club]));
     for (const p of spare.slice(0, 21)) wide[p.id] = 'ZZZ';
-    state.draftPool = { at: Date.now(), ids: wide };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids: wide };
     const pen2 = lockedArrivals();
     ok('(setup) the pen is wider than the old cut-off', pen2.length > 15, String(pen2.length));
     transfersView.tab = 'window';
@@ -195,7 +195,7 @@ const chk = (name, ok, detail = '') => {
        — and the desk refuses the WHOLE list for it. Every edit sends the whole
        list, so he could not add, could not delete, and the refusal named a
        player he was not touching. No way out from inside the app. */
-    state.draftPool = { at: Date.now(), ids: wide };
+    state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids: wide };
     const pen3 = lockedArrivals();
     const sq = squadAt(mid, transferGw());
     const goneMan = sq[3];
