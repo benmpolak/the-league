@@ -3655,13 +3655,48 @@ function playoffOdds(runs = 1000) {
   }
   const played = hist[state.managers[0].id].length;
   if (played < 3 || played >= REGULAR_GWS) return null; // too early to guess / nothing left to simulate
+  // Marc, 6 Sep 2026: "the playoff prediction % doesnt make sense. we are only
+  // 3 games in and its giving people 99/100% … there are still 30 gameweeks
+  // left". He was right. The old model took each manager's three-week average
+  // as his true scoring rate and ran that rate out over the thirty weeks to
+  // come, so a hot start was indistinguishable from a good squad and the
+  // simulation went looking for the answer it had already been handed.
+  //
+  // Three weeks of fantasy football is mostly noise, so an average is now
+  // pulled back toward the league mean by how little of it has been earned —
+  // shrink = played / (played + PRIOR_GWS) — and what survives the pulling is
+  // still only an estimate, so each simulated season draws the manager a true
+  // rate of its own before it draws his thirty scores. By Christmas shrink has
+  // climbed and the model comes round to what the table already says.
+  //
+  // PRIOR_GWS is how many weeks it takes before an average is believed half
+  // way. Ten: the weekly bounce (a good 15 either way) dwarfs the gap between
+  // this league's best manager and its worst (nearer 5), and it takes
+  // sigma²/tau² weeks for one to out-shout the other. Reading that ratio off
+  // the league week by week was tried first and does not work — three rounds
+  // of twelve identical managers throw up a convincing-looking pecking order
+  // about a third of the time, and the model believed it. A fixed prior does
+  // not have moods. test/crystalball.smoke.js holds it to that: at zero (the
+  // old model) an identical twelve reads 100/99/99 down to 3/4/14, which is
+  // Marc's screenshot; at ten it reads about 90 down to about 35, and that
+  // remaining spread is the H2H Points already banked, which are not a guess.
+  const PRIOR_GWS = 10;
+  const avg = a => a.reduce((t, x) => t + x, 0) / (a.length || 1);
+  const means = Object.fromEntries(state.managers.map(m => [m.id, avg(hist[m.id])]));
+  const league = avg(Object.values(means));
+  // week-to-week bounce, pooled across all twelve — twelve short series make a
+  // steadier estimate than any one of them alone. The floor is there for a
+  // freak quiet round, not to put a thumb on the scale
+  let ss = 0;
+  for (const m of state.managers) for (const x of hist[m.id]) ss += (x - means[m.id]) ** 2;
+  const sigma = Math.max(8, Math.sqrt(ss / Math.max(1, state.managers.length * (played - 1))));
+  const shrink = played / (played + PRIOR_GWS);
   const dist = {};
-  for (const m of state.managers) {
-    const a = hist[m.id];
-    const mean = a.reduce((t, x) => t + x, 0) / a.length;
-    const sd = Math.sqrt(a.reduce((t, x) => t + (x - mean) ** 2, 0) / a.length);
-    dist[m.id] = { mean, sd: Math.max(6, sd) };
-  }
+  for (const m of state.managers) dist[m.id] = {
+    mean: league + shrink * (means[m.id] - league),
+    rateSd: sigma / Math.sqrt(played + PRIOR_GWS), // how wrong that estimate could still be
+    sd: sigma,
+  };
   const base = h2hStandings(false);
   const remaining = [];
   for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) !== 'final') remaining.push(i);
@@ -3670,8 +3705,11 @@ function playoffOdds(runs = 1000) {
   for (let r = 0; r < runs; r++) {
     const pts = {}, pf = {};
     for (const row of base) { pts[row.id] = row.pts; pf[row.id] = row.pf; }
+    // one season, one guess at who each manager actually is
+    const rate = {};
+    for (const m of state.managers) rate[m.id] = norm({ mean: dist[m.id].mean, sd: dist[m.id].rateSd });
     for (const i of remaining) for (const [a, b] of pairingsFor(i)) {
-      const sa = norm(dist[a]), sb = norm(dist[b]);
+      const sa = norm({ mean: rate[a], sd: dist[a].sd }), sb = norm({ mean: rate[b], sd: dist[b].sd });
       pf[a] += sa; pf[b] += sb;
       if (Math.abs(sa - sb) < 0.5) { pts[a]++; pts[b]++; } else if (sa > sb) pts[a] += 3; else pts[b] += 3;
     }
@@ -11081,7 +11119,7 @@ function crystalBallCard(standings) {
         <th class="num" title="Your win-draw-loss record against all eleven managers each finished week">Vs all</th>
         <th class="num" title="H2H points vs what your scores deserved. Positive = riding your luck">Luck</th>
         <th class="num" title="Points left on the bench vs your best possible XI, season total">Waste</th>
-        ${odds ? '<th class="num" title="Monte Carlo simulation of the remaining fixtures, 1,000 runs">Playoffs %</th>' : ''}
+        ${odds ? '<th class="num" title="Monte Carlo simulation of the remaining fixtures, 1,000 runs. Early form is pulled toward the league average, because a few weeks proves very little">Playoffs %</th>' : ''}
       </tr></thead>
       <tbody>
       ${rows.map(r => `<tr>
@@ -11097,7 +11135,7 @@ function crystalBallCard(standings) {
       <li><b>Vs all</b> — your record if you had played all eleven, not just your fixture.</li>
       <li><b>Luck</b> — H2H points earned minus what those scores deserved.</li>
       <li><b>Waste</b> — points left on the bench against your best possible XI.</li>
-      ${odds ? '<li><b>Playoffs %</b> — 1,000 simulated seasons from everyone&rsquo;s scoring so far.</li>' : '<li><b>Playoffs %</b> — appears after three finished gameweeks.</li>'}
+      ${odds ? '<li><b>Playoffs %</b> — 1,000 simulated seasons from everyone&rsquo;s scoring so far. A hot start is treated as mostly luck until it stops being one, so early numbers sit closer together than the table does.</li>' : '<li><b>Playoffs %</b> — appears after three finished gameweeks.</li>'}
     </ul>
   </div>`;
 }
