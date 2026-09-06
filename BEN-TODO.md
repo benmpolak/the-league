@@ -8,6 +8,67 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 09. IS THE HOLDING PEN STILL FULL? — one question only you can answer (6 Sept)
+
+Marc, 6 Sept 2026: *"the window waiver is finished. Any new players now just go
+straight into the trough. I also think the window waiver section can now be
+hidden until January 1st as there will be a new window waiver to be run in
+february after the january window is closed."*
+
+**Nothing has been changed. This is a question, and then possibly a rule change
+that is yours either way.**
+
+### The bit that answers itself
+
+The Window Waiver desk is already gated on `arrivals.length` — no penned
+players, no card. It needs no date logic and no "hide until January": it goes
+away by itself the moment the pen empties.
+
+So the fact Marc can still see it says **the pen is not empty**, and that is
+the thing worth chasing rather than the card.
+
+### The question
+
+When the run resolves, the server re-snapshots the whole pool to everyone's
+current club (`functions/index.js`, in `windowWaiverRun` — `public/draftPool`
+set to every player at his club as of now). That empties the pen in one go.
+
+Two possibilities, and the sandbox cannot reach the database to tell them
+apart:
+
+1. **The 3 Sept run did not complete, or did not re-snapshot.** Then there is
+   nothing to build — the run wants looking at.
+2. **It completed, and new ids have entered the feed since.** Any id the
+   snapshot has not seen is penned automatically, and with no run scheduled
+   until February there is nothing to release them.
+
+Please check `public/draftPool.at` against the run, and whether
+`lockedArrivals()` is non-empty. Ten seconds for you; unreachable for me.
+
+### If it is (2), what Marc is asking for is a rule change
+
+Arrivals should pen only while a run is PENDING, and go straight to the Trough
+between windows. That is one clause on `arrivalLocked` — but:
+
+- `arrivalLocked` is shared law. It lives in `js/app.js` AND `js/engine.js`,
+  and the server enforces it on every signing and every team sheet. Shipping
+  the client half alone makes the app offer signings the server refuses, which
+  is the exact failure `isArrival`'s comment warns about.
+- `js/engine.js` has no notion of WHEN the next run is — the schedule lives in
+  `js/app.js` and `functions/index.js` only. So the February date would need to
+  live somewhere both halves can read (`state.settings`, most likely) rather
+  than being mirrored into a third file.
+- It needs your deploy regardless.
+
+Today the only release valve is the Chairman admitting players **one at a
+time** — the tool built for Osman on 21 Aug. Between now and February that is a
+recurring chore for you, which is the real argument for making the change.
+
+I have not touched the waiver engine. Say the word and I will write it
+properly, with the schedule moved into state and the parity test extended.
+
+---
+
 ## 07b. THE WINDOW DRAFT BECOMES A WAIVER — Thu 3 Sept 20:00 (30 Aug)
 
 ### ⚠ THE RUN TIME MOVED TO 20:00 — AND IT NEEDS YOUR DEPLOY TO TAKE EFFECT
