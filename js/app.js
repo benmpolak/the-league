@@ -11133,6 +11133,26 @@ const COTW_DRAWS = [
   'for the second reminder about the fifty quid',
   'the Committee has moved on. The Committee has not moved on',
 ];
+// Marc, 6 Sep 2026: "why am i seeing ian as cunt of the week three times and
+// [he] is seeing three different cunts". The charge sheet reads matchStats and
+// fixtures — data/stats.json and data/fixtures.json, fetched per device and
+// deliberately NOT part of the shared snapshot (SHARED_KEYS). Everything else
+// the sheet reads is shared and identical on all twelve phones; the feed is
+// not. Once the calendar says a round is over, gwStatus calls it 'final' on
+// any device holding *some* stats for it — so a phone still on Saturday
+// teatime's snapshot saw nine managers "fielding three men who kicked a ball"
+// and charged one of them, while a phone with the finished round charged
+// somebody else entirely. Both were reading their evidence correctly.
+//
+// The fix is to make the sheet honest about its own vintage: a round is only
+// judgeable here once every game this device knows about has been blown. No
+// fixture list at all (the demo, the Simulation Chamber, a cold offline start)
+// is not a contradiction, so it still judges.
+function roundHeldWhole(i) {
+  const gwN = GAMEWEEKS[i]?.n;
+  const fx = (state.fixtures || []).filter(f => f.gw === gwN);
+  return fx.every(f => f.finished || f.fp);
+}
 // The charge sheet, gravest first (Marc, 9 Aug: "annoying things like…").
 // Every charge is provable from settled data — team sheets, the transfer log,
 // timestamps against the deadline. Nothing here rewards or punishes a score:
@@ -11146,8 +11166,11 @@ function cotwCharges(i) {
   const moves = state.transfers.filter(t => t.gw === i);
   const mins = pid => gwEvent(i)?.playerStats?.[pid]?.min || 0;
   // a feed that carries no minutes at all is a gap in the data, not twelve
-  // negligent managers — the charges that read minutes stand down for the week
-  const anyMins = Object.values(gwEvent(i)?.playerStats || {}).some(s => (s?.min || 0) > 0);
+  // negligent managers — the charges that read minutes stand down for the week.
+  // A HALF-loaded feed is the same gap wearing a disguise, so the round has to
+  // be blown on this device too (roundHeldWhole) — see the note there.
+  const anyMins = roundHeldWhole(i)
+    && Object.values(gwEvent(i)?.playerStats || {}).some(s => (s?.min || 0) > 0);
   // likewise the blank-gameweek charge: no fixture list, no accusation
   const gwN = GAMEWEEKS[i]?.n;
   const roundFx = state.fixtures.filter(f => f.gw === gwN);
@@ -11288,6 +11311,11 @@ function cotwCharges(i) {
 }
 function cotwFor(i) {
   if (!state.managers.length) return null;
+  // no verdict on a round this device is only holding half of. Standing down
+  // the minutes charges is not enough on its own — a stale phone would simply
+  // fall through and name a lesser offender nobody else can see. Twelve phones
+  // showing the same man, or showing nothing until the feed lands
+  if (!roundHeldWhole(i)) return null;
   // gravest charge wins, then the worst offence within it. Level offenders are
   // separated on their whole record for the week — most charges, then heaviest
   // — so it lands on merit and never on a coin toss (Marc, 9 Aug: "it shouldn't

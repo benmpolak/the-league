@@ -176,6 +176,33 @@ const chk = (name, ok, detail = '') => {
     const noFx = cotwCharges(0).filter(c => c.gravity === 1).length;
     log.push(`${noFx === 0 ? 'PASS' : 'FAIL'}   – an empty fixture list accuses nobody — ${noFx} blank-gameweek charges`);
 
+    // Marc, 6 Sep 2026: "why am i seeing ian as cunt of the week three times
+    // and [he] is seeing three different cunts". stats.json and fixtures.json
+    // are fetched per device and are NOT in the shared snapshot, so a phone
+    // still holding Saturday teatime's feed used to charge a man nobody else
+    // could see. A round only judges once this device holds all of it blown.
+    const teatime = frac => {
+      const ps = state.matchStats.gw1.playerStats;
+      const ids = Object.keys(ps);
+      ids.slice(Math.floor(ids.length * frac)).forEach(k => delete ps[k]);
+      const fx = state.fixtures.filter(f => f.gw === GAMEWEEKS[0].n);
+      fx.slice(Math.floor(fx.length * frac)).forEach(f => { f.finished = false; f.fp = false; });
+    };
+    baseline();
+    const whole = cotwFor(0);
+    baseline(); teatime(0.5);
+    const half = cotwFor(0);
+    log.push(`${half === null ? 'PASS' : 'FAIL'}   – a half-played round returns no verdict — ${half ? teamName(half.id) + ': ' + half.why : 'none'}`);
+    log.push(`${whole && whole.id != null ? 'PASS' : 'FAIL'}   – the same round, held whole, still returns one`);
+    baseline(); teatime(0.5);
+    const halfMins = cotwCharges(0).filter(c => [3, 9, 13].includes(c.gravity)).length;
+    log.push(`${halfMins === 0 ? 'PASS' : 'FAIL'}   – half-loaded minutes accuse nobody — ${halfMins} minute-based charges`);
+    // ...but a device with no fixture list at all is not contradicting itself:
+    // the demo, the Simulation Chamber and a cold offline start still judge
+    baseline();
+    state.fixtures = [];
+    log.push(`${cotwFor(0) ? 'PASS' : 'FAIL'}   – no fixture list at all still returns a verdict`);
+
     // the verdict must be stable and must not rotate: the same evidence twice
     // running names the same man
     baseline();
