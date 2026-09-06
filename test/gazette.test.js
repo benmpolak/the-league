@@ -211,6 +211,12 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
      matchday edition, and the Window Waiver story follows the ledger */
   const fp = await page.evaluate(() => {
     const gw3 = GAMEWEEKS.findIndex(g => g.n === 3);
+    // This is a MATCHDAY preview fixture, even after the real GW3 settles.
+    const wallNow = Date.now, savedFinished = GAMEWEEKS[gw3].finished;
+    const ev = gwEvent(gw3), savedFinal = ev?.final;
+    Date.now = () => new Date(GAMEWEEKS[gw3].from).getTime() - 3600e3;
+    GAMEWEEKS[gw3].finished = false;
+    if (ev) ev.final = false;
     const a = Gazette.frontPage(gw3);
     const ian = state.managers.find(m => /tussie/i.test(managerName(m.id)));
     const keep = ian?.team;
@@ -225,7 +231,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
       const ids = {};
       for (const p of PLAYERS) ids[p.id] = p.club;
       for (const p of PLAYERS.filter(p => !owned.has(p.id)).slice(0, 5)) ids[p.id] = 'MOVED';
-      state.draftPool = { at: Date.now(), ids };
+      state.draftPool = { at: Date.parse('2026-08-13T19:00:00Z'), ids };
     }
     const pen = lockedArrivals();
     const special = Gazette.windowSpecial();
@@ -247,13 +253,16 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     state.transfers.length = n;
     state.draftPool = keepPool;
     const inPreview = previewArticle(gw3, (arr, seed) => arr[seed % arr.length]);
-    return { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 1), deterministic: Gazette.frontPage(gw3) === a,
+    const result = { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 1), deterministic: Gazette.frontPage(gw3) === a,
       letters: /LETTERS TO THE EDITOR/.test(a) && /SEE MY FOURTEEN/.test(a), lead: /FORTUNE FAVOURS THE BRAVE/.test(a),
       noWindowOnFriday: !/WINDOW WAIVER/.test(a) && !/WINDOW WAIVER/.test(postFront),
       escaped: !/<script>/.test(hostile) && /&lt;script&gt;/.test(hostile), pre, penSize: pen.length,
       post: !pen.length || (/IN FULL/.test(post) && /PICK 1 ·/.test(post) && post.includes(pen[0].name) && /Closing Remark/.test(post)),
       todayIn, keyIn, archived, todayBefore, todayAfter,
       hooked: inPreview.includes(a) && inPreview.indexOf(a) < inPreview.indexOf('prog-lead') };
+    Date.now = wallNow; GAMEWEEKS[gw3].finished = savedFinished;
+    if (ev) ev.final = savedFinal;
+    return result;
   });
   chk('commissioned front page prints only for GW3, deterministically, with the lead and the letters',
     fp.others === '' && fp.deterministic && fp.letters && fp.lead && fp.noWindowOnFriday, JSON.stringify(fp));
