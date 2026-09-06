@@ -38,6 +38,16 @@ const chk = (name, ok, detail = '') => {
 (async () => {
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
   const page = await browser.newPage();
+  // Exercise online snapshot/list logic with a controlled transport. A real
+  // Firebase bootstrap could finish during one of the awaited saves and wipe
+  // the synthetic identity/list, depending on CI network timing.
+  await page.setRequestInterception(true);
+  page.on('request', req => {
+    const url = new URL(req.url());
+    if (url.pathname === '/js/sync.js') return req.respond({ status: 200, contentType: 'application/javascript', body: '// Transport driven explicitly by this test.' });
+    if (url.origin !== new URL(baseUrl).origin) return req.abort();
+    return req.continue();
+  });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(e.message));
   page.on('dialog', d => d.accept());
@@ -240,11 +250,13 @@ const chk = (name, ok, detail = '') => {
 
     // and ADDING works again from a list that held a dead line
     state.windowClaims = { [mid]: [stale] };
-    setWindowClaims(mid, [stale, { in: pen3[0].id, out: squadAt(mid, transferGw())[0].id }]);
+    const addition = { in: pen3[0].id, out: squadAt(mid, transferGw())[0].id };
+    const additionReason = deadWindowClaim(addition, mid);
+    setWindowClaims(mid, [stale, addition]);
     await new Promise(r => setTimeout(r, 40));
     ok('adding a good line succeeds even though a dead one was on the list',
       myWindowClaims(mid).length === 1 && myWindowClaims(mid)[0].in === pen3[0].id,
-      JSON.stringify(myWindowClaims(mid).map(c => c.in)));
+      JSON.stringify({ claims: myWindowClaims(mid).map(c => c.in), sent, additionReason, after: deadWindowClaim(addition, mid) }));
 
     window.serverAct = realAct;
     return out.join('\n');
