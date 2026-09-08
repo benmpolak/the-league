@@ -451,6 +451,8 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 .deal-tag { flex: 0 0 auto; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; padding: 2px 8px; border-radius: 999px; }
 .deal-tag.out { background: rgba(239, 100, 97, .16); color: var(--red); }
 .deal-tag.in { background: rgba(45, 212, 167, .16); color: var(--accent); }
+.claim-saved { background: rgba(45, 212, 167, .16); color: var(--accent); border: none; }
+.claim-unsaved { flex: none; }
 .conn { color: var(--red); font-size: 13px; transition: color .3s; }
 .conn.up { color: var(--accent); }
 

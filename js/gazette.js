@@ -1086,8 +1086,68 @@ window.Gazette = (() => {
   }
   const pick2 = (arr, key) => arr[hash(key) % arr.length];
 
+  /* ---------- WAIVERGATE (Ben, 8 Sept 2026: "get it on the front page of the
+     gazette... matt le tus etc - conspiracy - BREAKING NEWS") ----------
+     Lee, 14:16 Tuesday: "My transfers didn't go through. I set my list last
+     night." The Chairman's inquiry read the server request log — every write
+     the app makes, with device, network and request size — and found nothing
+     from Lee after Monday afternoon. Not rejected: never sent. The laptop was
+     offline; the app said "Claim lodged" thirteen times to an empty room.
+     Every number below is the inquiry's as reported to the group chat; the
+     private ladders of other managers are not printed. */
+  function waivergate(gwIdx) {
+    try {
+      const lee = state.managers.find(m => /warner/i.test(managerName(m.id)));
+      if (!lee) return '';
+      const find = re => state.managers.find(m => re.test(managerName(m.id)));
+      const marc = find(/conway/i), ian = find(/tussie/i), ric = find(/blank/i), wilko = find(/wilko/i);
+      const toby = state.managers.find(m => /toby/i.test(managerName(m.id)));
+      const L = esc(managerName(lee.id)), T = esc(teamName(lee.id));
+      const nm = (m, fb) => esc(m ? managerName(m.id) : fb);
+      const by = press(['wire'], 'waivergate:by');
+      const redact = s => `<span class="prog-redact" style="background:currentColor;border-radius:2px" aria-label="redacted">${esc(s)}</span>`;
+      const deck = `${T} say their waiver list “didn’t go through”. The server says it never arrived. Thirteen claims, one laptop, no connection, and an app that said yes to all of them anyway.`;
+      const paras = [
+        `${L} reported at 14:16 on Tuesday, four hours after the run, that his transfers “didn’t go through”, that he had set his list on his laptop the night before, and that he could retrace his steps if needed. The Chairman, not near his laptop, replied that the game would have recorded it. The game has recorded everything. It has recorded nothing.`,
+        `Tuesday’s run processed thirteen claims from eleven managers in the correct order. None lapsed. Every list that reached the league was honoured, and ${T}’s slot in the ledger was empty before the run began. The Trough was closed by ${nm(toby, 'the Deputy Chairman')} at 14:20 pending an inquiry, the first time in League history that sentence has been true.`,
+        `The inquiry went to the server logs, which record every request the app makes: the device, the network, the size of the thing. From the ${esc(managerName(lee.id).split(' ').pop())} household between Friday lunchtime and the run: Friday 14:30, a team sheet. Friday 21:52, fourteen taps in fifty seconds, each a few bytes smaller than the last. Monday 14:55, a team sheet. Monday 14:56 to 15:12, sixteen taps, each a few bytes larger. Then silence. Not a byte, from any device, on any network, until after the run.`,
+        `Here is the part that settles it. Every tap on Claim sends the WHOLE list to the league, not the one man. ${L} says he tapped thirteen times and reordered a few. One of those getting through would have saved the lot. None did. The laptop had no connection to the league for the entire session — and the app, which loads from its own cache when offline and looks perfectly normal doing it, said “Claim lodged” to every one of them. The Committee’s finding is that the app lied to a man thirteen times in a row and then went to bed. The Committee built the app.`,
+        `Theories were entertained. ${nm(marc, 'The Committee’s spokesman')} proposed that the claims “should have been blocked because they resulted in an invalid formation”, adding in the same breath that this was “based on very little”. Rejections are logged in red; there were forty-two that week and none from ${T}. The theory is out. ${nm(ian, 'A senior manager')} asked whether the developers can see what else the managers are doing on their computers. They can see requests to the league, and the size of them. ${redact('They can also see')} ${redact('██████████████████')}. That sentence has been redacted at the request of counsel.`,
+        `${L} has since supplied his list from memory, “95% certain”: Scott, Pino, Van de Ven, Udogie, Cash, Lindelöf, Mings and Madjo for the same two outgoing men, three goalkeepers for Leno, then Mitchell and Richards. He was fifth in the order. Replaying the run with that list in, Scott and Pino were gone before his turn; he would have landed Van de Ven and Henderson. ${nm(ric, 'Asterick')} would have taken Udogie instead of Van de Ven, and ${nm(ian, 'CF Iain FC')} someone else instead of Udogie. Nothing else would have moved.`,
+        `${nm(ric, 'Asterick')}, for the avoidance of doubt, “shan’t be giving VDV back”, will “most likely ditch him”, and intends to block him. ${nm(marc, 'The spokesman')} took the opposite view, that in a game of fantasy football you just give the man his player, and that the precedent already existed under the previous administration. The previous administration had a spreadsheet and a dictator. This one has a ledger, and a ledger cannot be amended on a memory, however honest — and the Committee records that it believes this one.`,
+      ];
+      const ruling = `The run stands. No landed player is taken from any manager. ${nm(toby, 'The Deputy Chairman')}, to whom the final call was left: “Works for me.” The Trough is open for Friday’s run, and Madjo, Cash, Mings, Richards and three of the goalkeepers are still in it. The app has been changed tonight so that “Claim lodged” appears only once the league is holding the claim, a failed one comes back in red, and every saved request carries a tick on the Waiver list tab. A browser that knows it is offline is now told so before it lets you tap anything. Lord Pannick KC has been retained by ${T} and his fee note will appear in the Corrections.`;
+      const letus = [
+        'Thread 🧵 1/47. A list that “never reached the server”. Reached. Server. Ask yourself what a server is. Nobody in the media will tell you.',
+        'Thirteen claims. Thirteen. Not twelve, not fourteen. Look up what thirteen means. I have. I’m not saying anything. I’m saying thirteen.',
+        'They say the laptop was “offline”. Off which line. Whose line. Since when do lines go off. They go off when someone turns them off.',
+        'A ledger that “records every write”. Every write. Including this one. Including yours. Sleep well. Code LETUS20.',
+        'Nobody has shown me a photo of Van de Ven NOT in a Celta shirt. Think about it.',
+        'Sponsored: LETUS20 for 20% off CBD oil. It sorted my hamstring in 2009 and it would have kept that laptop connected. Not tech support. Better than tech support.',
+      ];
+      return `<div class="prog-story prog-waivergate">
+        <div class="prog-story-kicker">BREAKING NEWS · WAIVERGATE · THE INQUIRY REPORTS</div>
+        <div class="prog-head">THE LIST THAT NEVER WAS</div>
+        <div class="prog-by">By ${esc(by.n)} · additional reporting by Matt Le Tus, who was not asked</div>
+        <p class="prog-deck">${esc(deck)}</p>
+        ${paras.map(p => `<p>${p}</p>`).join('')}
+        <div class="prog-int-q">The ruling</div>
+        <p>${ruling}</p>
+        <div class="prog-int-q">The Le Tus thread, reproduced in full because nobody reached tweet 2</div>
+        ${letus.map(t => `<p><i>${esc(t)}</i></p>`).join('')}
+      </div>`;
+    } catch (e) { return ''; }
+  }
+
   const COMMISSIONS = {
     3: gwIdx => luckStory(gwIdx) + managerInFocus(gwIdx) + lettersPage(gwIdx),
+  };
+  /* BREAKING: a story that goes to press in the REVIEW edition of the named
+     gameweek — the paper on the dashboard between a round settling and the
+     next deadline. Its .prog-head leads, so the splash and the WhatsApp drop
+     lift it. Ben, 8 Sept: "get it on the front page of the gazette now". */
+  const BREAKING = {
+    3: gwIdx => waivergate(gwIdx),
   };
   /* the commissioned front page for a matchday edition, or '' — app.js
      previewArticle prints it above the fixtures, so its .prog-head is the
@@ -1118,7 +1178,10 @@ window.Gazette = (() => {
     // a table are weather; the paper needs a developing plot.
     const stakes = table.some(r => r.p > 0)
       ? `<div class="prog-sec">The State of the Table</div><p>${esc(`${teamName(table[0].id)} have the early bragging rights${table[0].pts > table[1].pts ? `, ${table[0].pts - table[1].pts} point${table[0].pts - table[1].pts === 1 ? '' : 's'} clear` : ' on tiebreak'}. The playoff line cuts between ${teamName(table[7].id)} and ${teamName(table[8].id)}; ${teamName(table.at(-1).id)} are holding the rest of it up. The table never lies, but it does enjoy a wind-up.`)}</p>` : '';
+    let breaking = '';
+    try { const fn = BREAKING[GAMEWEEKS[gwIdx]?.n]; breaking = fn ? fn(gwIdx) : ''; } catch (e) { breaking = ''; }
     return `<div class="prog-art">
+      ${breaking}
       <div class="prog-cols">${lead}${second}</div>
       ${nibBlock}
       ${stakes}

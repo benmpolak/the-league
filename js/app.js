@@ -251,6 +251,10 @@ function serverAct(action, data = {}) {
     return p;
   };
   if (!window.WCSync?.call) return refuse('League connection is still starting — try again in a moment.');
+  // navigator.onLine is unreliable when true and reliable when false. A laptop
+  // with no network must never be told "Claim lodged" (Lee, 8 Sept 2026:
+  // thirteen claims and a reorder, not one request left the machine).
+  if (navigator.onLine === false) return refuse('You’re offline — nothing will save until you reconnect.');
   const dispatch = () => window.WCSync.call(action, data)
     .catch(e => { toast(e.message || 'That change did not save — try again.'); throw e; });
   if (_serialActions.has(action)) {
@@ -2804,8 +2808,18 @@ function setClaims(mid, arr) {
   // codes ride along so a lodged claim survives a feed id shift (Desk §3b)
   arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
   const stale = claimBuckets().filter(g => g !== cur && toArr(state.claims[g]?.[mid]).length);
+  // Waivergate (Lee, 8 Sept 2026): thirteen claims lodged on an offline laptop,
+  // every one answered "Claim lodged", none ever reached the league. The list
+  // on screen is now PROVISIONAL until the private node echoes it back with the
+  // server's stamp (t), a failed write rolls the screen back to what the league
+  // actually holds, and callers get told which happened.
+  const before = JSON.parse(JSON.stringify(state.claims || {}));
+  let confirmed = Promise.resolve(true);
   if (netOn()) {
-    serverAct('claimSet', { gwIndex: cur, claims: arr, ...(mid !== whoami && { asManager: mid }) }).catch(() => {});
+    const payload = arr.map(({ pending, t, ...c }) => c); // the server stamps what it accepts
+    confirmed = serverAct('claimSet', { gwIndex: cur, claims: payload, ...(mid !== whoami && { asManager: mid }) })
+      .then(() => true)
+      .catch(() => { state.claims = before; save(); render(); return false; });
     // consolidation: the rolled-over bucket empties in the same breath, so the
     // private node ends up holding ONE list in ONE bucket. The server only
     // reaches back one week, which is as far back as a live bucket can exist
@@ -2816,8 +2830,27 @@ function setClaims(mid, arr) {
     // the private snapshot echoes the authoritative list back
   }
   for (const g of stale) if (state.claims[g]) delete state.claims[g][mid];
-  (state.claims[cur] = state.claims[cur] || {})[mid] = arr;
+  (state.claims[cur] = state.claims[cur] || {})[mid] = netOn() ? arr.map(c => ({ ...c, pending: true })) : arr;
   save(); render();
+  return confirmed;
+}
+// the claim did not reach the league — say so, in red, instead of a receipt
+function claimFailedSheet(inP, outP) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.id = 'claimFailed';
+  ov.innerHTML = `<div class="card" style="max-width:420px;width:94%" role="dialog" aria-label="Claim not lodged">
+    <h2 style="color:var(--red)">Claim NOT lodged</h2>
+    ${dealRows(outP ? [outP] : [], inP ? [inP] : [])}
+    <p class="warn">The league did not receive this request. Nothing has been saved and it will not be in the run.</p>
+    <p class="muted" style="font-size:12px">Usually a dropped connection. Check you’re online, refresh the page and lodge it again. The Waiver list tab shows a tick against every request the league is actually holding.</p>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="cfDone" style="flex:1">OK</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const done = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) done(); };
+  ov.querySelector('#cfDone').onclick = done;
 }
 // commissioner-only: resolve all pending claims, then open the Trough
 function processWaivers(manual = false) {
@@ -8603,6 +8636,7 @@ function viewTransfers() {
           title="Type a number to move him there — everyone else shifts down" aria-label="${esc(PLAYER_BY_ID[c.in]?.name || 'this claim')} is number ${k + 1}. Type a number to move him."> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
         ${deadClaim(c) ? `<span class="tag claim-dead-tag" title="${esc(deadClaim(c))}">will not land</span>` : ''}
+        ${netOn() ? (c.t ? `<span class="tag claim-saved" title="The league is holding this request">&#10003; saved</span>` : `<span class="tag warn-tag claim-unsaved" title="Not yet confirmed by the league">saving…</span>`) : ''}
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
           <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
           <button class="btn ghost small icon-btn" data-claimdn="${k}" title="Lower priority" ${k === claims.length - 1 ? 'disabled' : ''} aria-label="Lower priority">&#9660;</button>
@@ -8620,6 +8654,9 @@ function viewTransfers() {
     return `${head}<div class="card">
       <h2>${esc(managerName(mid))}'s waiver list</h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Top of the list is tried first when waivers are processed — next run ${esc(fmtWhen(nextRun))}. Type a number to move a man straight there, or drag; &#10005; to withdraw. Lodge new requests from <button class="btn ghost small" data-trtab="trough" style="padding:2px 8px">the Trough</button>.</p>
+      ${netOn() && claims.length ? (claims.every(c => c.t)
+        ? `<p class="muted claim-status" style="font-size:12px;margin-bottom:8px">&#10003; All ${claims.length} on this list are saved with the league.</p>`
+        : `<p class="warn claim-status">${claims.filter(c => !c.t).length} request${claims.filter(c => !c.t).length === 1 ? '' : 's'} not yet confirmed by the league. If this doesn’t clear in a few seconds, check your connection and refresh.</p>`) : ''}
       ${claims.length ? claimRows
         : `<p class="muted" style="font-size:12px;margin-bottom:8px">Nothing on the list. Sign a player who's <b>on waivers</b> in the Trough and he joins your waiver list.</p>`}
       ${movesBlock}
@@ -9217,10 +9254,11 @@ function bindTransfers() {
             yes: 'Lodge claim',
             note: 'Resolves when waivers are processed. You can withdraw or reorder it from the Waiver list tab until then.',
           })) return;
-          setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
+          const saved = await setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
+          if (!saved) { claimFailedSheet(inP, outP); return; }
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
+            note: `Saved with the league. Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
           return;
         }
         const tgw = transferGw();

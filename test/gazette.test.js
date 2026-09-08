@@ -68,7 +68,9 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     // moves and the dashboard follows. Compare against the edition the
     // paper actually printed today, not the one this test happens to study.
     const d2 = document.createElement('div'); d2.innerHTML = Gazette.review(lastFinalGw());
-    const leadToday = d2.querySelector('.prog-lead-story .prog-head')?.textContent || '';
+    // ...and the splash lifts the FIRST head of that paper — a BREAKING story
+    // (Waivergate, 8 Sept 2026) leads over the match report when one is set.
+    const leadToday = d2.querySelector('.prog-head')?.textContent || '';
     return {
       deterministic: Gazette.review(0) === html, scoresOk, stories: doc.querySelectorAll('.prog-story').length,
       headline, frontHeadline, leadToday, scoreline: !!doc.querySelector('.prog-lead-story .prog-scoreline'),
