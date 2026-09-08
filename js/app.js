@@ -11569,7 +11569,7 @@ function dashMiniPitch(mid, gw) {
       <div class="pitch-chip mu-chip ${statusClass(p)}" data-pcard="${p.id}" style="cursor:pointer">
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
-        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>`}
         ${marks[p.id] || ''}
       </div>`).join('') || '<span class="muted" style="font-size:10px">—</span>'}</div>`).join('')}</div>
   ${bench.length ? `<div class="bench-strip">
@@ -11579,7 +11579,7 @@ function dashMiniPitch(mid, gw) {
         <span class="tag" style="font-size:9px;padding:1px 5px">${outs.has(p.id) ? 'Off' : priority.get(p.id)}</span>
         ${kitImg(p.team, p.pos === 'GK')}
         <span class="pitch-name">${esc(p.name)}</span>
-        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : ''}
+        ${started ? `<span class="mu-pts">${gwPlayerPoints(p.id, gw)}</span>` : `<span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[gw].n)}</span>`}
         ${marks[p.id] || ''}
       </div>`).join('')}
   </div>` : ''}</div>`;
