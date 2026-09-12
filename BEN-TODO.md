@@ -8,6 +8,53 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 10. A COVENANT'S GAMEWEEK MEANS TWO DIFFERENT THINGS (12 Sept)
+
+The app is correct as of `20663aa9` — it normalises on read. **The stored data
+is still inconsistent, and that is yours.** Nothing is on fire; this is a
+tidy-up before it bites somebody who joins the two tables.
+
+Two writers, two meanings, no way to tell them apart from the value:
+
+| written by | `covenant.gw` holds | carries `trade` id? |
+|---|---|---|
+| server — `tradeRespond`, minting a covenant from a trade's side-terms | the **index** (`eng.currentGwIndex()`) | yes |
+| client — somebody recording one by hand | the **number** (`GAMEWEEKS[cur].n`) | no |
+
+`functions/index.js` writes `gw: eng.currentGwIndex()` in both places it mints
+one (the accept path and the execute path). `js/app.js` writes
+`GAMEWEEKS[cur].n` in `covenantAdd` and in the offline trade path. Both are
+small integers. The trade id is the only discriminator, and it is incidental —
+it happens to be attached by the writer that uses the index.
+
+What it cost, before it was spotted:
+
+- the Covenant Register printed the wrong week for every covenant born of a
+  trade, one short — a GW1 deal rendered as **"GW0"**;
+- and the covenant-to-trade link shipped that morning joined on the raw field,
+  so it missed by exactly one week for precisely the covenants that HAVE a
+  trade behind them. It worked in the probe and would have matched nothing in
+  the real league.
+
+The client now reads every covenant gameweek through `covenantGwIndex`, and
+matches on the trade id when there is one. That is a shim over the data, not a
+fix to it.
+
+**What I would do, and why it needs you.** Make the server store the gameweek
+NUMBER, as the client always has — the number is what the register prints and
+what a human means by "GW4". That is a one-word change in the two places
+`functions/index.js` mints a covenant, plus a migration for the covenants
+already written with an index. It needs your deploy, and the migration needs
+deciding: existing rows cannot be converted safely without knowing which writer
+made them, which is exactly the `trade` id test above. Leaving the shim in
+place is a perfectly reasonable answer too — say so and I will note it as
+settled rather than outstanding.
+
+Either way the shim should stay until the stored rows agree, and it should be
+removed in the same breath as the migration, not before.
+
+---
+
 ## 09. IS THE HOLDING PEN STILL FULL? — one question only you can answer (6 Sept)
 
 Marc, 6 Sept 2026: *"the window waiver is finished. Any new players now just go
