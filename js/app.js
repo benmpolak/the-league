@@ -8718,13 +8718,13 @@ function viewTransfers() {
       ${[...toArr(state.covenants)].reverse().map(c => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
         <span class="muted">GW${c.gw ?? '?'}</span>
         <span><b>${esc(managerName(c.from))}</b> &harr; <b>${esc(managerName(c.to))}</b>: &#128220; ${esc(c.text)}</span>
-      </div>`).join('') || '<p class="muted" style="font-size:12px">No covenants recorded. Suspiciously clean.</p>'}
+      </div>${covenantTrades(c).map(covenantTradeLine).join('')}`).join('') || '<p class="muted" style="font-size:12px">No covenants recorded. Suspiciously clean.</p>'}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <select id="covWith" style="min-width:150px">
           <option value="">With…</option>
           ${state.managers.filter(m => m.id !== mid).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}
         </select>
-        <input type="text" id="covText" maxlength="200" placeholder="The agreement, verbatim" style="flex:1;min-width:220px">
+        <input type="text" id="covText" maxlength="200" placeholder="The agreement, verbatim &mdash; name the player" title="Name the player. &ldquo;1 week loan&rdquo; settles nothing in GW30." style="flex:1;min-width:220px">
         <button class="btn small" id="covAdd">Record it</button>
       </div>
     </div>`;
@@ -8737,28 +8737,65 @@ function viewTransfers() {
     const marks = { trade: '&#8644;', waiver: 'W', window: '&#9638;', trough: '+' };
     const hf = transfersView.histKind || '';
     const all = [...state.transfers].reverse();
+    /* One trade, one line (Marc, 12 Sept 2026: "the commentary only needs to
+       appear once here"). A trade writes a record for EACH side, so the wire
+       printed the same swap twice and offered two report cards that were
+       mirror images of one another — one man's daylight robbery is the other's
+       expensive mistake. Group the sides back together by trade id. Legacy
+       local/demo ledgers stored `trade: true` with no id to group on, so those
+       stay exactly as they were rather than being guessed at. */
+    const collapse = list => {
+      const out = [], seen = new Set();
+      for (const t of list) {
+        const id = t.trade && t.trade !== true ? String(t.trade) : null;
+        if (!id) { out.push({ gw: t.gw, recs: [t] }); continue; }
+        if (seen.has(id)) continue;
+        seen.add(id);
+        // every record of the trade, both sides, newest-first order preserved
+        out.push({ gw: t.gw, recs: state.transfers.filter(u => u.trade && String(u.trade) === id) });
+      }
+      return out;
+    };
+    const groupAll = collapse(all);
     const counts = {};
-    all.forEach(t => { const k = kindOf(t); counts[k] = (counts[k] || 0) + 1; });
-    const shown = all.filter(t => !hf || kindOf(t) === hf);
+    groupAll.forEach(g => { const k = kindOf(g.recs[0]); counts[k] = (counts[k] || 0) + 1; });
+    const shown = groupAll.filter(g => !hf || kindOf(g.recs[0]) === hf);
     const sections = [];
-    for (const t of shown) {
+    for (const g of shown) {
       const last = sections[sections.length - 1];
-      if (last && last.gw === t.gw) last.rows.push(t); else sections.push({ gw: t.gw, rows: [t] });
+      if (last && last.gw === g.gw) last.rows.push(g); else sections.push({ gw: g.gw, rows: [g] });
     }
     const pbit = (p, cls) => p
       ? `<span class="hist-p ${cls}"><span class="pos-badge pos-${p.pos}">${p.pos}</span> ${pname(p)} <span class="hist-club">${esc(p.club)}</span></span>`
       : '<span class="muted">&mdash;</span>';
-    const rowHtml = t => `<div class="hist-row">
+    const teamBtn = mid => `<button class="hist-team" data-histteam="${mid}" title="Open ${esc(teamName(mid))}'s squad">${kitSvg(mid, 17)} <b>${esc(teamName(mid))}</b></button>`;
+    const rowHtml = g => {
+      const recs = g.recs, t = recs[0];
+      // a collapsed trade is keyed by the trade, a plain move by its ledger number
+      const key = recs.length > 1 ? `tr-${String(t.trade)}` : `n-${t.n}`;
+      // a swap reads as who got what, not as two mirrored in/out pairs
+      const sides = recs.length > 1 ? [...new Set(recs.map(r => r.managerId))] : [];
+      const head = sides.length
+        ? sides.map(teamBtn).join('<span class="business-mark business-trade" aria-hidden="true">&#8644;</span>')
+        : teamBtn(t.managerId);
+      const flow = sides.length
+        ? sides.map(mid => `<div class="hist-flow">
+            <span class="business-label business-label-in">&#8593; ${esc(teamName(mid))} GETS</span>
+            ${recs.filter(r => r.managerId === mid).map(r => pbit(PLAYER_BY_ID[r.inId], 'hist-in')).join(' ')}
+          </div>`).join('')
+        : `<div class="hist-flow">
+            <span class="business-label business-label-in">&#8593; IN</span> ${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}
+            <span class="business-label business-label-out">&#8595; OUT</span> ${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}
+          </div>`;
+      return `<div class="hist-row">
       <span class="business-mark business-${kindOf(t)}" aria-hidden="true">${marks[kindOf(t)]}</span>
       <div class="hist-main">
-        <div class="business-who"><button class="hist-team" data-histteam="${t.managerId}" title="Open ${esc(teamName(t.managerId))}'s squad">${kitSvg(t.managerId, 17)} <b>${esc(teamName(t.managerId))}</b></button> <span class="tag">${kindOf(t)}</span>${t.t ? ` <span class="muted hist-when">${fmtStamp(t.t)}</span>` : ''}</div>
-        <div class="hist-flow">
-          <span class="business-label business-label-in">&#8593; IN</span> ${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}
-          <span class="business-label business-label-out">&#8595; OUT</span> ${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}
-        </div>
+        <div class="business-who">${head} <span class="tag">${kindOf(t)}</span>${t.t ? ` <span class="muted hist-when">${fmtStamp(t.t)}</span>` : ''}</div>
+        ${flow}
       </div>
-      <button class="btn ghost small hist-rcbtn" data-rc="${t.n}">Report card <span aria-hidden="true">&#9662;</span></button>
-    </div><div class="rc-slot hist-rc" data-rcslot="${t.n}" style="display:none"></div>`;
+      <button class="btn ghost small hist-rcbtn" data-rc="${key}">Report card <span aria-hidden="true">&#9662;</span></button>
+    </div><div class="rc-slot hist-rc" data-rcslot="${key}" style="display:none"></div>`;
+    };
     const sectionHtml = s => `<div class="hist-gw"><b>Gameweek ${GAMEWEEKS[s.gw].n}</b> ${s.rows.length} ${s.rows.length === 1 ? 'move' : 'moves'}</div>${s.rows.map(rowHtml).join('')}`;
     const fbtn = (k, label) => `<button class="btn small ${hf === k ? '' : 'ghost'}" data-histkind="${k}">${label}${counts[k] || (!k && all.length) ? ` <span class="hist-count">${k ? counts[k] : all.length}</span>` : ''}</button>`;
     // pages back to the start of the season (Ben, 10 Aug) — packed by whole
@@ -8991,8 +9028,16 @@ function bindTransfers() {
     const slot = document.querySelector(`[data-rcslot="${b.dataset.rc}"]`);
     if (!slot) return;
     if (slot.style.display === 'none') {
-      const t = state.transfers.find(x => x.n === +b.dataset.rc);
-      slot.innerHTML = t ? reportCardHtml(t) : '';
+      // the key is either a collapsed trade ("tr-<id>") or one move's ledger
+      // number ("n-<n>") — a trade is graded once, both sides in the one card
+      const k = String(b.dataset.rc || '');
+      if (k.startsWith('tr-')) {
+        const id = k.slice(3);
+        slot.innerHTML = tradeReportCardHtml(state.transfers.filter(u => u.trade && String(u.trade) === id));
+      } else {
+        const t = state.transfers.find(x => x.n === +k.replace(/^n-/, ''));
+        slot.innerHTML = t ? reportCardHtml(t) : '';
+      }
       slot.style.display = '';
     } else slot.style.display = 'none';
   });
@@ -9821,6 +9866,58 @@ function reportCardHtml(t) {
   };
   const body = (w6 ? windowRow(w6, '6 GWs') : '') + (w3 ? windowRow(w3, '3 GWs') : '');
   return body || `<div class="lrow muted" style="font-size:12px">Report card opens after three completed gameweeks from GW${GAMEWEEKS[t.gw]?.n ?? '?'} — the Gazette does not judge early. Much.</div>`;
+}
+/* One trade, one verdict (Marc, 12 Sept 2026). Both sides are graded in the
+   same card, because a swap has one story and printing it from each end said
+   the same thing twice in opposite directions. Before the three gameweeks are
+   up the Gazette says so once, not once per manager. */
+function tradeReportCardHtml(recs) {
+  if (!recs || !recs.length) return '';
+  const sides = [...new Set(recs.map(r => r.managerId))];
+  const one = mid => recs.find(r => r.managerId === mid);
+  if (!sides.some(mid => transferWindowFacts(one(mid), 3))) return reportCardHtml(recs[0]);
+  return sides.map(mid => `<div class="lrow" style="font-size:12px;font-weight:700">${esc(teamName(mid))}</div>${reportCardHtml(one(mid))}`).join('');
+}
+/* What a covenant was actually about (Marc, 12 Sept 2026: "it doesnt say what
+   the trade is, just the week it happened").
+   A covenant is free text by design — the offline business the app cannot
+   execute, witnessed here and enforced by the group chat — so it holds no
+   player and never will. What the ledger CAN do is show the trade those two
+   managers did that week, if there was one, labelled as exactly that rather
+   than presented as the covenant itself: a loan-back or a first refusal often
+   has no trade behind it at all, and captioning an unrelated swap as "the
+   deal" would be worse than saying nothing.
+   NB covenants store the gameweek NUMBER and transfers store the INDEX — a
+   join on the raw field matches the wrong week and looks convincing. */
+function covenantTrades(c) {
+  const gi = GAMEWEEKS.findIndex(g => g.n === c.gw);
+  if (gi < 0) return [];
+  const byTrade = {};
+  for (const t of state.transfers) {
+    if (!t.trade || t.gw !== gi) continue;
+    if (t.managerId !== c.from && t.managerId !== c.to) continue;
+    const id = String(t.trade);
+    (byTrade[id] = byTrade[id] || []).push(t);
+  }
+  // only a swap between THESE two counts — a trade one of them did with a
+  // third party that week is not this covenant's business
+  return Object.values(byTrade).filter(recs => {
+    const s = new Set(recs.map(r => r.managerId));
+    return s.size === 2 && s.has(c.from) && s.has(c.to);
+  });
+}
+// the covenant's one-line commentary: who got whom, and the verdict once the
+// Gazette is willing to give one
+function covenantTradeLine(recs) {
+  const sides = [...new Set(recs.map(r => r.managerId))];
+  const got = mid => recs.filter(r => r.managerId === mid)
+    .map(r => PLAYER_BY_ID[r.inId]?.name).filter(Boolean).join(' and ') || '—';
+  const swap = sides.map(mid => `<b>${esc(teamName(mid))}</b> got ${esc(got(mid))}`).join(' &middot; ');
+  const wf = transferWindowFacts(recs[0], 3);
+  const verdict = wf ? ` &mdash; ${esc(transferVerdict(wf, wf.gws.length))} for ${esc(teamName(recs[0].managerId))}` : '';
+  return `<div class="lrow muted" style="font-size:11.5px;flex-wrap:wrap">
+    <span class="business-mark business-trade" aria-hidden="true">&#8644;</span>
+    <span>their trade that week: ${swap}${verdict}</span></div>`;
 }
 
 // the post-waivers snapshot (Ben, UAT night: "there should be recent
