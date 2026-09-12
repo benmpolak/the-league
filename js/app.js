@@ -8716,7 +8716,7 @@ function viewTransfers() {
       <h2>The Covenant Register <span class="tag">the offline bits, on the record</span></h2>
       <p class="muted" style="font-size:12px;margin-bottom:10px">Loan-backs, first refusals, "you owe me one" — record it here so nobody can deny it in GW30. Witnessed by the Committee. Enforced by the group chat.</p>
       ${[...toArr(state.covenants)].reverse().map(c => `<div class="lrow" style="font-size:12.5px;flex-wrap:wrap">
-        <span class="muted">GW${c.gw ?? '?'}</span>
+        <span class="muted">GW${covenantGwNo(c)}</span>
         <span><b>${esc(managerName(c.from))}</b> &harr; <b>${esc(managerName(c.to))}</b>: &#128220; ${esc(c.text)}</span>
       </div>${covenantTrades(c).map(covenantTradeLine).join('')}`).join('') || '<p class="muted" style="font-size:12px">No covenants recorded. Suspiciously clean.</p>'}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -8778,11 +8778,22 @@ function viewTransfers() {
       const head = sides.length
         ? sides.map(teamBtn).join('<span class="business-mark business-trade" aria-hidden="true">&#8644;</span>')
         : teamBtn(t.managerId);
+      /* the side-terms the deal was struck on (Marc, 12 Sept 2026: "i want the
+         terms to be shown here"). They live on the trade, not on the transfer
+         records, and the server also mints the covenant out of them — so this
+         is the same sentence the Covenant Register holds, printed where the
+         deal is. A trade without terms was struck on nothing and says nothing. */
+      const terms = recs.length > 1
+        ? (state.trades || []).find(x => String(x.id) === String(t.trade))?.terms
+        : '';
+      const termsRow = terms
+        ? `<div class="hist-terms muted" style="font-size:11.5px">&#128220; ${esc(terms)}</div>`
+        : '';
       const flow = sides.length
         ? sides.map(mid => `<div class="hist-flow">
             <span class="business-label business-label-in">&#8593; ${esc(teamName(mid))} GETS</span>
             ${recs.filter(r => r.managerId === mid).map(r => pbit(PLAYER_BY_ID[r.inId], 'hist-in')).join(' ')}
-          </div>`).join('')
+          </div>`).join('') + termsRow
         : `<div class="hist-flow">
             <span class="business-label business-label-in">&#8593; IN</span> ${pbit(PLAYER_BY_ID[t.inId], 'hist-in')}
             <span class="business-label business-label-out">&#8595; OUT</span> ${pbit(PLAYER_BY_ID[t.outId], 'hist-out')}
@@ -9889,8 +9900,25 @@ function tradeReportCardHtml(recs) {
    deal" would be worse than saying nothing.
    NB covenants store the gameweek NUMBER and transfers store the INDEX — a
    join on the raw field matches the wrong week and looks convincing. */
+/* A covenant's gameweek is not one thing, and the two writers disagree.
+   The SERVER mints a covenant from a trade's side-terms (functions/index.js,
+   tradeRespond) and stamps `gw: currentGwIndex()` — an INDEX — along with the
+   trade id. The CLIENT, when somebody records one by hand, stamps
+   `gw: GAMEWEEKS[cur].n` — a NUMBER — and no trade id. Both are small integers
+   and nothing else tells them apart, so the trade id is the discriminator.
+   Read every covenant gameweek through here: the register was printing GW3
+   against a GW4 deal, and a join on the raw field misses by exactly one. */
+const covenantGwIndex = c => (c && c.trade != null)
+  ? c.gw
+  : GAMEWEEKS.findIndex(g => g.n === c?.gw);
+const covenantGwNo = c => GAMEWEEKS[covenantGwIndex(c)]?.n ?? c?.gw ?? '?';
 function covenantTrades(c) {
-  const gi = GAMEWEEKS.findIndex(g => g.n === c.gw);
+  // a covenant born of a trade carries its id, which beats any guess by week
+  if (c.trade != null) {
+    const recs = state.transfers.filter(t => t.trade && String(t.trade) === String(c.trade));
+    return recs.length ? [recs] : [];
+  }
+  const gi = covenantGwIndex(c);
   if (gi < 0) return [];
   const byTrade = {};
   for (const t of state.transfers) {
