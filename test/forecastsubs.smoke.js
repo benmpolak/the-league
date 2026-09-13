@@ -64,17 +64,20 @@ let pass = 0, fail = 0;
       const cnt = xiCounts(lineupFor(mid, GW));
       const slack = ['FW', 'MF', 'DF'].find(pos => cnt[pos] > XI_RULES[pos][0]);
       const out = xi.find(p => p.pos === slack) || xi[10];
-      // every fixture still to come...
-      state.fixtures = [];
-      for (let k = 0; k + 1 < TEAMS.length; k += 2)
-        state.fixtures.push({ id: 500 + k, gw: g.n, home: TEAMS[k].name, away: TEAMS[k + 1].name,
+      // The injured man's club has already played — against a club NOBODY in
+      // this squad plays for. Pairing the clubs alphabetically finished Aston
+      // Villa's game for Arsenal too, and the day the demo XI dealt an Arsenal
+      // man (13 Sep, Timber) the forecast replaced HIM first and had nobody
+      // left for our striker: ten reds, and the release gate shut the site.
+      const squadTeams = new Set([...xi, ...bench].map(p => p.team));
+      const foe = TEAMS.find(t => t.name !== out.team && !squadTeams.has(t.name)) || TEAMS.find(t => t.name !== out.team);
+      state.fixtures = [{ id: 500, gw: g.n, home: out.team, away: foe.name,
+        date: new Date(Date.now() - 5 * 36e5).toISOString(), started: true, minutes: 90, finished: true }];
+      // ...and every other fixture still to come
+      const rest = TEAMS.filter(t => t.name !== out.team && t.name !== foe.name);
+      for (let k = 0; k + 1 < rest.length; k += 2)
+        state.fixtures.push({ id: 502 + k, gw: g.n, home: rest[k].name, away: rest[k + 1].name,
           date: new Date(Date.now() + 2 * 864e5).toISOString(), started: false, minutes: 0, finished: false });
-      // ...except the one the injured man's club has already played
-      for (const f of state.fixtures)
-        if (f.home === out.team || f.away === out.team) {
-          f.date = new Date(Date.now() - 5 * 36e5).toISOString();
-          f.started = true; f.minutes = 90; f.finished = true;
-        }
       /* The replacement's club must still be TO PLAY, and "not a club-mate" was
          not enough: finishing the injured man's fixture finishes it for his
          OPPONENT too, so a bench man from the other side of that one game was

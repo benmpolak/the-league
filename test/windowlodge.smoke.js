@@ -209,12 +209,20 @@ const chk = (name, ok, detail = '') => {
     const pen3 = lockedArrivals();
     const sq = squadAt(mid, transferGw());
     const goneMan = sq[3];
-    const live = [{ in: pen3[0].id, out: sq[0].id }];
+    // the healthy line must be one the desk would take: like for like, or the
+    // day the pen leads with a keeper (13 Sep, Arrizabalaga for B.Fernandes)
+    // the "control" line is illegal on shape and the check fails for the
+    // wrong reason
+    const liveOut = sq.find(x => x.pos === pen3[0].pos && x.id !== goneMan.id) || sq[0];
+    const live = [{ in: pen3[0].id, out: liveOut.id }];
     const stale = { in: pen3[1].id, out: goneMan.id };
     state.windowClaims = { [mid]: [...live, stale] };
     // now take that drop man off his squad, the way a waiver would
+    // like for like here too: a waiver that lands a third keeper leaves the
+    // squad illegal on its own, and every line after it fails on shape
+    const waiverIn = pen3.find(q => q.pos === goneMan.pos && q.id !== pen3[0].id && q.id !== pen3[1].id) || pen3[2];
     state.transfers = [...toArr(state.transfers),
-      { managerId: mid, inId: pen3[2].id, outId: goneMan.id, gw: transferGw(), waiver: true, t: Date.now() }];
+      { managerId: mid, inId: waiverIn.id, outId: goneMan.id, gw: transferGw(), waiver: true, t: Date.now() }];
     ok('(setup) the drop man on one line has left his squad',
       !squadAt(mid, transferGw()).some(x => x.id === goneMan.id), goneMan.name);
     ok('the stale line is now recognised as dead', !!deadWindowClaim(stale, mid), deadWindowClaim(stale, mid));
@@ -250,7 +258,8 @@ const chk = (name, ok, detail = '') => {
 
     // and ADDING works again from a list that held a dead line
     state.windowClaims = { [mid]: [stale] };
-    const addition = { in: pen3[0].id, out: squadAt(mid, transferGw())[0].id };
+    const sqNow = squadAt(mid, transferGw());
+    const addition = { in: pen3[0].id, out: (sqNow.find(x => x.pos === pen3[0].pos) || sqNow[0]).id };
     const additionReason = deadWindowClaim(addition, mid);
     setWindowClaims(mid, [stale, addition]);
     await new Promise(r => setTimeout(r, 40));
