@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # to cancel a wedged Pages deploy (see the last step)
 
 concurrency:
   group: fpl-refresh
@@ -38,3 +39,31 @@ jobs:
             git commit -m 'data: FPL refresh'
             git push
           fi
+      # 12-13 Sep: a "Deploy site to Pages" run sat in `waiting` on the
+      # github-pages environment for 18 hours (no reviewers, no wait timer —
+      # a GitHub-side stall). It held the no-cancel `pages` concurrency group,
+      # so every deploy after it queued behind it and was cancelled by the
+      # next refresh; the site served Saturday night's feed through Sunday's
+      # matches while every workflow stayed green. A real deploy takes about
+      # a minute and a queued one starts within five, so anything still
+      # waiting or pending after ten minutes is wedged: cancel it and the
+      # queue drains on its own. This refresh runs every five minutes, so it
+      # is the natural watchdog.
+      - name: Unwedge a stuck Pages deploy
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          now=$(date +%s)
+          for st in waiting pending; do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow=pages.yml --status "$st" --limit 10 \
+              --json databaseId,createdAt --jq '.[] | "\(.databaseId) \(.createdAt)"' |
+            while read -r id created; do
+              [ -n "$id" ] || continue
+              age=$(( now - $(date -d "$created" +%s) ))
+              if [ "$age" -gt 600 ]; then
+                echo "cancelling wedged Pages deploy $id ($st for ${age}s)"
+                gh run cancel "$id" --repo "$GITHUB_REPOSITORY" || true
+              fi
+            done
+          done

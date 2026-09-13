@@ -29,9 +29,16 @@ const LEAGUE = 'the-league-2627'; // the sandbox fakes its own matchdays (the Ch
   // `finished` flag hasn't — without it this loop ran all night on GW1
   const live = fixtures.find(f => f && f.started && !f.finished && !f.fp);
   if (!live) {
-    // nothing in play — clear a leftover overlay exactly once, then stand down
-    if ((await ref.get()).val() != null) { await ref.set(null); console.log('cleared stale liveStats'); }
-    else console.log('no live fixtures');
+    // nothing in play — stand down and LEAVE the overlay alone. This script
+    // used to clear it here, and on 13 Sep (Coventry v Brighton) that wiped
+    // the full-time picture one minute after the whistle while the Pages
+    // deploy was wedged on last night's feed: every phone lost the round's
+    // points ("the latest pts from brighton cov aren't there now", Ben). Same
+    // law as liveTick in functions/ since 28 Aug: the last live write IS the
+    // full-time picture; only a fresher canonical feed retires it (the client
+    // prefers the feed whenever feedGenerated is newer) and the next round's
+    // kickoff overwrites it.
+    console.log('no live fixtures');
     process.exit(3);
   }
   const gwN = live.gw;
