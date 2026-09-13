@@ -166,6 +166,11 @@ const chk = (name, ok, detail = '') => {
         pendingSubs(mid, GW).length === 0, JSON.stringify(pendingSubs(mid, GW)));
       ev.playerStats[spare.id] = played();
       whistle(spare.team);
+      // The demo squad has since grown a second keeper, so the bench can hold
+      // one ABOVE the spare who is idle with his club still to play — and then
+      // the shirt genuinely has no settled owner yet (Marc, 13 Sept). Settle
+      // him, or this is testing the queue rather than the shape rule it is for.
+      for (const k of bench) if (k.pos === 'GK' && k.id !== spare.id) whistle(k.team);
       const got = pendingSubs(mid, GW);
       t('a reserve keeper who played does take it',
         got.length === 1 && got[0].out === gk.id && got[0].in === spare.id, JSON.stringify(got));
@@ -196,6 +201,67 @@ const chk = (name, ok, detail = '') => {
         pendingSubs(mid, GW).length === 0 && pendingSubPoints(mid, GW) === 0);
       t('liveScoreHtml prints a bare number when nothing is owed',
         liveScoreHtml(mid, GW) === String(gwManagerPoints(mid, GW)), liveScoreHtml(mid, GW));
+    })();
+
+    /* ----- a solid arrow must not name a man who can still be leapfrogged -----
+       Marc, 13 Sept 2026: "This isnt correct. It could still be fernandez
+       pardo, the arrows shouldnt show until it is confirmed." Fernandez-Pardo
+       sat ABOVE Rúben in the bench order, a forward and so a legal swap, with
+       Newcastle not playing until the following night — and the app banked
+       Rúben as settled anyway, while the forecast underneath named
+       Fernandez-Pardo. Two arrows, two different men, at the same time. */
+    (() => {
+      // the demo bench rarely holds two men of a position by luck, so pick the
+      // XI deliberately: three of one position, one starting and two benched
+      const ev = baseline();
+      const mid = state.managers[0].id;
+      const squad = squadAt(mid, GW);
+      // three of a position at three DIFFERENT clubs: whistling the ghost's
+      // club and the sub's must not quietly whistle the idle man's as well,
+      // or the very thing under test is switched off by the setup
+      let trio = null;
+      for (const q of ['MF', 'DF', 'FW']) {
+        const of = squad.filter(x => x.pos === q);
+        for (let a = 0; a < of.length && !trio; a++)
+          for (let b2 = 0; b2 < of.length && !trio; b2++)
+            for (let c2 = 0; c2 < of.length && !trio; c2++) {
+              const pick = [of[a], of[b2], of[c2]];
+              if (new Set(pick.map(x => x.id)).size !== 3) continue;
+              if (new Set(pick.map(x => x.team)).size !== 3) continue;
+              trio = pick;
+            }
+        if (trio) break;
+      }
+      if (!trio) { t('setup: three men of one position at three clubs', false, 'none in this squad'); return; }
+      const pos = trio[0].pos;
+      const [dead, ahead, behind] = trio;
+      for (const m of trio) { m.status = 'a'; m.chance = null; }
+      // the best legal XI WITHOUT the two bench men, with `dead` forced into it
+      const xi = autoXI(squad.filter(x => x.id !== ahead.id && x.id !== behind.id));
+      if (!xi.includes(dead.id)) {
+        const k = xi.findIndex(id => PLAYER_BY_ID[id].pos === pos);
+        if (k >= 0) xi[k] = dead.id;
+      }
+      state.lineups[mid] = { [GW]: xi };
+      state.benchOrders[mid] = { [GW]: [ahead.id, behind.id] }; // ahead is FIRST
+      for (const id of xi) if (id !== dead.id) ev.playerStats[id] = played();
+      ev.playerStats[behind.id] = played();        // the lower man is already on
+      whistle(dead.team); whistle(behind.team);    // and both their clubs are done
+      t('setup: a ghost starter, an idle man above the sub, and his club still to play',
+        xi.includes(dead.id) && !appearedInGw(dead.id, GW) && clubRoundOver(dead, GAMEWEEKS[GW].n)
+        && !appearedInGw(ahead.id, GW) && !clubRoundOver(ahead, GAMEWEEKS[GW].n)
+        && appearedInGw(behind.id, GW),
+        `${dead.name} out; ${ahead.name} (${ahead.club}) idle; ${behind.name} on`);
+      t('no certain sub while a man above him can still get on',
+        pendingSubs(mid, GW).length === 0, JSON.stringify(pendingSubs(mid, GW)));
+      t('and no solid arrow is drawn for it',
+        !/sub-arrow (in|out) pend/.test(Object.values(subMarks(mid, GW)).join(' ')));
+      // the forecast may still name him: it is an outline, and says as much
+      whistle(ahead.team);
+      const after = pendingSubs(mid, GW);
+      t('once his club has played and he never appeared, the sub is certain again',
+        after.length === 1 && after[0].out === dead.id && after[0].in === behind.id,
+        JSON.stringify(after));
     })();
 
     /* ----- the arrows name the partner, at BOTH ends ----- */

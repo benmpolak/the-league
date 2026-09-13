@@ -3446,8 +3446,19 @@ function pendingSubs(mid, gwIdx, base) {
   // A blank gameweek (no fixture at all) proves nothing — he can't be replaced
   // on the evidence of a match that was never played.
   const clubDone = pid => clubRoundOver(PLAYER_BY_ID[pid], gwN);
-  // certainly in: he is already on the pitch, or has been
-  const bench = benchFor(mid, gwIdx).filter(p => appearedInGw(p.id, gwIdx));
+  const ruledOut = p => !!(p && p.status && p.status !== 'a' && p.status !== 'd');
+  /* A bench man who has not played YET but still might is the reason this can
+     no longer take the first man who happens to have kicked a ball.
+     Marc, 13 Sept 2026, of a solid arrow banking Rúben for Gyökeres: "This
+     isnt correct. It could still be fernandez pardo, the arrows shouldnt show
+     until it is confirmed." He was right. Fernandez-Pardo sat ABOVE Rúben in
+     the bench order, is a forward and so a legal swap for Gyökeres, and
+     Newcastle were not playing until the following night — so if he gets on,
+     the shirt is his and Rúben never moves. Filtering the bench down to men
+     who had already appeared made him invisible and dressed a guess up as
+     settlement: a solid arrow says "his points land at the final whistle". */
+  const couldStillPlay = p => p && !appearedInGw(p.id, gwIdx) && !clubDone(p.id) && !ruledOut(p);
+  const bench = benchFor(mid, gwIdx);
   const subs = [];
   for (const pid of [...xi]) {
     if (appearedInGw(pid, gwIdx) || !clubDone(pid)) continue;
@@ -3458,16 +3469,17 @@ function pendingSubs(mid, gwIdx, base) {
       trial[idx] = cand.id;
       const c = xiCounts(trial);
       const shapeOk = ['GK', 'DF', 'MF', 'FW'].every(pos => c[pos] >= XI_RULES[pos][0] && c[pos] <= XI_RULES[pos][1]);
-      if (shapeOk) {
-        xi[idx] = cand.id;
-        subs.push({ out: pid, in: cand.id });
-        break;
-      }
+      if (!shapeOk) continue;                        // he could never take this shirt
+      if (couldStillPlay(cand)) break;               // and it is not yet known who does
+      if (!appearedInGw(cand.id, gwIdx)) continue;   // he cannot play at all: pass him over
+      xi[idx] = cand.id;
+      subs.push({ out: pid, in: cand.id });
+      break;
     }
   }
-  // a starter whose own club is still to play could yet fail to appear and
-  // take a bench man ahead of these — so the final pairings can differ from
-  // these, even though the count and the points rarely do
+  // What survives is the pairing nobody above it can take. A starter whose own
+  // club is still to play could yet fail to appear and add a sub below these,
+  // but he cannot change one of these.
   return subs;
 }
 // the eleven the projection should believe in: settled subs plus certain ones.
