@@ -255,7 +255,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     state.transfers.length = n;
     state.draftPool = keepPool;
     const inPreview = previewArticle(gw3, (arr, seed) => arr[seed % arr.length]);
-    const result = { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 1), deterministic: Gazette.frontPage(gw3) === a,
+    const result = { others: Gazette.frontPage(gw3 - 1) + Gazette.frontPage(gw3 + 2) /* GW4 carries the Complaints Desk (13 Sep) */, deterministic: Gazette.frontPage(gw3) === a,
       letters: /LETTERS TO THE EDITOR/.test(a) && /SEE MY FOURTEEN/.test(a), lead: /FORTUNE FAVOURS THE BRAVE/.test(a),
       noWindowOnFriday: !/WINDOW WAIVER/.test(a) && !/WINDOW WAIVER/.test(postFront),
       escaped: !/<script>/.test(hostile) && /&lt;script&gt;/.test(hostile), pre, penSize: pen.length,
@@ -266,7 +266,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     if (ev) ev.final = savedFinal;
     return result;
   });
-  chk('commissioned front page prints only for GW3, deterministically, with the lead and the letters',
+  chk('commissioned front page prints only for commissioned rounds, deterministically, with the lead and the letters',
     fp.others === '' && fp.deterministic && fp.letters && fp.lead && fp.noWindowOnFriday, JSON.stringify(fp));
   chk('commissioned front page escapes manager-controlled text', fp.escaped, JSON.stringify(fp));
   chk('window waiver special previews the pen, order and rules, then follows the ledger once it has run', fp.pre && fp.post, JSON.stringify(fp));

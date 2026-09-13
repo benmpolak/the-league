@@ -1139,8 +1139,120 @@ window.Gazette = (() => {
     } catch (e) { return ''; }
   }
 
+  /* ---------- the Complaints Desk: the GW4 matchday edition ----------
+     Sunday 13 Sept, 19:36, the group chat, between the derby and dinner.
+     Alex Singer: "64, 41, 38, 47. The scores against me so far this season.
+     Is that a record?!" Lee Warner, twelve seconds later: "Here he is."
+     Alex Duckett: "Constantly moaning." Singer: "The Wirtz luck ever."
+     Ian Tussie: "Maybe pick better players son x." Ben, 13 Sept: "get this
+     in the gazette tomorrow". Every number is read from the ledger at press
+     time — the fourth score keeps counting until Leeds v Newcastle is done —
+     and the record is checked against the archive, not asserted. */
+  function singerRecord(gwIdx) {
+    try {
+      const alex = state.managers.find(m => /singer/i.test(managerName(m.id)));
+      if (!alex) return '';
+      const find = re => state.managers.find(m => re.test(managerName(m.id)));
+      const lee = find(/warner/i), duck = find(/duckett/i), ian = find(/tussie/i), marc = find(/conway/i);
+      const nm = (m, fb) => esc(m ? managerName(m.id) : fb);
+      const N = esc(managerName(alex.id)), T = esc(teamName(alex.id));
+      const oppOf = (mid, i) => { const pr = pairingsFor(i).find(x => x.includes(mid)); return pr ? (pr[0] === mid ? pr[1] : pr[0]) : null; };
+      // this season, round by round, the live round included
+      const rounds = [];
+      for (let i = 0; i <= gwIdx; i++) {
+        const st = gwStatus(i);
+        if (st !== 'final' && st !== 'live') continue;
+        const op = oppOf(alex.id, i);
+        if (op == null) continue;
+        rounds.push({ i, op, pf: gwManagerPoints(alex.id, i), pa: gwManagerPoints(op, i), live: st === 'final' ? false : true });
+      }
+      const n = rounds.length;
+      if (n < 2) return '';
+      const total = rounds.reduce((t, r) => t + r.pa, 0);
+      const forTotal = rounds.reduce((t, r) => t + r.pf, 0);
+      const stillLive = rounds.some(r => r.live);
+      // everyone, over the same rounds
+      const sumAgainst = mid => rounds.reduce((t, r) => { const op = oppOf(mid, r.i); return t + (op == null ? 0 : gwManagerPoints(op, r.i)); }, 0);
+      const sumFor = mid => rounds.reduce((t, r) => t + gwManagerPoints(mid, r.i), 0);
+      const against = state.managers.map(m => ({ id: m.id, t: sumAgainst(m.id) })).sort((a, b) => b.t - a.t);
+      const forRows = state.managers.map(m => ({ id: m.id, t: sumFor(m.id) })).sort((a, b) => b.t - a.t);
+      const forRank = forRows.findIndex(x => x.id === alex.id) + 1;
+      const others = against.filter(x => x.id !== alex.id);
+      const avg = others.reduce((t, x) => t + x.t, 0) / Math.max(1, others.length);
+      const runnerUp = against.find(x => x.id !== alex.id);
+      // Marc's point, tested: everyone loses their worst afternoon, then rank again
+      const worstOf = mid => rounds.reduce((w, r) => { const op = oppOf(mid, r.i); return Math.max(w, op == null ? 0 : gwManagerPoints(op, r.i)); }, 0);
+      const trimmed = state.managers.map(m => ({ id: m.id, t: sumAgainst(m.id) - worstOf(m.id) })).sort((a, b) => b.t - a.t);
+      const trimmedRank = trimmed.findIndex(x => x.id === alex.id) + 1;
+      const big = Math.max(...rounds.map(r => r.pa));
+      const restAvg = n > 1 ? Math.round((total - big) / (n - 1)) : 0;
+      const table = h2hStandings(false, gwIdx + 1);
+      const pos = table.findIndex(r => r.id === alex.id) + 1;
+      // the archive: the worst opening n rounds anyone has suffered, the worst
+      // n in a row, and the worst single afternoon
+      const hist = (typeof LEAGUE_HISTORY !== 'undefined' && Array.isArray(LEAGUE_HISTORY)) ? LEAGUE_HISTORY : [];
+      let open = null, single = null, run = null;
+      for (const s of hist) {
+        const per = {};
+        const who = k => (s.managers && s.managers[k] && s.managers[k].name) || 'a manager since departed';
+        for (const [gw, a, b, sa, sb] of (s.matches || [])) {
+          (per[a] = per[a] || []).push([gw, sb]); (per[b] = per[b] || []).push([gw, sa]);
+          for (const [k, got] of [[a, sb], [b, sa]]) if (!single || got > single.v) single = { v: got, gw, name: who(k), season: s.season };
+        }
+        for (const [k, v] of Object.entries(per)) {
+          v.sort((x, y) => x[0] - y[0]);
+          const first = v.filter(x => x[0] <= n).map(x => x[1]);
+          if (first.length === n) { const t = first.reduce((a, b) => a + b, 0); if (!open || t > open.v) open = { v: t, scores: first, name: who(k), season: s.season }; }
+          const sc = v.map(x => x[1]);
+          for (let j = 0; j + n <= sc.length; j++) { const t = sc.slice(j, j + n).reduce((a, b) => a + b, 0); if (!run || t > run.v) run = { v: t, from: v[j][0], name: who(k), season: s.season }; }
+        }
+      }
+      const same = (a, b) => a && b && String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+      const isRecord = !open || total > open.v;
+      const scoresTxt = rounds.map(r => r.pa).join(', ');
+      // Wirtz, since he raised him
+      const wirtz = Object.values(PLAYER_BY_ID).find(p => /wirtz/i.test(p.name));
+      let wirtzPts = null;
+      if (wirtz) {
+        wirtzPts = 0; let fielded = 0;
+        for (const r of rounds) if (effectiveXI(alex.id, r.i).xi.includes(wirtz.id)) { fielded++; wirtzPts += gwPlayerPoints(wirtz.id, r.i); }
+        if (!fielded) wirtzPts = null;
+      }
+      const by = press(['colour'], 'singer:by');
+      const ord = k => `${k}${['th', 'st', 'nd', 'rd'][(k % 100 > 10 && k % 100 < 14) ? 0 : Math.min(k % 10, 4) % 4] || 'th'}`;
+      const head = isRecord ? 'IS THAT A RECORD?! THE GAZETTE REGRETS TO CONFIRM' : 'IS THAT A RECORD?! THE GAZETTE REGRETS: NOT QUITE';
+      const deck = `${scoresTxt} against ${T}${stillLive ? ', and the last of those is still counting' : ''}. ${N} put the question to the group at 19:36 on Sunday. The Committee has been to the ledger, and the ledger has been to the archive.`;
+      const ledger = rounds.map(r => `GW${GAMEWEEKS[r.i].n}: ${esc(teamName(r.op))} ${r.pa}, ${T} ${r.pf}${r.pa > r.pf ? ', lost' : r.pa < r.pf ? ', and he WON' : ', a draw'}${r.live ? ' (in play)' : ''}`);
+      const paras = [
+        `The message arrived at 19:36 on Sunday, between the derby and dinner: “64, 41, 38, 47. The scores against me so far this season. Is that a record?!” Twelve seconds later, ${nm(lee, 'Lee Warner')}: “Here he is.” ${nm(duck, 'Alex Duckett')}: “Constantly moaning.” ${N}, in his defence: “The Wirtz luck ever.” ${nm(ian, 'Ian Tussie')}, closing the correspondence: “Maybe pick better players son x.” The Gazette prints the exchange in full because it is the most the league has agreed on anything since the Window Waiver.`,
+        `First, the numbers, which are ${N}’s own and check out. Over ${n} rounds ${T} have had ${total} put past them${stillLive ? ', with this round still in play' : ''}. The other eleven have conceded an average of ${Math.round(avg)}. Nobody else is above ${runnerUp ? `${runnerUp.t} (${esc(teamName(runnerUp.id))})` : 'him'}. It is not that the league is scoring freely; it is that the league is scoring freely at him.`,
+        `${nm(marc, 'Marc Conway')}, from the Committee’s statistical wing: “${big} doing a lot of the heavy lifting there.” The Gazette has run it. Without the ${big}, the other ${n - 1} rounds average ${restAvg} against, which is ${restAvg > avg / n + 3 ? 'still above the league’s average afternoon' : 'roughly the league’s average afternoon'}. Strip every manager of his single worst afternoon, so that nobody is carrying a freak, and ${T} are ${trimmedRank === 1 ? 'STILL the most shot-at side in the league. The heavy lifting has help.' : `${ord(trimmedRank)} for points conceded. ${nm(marc, 'Conway')} is right: it is one afternoon, and it happened to be the first one.`}`,
+        open
+          ? (isRecord
+            ? `Is it a record? The archive holds one full season of ledger, ${esc(open.season)}, and the worst opening ${n} rounds anybody suffered in it came to ${open.v} — ${open.scores.join(', ')}. ${same(open.name, managerName(alex.id)) ? `The holder of that record was ${N}. He has broken his own record, which is the loneliest kind of history there is.` : `That was ${esc(open.name)}. ${N} has passed him${stillLive ? ', and is still going' : ''}.`}`
+            : `Is it a record? Not yet. The archive holds one full season of ledger, ${esc(open.season)}, and the worst opening ${n} rounds in it came to ${open.v} — ${open.scores.join(', ')} — against ${same(open.name, managerName(alex.id)) ? `${N} himself, who is therefore chasing his own record` : esc(open.name)}. He is ${open.v - total} short${stillLive ? ' with a game still running, so the Gazette will keep the page open' : ''}.`)
+          : `Is it a record? The archive is not loaded on this device, so the Gazette declines to say, which is more than the group chat managed.`,
+        single && run
+          ? `${nm(lee, 'Lee Warner')}’s contribution was two words, and the archive has a note on the author. The most points ever conceded in a single afternoon in this league is ${single.v}, in GW${single.gw} of ${esc(single.season)}, by ${esc(single.name)}. The worst ${n} rounds in a row anyone has endured is ${run.v}, from GW${run.from}, ${same(run.name, single.name) ? 'the same man' : `by ${esc(run.name)}`}.${same(single.name, lee ? managerName(lee.id) : '') ? ' Here he is.' : ''}`
+          : '',
+        `On the “Wirtz luck”: ${wirtz ? (wirtzPts == null ? `${N} does not appear to have fielded ${esc(wirtz.name)} this season, so the Gazette assumes the phrase was a pun and has let it stand.` : `${esc(wirtz.name)} has returned ${wirtzPts} for ${T} in the rounds he was fielded, which is ${wirtzPts >= 6 * n ? 'not the problem' : 'not nothing, and not the problem either'}. The problem is the other end.`) : 'the sub-editors have let it stand.'} For the record ${T} have scored ${forTotal} themselves, ${ord(forRank)} in the league over the same rounds, and sit ${ord(pos)} in the table. ${forRank <= 4 ? `${nm(ian, 'Tussie')}’s prescription is therefore unfair: the players are fine. It is the fixture computer he should be writing to, and the fixture computer does not take letters.` : `${nm(ian, 'Tussie')}’s prescription is, on the evidence, sound medical advice.`}`,
+        `The Committee’s finding is that it is ${isRecord ? 'a record' : 'nearly a record'}, that it is ${forRank <= 4 ? 'not his fault' : 'not entirely his fault'}, and that both of those things being true is exactly what makes it funny. ${stillLive ? 'The fourth number is still moving. Leeds v Newcastle on Monday night may add to it, and this page will update itself without being asked, which is more than the Complaints Desk can say for its correspondent.' : 'The Complaints Desk is now closed.'}`,
+      ].filter(Boolean);
+      return `<div class="prog-story prog-lead-story prog-complaints">
+        <div class="prog-story-kicker">THE COMPLAINTS DESK · ${T}</div>
+        <div class="prog-head">${head}</div>
+        <div class="prog-by">By ${esc(by.n)} · from the group chat, 19:36 Sunday</div>
+        <p class="prog-deck">${esc(deck)}</p>
+        ${paras.map(p => `<p>${p}</p>`).join('')}
+        <div class="prog-int-q">The ledger, as it stands</div>
+        ${ledger.map(l => `<p>${l}</p>`).join('')}
+      </div>`;
+    } catch (e) { return ''; }
+  }
+
   const COMMISSIONS = {
     3: gwIdx => luckStory(gwIdx) + managerInFocus(gwIdx) + lettersPage(gwIdx),
+    4: gwIdx => singerRecord(gwIdx),
   };
   /* BREAKING: a story that goes to press in the REVIEW edition of the named
      gameweek — the paper on the dashboard between a round settling and the
