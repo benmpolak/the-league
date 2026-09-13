@@ -10878,8 +10878,17 @@ function previewArticle(i, pick) {
   // edition-specific splash that prints above the fixtures, so its headline
   // is the one the dashboard lifts
   const front = (typeof Gazette !== 'undefined' && Gazette.frontPage) ? Gazette.frontPage(i) : '';
+  // no commission this week? The paper still needs a headline: the dashboard
+  // front page lifts the first .prog-head, and GW4 (13 Sep) went to press with
+  // a "LEAD STORY" label over an empty slot. The tie of the round writes it.
+  const splash = /prog-head/.test(front + sitdown) ? '' : `<div class="prog-head">${esc(pick([
+    `ALL ROADS LEAD TO ${stadium(motw.a)}`,
+    `${teamName(motw.a)} V ${teamName(motw.b)}: THE TIE OF THE ROUND`,
+    `${teamName(fav)} ${favPct}% FAVOURITES. ${teamName(dog)} HAVE READ WORSE FORECASTS`,
+    `${teamName(motw.b)} GO TO ${stadium(motw.a)} WITH THE COMMITTEE WATCHING`,
+  ], i + 3).toUpperCase())}</div>`;
   return `<div class="prog-art">
-    ${front}
+    ${front}${splash}
     <p class="prog-lead">${esc(lead)}</p>
     <p>${esc(numbers)}${esc(men)}${esc(dugouts)}</p>
     ${draftRecap ? `<p>${esc(draftRecap)}</p>` : ''}
