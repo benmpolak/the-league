@@ -11138,6 +11138,8 @@ function viewData() {
   ${fixtureMatrixCard()}
   ${sect('League data')}
   ${pointsGridCard(standings)}
+  ${rankGridCard(standings)}
+  ${averagesCard(standings)}
   ${crystalBallCard(standings)}
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
@@ -11299,60 +11301,106 @@ const statSd = a => {
   const m = statMean(a);
   return Math.sqrt(a.reduce((t, x) => t + (x - m) ** 2, 0) / a.length);
 };
-function pointsGridCard(standings) {
+function gwColumns() {
   const gws = [];
   for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final' || gwStatus(i) === 'live') gws.push(i);
+  return gws;
+}
+const gwHead = i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`;
+function pointsGridCard(standings) {
+  const gws = gwColumns();
   if (!gws.length) return '';
   const scores = {};
   for (const r of standings) scores[r.id] = gws.map(i => gwManagerPoints(r.id, i));
   const hi = gws.map((_, k) => Math.max(...standings.map(r => scores[r.id][k])));
-  /* Marc, 14 Sept 2026: "mean, median and standard deviation... on both axes...
-     I think this will be useful to see how different each week was to each
-     other as well as each person."
-     Down a column reads the league in one week: a high SD is a week that split
-     everybody, a low one a week nobody won. Across a row reads one manager over
-     the season: the same average with half the spread is a steadier side.
-     A round still IN PLAY is excluded from a manager's own three numbers — a
-     half-finished week would drag his average for no reason — but it is kept in
-     the column figures, where all twelve are equally half-finished and the
-     comparison still holds. */
-  const liveCol = gws.map(i => gwStatus(i) === 'live');
-  const settledOf = id => scores[id].filter((_, k) => !liveCol[k]);
-  const anySettled = liveCol.some(v => !v);
-  const num = (v, dp = 1) => (Number.isFinite(v) ? v.toFixed(dp) : '&mdash;');
-  const rowStat = (id, fn) => (anySettled ? num(fn(settledOf(id))) : '&mdash;');
-  const colOf = k => standings.map(r => scores[r.id][k]);
   const totals = standings.map(r => scores[r.id].reduce((t, x) => t + x, 0));
-  // the marginals, computed down every column including the summary ones, so
-  // "Mean" under "Mean" is the league's average week and reads as it should
-  const footRows = [
-    ['Total', a => a.reduce((t, x) => t + x, 0), 0],
-    ['Mean', statMean, 1],
-    ['Median', statMedian, 1],
-    ['SD', statSd, 1],
-  ];
-  const liveNote = liveCol.some(Boolean) ? ' &middot; a round in play is left out of each manager&rsquo;s own figures' : '';
+  // Marc, 15 Sept 2026: "remove mean median and sd along the bottom. I think
+  // its too much and too confusing." The per-week TOTAL stays — that was the
+  // other half of his original ask — and the three averages moved to a card of
+  // their own, where there is room to say what they mean.
   return `<div class="card" style="margin-bottom:18px">
     <h2>Points, Week by Week</h2>
     <div style="overflow-x:auto">
     <table class="pool-table" style="font-size:12px">
-      <thead><tr><th>Team</th>${gws.map(i => `<th class="num" title="${esc(GAMEWEEKS[i].label)}${gwStatus(i) === 'live' ? ' — in play' : ''}">${GAMEWEEKS[i].n}${gwStatus(i) === 'live' ? '&#8226;' : ''}</th>`).join('')}<th class="num act">Total</th><th class="num" title="This manager's average score across the settled weeks">Mean</th><th class="num" title="His middle score — unlike the mean, one freak week cannot drag it">Median</th><th class="num" title="How far his weeks sit from his own average. Low is a steady side, high is a streaky one">SD</th></tr></thead>
+      <thead><tr><th>Team</th>${gws.map(gwHead).join('')}<th class="num act">Total</th></tr></thead>
       <tbody>${standings.map((r, ri) => `<tr>
         <td style="white-space:nowrap"><b>${esc(r.team || r.name)}</b></td>
         ${gws.map((i, k) => `<td class="num ${scores[r.id][k] === hi[k] && hi[k] > 0 ? 'gold' : 'muted'}">${scores[r.id][k]}</td>`).join('')}
         <td class="num act" style="font-weight:700">${totals[ri]}</td>
-        <td class="num muted">${rowStat(r.id, statMean)}</td>
-        <td class="num muted">${rowStat(r.id, statMedian)}</td>
-        <td class="num muted">${rowStat(r.id, statSd)}</td>
       </tr>`).join('')}</tbody>
-      <tfoot>${footRows.map(([label, fn, dp], fi) => `<tr>
-        <td style="white-space:nowrap;${fi === 0 ? 'border-top:2px solid var(--line)' : ''}"><b class="muted">${label}</b></td>
-        ${gws.map((_, k) => `<td class="num muted" style="${fi === 0 ? 'border-top:2px solid var(--line)' : ''}">${num(fn(colOf(k)), dp)}</td>`).join('')}
-        <td class="num act" style="${fi === 0 ? 'border-top:2px solid var(--line)' : ''}">${num(fn(totals), dp)}</td>
-        ${[statMean, statMedian, statSd].map(rf => `<td class="num muted" style="${fi === 0 ? 'border-top:2px solid var(--line)' : ''}">${anySettled ? num(fn(standings.map(r => rf(settledOf(r.id)))), dp) : '&mdash;'}</td>`).join('')}
-      </tr>`).join('')}</tfoot>
+      <tfoot><tr>
+        <td style="white-space:nowrap;border-top:2px solid var(--line)"><b class="muted">Total</b></td>
+        ${gws.map((_, k) => `<td class="num muted" style="border-top:2px solid var(--line)">${standings.reduce((t, r) => t + scores[r.id][k], 0)}</td>`).join('')}
+        <td class="num act" style="border-top:2px solid var(--line)">${totals.reduce((t, x) => t + x, 0)}</td>
+      </tr></tfoot>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:8px">Down a column is the league in one week; across a row is one manager over the season${liveNote}.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">The bottom row is everything the league scored that week &mdash; a high one was a week that suited everybody.</p>
+  </div>`;
+}
+/* ----- the same grid, read as places rather than points ----- */
+// Marc, 15 Sept 2026: "a new card called Ranking, week by week... just showing
+// the rank from 1-12 in each gameweek". 62 points means nothing on its own; 62
+// for first place in a low week and 62 for eleventh in a high one are opposite
+// afternoons, and this is the card that tells them apart.
+// Ties share the higher place and then skip, the way a league table does: two
+// men level on the week are both 4th and the next man is 6th.
+function rankGridCard(standings) {
+  const gws = gwColumns();
+  if (!gws.length) return '';
+  const ranks = {};
+  for (const r of standings) ranks[r.id] = [];
+  gws.forEach((i, k) => {
+    const col = standings.map(r => ({ id: r.id, pts: gwManagerPoints(r.id, i) }))
+      .sort((a, b) => b.pts - a.pts);
+    // the first man on this score sets the place, so equals share it
+    for (const row of col) ranks[row.id][k] = col.findIndex(x => x.pts === row.pts) + 1;
+  });
+  const ord = n => (n === 1 ? '1st' : n === 2 ? '2nd' : n === 3 ? '3rd' : `${n}th`);
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>Ranking, Week by Week</h2>
+    <div style="overflow-x:auto">
+    <table class="pool-table" style="font-size:12px">
+      <thead><tr><th>Team</th>${gws.map(gwHead).join('')}</tr></thead>
+      <tbody>${standings.map(r => `<tr>
+        <td style="white-space:nowrap"><b>${esc(r.team || r.name)}</b></td>
+        ${gws.map((i, k) => `<td class="num ${ranks[r.id][k] === 1 ? 'gold' : 'muted'}" title="${esc(ord(ranks[r.id][k]))} of ${standings.length} in GW${GAMEWEEKS[i].n} on ${gwManagerPoints(r.id, i)}">${ranks[r.id][k]}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Where each manager finished among the twelve that week. Level scores share the higher place.</p>
+  </div>`;
+}
+/* ----- the three averages, off the ends of the points grid ----- */
+// Marc, 15 Sept 2026: "change the mean, median and sd from the ends of the
+// current card to a new card showing averages."
+function averagesCard(standings) {
+  const gws = gwColumns().filter(i => gwStatus(i) === 'final');
+  if (!gws.length) return '';
+  // settled weeks only: a round still in play would drag an average for no
+  // reason other than being half-finished
+  const of = id => gws.map(i => gwManagerPoints(id, i));
+  const rows = standings.map(r => {
+    const a = of(r.id);
+    return { team: r.team || r.name, mean: statMean(a), median: statMedian(a), sd: statSd(a) };
+  });
+  const best = Math.max(...rows.map(r => r.mean));
+  const steadiest = Math.min(...rows.map(r => r.sd));
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>Averages <span class="muted" style="font-weight:400;font-size:12px">${gws.length} settled gameweek${gws.length === 1 ? '' : 's'}</span></h2>
+    <div style="overflow-x:auto">
+    <table class="pool-table">
+      <thead><tr><th>Team</th>
+        <th class="num" title="Average score across the settled weeks">Mean</th>
+        <th class="num" title="The middle week — unlike the mean, one freak score cannot drag it">Median</th>
+        <th class="num" title="How far the weeks sit from that manager's own average. Low is a steady side, high is a streaky one">SD</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td style="white-space:nowrap"><b>${esc(r.team)}</b></td>
+        <td class="num ${r.mean === best ? 'gold' : 'muted'}">${r.mean.toFixed(1)}</td>
+        <td class="num muted">${r.median.toFixed(1)}</td>
+        <td class="num ${r.sd === steadiest && gws.length > 1 ? 'gold' : 'muted'}">${r.sd.toFixed(1)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Mean above median is a side carried by its best weeks. ${gws.length > 1 ? 'The lowest SD is the most predictable manager in the league &mdash; for better or worse.' : 'SD needs more than one week to say anything.'}</p>
   </div>`;
 }
 /* ----- the Crystal Ball: luck, playoff odds, points left on bench ----- */
