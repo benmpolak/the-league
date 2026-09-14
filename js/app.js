@@ -11399,6 +11399,10 @@ function averagesCard(standings) {
     return { team: r.team || r.name, mean: statMean(a), median: statMedian(a), sd: statSd(a) };
   });
   const best = Math.max(...rows.map(r => r.mean));
+  // the highest median too (Marc, 15 Sept 2026) — the man with the best
+  // ORDINARY week, which is a different claim from the best average and not
+  // always the same manager
+  const bestMedian = Math.max(...rows.map(r => r.median));
   const steadiest = Math.min(...rows.map(r => r.sd));
   return `<div class="card" style="margin-bottom:18px">
     <h2>Averages <span class="muted" style="font-weight:400;font-size:12px">${gws.length} settled gameweek${gws.length === 1 ? '' : 's'}</span></h2>
@@ -11412,7 +11416,7 @@ function averagesCard(standings) {
       <tbody>${rows.map(r => `<tr>
         <td style="white-space:nowrap"><b>${esc(r.team)}</b></td>
         <td class="num ${r.mean === best ? 'gold' : 'muted'}">${r.mean.toFixed(1)}</td>
-        <td class="num muted">${r.median.toFixed(1)}</td>
+        <td class="num ${r.median === bestMedian ? 'gold' : 'muted'}">${r.median.toFixed(1)}</td>
         <td class="num ${r.sd === steadiest && gws.length > 1 ? 'gold' : 'muted'}">${r.sd.toFixed(1)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
