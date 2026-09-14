@@ -412,12 +412,13 @@ const chk = (name, ok, detail = '') => {
       handicaps: pre.handicaps,
       cardBadges: ['+40', '+22', '+11'].every(x => card.includes(x)) && !card.includes('starts +0'),
       winners: settled.qfWinners,
-      expectedWinners: [ids[0], ids[1], ids[2], ids[4]],
+      // bracket order is 1v8, 4v5, 3v6, 2v7 (Marc, 14 Sept) — seeds 1, 5, 3 and 2 go through
+      expectedWinners: [ids[0], ids[4], ids[2], ids[1]],
       rules: /full table-Points gap/.test(rules) && !/capped/.test(rules),
     };
   });
-  chk('QF handicap is [40,22,11,0] (full Points gap) in playoffState and the playoff card',
-    JSON.stringify(qf.handicaps) === JSON.stringify([40, 22, 11, 0]) && qf.cardBadges, JSON.stringify(qf));
+  chk('QF handicap is [40,0,11,22] (full Points gap, in bracket order) in playoffState and the playoff card',
+    JSON.stringify(qf.handicaps) === JSON.stringify([40, 0, 11, 22]) && qf.cardBadges, JSON.stringify(qf));
   chk('QF winner maths applies the same handicap and Rules states the same formula',
     JSON.stringify(qf.winners) === JSON.stringify(qf.expectedWinners) && qf.rules, JSON.stringify(qf));
 

@@ -11079,7 +11079,8 @@ function bracketCard() {
   // handicaps come off the H2H table Points (3 a win), NOT overall fantasy
   // points (Marc, 3 Aug: "+11 in the bracket — it's using points not Points")
   const tablePts = Object.fromEntries(rows.map(r => [r.id, r.h2h]));
-  const qfs = po ? po.qfs : [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  // same bracket order as playoffState, for the empty card before it can settle
+  const qfs = po ? po.qfs : [[seeds[0], seeds[7]], [seeds[3], seeds[4]], [seeds[2], seeds[5]], [seeds[1], seeds[6]]];
   const hcaps = po ? po.handicaps : qfs.map(([a, b]) => qfHandicap(tablePts[a] || 0, tablePts[b] || 0));
   const seedNo = id => seeds.indexOf(id) + 1;
   const box = (a, b, { hcap = 0, score = null, winner = null, labelA = '', labelB = '' } = {}) =>
@@ -11101,7 +11102,7 @@ function bracketCard() {
   const semiCol = semiPairs.map((pair, k) => box(pair[0], pair[1], {
     score: semiScore ? semiScore[k] : null,
     winner: po?.semiWinners ? po.semiWinners[k] : null,
-    labelA: k === 0 ? 'Winner 1v8' : 'Winner 2v7', labelB: k === 0 ? 'Winner 4v5' : 'Winner 3v6',
+    labelA: k === 0 ? 'Winner 1v8' : 'Winner 3v6', labelB: k === 0 ? 'Winner 4v5' : 'Winner 2v7',
   })).join('');
   let finalBox;
   if (po?.semiWinners) {
@@ -11905,14 +11906,21 @@ function playoffState() {
   const semiIdx = REGULAR_GWS + 1; // GW35
   const finalIdx = [REGULAR_GWS + 2, REGULAR_GWS + 3, REGULAR_GWS + 4]; // GW36–38
   const higherSeed = (a, b) => seeds.indexOf(a) < seeds.indexOf(b) ? a : b;
-  const qfs = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]];
+  /* Bracket order, top to bottom: 1v8, 4v5, 3v6, 2v7 (Marc, 14 Sept 2026:
+     "reorder the playoff bracket so it is a proper bracked, eg 2nd vs 7th
+     should be at the bottom"). The PAIRINGS are unchanged and always were
+     right — 1 and 2 sit in opposite halves and can only meet in the final —
+     but they were listed 1v8, 2v7, 3v6, 4v5, which drew the two ends of the
+     draw next to each other and made the lines cross. Listed this way each
+     semi is simply the two ties above it. */
+  const qfs = [[seeds[0], seeds[7]], [seeds[3], seeds[4]], [seeds[2], seeds[5]], [seeds[1], seeds[6]]];
   const handicaps = qfs.map(([a, b]) => qfHandicap(tablePts[a], tablePts[b]));
   const qfWinners = gwStatus(qfIdx) === 'final' ? qfs.map(([a, b], k) => {
     const pa = gwManagerPoints(a, qfIdx) + handicaps[k], pb = gwManagerPoints(b, qfIdx);
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);
   }) : null;
-  // fixed bracket: winner of 1v8 meets winner of 4v5, winner of 2v7 meets winner of 3v6
-  const semis = qfWinners ? [[qfWinners[0], qfWinners[3]], [qfWinners[1], qfWinners[2]]] : null;
+  // each semi is the two ties directly above it: 1v8 with 4v5, 3v6 with 2v7
+  const semis = qfWinners ? [[qfWinners[0], qfWinners[1]], [qfWinners[2], qfWinners[3]]] : null;
   const semiWinners = semis && gwStatus(semiIdx) === 'final' ? semis.map(([a, b]) => {
     const pa = gwManagerPoints(a, semiIdx), pb = gwManagerPoints(b, semiIdx);
     return pa === pb ? higherSeed(a, b) : (pa > pb ? a : b);

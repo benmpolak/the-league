@@ -391,17 +391,27 @@ const check = (label, ok, detail = '') => {
     const seeds = table.map(r => r.id).slice(0, 8);
     const tp = Object.fromEntries(table.map(r => [r.id, r.h2h]));
     const hi = (x, y) => seeds.indexOf(x) < seeds.indexOf(y) ? x : y;
+    // bracket order, top to bottom: 1v8, 4v5, 3v6, 2v7 (Marc, 14 Sept 2026).
+    // The pairings are unchanged — only the order they are listed in — but this
+    // recompute has to list them the same way to compare like with like.
+    const QF = [[seeds[0], seeds[7]], [seeds[3], seeds[4]], [seeds[2], seeds[5]], [seeds[1], seeds[6]]];
     // handicap = the FULL H2H table-Points gap (3 a win) — Committee ruling 3 Aug
-    const H = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]]
-      .map(([x, y]) => Math.max(0, tp[x] - tp[y]));
-    const qfW = [[seeds[0], seeds[7]], [seeds[1], seeds[6]], [seeds[2], seeds[5]], [seeds[3], seeds[4]]].map(([x, y], k) => {
+    const H = QF.map(([x, y]) => Math.max(0, tp[x] - tp[y]));
+    const qfW = QF.map(([x, y], k) => {
       const px = gwManagerPoints(x, 33) + H[k], py = gwManagerPoints(y, 33);
       return px === py ? hi(x, y) : (px > py ? x : y);
     });
-    const semiW = [[qfW[0], qfW[3]], [qfW[1], qfW[2]]].map(([x, y]) => {
+    // each semi is the two ties directly above it
+    const semiW = [[qfW[0], qfW[1]], [qfW[2], qfW[3]]].map(([x, y]) => {
       const px = gwManagerPoints(x, 34), py = gwManagerPoints(y, 34);
       return px === py ? hi(x, y) : (px > py ? x : y);
     });
+    // the half each seed lands in is the thing that must never drift, whatever
+    // order the ties are drawn in: the top two can only meet in the final
+    const halfOf = n => (QF.slice(0, 2).flat().includes(seeds[n - 1]) ? 'top' : 'bottom');
+    const halvesOk = ['top', 'bottom'].every(h => [1, 2].filter(n => halfOf(n) === h).length === 1)
+      && halfOf(1) === halfOf(4) && halfOf(1) === halfOf(5) && halfOf(1) === halfOf(8)
+      && halfOf(2) === halfOf(3) && halfOf(2) === halfOf(6) && halfOf(2) === halfOf(7);
     let cx = 0, cy = 0, wx = 0, wy = 0;
     for (const i of [35, 36, 37]) {
       const a = gwManagerPoints(semiW[0], i), b = gwManagerPoints(semiW[1], i);
@@ -414,6 +424,7 @@ const check = (label, ok, detail = '') => {
     const html = document.querySelector('#main').innerHTML;
     return {
       handicaps: H,
+      halvesOk,
       seedsMatch: JSON.stringify(po.seeds) === JSON.stringify(seeds),
       qfsMatch: JSON.stringify(po.qfWinners) === JSON.stringify(qfW),
       semisMatch: JSON.stringify(po.semiWinners) === JSON.stringify(semiW),
@@ -424,6 +435,8 @@ const check = (label, ok, detail = '') => {
   });
   check('playoffs: seeds, QF winners (handicaps), semi winners and champion all agree with independent recompute',
     !po.err && po.seedsMatch && po.qfsMatch && po.semisMatch && po.champMatch && po.cardShowsChamp, po.err || `champion: ${po.champ}`);
+  check('playoffs: seeds 1/4/5/8 and 2/3/6/7 are in opposite halves, so the top two can only meet in the final',
+    !!po.halvesOk, JSON.stringify(po.handicaps));
   console.log(`INFO  simulated QF handicaps — ${JSON.stringify(po.handicaps)} (zero-boundary path is pinned in demo-night.smoke)`);
   check('playoff simulation exercised a nonzero QF handicap',
     po.handicaps.some(h => h > 0), JSON.stringify(po.handicaps));
