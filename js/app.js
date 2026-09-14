@@ -11416,7 +11416,7 @@ function averagesCard(standings) {
       <tbody>${rows.map(r => `<tr>
         <td style="white-space:nowrap"><b>${esc(r.team)}</b></td>
         <td class="num ${r.mean === best ? 'gold' : 'muted'}">${r.mean.toFixed(1)}</td>
-        <td class="num ${r.median === bestMedian ? 'gold' : 'muted'}">${r.median.toFixed(1)}</td>
+        <td class="num ${r.median === bestMedian ? 'gold' : 'muted'}">${r.median % 1 ? r.median.toFixed(1) : r.median.toFixed(0)}</td>
         <td class="num ${r.sd === steadiest && gws.length > 1 ? 'gold' : 'muted'}">${r.sd.toFixed(1)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
