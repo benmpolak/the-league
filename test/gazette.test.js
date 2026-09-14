@@ -199,7 +199,7 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
       if (s > best) { best = s; holders.length = 0; holders.push(m); }
       else if (s === best) holders.push(m);
     }
-    state.view = 'data'; render();
+    state.view = 'data'; dataView.tab = 'records'; render();   // the Record Book lives on the Records tab since the Data Room split (14 Sep)
     const cardTxt = [...document.querySelectorAll('.card h2')].find(h => /Record Book/.test(h.textContent))?.closest('.card')?.innerText || '';
     return { hiOk: hi && hi.value === best && hi.holders.length === holders.length,
       renders: /Highest weekly score/.test(cardTxt) && /this season/.test(cardTxt),
