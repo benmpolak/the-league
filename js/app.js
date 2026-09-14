@@ -7188,7 +7188,8 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the picked players live in scoutCompare now — shared with the draft pool,
 // the Trough and the search palette; what stays here is how to SHOW them
 let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
-  comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null };
+  comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null,
+  tab: 'players' };  // which Data Room section is open (Marc, 15 Sept 2026)
 /* The squad filter, shared by the Trough and the Data Room so the two read the
    same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
    commonest use is checking your own shape before a transfer — and the other
@@ -11123,40 +11124,55 @@ function bracketCard() {
     </div></div>`;
 }
 
+/* The Data Room, in sections you choose between rather than one long scroll.
+   Marc, 15 Sept 2026: "rather than it be one long list of stuff, can it maybe
+   be grouped together into sections which can be clicked on in the banner...
+   It can default to player data."
+   Each tab is one question somebody arrives with: who should I sign, who plays
+   whom, how is the league scoring, how have squads changed, what has been won.
+   The cards themselves are untouched — only which of them you are looking at. */
+const DATA_TABS = [
+  ['players', 'Players'],
+  ['fixtures', 'Fixtures'],
+  ['league', 'League'],
+  ['trough', 'The Trough'],
+  ['records', 'Records'],
+  ['archive', 'Archive'],
+];
 function viewData() {
-  const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
-  // Marc, 14 Sept 2026: both of these moved here off the Matches page. They
-  // are not match reports — one is every score the league has recorded and the
-  // other reads those same scores forward, so League data is where somebody
-  // goes looking for them. The grid leads the section because the Record Book
-  // and the honours below it are both derived from exactly these numbers.
+  const tab = DATA_TABS.some(([id]) => id === dataView.tab) ? dataView.tab : 'players';
   const standings = h2hStandings(false);
+  const archive = recordBookCards();
+  const groups = {
+    players: () => [playerExplorerCard(), compareCard(), treatmentRoomCard()],
+    fixtures: () => [fixtureMatrixCard()],
+    // every score the league has recorded, and what they imply
+    league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), crystalBallCard(standings)],
+    // how squads were built and how they changed — the market and its ledger
+    trough: () => [troughActivityCard(), tradeRecordCard(), seasonSquadCard()],
+    records: () => [
+      recordBookNowCard(),
+      awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`,
+      awardsHonoursCard(),
+    ],
+    // last season stands on its own (Marc, 15 Sept 2026): it is a different
+    // competition with its own record book, and it was burying this season's
+    // honours under four cards of 2025/26 the moment anybody opened Records
+    archive: () => [archive || '<div class="card"><h2>The Archive</h2><p class="muted" style="font-size:12.5px">Nothing shelved yet. The archive opens when a season closes.</p></div>'],
+  };
+  const body = groups[tab]().filter(Boolean).join('');
   return `
-  ${sect('Research')}
-  ${compareCard()}
-  ${playerExplorerCard()}
-  ${fixtureMatrixCard()}
-  ${sect('League data')}
-  ${pointsGridCard(standings)}
-  ${rankGridCard(standings)}
-  ${averagesCard(standings)}
-  ${crystalBallCard(standings)}
-  ${recordBookNowCard()}
-  ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
-  ${awardsHonoursCard()}
-  ${sect('Team data')}
-  ${troughActivityCard()}
-  ${tradeRecordCard()}
-  ${seasonSquadCard()}
-  ${sect('Player data')}
-  ${treatmentRoomCard()}
-  ${sect('The archive')}
-  ${recordBookCards() ? `<details class="card draft-intro">
-    <summary><b>Last season &mdash; 2025/26</b> <span>records, draft night, the cup, head-to-head</span></summary>
-    <div class="draft-intro-body">${recordBookCards()}</div>
-  </details>` : ''}`;
+  <div class="team-controls card">
+    ${DATA_TABS.map(([id, label]) => `<button class="btn small ${tab === id ? '' : 'ghost'}" data-dtab="${id}">${esc(label)}</button>`).join('')}
+  </div>
+  ${body || '<div class="card"><p class="muted" style="font-size:12.5px">Nothing here yet &mdash; this section fills up once the season has something to say.</p></div>'}`;
 }
 function bindData() {
+  document.querySelectorAll('[data-dtab]').forEach(b => b.onclick = () => {
+    dataView.tab = b.dataset.dtab;
+    window.scrollTo({ top: 0 });   // a new section starts at its own top
+    render();
+  });
   bindAwardsBits();
   bindPitchLinks();
   bindExplorer();

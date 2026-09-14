@@ -163,8 +163,14 @@ const chk = (name, ok, detail = '') => {
     state.matchStats = twoFinalState;
     const full = seasonAwards();
     const minutes = committeeMinutes(0);
-    state.view = 'data'; render();
-    const dataText = document.querySelector('#main').innerText;
+    // The Data Room is sectioned now (Marc, 15 Sept 2026), so no single render
+    // holds every card. Walk the tabs: this still asserts the room owns the
+    // lot, and additionally proves each section is reachable.
+    state.view = 'data';
+    const dataByTab = {};
+    for (const [id] of DATA_TABS) { dataView.tab = id; render(); dataByTab[id] = document.querySelector('#main').innerText; }
+    const dataText = Object.values(dataByTab).join('\n');
+    dataView.tab = 'players'; render();   // the treatment room lives here
     const filterCount = document.querySelectorAll('[data-trmpos]').length;
     const showAll = document.querySelector('#trmMore')?.textContent || '';
     state.view = 'table'; render();
@@ -218,6 +224,7 @@ const chk = (name, ok, detail = '') => {
     ovDepth = 0; ovSkipClose = false;
     window.__demoNightCopied = '';
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: t => { window.__demoNightCopied = t; return Promise.resolve(); } } });
+    dataView.tab = 'records';   // the awards card, and its copy button, live here
     state.view = 'data'; render();
   });
   await page.click('#copyMinutes');
@@ -238,7 +245,7 @@ const chk = (name, ok, detail = '') => {
     await page.evaluate(() => state.view === 'table' && location.hash === '#table'));
 
   const filterAudit = await page.evaluate(() => {
-    state.view = 'data'; trmView = { pos: '', club: '', sev: '' }; trmShowAll = false; render();
+    state.view = 'data'; dataView.tab = 'players'; trmView = { pos: '', club: '', sev: '' }; trmShowAll = false; render();
     const target = PLAYERS.find(p => p.status !== 'a');
     trmView.pos = target.pos; trmView.club = target.club; trmView.sev = treatmentBand(target).k === 'major-doubt' ? 'doubt' : treatmentBand(target).k;
     if (trmView.sev === 'unknown') trmView.sev = 'long';

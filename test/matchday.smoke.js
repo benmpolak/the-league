@@ -672,18 +672,25 @@ const CRAFT_LIVE = `((scoreSpec, clubPlan, forcedPair) => {
       for (const pid of effectiveXI(m.id, 0).xi) ps[pid] = { min: 90, st: 1, g: k % 2 };
     });
     state.matchStats['gw' + GAMEWEEKS[0].n] = { gw: 0, label: GAMEWEEKS[0].label, final: true, playerStats: ps };
-    state.view = 'data'; trmShowAll = true; render(); // awards + treatment desk live in the Data Room now
+    // awards + treatment desk live in the Data Room, and since 15 Sept 2026 on
+    // two different tabs of it — so each is read with its own section open
+    state.view = 'data'; trmShowAll = true;
+    dataView.tab = 'records'; render();
     const awards = [...document.querySelectorAll('.award-row')];
-    const treatments = [...document.querySelectorAll('.treatment-row')];
     const firstAward = awards[0];
     const label = firstAward?.querySelector('.award-label')?.getBoundingClientRect();
     const value = firstAward?.querySelector('.award-value')?.getBoundingClientRect();
+    const awardGridNow = firstAward ? getComputedStyle(firstAward).display : '';
+    const awardPartsNow = firstAward?.children.length || 0;
+    const awardStacksNow = !!label && !!value && value.top >= label.bottom - 1;
+    dataView.tab = 'players'; render();
+    const treatments = [...document.querySelectorAll('.treatment-row')];
     return {
       cases,
       awards: awards.length,
-      awardGrid: firstAward ? getComputedStyle(firstAward).display : '',
-      awardParts: firstAward?.children.length || 0,
-      mobileAwardStacks: !!label && !!value && value.top >= label.bottom - 1,
+      awardGrid: awardGridNow,
+      awardParts: awardPartsNow,
+      mobileAwardStacks: awardStacksNow,
       treatments: treatments.length,
       treatmentGrid: treatments[0] ? getComputedStyle(treatments[0]).display : '',
       treatmentParts: treatments[0]?.querySelectorAll('.treatment-player,.treatment-severity,.treatment-owner,.treatment-news').length || 0,
