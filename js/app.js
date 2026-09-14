@@ -11124,12 +11124,20 @@ function bracketCard() {
 
 function viewData() {
   const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
+  // Marc, 14 Sept 2026: both of these moved here off the Matches page. They
+  // are not match reports — one is every score the league has recorded and the
+  // other reads those same scores forward, so League data is where somebody
+  // goes looking for them. The grid leads the section because the Record Book
+  // and the honours below it are both derived from exactly these numbers.
+  const standings = h2hStandings(false);
   return `
   ${sect('Research')}
   ${compareCard()}
   ${playerExplorerCard()}
   ${fixtureMatrixCard()}
   ${sect('League data')}
+  ${pointsGridCard(standings)}
+  ${crystalBallCard(standings)}
   ${recordBookNowCard()}
   ${awardsCard() || `<div class="card"><h2>The Committee's Awards</h2><p class="muted" style="font-size:12.5px">No settled gameweek yet. The Committee sharpens its pencils.</p></div>`}
   ${awardsHonoursCard()}
@@ -12234,9 +12242,6 @@ function gwPreviewCard(i) {
 
 function viewH2H() {
   const cur = currentGwIndex();
-  // settled results only (Toby, GW1 weekend) — in-play scores stay on the
-  // matchup cards and the Vidiprinter; the standings wait for the whistle
-  const standings = h2hStandings(false);
   // the standings table itself moved to the League Table page (Ben, 1 Aug:
   // "the head to head table is what should be in the league table") — this
   // page is Matches: fixtures, preview, playoffs, points grid, crystal ball
@@ -12312,11 +12317,11 @@ function viewH2H() {
   })();
   // Lee's note: "Head-to-Head" must LEAD with the head-to-heads. Matches and
   // the preview first, THEN the standings — it read as a second league table.
+  // the points grid and the Crystal Ball moved to the Data Room's League data
+  // (Marc, 14 Sept 2026) — this page is for the matches themselves
   return `${matchesCard}
   ${gwPreviewCard(cur)}
   ${playoffCard()}
-  ${pointsGridCard(standings)}
-  ${crystalBallCard(standings)}
   ${vidiCard()}`;
 }
 
