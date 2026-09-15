@@ -11147,7 +11147,7 @@ function viewData() {
     players: () => [playerExplorerCard(), compareCard(), treatmentRoomCard()],
     fixtures: () => [fixtureMatrixCard()],
     // every score the league has recorded, and what they imply
-    league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), totwCard(), crystalBallCard(standings)],
+    league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), totwCard(), totwTallyCard(), crystalBallCard(standings)],
     // how squads were built and how they changed — the market and its ledger
     trough: () => [troughActivityCard(), tradeRecordCard(), seasonSquadCard()],
     records: () => [
@@ -11503,6 +11503,54 @@ function averagesCard(standings) {
       </tr>`).join('')}</tbody>
     </table></div>
     <p class="muted" style="font-size:10.5px;margin-top:8px">Mean above median is a side carried by its best weeks. ${gws.length > 1 ? 'The lowest SD is the most predictable manager in the league &mdash; for better or worse.' : 'SD needs more than one week to say anything.'}</p>
+  </div>`;
+}
+/* ----- who keeps turning up in those elevens -----
+   Marc, 15 Sept 2026: "a top ten card for each showing the number of times
+   players have appeared in team of the week or trough team of the week... I
+   want this to be populated retrospectively back to gameweek 1."
+   Same trick as the card above: nothing is kept. It walks every settled round,
+   picks both elevens again and counts, so GW1 is in it today and a new round
+   joins the moment it settles.
+   Level appearances are separated on the points earned in them — being picked
+   three times for 40 is a better claim than three times for 20 — and only then
+   alphabetically, so the order never wobbles between renders. */
+function totwTallyCard() {
+  const settled = [];
+  for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final') settled.push(i);
+  if (!settled.length) return '';
+  const openT = new Map(), troughT = new Map();
+  const add = (map, p, pts) => {
+    const e = map.get(p.id) || { p, n: 0, pts: 0 };
+    e.n++; e.pts += pts; map.set(p.id, e);
+  };
+  for (const i of settled) {
+    const sc = q => gwPlayerPoints(q.id, i);
+    const owned = ownedIdsAt(i);
+    const open = bestXIFrom(PLAYERS, sc);
+    const trough = bestXIFrom(PLAYERS.filter(q => !owned.has(q.id)), sc);
+    for (const q of open ? open.xi : []) add(openT, q, sc(q));
+    for (const q of trough ? trough.xi : []) add(troughT, q, sc(q));
+  }
+  const top = map => [...map.values()]
+    .sort((a, b) => b.n - a.n || b.pts - a.pts || a.p.name.localeCompare(b.p.name))
+    .slice(0, 10);
+  const list = (rows, empty) => rows.length ? rows.map((r, k) => `<div class="lrow" style="font-size:12.5px;gap:8px">
+      <span class="muted" style="min-width:18px">${k + 1}</span>
+      <span class="pos-badge pos-${r.p.pos}">${r.p.pos}</span>
+      <b>${esc(r.p.name)}</b> <span class="muted">${esc(r.p.club)}</span>
+      <span class="muted" style="margin-left:auto;font-size:11px">${r.pts} pts</span>
+      <span class="num gold" style="font-weight:700;min-width:26px;text-align:right">${r.n}</span>
+    </div>`).join('') : `<p class="muted" style="font-size:12px">${empty}</p>`;
+  const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
+  const wk = settled.length;
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>The Regulars <span class="muted" style="font-weight:400;font-size:12px">who keeps making those elevens</span></h2>
+    ${sect(`Team of the week &middot; ${wk} round${wk === 1 ? '' : 's'} counted`)}
+    ${list(top(openT), 'No settled round yet.')}
+    ${sect('Trough team of the week')}
+    ${list(top(troughT), 'No settled round yet.')}
+    <p class="muted" style="font-size:10.5px;margin-top:10px">Appearances on the right, points earned in them on the left of it. Counted back to GW1 every time it draws, so a new round lands here the moment it settles.</p>
   </div>`;
 }
 /* ----- the Crystal Ball: luck, playoff odds, points left on bench ----- */

@@ -161,6 +161,70 @@ const chk = (name, ok, detail = '') => {
       t('the card lives in the Data Room, not on its own page',
         !!card && !!document.querySelector('[data-dtab="league"]'));
     })();
+
+    /* ----- the regulars tally -----
+     * Marc, 15 Sept 2026: "a top ten card for each showing the number of times
+     * players have appeared in team of the week or trough team of the week...
+     * populated retrospectively back to gameweek 1". Same standard as the card
+     * above: nothing is stored, so the test recounts all three weeks itself and
+     * insists the card agrees. */
+    (() => {
+      const openN = new Map(), troughN = new Map();
+      for (let i = 0; i < WEEKS; i++) {
+        const sc = p => gwPlayerPoints(p.id, i);
+        const owned = ownedIdsAt(i);
+        for (const p of bestXIFrom(PLAYERS, sc).xi) openN.set(p.id, (openN.get(p.id) || 0) + 1);
+        for (const p of bestXIFrom(PLAYERS.filter(q => !owned.has(q.id)), sc).xi)
+          troughN.set(p.id, (troughN.get(p.id) || 0) + 1);
+      }
+      const html = totwTallyCard();
+      const box = document.createElement('div'); box.innerHTML = html;
+      const secs = [...box.querySelectorAll('p')].filter(p => /team of the week/i.test(p.textContent));
+      const rowsAfter = p => { const out = []; let n = p.nextElementSibling;
+        while (n && n.classList.contains('lrow')) { out.push(n); n = n.nextElementSibling; } return out; };
+      const read = p => rowsAfter(p).map(r => ({
+        name: r.querySelector('b').textContent,
+        n: +r.querySelector('.num').textContent }));
+      const openRows = secs[0] ? read(secs[0]) : [];
+      const troughRows = secs[1] ? read(secs[1]) : [];
+
+      t('the tally card lists ten for each eleven',
+        openRows.length === 10 && troughRows.length === 10,
+        `${openRows.length} / ${troughRows.length}`);
+      // every count on the card must match a recount done here from scratch
+      const nameCount = (map) => { const m = new Map();
+        for (const [id, n] of map) m.set(PLAYER_BY_ID[id].name, n); return m; };
+      const oN = nameCount(openN), tN = nameCount(troughN);
+      t('every team-of-the-week count matches an independent recount',
+        openRows.every(r => oN.get(r.name) === r.n),
+        openRows.filter(r => oN.get(r.name) !== r.n).map(r => `${r.name} ${r.n}≠${oN.get(r.name)}`).join(', '));
+      t('every Trough count matches an independent recount',
+        troughRows.every(r => tN.get(r.name) === r.n),
+        troughRows.filter(r => tN.get(r.name) !== r.n).map(r => `${r.name} ${r.n}≠${tN.get(r.name)}`).join(', '));
+      // a top ten is no use if it is not in order, and nobody outside it may
+      // out-appear the man at the bottom
+      t('both lists run highest first', openRows.every((r, k) => !k || openRows[k - 1].n >= r.n)
+        && troughRows.every((r, k) => !k || troughRows[k - 1].n >= r.n));
+      const cut = openRows[9].n;
+      const missed = [...oN].filter(([nm, n]) => n > cut && !openRows.some(r => r.name === nm));
+      t('and nobody left out beats the man in tenth', missed.length === 0,
+        missed.map(([nm, n]) => `${nm} ${n}`).join(', '));
+      // A Trough regular CAN out-appear his own open-field count — twelfth best
+      // in the league is still first in the Trough. What he cannot do is be
+      // counted in a week somebody owned him.
+      t('nobody is counted as a Trough pick in a week he was owned',
+        [...troughN].every(([id, n]) =>
+          [0, 1, 2].filter(i => !ownedIdsAt(i).has(id)).length >= n));
+      // it walks back to GW1, not just the settled tail
+      t('the tally counts every settled round, back to the first',
+        /3 rounds counted/i.test(box.textContent.replace(/\s+/g, ' ')),
+        box.textContent.replace(/\s+/g, ' ').match(/\d+ rounds? counted/)?.[0] || 'no count');
+
+      state.view = 'data'; dataView.tab = 'league'; render();
+      const live = [...document.querySelectorAll('.card')]
+        .find(c => /The Regulars/.test(c.querySelector('h2')?.textContent || ''));
+      t('and the card sits in the League section of the Data Room', !!live);
+    })();
     return log;
   });
 
