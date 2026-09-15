@@ -11,7 +11,10 @@
  */
 'use strict';
 const assert = require('assert');
-const { chooseRound, addRound, KICKOFF_GRACE_MS } = require('../scripts/snapshot_predictions.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { chooseRound, addRound, dueFromDisk, KICKOFF_GRACE_MS } = require('../scripts/snapshot_predictions.js');
 
 let passed = 0;
 const check = (name, fn) => {
@@ -123,6 +126,52 @@ check('nothing is half-written: a bad tie leaves the ledger untouched', () => {
   assert.throws(() => addRound(book, { n: 7, deadline: 'd', taken: 't',
     games: [{ a: 1, b: 2, w: 0.9, d: 0.9, l: 0.9 }] }));
   assert.strictEqual(JSON.stringify(book), before);
+});
+
+/* ----- the check that actually runs, 288 times a day -----
+ * It rides the FPL refresh, so it has to answer off the checkout alone: no
+ * network, no browser, and no node_modules, because that job installs none.
+ * Anything it needs beyond node's own libraries would break the refresh. */
+const work = fs.mkdtempSync(path.join(os.tmpdir(), 'snapshot-'));
+fs.mkdirSync(path.join(work, 'data'));
+const put = (name, obj) => fs.writeFileSync(path.join(work, 'data', name), JSON.stringify(obj));
+put('data.json', { gameweeks });
+put('fixtures.json', fixtures);
+put('predictions.json', { rounds: {} });
+
+check('off the disk, the window opens and shuts the same way', () => {
+  assert.strictEqual(dueFromDisk(DEADLINE - 60000, work), null);
+  assert.strictEqual(dueFromDisk(DEADLINE + 60000, work)?.n, 6);
+  assert.strictEqual(dueFromDisk(KICK, work), null);
+});
+check('a round already in that root\'s ledger is closed there too', () => {
+  const seen = fs.mkdtempSync(path.join(os.tmpdir(), 'snapshot-seen-'));
+  fs.mkdirSync(path.join(seen, 'data'));
+  fs.writeFileSync(path.join(seen, 'data', 'data.json'), JSON.stringify({ gameweeks }));
+  fs.writeFileSync(path.join(seen, 'data', 'fixtures.json'), JSON.stringify(fixtures));
+  fs.writeFileSync(path.join(seen, 'data', 'predictions.json'), JSON.stringify({ rounds: { 6: { games: [] } } }));
+  assert.strictEqual(dueFromDisk(DEADLINE + 60000, seen), null);
+});
+check('a missing calendar is survived, not thrown on', () => {
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'snapshot-bare-'));
+  assert.strictEqual(dueFromDisk(DEADLINE + 60000, bare), null);
+});
+check('an unparseable calendar is survived too', () => {
+  const broken = fs.mkdtempSync(path.join(os.tmpdir(), 'snapshot-broken-'));
+  fs.mkdirSync(path.join(broken, 'data'));
+  fs.writeFileSync(path.join(broken, 'data', 'data.json'), '{ not json');
+  fs.writeFileSync(path.join(broken, 'data', 'fixtures.json'), '[]');
+  assert.strictEqual(dueFromDisk(DEADLINE + 60000, broken), null);
+});
+check('the check needs nothing but node itself', () => {
+  // the refresh it hangs off installs no dependencies, so requiring one at
+  // load time would break the data feed rather than just this
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'snapshot_predictions.js'), 'utf8');
+  const top = src.slice(0, src.indexOf('async function main'));
+  const requires = [...top.matchAll(/require\('([^']+)'\)/g)].map(m => m[1]);
+  assert.deepStrictEqual(requires.sort(), ['fs', 'path'], `top-level requires: ${requires}`);
+  assert.ok(/require\('puppeteer-core'\)/.test(src.slice(src.indexOf('async function main'))),
+    'the browser should be required inside main, after the due check');
 });
 
 console.log(`\n[snapshot] ${passed} passed, ${process.exitCode ? 'some' : 0} failed`);

@@ -21,16 +21,27 @@
  * it — a second implementation would drift, and then the ledger would be
  * recording something no manager ever saw. Same trick as run_waivers.js.
  *
- * Which round to capture is decided HERE, in node, off data the page hands
- * back, so the rule can be tested without a browser in the room. The page is
- * asked to do only the one thing that needs it.
+ * Which round to capture is decided in node off the checkout's own calendar, so
+ * the rule can be tested without a browser in the room and costs nothing to ask.
+ * The page is handed a round NUMBER and finds its own index, so the ledger can
+ * never depend on our calendar and the app's being in step.
  *
  * It writes nothing unless it has every tie with odds that compute, and fails
  * loudly rather than committing half a round: a missing round can still be
  * rebuilt afterwards, a wrong one is wrong forever.
  *
+ * It costs almost nothing to run and nothing to run often. Whether a round is
+ * due is decided from data/data.json, data/fixtures.json and the ledger — all
+ * of them already in the checkout — so an off-window pass is a few milliseconds
+ * of node and exits before Chrome is ever started. The browser opens twice a
+ * week, inside the window, and not otherwise. That is why this hangs off the
+ * FPL refresh instead of carrying a schedule of its own: that job already runs
+ * every five minutes, and it is already the one that catches the perishable
+ * team news at the deadline. This is the same problem with the same answer.
+ *
  *   node scripts/snapshot_predictions.js            capture if a round is due
- *   node scripts/snapshot_predictions.js --dry      report, write nothing
+ *   node scripts/snapshot_predictions.js --due      say whether one is, and stop
+ *   node scripts/snapshot_predictions.js --dry      capture, print, write nothing
  *   SNAPSHOT_URL=... to point somewhere other than the live site
  */
 'use strict';
@@ -44,8 +55,9 @@ const OUT = path.join(ROOT, 'data', 'predictions.json');
    deadline a manager can still change an XI, so the snapshot would be of a team
    nobody fielded; after kickoff the odds have started moving and it is no
    longer a prediction. FPL's deadline sits 90 minutes before the first match,
-   which is the whole window — a job on a 20-minute cron lands in it several
-   times over and the first to arrive is the one that counts. */
+   which is the whole window — the five-minute refresh this rides on passes
+   through it around twenty times, and the first one to arrive is the only one
+   that does any work. */
 const KICKOFF_GRACE_MS = 5 * 60000; // never capture a round already under way
 
 /* The decision, as a pure function of what the page can tell us. Returns the
@@ -67,6 +79,25 @@ function chooseRound({ gameweeks, fixtures, already = [], now = Date.now(), grac
     return { index: i, n: gw.n, deadline };
   }
   return null;
+}
+
+/* Is a round due, decided entirely from the checkout? The calendar and the
+   fixtures are shipped data and the ledger is next to them, so this answers
+   without a network call, a browser, or the live league — which is what makes
+   it cheap enough to ask every five minutes off the back of the FPL refresh. */
+function dueFromDisk(now = Date.now(), root = ROOT) {
+  let gameweeks, fixtures;
+  try {
+    gameweeks = JSON.parse(fs.readFileSync(path.join(root, 'data', 'data.json'), 'utf8')).gameweeks;
+    fixtures = JSON.parse(fs.readFileSync(path.join(root, 'data', 'fixtures.json'), 'utf8'));
+  } catch (e) {
+    return null; // no calendar to read: the refresh that owns those files will say so
+  }
+  if (!Array.isArray(gameweeks) || !Array.isArray(fixtures)) return null;
+  // REGULAR_GWS is the app's to know, not ours — the page refuses a playoff
+  // round on its own, so this does not carry a second copy of that number
+  const ledger = readLedger(path.join(root, 'data', 'predictions.json'));
+  return chooseRound({ gameweeks, fixtures, already: Object.keys(ledger.rounds || {}), now });
 }
 
 function readLedger(file = OUT) {
@@ -102,7 +133,6 @@ function addRound(book, shot) {
 }
 
 async function main() {
-  const puppeteer = require('puppeteer-core');
   const SITE = process.env.SNAPSHOT_URL || 'https://theleaguehq.co.uk/';
   const DRY = process.argv.includes('--dry');
   const chromePath = process.env.CHROME_BIN
@@ -110,6 +140,20 @@ async function main() {
       ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
       : '/usr/bin/google-chrome');
 
+  /* The cheap question first, and it needs nothing but the checkout: no
+     network, no browser, and — deliberately — no node_modules, because the FPL
+     refresh this rides on does not install any. --due answers in an EXIT CODE
+     so a shell can gate the install on it: 0 a round is due, 1 none is. */
+  const due = dueFromDisk();
+  if (process.argv.includes('--due')) {
+    if (due) console.log(`GW${due.n} is due: its deadline has passed and its first game has not started`);
+    else console.log('nothing due');
+    process.exitCode = due ? 0 : 1;
+    return;
+  }
+  if (!due) { console.log(JSON.stringify({ skipped: 'no round sitting between its deadline and its first kickoff' })); return; }
+
+  const puppeteer = require('puppeteer-core');
   const book = readLedger();
   const browser = await puppeteer.launch({
     executablePath: chromePath, headless: 'new', args: ['--no-sandbox'],
@@ -130,44 +174,40 @@ async function main() {
       throw Error('league state or score feed did not become ready');
     }
 
-    const world = await page.evaluate(() => ({
-      phase: state.phase,
-      regular: REGULAR_GWS,
-      managers: state.managers.length,
-      gameweeks: GAMEWEEKS.map(g => ({ n: g.n, deadline: g.deadline || g.from })),
-      fixtures: state.fixtures.map(f => ({ gw: f.gw, date: f.date })),
-    }));
-    if (world.phase !== 'season') { console.log(JSON.stringify({ skipped: `phase is ${world.phase}` })); return; }
-
-    const target = chooseRound({
-      gameweeks: world.gameweeks, fixtures: world.fixtures,
-      already: Object.keys(book.rounds || {}), regular: world.regular,
-    });
-    if (!target) { console.log(JSON.stringify({ skipped: 'no round sitting between its deadline and its first kickoff' })); return; }
-
-    const games = await page.evaluate(i => pairingsFor(i).map(([a, b]) => {
-      const o = matchOdds(a, b, i);
-      return { a, b,
-        w: +o.win.toFixed(4), d: +o.draw.toFixed(4), l: +o.loss.toFixed(4),
-        pa: projectedGwScore(a, i), pb: projectedGwScore(b, i) };
-    }), target.index);
-    if (games.length !== world.managers / 2) throw Error(`expected ${world.managers / 2} ties, got ${games.length}`);
+    // The round is named by NUMBER, and the page finds its own index: the
+    // ledger must never depend on our calendar and the app's being in step.
+    const shot = await page.evaluate(n => {
+      if (state.phase !== 'season') return { skip: `phase is ${state.phase}` };
+      const i = GAMEWEEKS.findIndex(g => g.n === n);
+      if (i < 0) return { skip: `the app has no GW${n}` };
+      if (i >= REGULAR_GWS) return { skip: 'the playoffs are not the league season' };
+      const games = pairingsFor(i).map(([a, b]) => {
+        const o = matchOdds(a, b, i);
+        return { a, b,
+          w: +o.win.toFixed(4), d: +o.draw.toFixed(4), l: +o.loss.toFixed(4),
+          pa: projectedGwScore(a, i), pb: projectedGwScore(b, i) };
+      });
+      return { games, managers: state.managers.length };
+    }, due.n);
+    if (shot.skip) { console.log(JSON.stringify({ skipped: shot.skip })); return; }
+    const games = shot.games;
+    if (games.length !== shot.managers / 2) throw Error(`expected ${shot.managers / 2} ties, got ${games.length}`);
 
     addRound(book, {
-      n: target.n,
-      deadline: new Date(target.deadline).toISOString().replace(/\.\d+Z$/, 'Z'),
+      n: due.n,
+      deadline: new Date(due.deadline).toISOString().replace(/\.\d+Z$/, 'Z'),
       taken: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
       games,
     });
-    if (DRY) { console.log(JSON.stringify({ wouldRecord: target.n, ties: games.length, games }, null, 2)); return; }
+    if (DRY) { console.log(JSON.stringify({ wouldRecord: due.n, ties: games.length, games }, null, 2)); return; }
     fs.writeFileSync(OUT, JSON.stringify(book) + '\n', 'utf8');
-    console.log(`recorded GW${target.n}: ${games.length} ties, deadline ${target.deadline}`);
+    console.log(`recorded GW${due.n}: ${games.length} ties, deadline ${new Date(due.deadline).toISOString()}`);
   } finally {
     await browser.close();
   }
 }
 
-module.exports = { chooseRound, addRound, readLedger, KICKOFF_GRACE_MS, NOTE, OUT };
+module.exports = { chooseRound, addRound, readLedger, dueFromDisk, KICKOFF_GRACE_MS, NOTE, OUT };
 
 if (require.main === module) {
   main().catch(e => { console.error('[snapshot]', e.message); process.exit(1); });
