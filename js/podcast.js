@@ -270,7 +270,17 @@ window.Podcast = (() => {
   const lastSeasonPts = p => { const ls = typeof lastSeasonOf === 'function' ? lastSeasonOf(p) : null; return ls ? (ls.pts || 0) : 0; };
   // squad strength on last season's evidence — the only measure that exists
   // before a ball is kicked, and the one the grades rest on
-  const squadScore = mid => squadOf(mid).reduce((t, p) => t + lastSeasonPts(p), 0);
+  // The draft verdict is about the squad a manager DRAFTED, so it reads the
+  // draft board, not the squad as it stands. Read from the live squad it
+  // drifted with every waiver: three grade lines re-wrote themselves between
+  // draft night and GW4, orphaning the audio cut for them and blocking the
+  // render's commit step (Ben, 15 Sep 2026). Falls back to the live squad
+  // only where no draft has been recorded.
+  const draftSquadOf = mid => {
+    const picks = (state.draft?.picks || []).filter(pk => pk.managerId === mid);
+    return picks.length ? picks.map(pk => PLAYER_BY_ID[pk.playerId]).filter(Boolean) : squadOf(mid);
+  };
+  const squadScore = mid => draftSquadOf(mid).reduce((t, p) => t + lastSeasonPts(p), 0);
   const GRADES = ['A+', 'A', 'A-', 'B+', 'B', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D'];
   function draftTable() {
     return state.managers.map(m => ({ mid: m.id, score: squadScore(m.id) }))
@@ -641,8 +651,8 @@ window.Podcast = (() => {
       B.push(say(P.tactics, table.slice(4, 8).map(r => `${teamName(r.mid)}, ${r.grade}`).join('. ') + '. All perfectly sound, all one bad month from a rebuild.'));
       B.push(say(P.colour, table.slice(8).map(r => `${teamName(r.mid)}, ${r.grade}`).join('. ') + '. And I want to be careful with that bottom group, because a low grade in August is a story about last season, not this one.'));
       B.push(say(P.colour, `At the other end, ${teamName(worst.mid)} have had what we would traditionally call a difficult evening. I would encourage everyone to remember that it is a game about a game.`));
-      const topMan = squadOf(best.mid).slice().sort((x, y) => lastSeasonPts(y) - lastSeasonPts(x))[0];
-      const lowMan = squadOf(worst.mid).slice().sort((x, y) => lastSeasonPts(y) - lastSeasonPts(x))[0];
+      const topMan = draftSquadOf(best.mid).slice().sort((x, y) => lastSeasonPts(y) - lastSeasonPts(x))[0];
+      const lowMan = draftSquadOf(worst.mid).slice().sort((x, y) => lastSeasonPts(y) - lastSeasonPts(x))[0];
       if (topMan) B.push(say(P.tactics, `${teamName(best.mid)} are built around ${topMan.name}, and that is both the strength and the risk. A squad with one obvious best player is a squad with one obvious way to fail.`));
       if (lowMan) B.push(say(P.colour, `Whereas ${teamName(worst.mid)} lead with ${lowMan.name}, which is a perfectly respectable place to start and a difficult place to finish.`));
       B.push(say(P.spain, 'From Spain, the only observation worth making: every one of these squads will be unrecognisable by Christmas. The draft is the beginning of the argument, not the end of it.'));

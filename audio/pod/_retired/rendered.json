@@ -1,17 +1,5 @@
 {
   "gfw-draft": {
-    "1jtmdxx": {
-      "file": "1jtmdxx.mp3",
-      "voice": "pFZP5JQG7iQjIQuC4Bku",
-      "provider": "elevenlabs",
-      "at": "2026-08-20"
-    },
-    "9r1q7w": {
-      "file": "9r1q7w.mp3",
-      "voice": "pFZP5JQG7iQjIQuC4Bku",
-      "provider": "elevenlabs",
-      "at": "2026-08-20"
-    },
     "9wpcfi": {
       "file": "9wpcfi.mp3",
       "voice": "lfPTQbwnu1oXQ9g6V0r4",
@@ -23,6 +11,18 @@
       "voice": "pFZP5JQG7iQjIQuC4Bku",
       "provider": "elevenlabs",
       "at": "2026-08-21"
+    },
+    "129muz8": {
+      "file": "129muz8.mp3",
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
+      "provider": "elevenlabs",
+      "at": "2026-08-21"
+    },
+    "wqg5rh": {
+      "file": "wqg5rh.mp3",
+      "voice": "lfPTQbwnu1oXQ9g6V0r4",
+      "provider": "elevenlabs",
+      "at": "2026-08-21"
     }
   },
   "tt-draft": {
@@ -32,11 +32,17 @@
       "provider": "elevenlabs",
       "at": "2026-08-21"
     },
-    "3cv23y": {
-      "file": "3cv23y.mp3",
+    "18boia2": {
+      "file": "18boia2.mp3",
+      "voice": "GPBdEhqsWQkHEWGnPOdO",
+      "provider": "elevenlabs",
+      "at": "2026-08-21"
+    },
+    "wce3ex": {
+      "file": "wce3ex.mp3",
       "voice": "csXxiUN2BUFflsCaDxPM",
       "provider": "elevenlabs",
-      "at": "2026-08-20"
+      "at": "2026-08-21"
     }
   }
 }

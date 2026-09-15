@@ -105,7 +105,9 @@
  *   --clone NAME f… clone a real voice from recordings, cast it as NAME
  *   --parts        print the lines assigned to human voices, then stop
  *   --scan         rebuild index.json from the files on disk, render nothing
- *   --only a,b     work on just these episode ids (default: all published)
+ *   --only a,b     work on just these episode ids (default: every published
+ *                  episode that is not yet dated — see harvest(); --only
+ *                  renders a dated one if you name it)
  *   --provider     elevenlabs | openai — overrides cast.json
  *   --force        re-render lines that already have a file (WILL overwrite)
  *   --dry          cost the job without casting or spending anything
@@ -381,15 +383,33 @@ async function harvest() {
   });
   const eps = await page.evaluate(() => Podcast.published().map(p => {
     const e = Podcast.episode(p.show, p.kind, p.gw);
+    // Dated episodes are not rendered (Ben, 15 Sep 2026: "no need to put out
+    // anything dated, don't waste the credits, just this week's gw review").
+    // A preview is dated once its round has kicked off; a review once the
+    // NEXT round has. The archive keeps the words either way — the player
+    // reads an unrendered line aloud — this only decides what money is spent
+    // on. Pilots and drafts are fixed August episodes: what they have is what
+    // they have, unless --only asks for them by name.
+    let stale = '';
+    if (p.gw == null) stale = 'fixed episode, cut in August';   // pilots and drafts
+    else {
+      const started = i => gwStatus(i) !== 'upcoming';
+      if (p.kind === 'preview' && started(p.gw)) stale = `GW${p.gw + 1} has kicked off`;
+      else for (let j = p.gw + 1; j < REGULAR_GWS; j++) if (started(j)) { stale = `GW${j + 1} has kicked off`; break; }
+    }
     // `say` is what the voice is given, `text` is what the reader sees — they
     // differ where English spelling and English pronunciation part company
-    return { id: e.id, show: e.show.id, host: e.show.host, title: e.title,
+    return { id: e.id, show: e.show.id, host: e.show.host, title: e.title, stale,
       blocks: e.blocks.map(b => ({ ...b,
         say: Podcast.sayable(b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text),
         key: Podcast.lineKey(b) })) };
   }));
   await browser.close();
-  return eps.filter(e => !ONLY.length || ONLY.includes(e.id));
+  // --only is the override: name a dated episode and it renders anyway
+  if (ONLY.length) return eps.filter(e => ONLY.includes(e.id));
+  const dated = eps.filter(e => e.stale);
+  if (dated.length) console.log(`dated, not rendered: ${dated.map(e => `${e.id} (${e.stale})`).join(', ')}`);
+  return eps.filter(e => !e.stale);
 }
 
 /* ---------- the manifest ----------

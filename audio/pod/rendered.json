@@ -340,17 +340,17 @@
       "provider": "elevenlabs",
       "at": "2026-08-20"
     },
-    "wqg5rh": {
-      "file": "wqg5rh.mp3",
-      "voice": "lfPTQbwnu1oXQ9g6V0r4",
+    "1jtmdxx": {
+      "file": "1jtmdxx.mp3",
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
       "provider": "elevenlabs",
-      "at": "2026-08-21"
+      "at": "2026-08-20"
     },
-    "129muz8": {
-      "file": "129muz8.mp3",
-      "voice": "lfPTQbwnu1oXQ9g6V0r4",
+    "9r1q7w": {
+      "file": "9r1q7w.mp3",
+      "voice": "pFZP5JQG7iQjIQuC4Bku",
       "provider": "elevenlabs",
-      "at": "2026-08-21"
+      "at": "2026-08-20"
     }
   },
   "tt-draft": {
@@ -456,23 +456,17 @@
       "provider": "elevenlabs",
       "at": "2026-08-20"
     },
-    "wce3ex": {
-      "file": "wce3ex.mp3",
-      "voice": "csXxiUN2BUFflsCaDxPM",
-      "provider": "elevenlabs",
-      "at": "2026-08-21"
-    },
-    "18boia2": {
-      "file": "18boia2.mp3",
-      "voice": "GPBdEhqsWQkHEWGnPOdO",
-      "provider": "elevenlabs",
-      "at": "2026-08-21"
-    },
     "5btpeh": {
       "file": "5btpeh.mp3",
       "voice": "csXxiUN2BUFflsCaDxPM",
       "provider": "elevenlabs",
       "at": "2026-08-24"
+    },
+    "3cv23y": {
+      "file": "3cv23y.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "at": "2026-08-20"
     }
   },
   "gfw-preview-gw1": {
