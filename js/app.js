@@ -180,7 +180,38 @@ const transferGw = () => {
   return Math.min(g, GAMEWEEKS.length - 1);
 };
 // stats for a gameweek land under key 'gw{n}' — no date-window matching needed
-const gwEvent = i => state.matchStats[`gw${GAMEWEEKS[i].n}`];
+/* ----- reading the season as it looked at a deadline -----
+   Marc, 15 Sept 2026: "I want it to be from the % as close to what it said at
+   the deadline as possible." Nothing about a projection is kept anywhere — the
+   site works one out fresh every time it draws — so the only honest way to mark
+   our own homework on a round already played is to wind the season back to the
+   moment before it kicked off and ask the same question again.
+
+   asOfGw does that. Set it to a round index and everything downstream stops
+   seeing that round and every round after it: no points, no appearances, no
+   settled status, and its fixtures read as still to be played. Then call the
+   very same matchOdds() the win bar calls, and it answers with what it knew at
+   the deadline rather than what it can see now.
+
+   Three touch points and no more, which is the point of doing it here rather
+   than writing a parallel projection that could drift away from the real one:
+     gwEvent            the match record, round by round
+     playerPoints       the season total, which reads matchStats directly
+     teamFixturesInGw   the calendar, so a played game reads as unplayed
+
+   Two things it cannot wind back, and they are said on the card rather than
+   quietly ignored: a player's injury flag and availability % are today's, and
+   so are Scout's predicted XIs — we archive neither per round. Both nudge a
+   projection. Neither of them knows the result. */
+let asOfGw = null;
+const asOfHides = i => asOfGw !== null && i != null && i >= asOfGw;
+const gwIndexOfN = n => GAMEWEEKS.findIndex(g => g.n === n);
+function withAsOf(i, fn) {
+  const prev = asOfGw;
+  asOfGw = i;
+  try { return fn(); } finally { asOfGw = prev; }
+}
+const gwEvent = i => (asOfHides(i) ? undefined : state.matchStats[`gw${GAMEWEEKS[i].n}`]);
 // round robin (circle method): 11 unique rounds for 12 managers, repeated three times
 function pairingsFor(i) {
   if (i >= REGULAR_GWS) return []; // playoffs — bracket handled separately
@@ -1195,7 +1226,13 @@ function playerVariance(xp, sc) {
 // The one fixture-parsing helper: the win bar, "what do I need" and Next Six
 // all read the calendar through here.
 function teamFixturesInGw(team, gwN) {
-  return state.fixtures.filter(f => f.gw === gwN && (f.home === team || f.away === team));
+  const fx = state.fixtures.filter(f => f.gw === gwN && (f.home === team || f.away === team));
+  // wound back to a deadline (asOfGw): those games had not kicked off yet, so
+  // the whole afternoon is still to come. Doing it here and not in
+  // playerFixtureState covers clubRoundOver and the forecast subs too — every
+  // reader of the calendar goes through this one function.
+  if (!asOfHides(gwIndexOfN(gwN))) return fx;
+  return fx.map(f => ({ ...f, finished: false, fp: false, started: false, minutes: 0 }));
 }
 function playerFixtureState(p, gwN) {
   const fx = teamFixturesInGw(p.team, gwN);
@@ -3641,6 +3678,7 @@ function playerPoints(pid) {
   let pts = 0;
   const agg = { app: 0, g: 0, a: 0, cs: 0, sv: 0, ps: 0, pm: 0, yc: 0, rc: 0, og: 0 };
   for (const ev of Object.values(state.matchStats)) {
+    if (asOfHides(ev.gw)) continue; // wound back to a deadline: not banked yet
     const s = ev.playerStats?.[pid];
     if (!s) continue;
     pts += statPoints(p, s); // points computed per-gameweek, so the floors stay honest
@@ -7189,7 +7227,7 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Trough and the search palette; what stays here is how to SHOW them
 let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
   comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null,
-  tab: 'players', totwGw: null };  // Data Room section, and the Team of the Week round
+  tab: 'players', totwGw: null, predGw: null };  // Data Room section, and the Team of the Week / prediction rounds
 /* The squad filter, shared by the Trough and the Data Room so the two read the
    same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
    commonest use is checking your own shape before a transfer — and the other
@@ -11135,6 +11173,7 @@ const DATA_TABS = [
   ['players', 'Players'],
   ['fixtures', 'Fixtures'],
   ['league', 'League'],
+  ['prediction', 'Predictions'],
   ['trough', 'The Trough'],
   ['records', 'Records'],
   ['archive', 'Archive'],
@@ -11146,6 +11185,8 @@ function viewData() {
   const groups = {
     players: () => [playerExplorerCard(), compareCard(), treatmentRoomCard()],
     fixtures: () => [fixtureMatrixCard()],
+    // the Committee marking its own homework (Marc, 15 Sept 2026)
+    prediction: () => [predictionCard()],
     // every score the league has recorded, and what they imply
     league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), totwCard(), totwTallyCard(), crystalBallCard(standings)],
     // how squads were built and how they changed — the market and its ledger
@@ -11175,6 +11216,11 @@ function bindData() {
   });
   const totw = $('#totwGw');
   if (totw) totw.onchange = () => { dataView.totwGw = +totw.value; render(); };
+  document.querySelectorAll('[data-predgw]').forEach(el => el.onclick = e => {
+    e.preventDefault();
+    dataView.predGw = +el.dataset.predgw;
+    render();
+  });
   bindAwardsBits();
   bindPitchLinks();
   bindExplorer();
@@ -11503,6 +11549,146 @@ function averagesCard(standings) {
       </tr>`).join('')}</tbody>
     </table></div>
     <p class="muted" style="font-size:10.5px;margin-top:8px">Mean above median is a side carried by its best weeks. ${gws.length > 1 ? 'The lowest SD is the most predictable manager in the league &mdash; for better or worse.' : 'SD needs more than one week to say anything.'}</p>
+  </div>`;
+}
+/* ----- marking our own homework -----
+   Marc, 15 Sept 2026: "Id also like to track your prediction accuracy, purely
+   on who you thought would win based on the projection immediately after the
+   deadline... generate it retrospectively going back to week 1."
+
+   No projection is stored, so every round here is REBUILT: asOfGw winds the
+   season back to the deadline and the very same matchOdds() that draws the win
+   bar is asked again, blind to everything from that Saturday onward. Using the
+   real function rather than a copy of it is the whole point — a private
+   scoring routine would quietly drift away from the one managers actually see,
+   and then this card would be marking somebody else's homework.
+
+   The call is whichever of win / draw / loss came out highest, so a genuine
+   tie is a result we could have named and not an unlucky miss. A drawn game we
+   called for a winner is simply wrong, which is the honest reading of six out
+   of six.
+
+   Two caveats, printed on the card rather than buried: injury flags and
+   availability % are today's, and so are Scout's predicted XIs. Neither is
+   archived per round. Both move a projection a little. Neither knows the
+   result, so this cannot flatter itself into a right answer. */
+const PRED_CACHE = new Map();
+// a reconstruction only reads rounds BEFORE its own, and those are settled and
+// frozen — so the answer moves only if history itself moves
+function predSignature() {
+  let settled = -1, scored = 0;
+  for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final') settled = i;
+  // the league's own score in the last settled round: it moves on a late
+  // correction or a Chairman's adjustment, and it is nothing like the demo's,
+  // so a cache built under one state can never be read back under another
+  if (settled >= 0) for (const m of state.managers) scored += gwManagerPoints(m.id, settled);
+  return `${settled}|${scored}|${state.managers.length}|${(state.transfers || []).length}|${Object.keys(state.matchStats || {}).length}`;
+}
+function predictionsFor(i) {
+  const key = `${i}|${predSignature()}`;
+  if (PRED_CACHE.has(key)) return PRED_CACHE.get(key);
+  if (PRED_CACHE.size > 200) PRED_CACHE.clear();
+  // the projection, blind to the round it is projecting
+  const rows = withAsOf(i, () => pairingsFor(i).map(([a, b]) => {
+    const o = matchOdds(a, b, i);
+    const call = o.win >= o.loss && o.win >= o.draw ? 'a' : o.loss >= o.draw ? 'b' : 'd';
+    return { a, b, o, call, conf: Math.max(o.win, o.draw, o.loss) };
+  }));
+  // and now, eyes open, what actually happened
+  for (const r of rows) {
+    r.pa = gwManagerPoints(r.a, i);
+    r.pb = gwManagerPoints(r.b, i);
+    r.actual = r.pa > r.pb ? 'a' : r.pb > r.pa ? 'b' : 'd';
+    r.right = r.call === r.actual;
+  }
+  PRED_CACHE.set(key, rows);
+  return rows;
+}
+function predictionCard() {
+  const settled = [];
+  for (let i = 0; i < Math.min(REGULAR_GWS, GAMEWEEKS.length); i++) if (gwStatus(i) === 'final') settled.push(i);
+  if (!settled.length) {
+    return `<div class="card"><h2>Prediction Accuracy</h2>
+      <p class="muted" style="font-size:12.5px">No settled round yet. The Committee has made no claims it can be held to.</p></div>`;
+  }
+  const byGw = settled.map(i => ({ i, rows: predictionsFor(i) }));
+  let run = 0, runOf = 0;
+  for (const g of byGw) {
+    g.right = g.rows.filter(r => r.right).length;
+    run += g.right; runOf += g.rows.length;
+    g.run = run; g.runOf = runOf;
+  }
+  const pct = (n, d) => d ? Math.round((n / d) * 100) : 0;
+  const tick = ok => `<span class="${ok ? 'gold' : 'muted'}" style="font-weight:700">${ok ? '&#10003;' : '&#10007;'}</span>`;
+
+  /* ----- the week the reader is looking at ----- */
+  const pick = settled.includes(dataView.predGw) ? dataView.predGw : settled[settled.length - 1];
+  const detail = predictionsFor(pick);
+  const nameOf = mid => teamName(mid) || managerName(mid);
+  const called = r => r.call === 'd' ? 'Draw' : nameOf(r.call === 'a' ? r.a : r.b);
+  const games = detail.map(r => `<tr>
+    <td style="white-space:nowrap"><b>${esc(nameOf(r.a))}</b> <span class="muted">v</span> <b>${esc(nameOf(r.b))}</b></td>
+    <td class="num muted" style="white-space:nowrap">${r.pa}&ndash;${r.pb}</td>
+    <td style="white-space:nowrap;font-size:12px">${esc(called(r))} <span class="muted">${Math.round(r.conf * 100)}%</span></td>
+    <td class="num">${tick(r.right)}</td>
+  </tr>`).join('');
+
+  /* ----- by team. Marc asked for both readings without knowing it: the
+     headline is how often we called a manager's game right at all, and the
+     last column is the one his example describes — of the weeks he WON, how
+     many did we say he would ----- */
+  const tally = {};
+  for (const m of state.managers) tally[m.id] = { id: m.id, team: m.team || m.name, p: 0, right: 0, w: 0, wCalled: 0 };
+  for (const g of byGw) for (const r of g.rows) {
+    for (const [mid, side] of [[r.a, 'a'], [r.b, 'b']]) {
+      const t = tally[mid];
+      if (!t) continue;
+      t.p++;
+      if (r.right) t.right++;
+      if (r.actual === side) { t.w++; if (r.call === side) t.wCalled++; }
+    }
+  }
+  const teams = Object.values(tally).filter(t => t.p)
+    .sort((a, b) => pct(b.right, b.p) - pct(a.right, a.p) || b.right - a.right || a.team.localeCompare(b.team));
+  const bestPct = teams.length ? pct(teams[0].right, teams[0].p) : 0;
+
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>Prediction Accuracy <span class="muted" style="font-weight:400;font-size:12px">${run} of ${runOf} &middot; ${pct(run, runOf)}%</span></h2>
+    <p class="muted" style="font-size:11.5px;margin:0 0 10px">Every round below is rebuilt from scratch: the season is wound back to that deadline and the same projection that draws the win bar is asked again, blind to everything after it.</p>
+
+    <p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">Week by week</p>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>GW</th><th style="text-align:center">Six games</th>
+        <th class="num">Right</th><th class="num" title="Every game called this season">Running</th><th class="num">%</th></tr></thead>
+      <tbody>${byGw.map(g => `<tr${g.i === pick ? ' style="font-weight:600"' : ''}>
+        <td><a href="#" data-predgw="${g.i}">GW${GAMEWEEKS[g.i].n}</a></td>
+        <td style="text-align:center;letter-spacing:3px">${g.rows.map(r => tick(r.right)).join('')}</td>
+        <td class="num ${g.right === g.rows.length ? 'gold' : ''}">${g.right}/${g.rows.length}</td>
+        <td class="num muted">${g.run}/${g.runOf}</td>
+        <td class="num muted">${pct(g.run, g.runOf)}%</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+
+    <p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">GW${GAMEWEEKS[pick].n}, game by game</p>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Tie</th><th class="num">Result</th><th>We said</th><th class="num">&nbsp;</th></tr></thead>
+      <tbody>${games}</tbody>
+    </table></div>
+
+    <p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">By team</p>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th>Team</th><th class="num">Games</th><th class="num">Called right</th><th class="num">%</th>
+        <th class="num" title="Of the weeks this manager won, how many the projection said he would">Wins called</th></tr></thead>
+      <tbody>${teams.map(t => `<tr>
+        <td style="white-space:nowrap"><b>${esc(t.team)}</b></td>
+        <td class="num muted">${t.p}</td>
+        <td class="num">${t.right}</td>
+        <td class="num ${pct(t.right, t.p) === bestPct ? 'gold' : 'muted'}">${pct(t.right, t.p)}%</td>
+        <td class="num muted">${t.w ? `${t.wCalled}/${t.w}` : '&mdash;'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+
+    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. Two things cannot be wound back and are not: injury flags and availability are today's, and so are the predicted line-ups. Both nudge a projection. Neither of them knows the score.</p>
   </div>`;
 }
 /* ----- who keeps turning up in those elevens -----

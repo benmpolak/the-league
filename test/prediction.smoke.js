@@ -1,0 +1,270 @@
+/* Prediction accuracy, rebuilt from the deadline (Marc, 15 Sept 2026: "I want
+ * it to be from the % as close to what it said at the deadline as possible").
+ *
+ * Nothing about a projection is stored, so the card winds the season back with
+ * asOfGw and asks the real matchOdds() again. That is only worth anything if
+ * the wind-back is airtight, so most of this file is spent attacking it:
+ *   - blind: no points, no appearances, no settled status, no finished
+ *     fixtures for the round being projected or any round after it
+ *   - not TOO blind: every earlier round is still fully visible, because that
+ *     history is exactly what the projection is supposed to be using
+ *   - inert: with asOfGw unset, every one of those readers answers precisely as
+ *     it did before this existed. This is the one that matters most — the
+ *     machinery sits inside functions the whole site depends on
+ *   - restored: a throw inside withAsOf must not leave the season wound back
+ *   - honest: the marking cannot be beaten by a card that peeks. The same
+ *     projection run with eyes open scores far better, and the gap is the proof
+ * Run against any side-port server with TEST_BASE_URL=http://127.0.0.1:8135.
+ */
+'use strict';
+const puppeteer = require('puppeteer-core');
+const chromePath = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
+
+let pass = 0, fail = 0;
+const chk = (name, ok, detail = '') => {
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+  if (ok) pass++; else fail++;
+};
+
+(async () => {
+  const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
+  const page = await browser.newPage();
+  const pageErrors = [];
+  page.on('pageerror', e => pageErrors.push(e.message));
+  page.on('dialog', d => d.accept());
+  await page.goto(baseUrl + '?sandbox&nosync', { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => typeof state !== 'undefined' && state.managers.length === 12);
+
+  const log = await page.evaluate(() => {
+    const log = [];
+    const t = (name, ok, detail = '') => log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
+
+    /* ----- a season with enough behind it to project from ----- */
+    state = buildDemoState();
+    const WEEKS = 5;
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < WEEKS; i++) {
+      const gwN = GAMEWEEKS[i].n, ps = {};
+      for (const q of PLAYERS) {
+        if (rnd() < 0.35) continue;
+        const gp = { FW: 0.34, MF: 0.18, DF: 0.06, GK: 0.01 }[q.pos];
+        ps[q.id] = { min: 90, st: 1, g: rnd() < gp ? 1 : 0, a: rnd() < 0.12 ? 1 : 0,
+          cs: rnd() < 0.3 ? 1 : 0, sv: q.pos === 'GK' ? Math.floor(rnd() * 6) : 0 };
+      }
+      state.matchStats['gw' + gwN] = { gw: i, label: GAMEWEEKS[i].label, final: true, playerStats: ps };
+      GAMEWEEKS[i].finished = true;
+      // the calendar has to agree the round was played, or nothing below is
+      // testing a wind-back at all
+      for (const f of state.fixtures.filter(f => f.gw === gwN)) { f.finished = true; f.fp = true; f.started = true; f.minutes = 90; }
+    }
+    const realStatus = window.gwStatus;
+    window.gwStatus = i => (i < WEEKS ? 'final' : realStatus(i));
+
+    const TARGET = 3;              // a round with three settled weeks behind it
+    const mid = state.managers[0].id;
+    const someone = lineupFor(mid, TARGET)[0];
+    const club = PLAYER_BY_ID[someone].team;
+    const gwN = GAMEWEEKS[TARGET].n;
+
+    /* ----- inert until asked. The single most important property here:
+       asOfGw lives inside gwEvent, playerPoints and teamFixturesInGw, which
+       the entire site reads. Unset, every one of them must answer exactly as
+       it always did ----- */
+    (() => {
+      const before = {
+        pts: gwManagerPoints(mid, TARGET),
+        player: gwPlayerPoints(someone, TARGET),
+        season: playerPoints(someone).pts,
+        app: appearedInGw(someone, TARGET),
+        fx: teamFixturesInGw(club, gwN).map(f => `${f.home}-${f.away}-${!!f.finished}`).join('|'),
+        odds: JSON.stringify(matchOdds(...pairingsFor(TARGET)[0], TARGET)),
+      };
+      withAsOf(TARGET, () => matchOdds(...pairingsFor(TARGET)[0], TARGET));
+      const after = {
+        pts: gwManagerPoints(mid, TARGET),
+        player: gwPlayerPoints(someone, TARGET),
+        season: playerPoints(someone).pts,
+        app: appearedInGw(someone, TARGET),
+        fx: teamFixturesInGw(club, gwN).map(f => `${f.home}-${f.away}-${!!f.finished}`).join('|'),
+        odds: JSON.stringify(matchOdds(...pairingsFor(TARGET)[0], TARGET)),
+      };
+      t('the season reads identically before and after a wind-back',
+        JSON.stringify(before) === JSON.stringify(after),
+        Object.keys(before).filter(k => before[k] !== after[k]).join(', ') || 'all match');
+      t('and asOfGw is back to nothing', asOfGw === null, String(asOfGw));
+    })();
+
+    /* ----- blind to the round it is projecting, and everything after ----- */
+    withAsOf(TARGET, () => {
+      t('wound back: nobody has scored in the target round',
+        gwManagerPoints(mid, TARGET) === 0 && gwPlayerPoints(someone, TARGET) === 0);
+      t('wound back: nobody has appeared in it',
+        lineupFor(mid, TARGET).every(id => !appearedInGw(id, TARGET)));
+      t('wound back: it is not a settled round',
+        realStatus(TARGET) !== 'final', realStatus(TARGET));
+      t('wound back: its fixtures are still to be played',
+        teamFixturesInGw(club, gwN).every(f => !f.finished && !f.fp && !f.started));
+      t('wound back: the whole afternoon is still to come',
+        playerFixtureState(PLAYER_BY_ID[someone], gwN).frac === 1);
+      t('wound back: later rounds are hidden too',
+        gwManagerPoints(mid, TARGET + 1) === 0 && !appearedInGw(someone, TARGET + 1));
+      t('wound back: the season total counts only what came before',
+        playerPoints(someone).pts === [0, 1, 2].reduce((s, i) => s + gwPlayerPoints(someone, i), 0),
+        `${playerPoints(someone).pts}`);
+      // a settled round with nothing banked and everything to play for is
+      // exactly a deadline: both sides must read as eleven men still to play
+      const o = teamOutlook(mid, TARGET);
+      t('wound back: eleven men still to play, nothing banked',
+        o.toPlay === 11 && o.varsum > 0, `toPlay ${o.toPlay}`);
+      // The submitted eleven, except where a man was ruled out before a ball
+      // was kicked — the site forecast-subs those at a real deadline too, so
+      // the reconstruction must as well. What it must NOT do is move anyone
+      // for any other reason: no settled auto-subs, and nobody swapped because
+      // of how the afternoon went.
+      const live = liveXI(mid, TARGET);
+      t('wound back: no settled auto-subs, the round has not been played',
+        live.subs.length === 0, JSON.stringify(live.subs));
+      t('wound back: the eleven moves only for men ruled out before kick-off',
+        live.forecast.every(s => startChance(PLAYER_BY_ID[s.out], TARGET) === 0),
+        live.forecast.map(s => PLAYER_BY_ID[s.out].name).join(', ') || 'none moved');
+    });
+
+    /* ----- but NOT blind to the history it is meant to be using ----- */
+    (() => {
+      const openEyes = [0, 1, 2].map(i => gwManagerPoints(mid, i));
+      const woundBack = withAsOf(TARGET, () => [0, 1, 2].map(i => gwManagerPoints(mid, i)));
+      t('every earlier round is still fully visible',
+        JSON.stringify(openEyes) === JSON.stringify(woundBack), woundBack.join(','));
+      t('and there was something there to see', openEyes.some(x => x > 0), openEyes.join(','));
+    })();
+
+    /* ----- a throw must not leave the season wound back ----- */
+    (() => {
+      let threw = false;
+      try { withAsOf(TARGET, () => { throw new Error('boom'); }); } catch (e) { threw = true; }
+      t('a throw inside a wind-back still restores the season',
+        threw && asOfGw === null && gwManagerPoints(mid, TARGET) > 0,
+        `asOfGw=${asOfGw}`);
+    })();
+
+    /* ----- the marking itself ----- */
+    const rounds = [0, 1, 2, 3, 4].map(i => predictionsFor(i));
+    (() => {
+      t('every settled round is marked, six games each',
+        rounds.every(r => r.length === 6), rounds.map(r => r.length).join(','));
+      t('every game has a call, a result and a verdict',
+        rounds.flat().every(r => ['a', 'b', 'd'].includes(r.call)
+          && ['a', 'b', 'd'].includes(r.actual) && typeof r.right === 'boolean'));
+      t('right means the call matched the result, and nothing else',
+        rounds.flat().every(r => r.right === (r.call === r.actual)));
+      t('the result recorded is the real one',
+        rounds.flat().every((r, k) => {
+          const i = Math.floor(k / 6);
+          return r.pa === gwManagerPoints(r.a, i) && r.pb === gwManagerPoints(r.b, i);
+        }));
+      t('the call is the likeliest of the three outcomes',
+        rounds.flat().every(r => {
+          const best = Math.max(r.o.win, r.o.draw, r.o.loss);
+          return Math.abs(r.conf - best) < 1e-9
+            && ({ a: r.o.win, b: r.o.loss, d: r.o.draw })[r.call] === best;
+        }));
+      t('and it is a real projection, not a coin flip on the favourite',
+        rounds.flat().every(r => r.conf > 0 && r.conf <= 1));
+    })();
+
+    /* ----- the marking is honest: a card that peeked would score far better ----- */
+    (() => {
+      const blindRight = rounds.flat().filter(r => r.right).length;
+      let peekRight = 0;
+      for (let i = 0; i < 5; i++) for (const [a, b] of pairingsFor(i)) {
+        const o = matchOdds(a, b, i);                 // eyes open: the round is settled
+        const call = o.win >= o.loss && o.win >= o.draw ? 'a' : o.loss >= o.draw ? 'b' : 'd';
+        const pa = gwManagerPoints(a, i), pb = gwManagerPoints(b, i);
+        if (call === (pa > pb ? 'a' : pb > pa ? 'b' : 'd')) peekRight++;
+      }
+      t('marking blind scores worse than marking with the result in hand',
+        blindRight < peekRight, `blind ${blindRight}/30 vs peeking ${peekRight}/30`);
+      t('and it is not simply always wrong', blindRight > 0, `${blindRight}/30`);
+    })();
+
+    /* ----- the same round asked twice gives the same answer ----- */
+    (() => {
+      const a = JSON.stringify(predictionsFor(2).map(r => [r.call, r.right]));
+      const b = JSON.stringify(predictionsFor(2).map(r => [r.call, r.right]));
+      t('a round marked twice is marked the same way', a === b);
+      // and the cache cannot serve one state's answers to another
+      const sig = predSignature();
+      const keep = state.transfers.length;
+      state.transfers.push({ managerId: mid, outId: 1, inId: 2, gw: 9, t: Date.now(), n: keep + 1 });
+      t('the cache notices when the league underneath it changes', predSignature() !== sig);
+      state.transfers.length = keep;
+    })();
+
+    /* ----- the card ----- */
+    (() => {
+      myId = state.managers[0].id; state.view = 'data'; dataView.tab = 'prediction'; dataView.predGw = null;
+      render();
+      const card = [...document.querySelectorAll('.card')]
+        .find(c => /Prediction Accuracy/.test(c.querySelector('h2')?.textContent || ''));
+      const txt = card ? card.textContent.replace(/\s+/g, ' ') : '';
+      t('the card renders in its own Data Room section',
+        !!card && !!document.querySelector('[data-dtab="prediction"]'));
+      t('it shows all three tables Marc asked for',
+        /Week by week/i.test(txt) && /game by game/i.test(txt) && /By team/i.test(txt));
+      // the running total on the last row must be the whole season's marking
+      const rows = card ? [...card.querySelectorAll('tbody tr')] : [];
+      const weekRows = rows.filter(r => /^GW\d+$/.test(r.cells[0].textContent.trim()));
+      const total = rounds.flat().filter(r => r.right).length;
+      t('the week-by-week table has a row per settled round',
+        weekRows.length === 5, String(weekRows.length));
+      t('and its last running total is the season\'s',
+        weekRows.length === 5 && weekRows[4].cells[3].textContent.trim() === `${total}/30`,
+        weekRows.length === 5 ? weekRows[4].cells[3].textContent.trim() : 'no row');
+      t('it defaults to the most recent settled round', /GW5, game by game/i.test(txt));
+
+      // by-team: twelve managers, five games each, and the percentages sorted
+      const teamRows = rows.filter(r => /^\d+$/.test(r.cells[1]?.textContent.trim() || '') && r.cells.length === 5);
+      t('the by-team table covers all twelve', teamRows.length === 12, String(teamRows.length));
+      t('every manager played all five rounds',
+        teamRows.every(r => r.cells[1].textContent.trim() === '5'));
+      const pcts = teamRows.map(r => +r.cells[3].textContent.replace('%', ''));
+      t('and the table runs highest accuracy first',
+        pcts.every((x, k) => !k || pcts[k - 1] >= x), pcts.join(','));
+      // every game is called for two managers, so the by-team column totals
+      // must come to twice the season's tally
+      const sum = teamRows.reduce((s, r) => s + +r.cells[2].textContent.trim(), 0);
+      t('the by-team counts add up to the season tally, counted twice',
+        sum === total * 2, `${sum} vs ${total * 2}`);
+      // Marc's own example: of the weeks a manager won, how many we called
+      t('the wins-called column never claims more wins than were won',
+        teamRows.every(r => {
+          const c = r.cells[4].textContent.trim();
+          if (c === '—') return true;
+          const [got, of] = c.split('/').map(Number);
+          return got <= of && of <= 5;
+        }));
+    })();
+
+    /* ----- picking a different week ----- */
+    (() => {
+      dataView.predGw = 0; render();
+      const card = [...document.querySelectorAll('.card')]
+        .find(c => /Prediction Accuracy/.test(c.querySelector('h2')?.textContent || ''));
+      t('picking an earlier round switches the game-by-game table',
+        /GW1, game by game/i.test(card ? card.textContent.replace(/\s+/g, ' ') : ''));
+      dataView.predGw = null;
+    })();
+
+    window.gwStatus = realStatus;
+    return log;
+  });
+
+  for (const line of log) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));
+  chk('no page errors while marking the homework', pageErrors.length === 0, pageErrors.join(' | '));
+
+  console.log(`\n[prediction] ${pass} passed, ${fail} failed`);
+  await browser.close();
+  process.exit(fail ? 1 : 0);
+})();
