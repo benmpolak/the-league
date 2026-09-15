@@ -1284,6 +1284,10 @@ function playerFixtureState(p, gwN) {
 const SCOUT_PICKED = 0.92;    // they name him: strong, not certain — they are guessing too
 const SCOUT_OMITTED = 0.2;    // named XI without him: he can still come on, or they can be wrong
 function scoutXI(p, gwIdx) {
+  // lineups.json holds the CURRENT slot only — there is no archive of it — so
+  // a wound-back round has to do without rather than read this week's team
+  // sheet into a round played a fortnight ago
+  if (asOfHides(gwIdx)) return null;
   const book = state.lineupsFeed?.clubs;
   const club = book && p && p.club && book[String(p.club).toUpperCase()];
   if (!club || !Array.isArray(club.xi) || !club.xi.length) return null;
@@ -1299,16 +1303,36 @@ function scoutXI(p, gwIdx) {
   if (!club.updatedOn) return null;
   return club.xi.includes(p.id) ? SCOUT_PICKED : SCOUT_OMITTED;
 }
+/* The treatment room as it stood at ONE deadline. Only a wound-back season
+   asks for this: today's flags are the right answer for today's projection,
+   and the wrong one entirely for a round played three weeks ago. A player with
+   no entry was unflagged that week — the file lists the ones the FPL desk had
+   something to say about — so he reads as fully available rather than unknown.
+   Rounds before the file started keep the old behaviour and the card says so. */
+function newsAt(pid, gwIdx) {
+  const rounds = state.teamNews?.rounds;
+  const gwN = GAMEWEEKS[gwIdx]?.n;
+  if (!rounds || gwN == null) return null;
+  const round = rounds[String(gwN)];
+  if (!round || !round.flagged) return null;
+  return round.flagged[String(pid)] || { s: 'a', c: 100 };
+}
+// is the frozen news good for this round at all? (it began at GW2)
+const newsKnownAt = gwIdx => !!state.teamNews?.rounds?.[String(GAMEWEEKS[gwIdx]?.n)];
 function startChance(p, gwIdx) {
   if (!p) return 0;
   // already on the pitch this week: no longer a question of selection
   if (appearedInGw(p.id, gwIdx)) return 1;
-  if (p.status && p.status !== 'a' && p.status !== 'd') return 0; // injured, banned, gone
+  // wound back to a deadline: the flags that mattered were that week's
+  const was = asOfHides(gwIdx) ? newsAt(p.id, gwIdx) : null;
+  const status = was ? was.s : p.status;
+  const chance = was ? was.c : p.chance;
+  if (status && status !== 'a' && status !== 'd') return 0; // injured, banned, gone
   // NB `chance` is null for everyone the FPL desk has no news about, and
   // +null is 0 — read carelessly that is a 0% rating for the entire league,
   // and every projection on the site collapses to nothing
-  const hasChance = p.chance !== null && p.chance !== undefined && p.chance !== '' && Number.isFinite(+p.chance);
-  const cap = hasChance ? Math.max(0, Math.min(100, +p.chance)) / 100 : 1;
+  const hasChance = chance !== null && chance !== undefined && chance !== '' && Number.isFinite(+chance);
+  const cap = hasChance ? Math.max(0, Math.min(100, +chance)) / 100 : 1;
   if (!cap) return 0;
   // our own record: gameweeks his club actually played, and whether he started
   let played = 0, started = 0;
@@ -4993,11 +5017,12 @@ async function syncNow(manual = false) {
   if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
-    const [statsRes, fxRes, hlRes, luRes] = await Promise.all([
+    const [statsRes, fxRes, hlRes, luRes, tnRes] = await Promise.all([
       fetch(`data/stats.json${bust}`),
       fetch(`data/fixtures.json${bust}`),
       fetch(`data/highlights.json${bust}`).catch(() => null), // optional, hand-curated
       fetch(`data/lineups.json${bust}`).catch(() => null),    // optional, predicted XIs
+      fetch(`data/teamnews.json${bust}`).catch(() => null),   // optional, the frozen treatment room
     ]);
     const stats = await statsRes.json();
     const fixtures = await fxRes.json();
@@ -5008,6 +5033,13 @@ async function syncNow(manual = false) {
     // the highlights map is: no file, or a file that will not parse, and the
     // projection carries on with the signals it already had.
     if (luRes?.ok) { try { state.lineupsFeed = await luRes.json(); } catch { /* keep the old book */ } }
+    // team news as it stood going into each deadline, frozen once the deadline
+    // passes (scripts/fetch_fpl.py). The live projection has no use for it —
+    // it reads today's flags off the player feed, which is right for today —
+    // but a wound-back one does, because today's treatment room says nothing
+    // about who was fit in September. Optional the same way: no file and the
+    // reconstruction falls back on the current flags and says so.
+    if (tnRes?.ok) { try { state.teamNews = await tnRes.json(); } catch { /* keep the old rounds */ } }
     state.feedGenerated = stats.generated || null; // for the stale-feed warning
     state.fixtures = fixtures
       .filter(f => f.date)
@@ -11582,7 +11614,7 @@ function predSignature() {
   // correction or a Chairman's adjustment, and it is nothing like the demo's,
   // so a cache built under one state can never be read back under another
   if (settled >= 0) for (const m of state.managers) scored += gwManagerPoints(m.id, settled);
-  return `${settled}|${scored}|${state.managers.length}|${(state.transfers || []).length}|${Object.keys(state.matchStats || {}).length}`;
+  return `${settled}|${scored}|${state.managers.length}|${(state.transfers || []).length}|${Object.keys(state.matchStats || {}).length}|${JSON.stringify(state.teamNews?.rounds || {}).length}`;
 }
 function predictionsFor(i) {
   const key = `${i}|${predSignature()}`;
@@ -11612,6 +11644,9 @@ function predictionCard() {
       <p class="muted" style="font-size:12.5px">No settled round yet. The Committee has made no claims it can be held to.</p></div>`;
   }
   const byGw = settled.map(i => ({ i, rows: predictionsFor(i) }));
+  // rounds the frozen team news does not reach back to — named rather than
+  // glossed over, because those are the ones marked against today's flags
+  const newsGap = settled.filter(i => !newsKnownAt(i));
   let run = 0, runOf = 0;
   for (const g of byGw) {
     g.right = g.rows.filter(r => r.right).length;
@@ -11688,7 +11723,7 @@ function predictionCard() {
       </tr>`).join('')}</tbody>
     </table></div>
 
-    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. Two things cannot be wound back and are not: injury flags and availability are today's, and so are the predicted line-ups. Both nudge a projection. Neither of them knows the score.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. ${newsGap.length ? `The treatment room is wound back too, from the team news frozen at each deadline &mdash; except ${newsGap.map(i => 'GW' + GAMEWEEKS[i].n).join(', ')}, which ${newsGap.length === 1 ? 'predates' : 'predate'} that record and ${newsGap.length === 1 ? 'reads' : 'read'} today's flags instead.` : 'The treatment room is wound back too, from the team news frozen at each deadline.'} What cannot be wound back is the predicted line-ups, which are kept for the open round only, so a rebuilt projection does without them.</p>
   </div>`;
 }
 /* ----- who keeps turning up in those elevens -----

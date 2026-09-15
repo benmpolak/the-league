@@ -40,8 +40,65 @@ const chk = (name, ok, detail = '') => {
     const log = [];
     const t = (name, ok, detail = '') => log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
 
+    /* ----- the frozen treatment room -----
+     * Checked on the REAL feed before the demo season replaces it, because
+     * this is the one part of the wind-back that depends on shipped data.
+     * Today's injury list says nothing about who was fit in August: without
+     * this the reconstruction rules out men who played 90 minutes. */
+    const realNews = state.teamNews;
+    (() => {
+      t('the frozen team news is loaded on boot', !!realNews?.rounds,
+        realNews ? Object.keys(realNews.rounds || {}).join(',') : 'absent');
+      if (!realNews?.rounds) return;
+      const archived = Object.keys(realNews.rounds).map(Number).sort((a, b) => a - b);
+      const T = GAMEWEEKS.findIndex(g => g.n === archived[0]);
+      t('and it knows the rounds it has, and admits the ones it has not',
+        newsKnownAt(T) && !newsKnownAt(GAMEWEEKS.findIndex(g => g.n === archived[archived.length - 1] + 1)));
+      // an unflagged man was unflagged, not unknown
+      const clean = PLAYERS.find(p => !realNews.rounds[String(archived[0])].flagged[String(p.id)]);
+      t('a man the desk said nothing about reads as available that week',
+        !!clean && newsAt(clean.id, T)?.s === 'a' && newsAt(clean.id, T)?.c === 100);
+      // The point of the exercise: today's flags must not rule out a man who
+      // was fit at that deadline. Read on men who did NOT play that week —
+      // for anyone who did, startChance answers 1 off the teamsheet before it
+      // ever looks at a flag, which would hide the very thing being tested.
+      const wasFit = PLAYERS.filter(p => {
+        const n = newsAt(p.id, T);
+        return n && n.s === 'a' && !appearedInGw(p.id, T)
+          && p.status && p.status !== 'a' && p.status !== 'd';
+      });
+      t('men fit at that deadline but flagged today are not ruled out by it',
+        wasFit.length > 0 && wasFit.every(p => startChance(p, T) === 0)
+          && wasFit.some(p => withAsOf(T, () => startChance(p, T)) > 0),
+        `${wasFit.length} such players`);
+      // and the reverse: a man ruled out THEN stays ruled out then
+      const wasOut = PLAYERS.filter(p => {
+        const n = newsAt(p.id, T);
+        return n && n.s !== 'a' && n.s !== 'd';
+      });
+      t('and men ruled out at that deadline stay ruled out for that round',
+        wasOut.length > 0 && wasOut.every(p => withAsOf(T, () => startChance(p, T)) === 0),
+        `${wasOut.length} such players`);
+      // Scout's XIs are kept for the open round only, so a rebuilt round must
+      // not read this week's team sheet into a fortnight-old deadline
+      t('the predicted line-ups go quiet while the season is wound back',
+        PLAYERS.every(p => withAsOf(T, () => scoutXI(p, T)) === null));
+      // and the gag is the wind-back and nothing wider: wound back to a LATER
+      // round, this one is not hidden, and Scout speaks exactly as he always
+      // did. (Whether he says anything at all is the freshness rule's business
+      // — those XIs are only good for the round they were written for.)
+      t('and that gag is the wind-back alone, not a wider silencing',
+        PLAYERS.every(p => withAsOf(T + 2, () => scoutXI(p, T)) === scoutXI(p, T)));
+      // inert when not asked, for startChance specifically
+      const before = PLAYERS.slice(0, 300).map(p => startChance(p, T));
+      withAsOf(T, () => PLAYERS.slice(0, 300).map(p => startChance(p, T)));
+      t('and today\'s projection is untouched by any of it',
+        JSON.stringify(before) === JSON.stringify(PLAYERS.slice(0, 300).map(p => startChance(p, T))));
+    })();
+
     /* ----- a season with enough behind it to project from ----- */
     state = buildDemoState();
+    state.teamNews = realNews;   // the demo replaces state wholesale
     const WEEKS = 5;
     let seed = 7;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
