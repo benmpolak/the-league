@@ -7189,7 +7189,7 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Trough and the search palette; what stays here is how to SHOW them
 let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
   comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null,
-  tab: 'players' };  // which Data Room section is open (Marc, 15 Sept 2026)
+  tab: 'players', totwGw: null };  // Data Room section, and the Team of the Week round
 /* The squad filter, shared by the Trough and the Data Room so the two read the
    same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
    commonest use is checking your own shape before a transfer — and the other
@@ -11147,7 +11147,7 @@ function viewData() {
     players: () => [playerExplorerCard(), compareCard(), treatmentRoomCard()],
     fixtures: () => [fixtureMatrixCard()],
     // every score the league has recorded, and what they imply
-    league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), crystalBallCard(standings)],
+    league: () => [pointsGridCard(standings), rankGridCard(standings), averagesCard(standings), totwCard(), crystalBallCard(standings)],
     // how squads were built and how they changed — the market and its ledger
     trough: () => [troughActivityCard(), tradeRecordCard(), seasonSquadCard()],
     records: () => [
@@ -11173,6 +11173,8 @@ function bindData() {
     window.scrollTo({ top: 0 });   // a new section starts at its own top
     render();
   });
+  const totw = $('#totwGw');
+  if (totw) totw.onchange = () => { dataView.totwGw = +totw.value; render(); };
   bindAwardsBits();
   bindPitchLinks();
   bindExplorer();
@@ -11383,6 +11385,81 @@ function rankGridCard(standings) {
       </tr>`).join('')}</tbody>
     </table></div>
     <p class="muted" style="font-size:10.5px;margin-top:8px">Where each manager finished among the twelve that week. Level scores share the higher place.</p>
+  </div>`;
+}
+/* ----- Team of the Week, and of the season -----
+   Marc, 15 Sept 2026: "Team of the week, showing the highest scoring team of
+   the week in any legal formation... the same just for players who were in the
+   trough at the start of the gameweek... a team of the season showing the
+   players with highest cumulative scores."
+
+   Nothing is stored. Every one of these is recomputed from settled match
+   stats, which is why it can be wound back to GW1 today and why it fills
+   itself in at the close of each round without anything having to run.
+
+   The eleven is optimal, not merely good: a shape fixes how many of each
+   position play, and inside a fixed shape the best XI is the top scorers of
+   each position, so trying all eight legal shapes and taking the best is
+   exhaustive. XI_RULES gives 1 keeper, 3-5 at the back, 2-5 in midfield and
+   1-3 up front. */
+function bestXIFrom(pool, scoreOf) {
+  const byPos = { GK: [], DF: [], MF: [], FW: [] };
+  for (const p of pool) if (byPos[p.pos]) byPos[p.pos].push(p);
+  for (const k in byPos) byPos[k].sort((a, b) => scoreOf(b) - scoreOf(a) || a.name.localeCompare(b.name));
+  let best = null;
+  for (let df = XI_RULES.DF[0]; df <= XI_RULES.DF[1]; df++)
+    for (let mf = XI_RULES.MF[0]; mf <= XI_RULES.MF[1]; mf++) {
+      const fw = XI_RULES.size - 1 - df - mf;
+      if (fw < XI_RULES.FW[0] || fw > XI_RULES.FW[1]) continue;
+      if (byPos.GK.length < 1 || byPos.DF.length < df || byPos.MF.length < mf || byPos.FW.length < fw) continue;
+      const xi = [...byPos.GK.slice(0, 1), ...byPos.DF.slice(0, df), ...byPos.MF.slice(0, mf), ...byPos.FW.slice(0, fw)];
+      const total = xi.reduce((t, p) => t + scoreOf(p), 0);
+      if (!best || total > best.total) best = { xi, total, shape: `${df}-${mf}-${fw}` };
+    }
+  return best;
+}
+function totwCard() {
+  const settled = [];
+  for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final') settled.push(i);
+  if (!settled.length) return '';
+  const pick = settled.includes(dataView.totwGw) ? dataView.totwGw : settled[settled.length - 1];
+  const gwN = GAMEWEEKS[pick].n;
+  // who was NOT owned when the round kicked off. squadAt counts a transfer
+  // that lands IN a gameweek, so the start of round i is ownership at i-1
+  const ownedAtKickoff = ownedIdsAt(pick - 1);
+  const ownerNow = {};
+  for (const m of state.managers) for (const p of squadAt(m.id, pick)) ownerNow[p.id] = m.id;
+  const wk = p => gwPlayerPoints(p.id, pick);
+  const season = p => settled.reduce((t, i) => t + gwPlayerPoints(p.id, i), 0);
+
+  const anyone = bestXIFrom(PLAYERS, wk);
+  const trough = bestXIFrom(PLAYERS.filter(p => !ownedAtKickoff.has(p.id)), wk);
+  const ofSeason = bestXIFrom(PLAYERS, season);
+
+  const row = (p, pts, showOwner) => `<div class="lrow" style="font-size:12.5px;gap:8px">
+    <span class="pos-badge pos-${p.pos}">${p.pos}</span>
+    <b>${esc(p.name)}</b> <span class="muted">${esc(p.club)}</span>
+    ${showOwner ? `<span class="tag" style="font-size:10px">${ownerNow[p.id] != null ? esc(teamName(ownerNow[p.id])) : 'Trough'}</span>` : ''}
+    <span class="num gold" style="margin-left:auto;font-weight:700">${pts(p)}</span>
+  </div>`;
+  const side = (t, pts, showOwner, blurb) => !t ? '<p class="muted" style="font-size:12px">Not enough players with a score to field an eleven.</p>'
+    : `<p class="muted" style="font-size:11px;margin:2px 0 6px">${t.shape} &middot; <b style="color:var(--text)">${t.total}</b> points${blurb ? ` &middot; ${blurb}` : ''}</p>
+       ${['GK', 'DF', 'MF', 'FW'].map(q => t.xi.filter(p => p.pos === q).map(p => row(p, pts, showOwner)).join('')).join('')}`;
+  const sect = t => `<p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t}</p>`;
+
+  return `<div class="card" style="margin-bottom:18px">
+    <h2>Team of the Week <span class="muted" style="font-weight:400;font-size:12px">the best eleven anybody could have fielded</span></h2>
+    ${sect(`Team of the season &middot; ${settled.length} settled gameweek${settled.length === 1 ? '' : 's'}`)}
+    ${side(ofSeason, season, false, 'highest cumulative scorers, in a legal shape')}
+    ${sect('The gameweek')}
+    <div style="margin-bottom:6px"><select id="totwGw" aria-label="Gameweek">
+      ${settled.map(i => `<option value="${i}" ${i === pick ? 'selected' : ''}>GW${GAMEWEEKS[i].n}</option>`).join('')}
+    </select></div>
+    ${side(anyone, wk, true, `the best XI in GW${gwN}, owned or not`)}
+    ${sect('From the Trough')}
+    <p class="muted" style="font-size:11px;margin:2px 0 6px">The best eleven out of the men nobody owned when GW${gwN} kicked off &mdash; all of them there for the taking.</p>
+    ${side(trough, wk, false, '')}
+    <p class="muted" style="font-size:10.5px;margin-top:10px">Recomputed from settled scores every time, so it fills itself in at the close of each round and winds back to GW1. Ownership is taken at kick-off, before that week&rsquo;s signings landed.</p>
   </div>`;
 }
 /* ----- the three averages, off the ends of the points grid ----- */
