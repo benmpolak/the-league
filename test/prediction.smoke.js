@@ -272,7 +272,8 @@ const chk = (name, ok, detail = '') => {
         /Week by week/i.test(txt) && /game by game/i.test(txt) && /By team/i.test(txt));
       // the running total on the last row must be the whole season's marking
       const rows = card ? [...card.querySelectorAll('tbody tr')] : [];
-      const weekRows = rows.filter(r => /^GW\d+$/.test(r.cells[0].textContent.trim()));
+      // the GW cell can carry a 'rebuilt' tag beside the number
+      const weekRows = rows.filter(r => /^GW\d+\b/.test(r.cells[0].textContent.trim()));
       const total = rounds.flat().filter(r => r.right).length;
       t('the week-by-week table has a row per settled round',
         weekRows.length === 5, String(weekRows.length));
@@ -302,6 +303,99 @@ const chk = (name, ok, detail = '') => {
           const [got, of] = c.split('/').map(Number);
           return got <= of && of <= 5;
         }));
+    })();
+
+    /* ----- the recorded ledger beats the rebuild -----
+     * Marc, 15 Sept 2026: "why dont you just take a snapshot at the gameweek
+     * deadline". A rebuild re-derives with today's model and would quietly
+     * change the day the projection improves; a record is what was claimed.
+     * So where a record exists it must be used verbatim — including when the
+     * tie was published the other way up. */
+    (() => {
+      const i = 2, gwN = GAMEWEEKS[i].n;
+      const rebuilt = predictionsFor(i).map(r => [r.a, r.b, r.call, r.recorded]);
+      // publish a ledger for that round with the sides REVERSED and odds that
+      // disagree with the rebuild, so there is no way to pass by accident
+      const pairs = pairingsFor(i);
+      state.predictions = { rounds: { [String(gwN)]: {
+        deadline: 'x', taken: '2026-09-19T17:41:00Z',
+        games: pairs.map(([a, b]) => ({ a: b, b: a, w: 0.07, d: 0.05, l: 0.88, pa: 33, pb: 61 })),
+      } } };
+      PRED_CACHE.clear();
+      const rows = predictionsFor(i);
+      t('a recorded round is read back instead of rebuilt',
+        rows.every(r => r.recorded === true) && rebuilt.some(x => x[3] === false));
+      // stored b-vs-a with 88% to the stored 'b' means the FIRST side of our
+      // pairing is the one favoured, so every call must come back 'a'
+      t('and a tie published the other way up is turned back the right way',
+        rows.every(r => r.call === 'a' && Math.abs(r.o.win - 0.88) < 1e-9
+          && Math.abs(r.o.loss - 0.07) < 1e-9),
+        rows.map(r => `${r.call}/${r.o.win}`).join(' '));
+      t('the projected scores come back the right way round too',
+        rows.every(r => r.projA === 61 && r.projB === 33));
+      t('the pairing itself is untouched by how it was stored',
+        JSON.stringify(rows.map(r => [r.a, r.b])) === JSON.stringify(pairs));
+      t('and the result is still the real one, not the record\'s',
+        rows.every(r => r.pa === gwManagerPoints(r.a, i) && r.pb === gwManagerPoints(r.b, i)));
+
+      // a round missing one of its six is not half-trusted
+      state.predictions.rounds[String(gwN)].games.pop();
+      PRED_CACHE.clear();
+      t('a round missing a tie falls back to a rebuild entire',
+        predictionsFor(i).every(r => r.recorded === false));
+
+      // nor is one whose odds are nonsense
+      state.predictions = { rounds: { [String(gwN)]: { games: pairs.map(([a, b]) => ({ a, b, w: null, d: null, l: null })) } } };
+      PRED_CACHE.clear();
+      t('a round with unreadable odds falls back to a rebuild',
+        predictionsFor(i).every(r => r.recorded === false));
+
+      // and the card says which is which rather than passing a rebuild off
+      state.predictions = { rounds: { [String(gwN)]: { deadline: 'x', taken: 'y',
+        games: pairs.map(([a, b]) => ({ a, b, w: 0.6, d: 0.1, l: 0.3, pa: 50, pb: 44 })) } } };
+      PRED_CACHE.clear();
+      state.view = 'data'; dataView.tab = 'prediction'; dataView.predGw = i; render();
+      const card = [...document.querySelectorAll('.card')]
+        .find(c => /Prediction Accuracy/.test(c.querySelector('h2')?.textContent || ''));
+      const txt = card ? card.textContent.replace(/\s+/g, ' ') : '';
+      const rowFor = n => [...card.querySelectorAll('tbody tr')]
+        .find(r => r.cells[0].textContent.trim().startsWith(`GW${n}`));
+      t('the card marks a rebuilt round as rebuilt',
+        /rebuilt/.test(rowFor(GAMEWEEKS[0].n)?.textContent || ''));
+      t('and does not call a recorded one rebuilt',
+        !/rebuilt/.test(rowFor(gwN)?.textContent || ''));
+      t('the card counts how many rounds are the Committee\'s own words',
+        /1 of these 5 rounds is the Committee's own words/.test(txt), txt.slice(0, 220));
+      t('and a recorded round shows the projection it published',
+        /proj 50&ndash;44|proj 50–44/.test(card.innerHTML));
+
+      /* ----- and it reaches the individual archived tie ----- */
+      const [ma, mb] = pairingsFor(i)[0];
+      showMatchup(ma, mb, i);
+      const ov = document.querySelector('#muOverlay');
+      const otxt = ov ? ov.textContent.replace(/\s+/g, ' ') : '';
+      t('an archived tie shows what was said at the deadline',
+        /AT THE DEADLINE/.test(otxt), otxt.slice(0, 120));
+      t('and says whether the Committee got it right',
+        /got it (right|wrong)/.test(otxt));
+      t('and that it was recorded, not reconstructed',
+        /Recorded at the deadline/.test(otxt));
+      // a round with no record says so on the tie as well
+      closeOv(ov);
+      const [ea, eb] = pairingsFor(0)[0];
+      showMatchup(ea, eb, 0);
+      const ov2 = document.querySelector('#muOverlay');
+      t('a tie from before the ledger says it was rebuilt',
+        /Rebuilt: no record was kept/.test(ov2 ? ov2.textContent : ''));
+      closeOv(ov2);
+      // and an unplayed round keeps its live bar and nothing else
+      showMatchup(...pairingsFor(WEEKS)[0], WEEKS);
+      const ov3 = document.querySelector('#muOverlay');
+      t('a tie still to be played shows no deadline verdict',
+        !/AT THE DEADLINE/.test(ov3 ? ov3.textContent : ''));
+      closeOv(ov3);
+
+      state.predictions = null; PRED_CACHE.clear(); dataView.predGw = null;
     })();
 
     /* ----- picking a different week ----- */

@@ -1785,3 +1785,9 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .club-aside { border-top:1px solid var(--line); margin-top:10px; padding-top:8px; font-size:12px; color:var(--muted); font-style:italic; }
 #clubMediaError:not(:empty) { margin-top:10px; font-size:12px; color:#ffac94; }
 @media (max-width:700px) { .club-options { grid-template-columns:1fr; } .club-option { padding:12px; min-height:64px; } }
+
+/* The deadline call on a settled tie (Marc, 15 Sept 2026). Deliberately
+   quieter than the live bar it sits under: this is the record of a claim, not
+   a thing still in play. */
+.prob-deadline { opacity: .82; margin-top: 8px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); padding-top: 8px; }
+.prob-deadline .prob-bar span { filter: saturate(.55); }

@@ -28,6 +28,7 @@ const files = {
   'data/stats.json': JSON.stringify({ gws: {} }),
   'data/fixtures.json': '[]',
   'data/teamnews.json': '{}',
+  'data/predictions.json': '{}',
   'js/data.js': `// Generated\nconst TEAMS = ${JSON.stringify(data.teams)};\nconst PLAYERS = ${JSON.stringify(data.players)};\nconst GAMEWEEKS_RAW = ${JSON.stringify(data.gameweeks)};\n`,
 };
 const validate = changes => validateFeed(p => ({ ...files, ...changes })[p]);
@@ -37,4 +38,15 @@ check('extra executable JavaScript cannot hide in a feed-only update', () => ass
 check('inline executable JavaScript cannot hide in a declaration', () => assert.throws(() => validate({ 'js/data.js': files['js/data.js'].replace('const TEAMS = ', 'const TEAMS = alert(1) || ') })));
 check('Unicode comment line breaks cannot hide executable JavaScript', () => assert.throws(() => validate({ 'js/data.js': '// safe\u2028alert(1);\n' + files['js/data.js'] })));
 check('browser and server player data must match', () => assert.throws(() => validate({ 'js/data.js': files['js/data.js'].replace('Player One', 'Other Player') })));
+// the deadline ledger rides the feed exception, so the gate is the only thing
+// standing between a bot's arithmetic and the Committee being quoted on odds
+// it never gave (Marc, 15 Sept 2026)
+check('a deadline record whose odds do not add up is refused', () => assert.throws(() => validate({
+  'data/predictions.json': JSON.stringify({ rounds: { 3: { games: [{ a: 1, b: 2, w: 0.9, d: 0.9, l: 0.9 }] } } }) })));
+check('a deadline record with a tie missing its odds is refused', () => assert.throws(() => validate({
+  'data/predictions.json': JSON.stringify({ rounds: { 3: { games: [{ a: 1, b: 2 }] } } }) })));
+check('an empty round in the ledger is refused', () => assert.throws(() => validate({
+  'data/predictions.json': JSON.stringify({ rounds: { 3: { games: [] } } }) })));
+check('a sound deadline record passes', () => validate({
+  'data/predictions.json': JSON.stringify({ rounds: { 3: { deadline: 'x', taken: 'y', games: [{ a: 1, b: 2, w: 0.5, d: 0.1, l: 0.4, pa: 44, pb: 41 }] } } }) }));
 console.log(`\n[release-gate] ${passed} passed, 0 failed`);

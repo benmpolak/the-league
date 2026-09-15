@@ -1502,6 +1502,34 @@ function matchNeeds(a, b, i, pov = null) {
   return { state: st, left, right, leader, margin, drawChance: odds.draw, tieRequirement: margin < 0 ? -margin : 0, leadRequirement: margin < 0 ? -margin + 1 : 0, lines };
 }
 
+/* ----- what we said before a ball was kicked -----
+   Marc, 15 Sept 2026, on the archived ties: "keep it alongside the live
+   predictor and the final score so we can see it for every archived game
+   individually."
+
+   Only drawn once a tie is settled, because until then the live bar above it
+   IS the answer. A recorded round quotes the Committee verbatim; a round from
+   before the ledger existed is rebuilt and says so, so nobody mistakes a
+   reconstruction for a claim that was actually made at the time. */
+function deadlineCallHtml(a, b, i) {
+  if (gwStatus(i) !== 'final' || i >= REGULAR_GWS) return '';
+  const row = (predictionsFor(i) || []).find(r =>
+    (r.a === a && r.b === b) || (r.a === b && r.b === a));
+  if (!row) return '';
+  const flip = row.a !== a;
+  const o = flip ? { win: row.o.loss, draw: row.o.draw, loss: row.o.win } : row.o;
+  let w = Math.round(o.win * 100), d = Math.round(o.draw * 100);
+  let l = 100 - w - d;
+  if (l < 0) { d += l; l = 0; }
+  const pa = flip ? row.projB : row.projA, pb = flip ? row.projA : row.projB;
+  const said = row.call === 'd' ? 'a draw'
+    : esc(teamName(row.call === 'a' ? row.a : row.b));
+  return `<div class="prob-wrap prob-deadline" title="The projection as it stood when the deadline passed, ${row.recorded ? 'recorded at the time' : 'rebuilt afterwards from that week’s team news'}">
+    <div class="prob-row"><span><b>${w}%</b> ${kitSvg(a)}</span><span class="prob-mid">AT THE DEADLINE${d ? ` &middot; <span class="prob-draw-pct">draw ${d}%</span>` : ''}</span><span>${kitSvg(b)} <b>${l}%</b></span></div>
+    <div class="prob-bar"><span style="width:${w}%"></span>${d ? `<span class="prob-draw" style="width:${d}%"></span>` : ''}</div>
+    <div class="need-line">The Committee went for ${said}${pa != null ? `, projecting ${pa}&ndash;${pb}` : ''} &mdash; ${row.right ? 'and got it right.' : 'and got it wrong.'} <span class="muted" style="font-size:10px">${row.recorded ? 'Recorded at the deadline.' : 'Rebuilt: no record was kept of this one.'}</span></div>
+  </div>`;
+}
 /* the Opta bar (Conway's ask, Lee-approved): live win chance + projected
    points for a matchup, recomputed every render as minutes tick down — you
    can go into Sunday 20:80 down and watch it swing. Pre-kickoff it's the pure
@@ -5017,12 +5045,13 @@ async function syncNow(manual = false) {
   if (btn) { btn.disabled = true; btn.innerHTML = '&#8987;<span class="sync-txt"> Refreshing…</span>'; }
   try {
     const bust = `?t=${Date.now()}`;
-    const [statsRes, fxRes, hlRes, luRes, tnRes] = await Promise.all([
+    const [statsRes, fxRes, hlRes, luRes, tnRes, pdRes] = await Promise.all([
       fetch(`data/stats.json${bust}`),
       fetch(`data/fixtures.json${bust}`),
       fetch(`data/highlights.json${bust}`).catch(() => null), // optional, hand-curated
       fetch(`data/lineups.json${bust}`).catch(() => null),    // optional, predicted XIs
       fetch(`data/teamnews.json${bust}`).catch(() => null),   // optional, the frozen treatment room
+      fetch(`data/predictions.json${bust}`).catch(() => null), // optional, what we said at each deadline
     ]);
     const stats = await statsRes.json();
     const fixtures = await fxRes.json();
@@ -5040,6 +5069,13 @@ async function syncNow(manual = false) {
     // about who was fit in September. Optional the same way: no file and the
     // reconstruction falls back on the current flags and says so.
     if (tnRes?.ok) { try { state.teamNews = await tnRes.json(); } catch { /* keep the old rounds */ } }
+    // what the projection actually said, recorded at each deadline by
+    // scripts/snapshot_predictions.js. A rebuilt round re-derives with TODAY'S
+    // model, so it would quietly change the day we improve the projection; a
+    // recorded one is what the Committee actually claimed and cannot move.
+    // Optional in the same way: no file and every round falls back on a
+    // rebuild, which is what the rounds before this shipped have to do anyway.
+    if (pdRes?.ok) { try { state.predictions = await pdRes.json(); } catch { /* keep the old ledger */ } }
     state.feedGenerated = stats.generated || null; // for the stale-feed warning
     state.fixtures = fixtures
       .filter(f => f.date)
@@ -11614,17 +11650,38 @@ function predSignature() {
   // correction or a Chairman's adjustment, and it is nothing like the demo's,
   // so a cache built under one state can never be read back under another
   if (settled >= 0) for (const m of state.managers) scored += gwManagerPoints(m.id, settled);
-  return `${settled}|${scored}|${state.managers.length}|${(state.transfers || []).length}|${Object.keys(state.matchStats || {}).length}|${JSON.stringify(state.teamNews?.rounds || {}).length}`;
+  return `${settled}|${scored}|${state.managers.length}|${(state.transfers || []).length}|${Object.keys(state.matchStats || {}).length}|${JSON.stringify(state.teamNews?.rounds || {}).length}|${JSON.stringify(state.predictions?.rounds || {}).length}`;
+}
+/* What we said at THIS deadline, if anybody wrote it down. Stored home-first
+   as it was published, so a tie listed the other way round is read back the
+   other way round rather than silently inverted. A round missing so much as
+   one of its six is not half-trusted: it falls back to a rebuild entire, so a
+   card never mixes a record and a reconstruction inside one gameweek. */
+function recordedPrediction(i) {
+  const row = state.predictions?.rounds?.[String(GAMEWEEKS[i]?.n)];
+  if (!row || !Array.isArray(row.games) || !row.games.length) return null;
+  const rows = pairingsFor(i).map(([a, b]) => {
+    const g = row.games.find(x => (x.a === a && x.b === b) || (x.a === b && x.b === a));
+    if (!g || ![g.w, g.d, g.l].every(Number.isFinite)) return null;
+    const flip = g.a !== a;                       // published the other way up
+    const o = flip ? { win: g.l, draw: g.d, loss: g.w } : { win: g.w, draw: g.d, loss: g.l };
+    const call = o.win >= o.loss && o.win >= o.draw ? 'a' : o.loss >= o.draw ? 'b' : 'd';
+    return { a, b, o, call, conf: Math.max(o.win, o.draw, o.loss), recorded: true,
+      projA: flip ? g.pb : g.pa, projB: flip ? g.pa : g.pb, taken: row.taken || null };
+  });
+  return rows.every(Boolean) ? rows : null;
 }
 function predictionsFor(i) {
   const key = `${i}|${predSignature()}`;
   if (PRED_CACHE.has(key)) return PRED_CACHE.get(key);
   if (PRED_CACHE.size > 200) PRED_CACHE.clear();
-  // the projection, blind to the round it is projecting
-  const rows = withAsOf(i, () => pairingsFor(i).map(([a, b]) => {
+  // what we actually said, if it was written down; otherwise the projection
+  // rebuilt blind to the round it is projecting
+  const rows = recordedPrediction(i) || withAsOf(i, () => pairingsFor(i).map(([a, b]) => {
     const o = matchOdds(a, b, i);
     const call = o.win >= o.loss && o.win >= o.draw ? 'a' : o.loss >= o.draw ? 'b' : 'd';
-    return { a, b, o, call, conf: Math.max(o.win, o.draw, o.loss) };
+    return { a, b, o, call, conf: Math.max(o.win, o.draw, o.loss), recorded: false,
+      projA: null, projB: null, taken: null };
   }));
   // and now, eyes open, what actually happened
   for (const r of rows) {
@@ -11646,7 +11703,8 @@ function predictionCard() {
   const byGw = settled.map(i => ({ i, rows: predictionsFor(i) }));
   // rounds the frozen team news does not reach back to — named rather than
   // glossed over, because those are the ones marked against today's flags
-  const newsGap = settled.filter(i => !newsKnownAt(i));
+  const recCount = byGw.filter(g => g.rows[0]?.recorded).length;
+  const newsGap = byGw.filter(g => !g.rows[0]?.recorded && !newsKnownAt(g.i)).map(g => g.i);
   let run = 0, runOf = 0;
   for (const g of byGw) {
     g.right = g.rows.filter(r => r.right).length;
@@ -11664,7 +11722,7 @@ function predictionCard() {
   const games = detail.map(r => `<tr>
     <td style="white-space:nowrap"><b>${esc(nameOf(r.a))}</b> <span class="muted">v</span> <b>${esc(nameOf(r.b))}</b></td>
     <td class="num muted" style="white-space:nowrap">${r.pa}&ndash;${r.pb}</td>
-    <td style="white-space:nowrap;font-size:12px">${esc(called(r))} <span class="muted">${Math.round(r.conf * 100)}%</span></td>
+    <td style="white-space:nowrap;font-size:12px">${esc(called(r))} <span class="muted">${Math.round(r.conf * 100)}%</span>${r.projA != null ? ` <span class="muted" style="font-size:10.5px">(proj ${r.projA}&ndash;${r.projB})</span>` : ''}</td>
     <td class="num">${tick(r.right)}</td>
   </tr>`).join('');
 
@@ -11689,14 +11747,14 @@ function predictionCard() {
 
   return `<div class="card" style="margin-bottom:18px">
     <h2>Prediction Accuracy <span class="muted" style="font-weight:400;font-size:12px">${run} of ${runOf} &middot; ${pct(run, runOf)}%</span></h2>
-    <p class="muted" style="font-size:11.5px;margin:0 0 10px">Every round below is rebuilt from scratch: the season is wound back to that deadline and the same projection that draws the win bar is asked again, blind to everything after it.</p>
+    <p class="muted" style="font-size:11.5px;margin:0 0 10px">${recCount ? `${recCount === byGw.length ? 'Every round below is' : `${recCount} of these ${byGw.length} rounds ${recCount === 1 ? 'is' : 'are'}`} the Committee's own words, recorded at the deadline and never touched since.${recCount < byGw.length ? ' The rest predate that ledger and are rebuilt: the season is wound back to the deadline and the same projection that draws the win bar is asked again, blind to everything after it.' : ''}` : 'Every round below is rebuilt from scratch: the season is wound back to that deadline and the same projection that draws the win bar is asked again, blind to everything after it. Rounds from here on are recorded at the deadline instead, so they can never drift.'}</p>
 
     <p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">Week by week</p>
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr><th>GW</th><th style="text-align:center">Six games</th>
         <th class="num">Right</th><th class="num" title="Every game called this season">Running</th><th class="num">%</th></tr></thead>
       <tbody>${byGw.map(g => `<tr${g.i === pick ? ' style="font-weight:600"' : ''}>
-        <td><a href="#" data-predgw="${g.i}">GW${GAMEWEEKS[g.i].n}</a></td>
+        <td><a href="#" data-predgw="${g.i}">GW${GAMEWEEKS[g.i].n}</a>${g.rows[0]?.recorded ? '' : ' <span class="muted" style="font-size:10px" title="No record was kept of this deadline, so the projection has been rebuilt from it">rebuilt</span>'}</td>
         <td style="text-align:center;letter-spacing:3px">${g.rows.map(r => tick(r.right)).join('')}</td>
         <td class="num ${g.right === g.rows.length ? 'gold' : ''}">${g.right}/${g.rows.length}</td>
         <td class="num muted">${g.run}/${g.runOf}</td>
@@ -11723,7 +11781,7 @@ function predictionCard() {
       </tr>`).join('')}</tbody>
     </table></div>
 
-    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. ${newsGap.length ? `The treatment room is wound back too, from the team news frozen at each deadline &mdash; except ${newsGap.map(i => 'GW' + GAMEWEEKS[i].n).join(', ')}, which ${newsGap.length === 1 ? 'predates' : 'predate'} that record and ${newsGap.length === 1 ? 'reads' : 'read'} today's flags instead.` : 'The treatment room is wound back too, from the team news frozen at each deadline.'} What cannot be wound back is the predicted line-ups, which are kept for the open round only, so a rebuilt projection does without them.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. ${recCount === byGw.length ? '' : newsGap.length ? `The treatment room is wound back too, from the team news frozen at each deadline &mdash; except ${newsGap.map(i => 'GW' + GAMEWEEKS[i].n).join(', ')}, which ${newsGap.length === 1 ? 'predates' : 'predate'} that record and ${newsGap.length === 1 ? 'reads' : 'read'} today's flags instead.` : 'The treatment room is wound back too, from the team news frozen at each deadline.'} What cannot be wound back is the predicted line-ups, which are kept for the open round only, so a rebuilt projection does without them.</p>
   </div>`;
 }
 /* ----- who keeps turning up in those elevens -----
@@ -12481,6 +12539,7 @@ function showMatchup(a, b, i) {
       <span class="fx-side">${kitSvg(b, 28)}<b>${esc(teamName(b))}</b></span>
     </div>
     ${winProbBar(a, b, i, (whoami === a || whoami === b) ? whoami : null)}
+    ${deadlineCallHtml(a, b, i)}
     ${adStrip(a * 1009 + b * 31 + i, 4, a)}
     <div class="mu-grid">${side(a)}${side(b)}</div>
     <p class="venue-line" style="margin-top:8px">${esc(chantFor(a, b, i))}</p>

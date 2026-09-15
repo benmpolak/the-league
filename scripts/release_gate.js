@@ -11,7 +11,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { isDeepStrictEqual } = require('util');
 const Feed = require('../functions/feedcheck.js');
 const ROOT = path.resolve(__dirname, '..');
-const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', 'data/fixtures.json', 'data/teamnews.json']);
+const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', 'data/fixtures.json', 'data/teamnews.json', 'data/predictions.json']);
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).trim();
 
@@ -40,6 +40,18 @@ function validateFeed(read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')) {
   Feed.validateFixtures(Feed.parseJson(read('data/fixtures.json'), 'fixtures.json', Feed.LIMITS.dataBytes));
   const news = Feed.parseJson(read('data/teamnews.json'), 'teamnews.json', Feed.LIMITS.dataBytes);
   if (!news || typeof news !== 'object' || Array.isArray(news)) throw Error('teamnews.json must be an object');
+  // the deadline ledger. A bot writes it, so it rides the feed exception and
+  // has to be checked here instead: a round's odds must add up, or the card
+  // would be quoting the Committee on something it never said.
+  const preds = Feed.parseJson(read('data/predictions.json'), 'predictions.json', Feed.LIMITS.dataBytes);
+  if (!preds || typeof preds !== 'object' || Array.isArray(preds)) throw Error('predictions.json must be an object');
+  for (const [gwN, row] of Object.entries(preds.rounds || {})) {
+    if (!row || !Array.isArray(row.games) || !row.games.length) throw Error(`predictions.json GW${gwN} has no ties`);
+    for (const g of row.games) {
+      if (![g.w, g.d, g.l].every(Number.isFinite)) throw Error(`predictions.json GW${gwN} has a tie with no odds`);
+      if (Math.abs(g.w + g.d + g.l - 1) > 0.01) throw Error(`predictions.json GW${gwN} has odds that do not total one`);
+    }
+  }
   // This file executes in the browser, so it cannot be treated as an opaque
   // data exception. Accept ONLY comments plus the three JSON declarations,
   // and require them to agree with the server's validated JSON feed.
