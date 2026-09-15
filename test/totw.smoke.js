@@ -10,8 +10,10 @@
  *     search over every combination that could possibly beat it
  *   - the Trough XI contains nobody a manager already owned at kick-off, and
  *     can never out-score the open field it is a subset of
- *   - ownership is read at KICK-OFF, so a man signed during the week is still
- *     a Trough player for that week
+ *   - ownership is read as the whistle goes. A deal always lands in the
+ *     UPCOMING round, so squadAt(mid, i) is the side that plays round i: a man
+ *     signed in the run-up to a week is owned for it, and was in the Trough
+ *     only the week before
  * Run against any side-port server with TEST_BASE_URL=http://127.0.0.1:8135.
  */
 'use strict';
@@ -98,7 +100,7 @@ const chk = (name, ok, detail = '') => {
       t(`GW${gwN}: and no other combination beats it`, !!open && open.total === bruteBest(PLAYERS, sc),
         open ? `solver ${open.total} vs brute force ${bruteBest(PLAYERS, sc)}` : 'none');
 
-      const ownedAtKickoff = ownedIdsAt(i - 1);
+      const ownedAtKickoff = ownedIdsAt(i);
       const free = PLAYERS.filter(p => !ownedAtKickoff.has(p.id));
       const trough = bestXIFrom(free, sc);
       t(`GW${gwN}: the Trough eleven is legal and owns nobody`,
@@ -110,19 +112,27 @@ const chk = (name, ok, detail = '') => {
         !!trough && trough.total === bruteBest(free, sc), `solver ${trough && trough.total}`);
     }
 
-    /* ----- ownership is read at kick-off, not at the final whistle ----- */
+    /* ----- ownership is read as the whistle goes, not a week earlier ----- */
+    // A deal can never land in a round already under way: transferGw always
+    // sends it to the UPCOMING week. So squadAt(mid, i) is the side that plays
+    // round i, and a man signed in the run-up to it is NOT a Trough player for
+    // it — he was one the week before. Marc, 15 Sept 2026, asking exactly this.
     (() => {
       const i = 1;
       const mid = state.managers[0].id;
-      const before = ownedIdsAt(i - 1);
-      const target = PLAYERS.find(p => !before.has(p.id) && p.pos === 'MF');
+      const target = PLAYERS.find(p => !ownedIdsAt(i - 1).has(p.id) && p.pos === 'MF');
       const drop = squadAt(mid, i - 1).find(p => p.pos === 'MF');
-      if (!target || !drop) { t('setup: a midfielder to sign mid-week', false, 'none'); return; }
+      if (!target || !drop) { t('setup: a midfielder to sign before the round', false, 'none'); return; }
       state.transfers.push({ managerId: mid, outId: drop.id, inId: target.id, gw: i, t: Date.now(), n: state.transfers.length + 1 });
-      const stillFree = !ownedIdsAt(i - 1).has(target.id);
-      const ownedAfter = ownedIdsAt(i).has(target.id);
-      t('a man signed DURING the week is still a Trough player for that week',
-        stillFree && ownedAfter, `${target.name}: free at kick-off ${stillFree}, owned after ${ownedAfter}`);
+      t('a man signed before the round is owned for it, and was free the week before',
+        ownedIdsAt(i).has(target.id) && !ownedIdsAt(i - 1).has(target.id), `${target.name}`);
+      t('and the man he replaced is back in the Trough for that round',
+        !ownedIdsAt(i).has(drop.id) && ownedIdsAt(i - 1).has(drop.id), `${drop.name}`);
+      const sc = p => gwPlayerPoints(p.id, i);
+      const free = PLAYERS.filter(p => !ownedIdsAt(i).has(p.id));
+      const trough = bestXIFrom(free, sc);
+      t('the Trough eleven never contains a man owned when the whistle went',
+        !!trough && trough.xi.every(p => !ownedIdsAt(i).has(p.id)));
       state.transfers.pop();
     })();
 

@@ -11424,9 +11424,14 @@ function totwCard() {
   if (!settled.length) return '';
   const pick = settled.includes(dataView.totwGw) ? dataView.totwGw : settled[settled.length - 1];
   const gwN = GAMEWEEKS[pick].n;
-  // who was NOT owned when the round kicked off. squadAt counts a transfer
-  // that lands IN a gameweek, so the start of round i is ownership at i-1
-  const ownedAtKickoff = ownedIdsAt(pick - 1);
+  /* Who was NOT owned when the round kicked off. A deal always lands in the
+     UPCOMING gameweek — transferGw never lets one land in a round already
+     under way — so squadAt(mid, i) IS the squad that plays round i, and
+     ownedIdsAt(i) is ownership as the whistle goes. Marc, 15 Sept 2026,
+     checking what "the start of the gameweek" meant: it is the Trough as it
+     stood once the previous round had passed and that week's waivers and
+     signings were done, which is this and not the week before it. */
+  const ownedAtKickoff = ownedIdsAt(pick);
   const ownerNow = {};
   for (const m of state.managers) for (const p of squadAt(m.id, pick)) ownerNow[p.id] = m.id;
   const wk = p => gwPlayerPoints(p.id, pick);
