@@ -12,11 +12,19 @@ const { isDeepStrictEqual } = require('util');
 const Feed = require('../functions/feedcheck.js');
 const ROOT = path.resolve(__dirname, '..');
 const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', 'data/fixtures.json', 'data/teamnews.json', 'data/predictions.json']);
+// Rendered podcast audio and its manifests are data too (Ben, 16 Sept 2026).
+// The render bot commits them with the workflow token, which never triggers
+// the test workflow, so counting them as code left the gate with no test run
+// to match and froze every deploy until a human pushed: 02:24 to 12:13 that
+// morning, then again the same evening. The app only reads index.json to find
+// a recording; nothing under here executes.
+const AUDIO_DIR = 'audio/pod/';
+const isData = p => FEED_FILES.has(p) || p.startsWith(AUDIO_DIR);
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
 const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).trim();
 
 function sourceFingerprint(tree) {
-  const rows = tree.split('\0').filter(Boolean).filter(row => !FEED_FILES.has(row.slice(row.indexOf('\t') + 1)));
+  const rows = tree.split('\0').filter(Boolean).filter(row => !isData(row.slice(row.indexOf('\t') + 1)));
   return hash(rows.sort().join('\0'));
 }
 function matchingRun(runs, fingerprint, ancestor, head) {

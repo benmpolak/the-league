@@ -10,6 +10,11 @@ check('all five feed outputs may change without re-testing identical code', () =
 for (const file of ['js/app.js', 'functions/index.js', '.github/workflows/test.yml', 'data/provisional.json']) {
   check(`${file} changes require new tests`, () => assert.notEqual(sourceFingerprint(tree(base)), sourceFingerprint(tree({ ...base, [file]: 'changed' }))));
 }
+// the render bot's commits: recordings and their manifests, never code
+check('rendered podcast audio may change without re-testing identical code', () =>
+  assert.equal(sourceFingerprint(tree(base)), sourceFingerprint(tree({ ...base, 'audio/pod/index.json': 'idx2', 'audio/pod/rendered.json': 'prov2', 'audio/pod/tt-review-gw4/abc123.mp3': 'take1' }))));
+check('a file merely named audio outside audio/pod/ still counts as code', () =>
+  assert.notEqual(sourceFingerprint(tree(base)), sourceFingerprint(tree({ ...base, 'js/audio.js': 'changed' }))));
 const run = (id, sha, state = 'success') => ({ id, head_sha: sha, event: 'push', head_branch: 'main', status: 'completed', conclusion: state });
 const fingerprints = { head: 'new', good: 'new', failed: 'new', pending: 'new', old: 'old', unrelated: 'new' };
 const match = runs => matchingRun(runs, sha => fingerprints[sha], sha => sha !== 'unrelated', 'head');
