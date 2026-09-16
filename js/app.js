@@ -2736,6 +2736,27 @@ function deadWindowClaim(c, mid) {
   }
   return '';
 }
+/* Why a WEEKLY waiver line can no longer land. The Window ladder has had this
+   since Toby's lockout (2 Sept 2026); the weekly one never got it, and the two
+   missing tests below are exactly the pair that jammed Tom Wilkowski's list on
+   16 Sept: his drop man had left his squad on an earlier move, and the desk
+   refused every edit he made afterwards while naming a player he was not
+   touching. Same bug, other ladder. */
+function deadClaim(c, mid) {
+  const p = PLAYER_BY_ID[c.in], out = PLAYER_BY_ID[c.out];
+  if (!p) return 'that player is no longer in the feed';
+  if (arrivalLocked(p)) return `${p.name} is in the holding pen — he goes to the Window Waiver, not this one`;
+  if (ownedIdsAt(transferGw()).has(c.in)) return `${p.name} has already been signed`;
+  // the two the desk checks and this did not
+  const squad = squadAt(mid, transferGw());
+  if (!squad.some(x => x.id === c.out)) {
+    return `${out ? out.name : 'the man you were dropping'} is no longer in your squad — pick someone else to make way`;
+  }
+  if (!squadShapeOk([...squad.filter(x => x.id !== c.out), p])) {
+    return `${p.name} for ${out ? out.name : 'that drop'} would leave an illegal squad`;
+  }
+  return '';
+}
 function setWindowClaims(mid, arr) {
   // codes ride along so a lodged list survives a feed id shift (Desk §3b)
   arr = toArr(arr).map(c => ({ ...c, inCode: PLAYER_BY_ID[c.in]?.code ?? null, outCode: PLAYER_BY_ID[c.out]?.code ?? null }));
@@ -2902,13 +2923,34 @@ function setClaims(mid, arr) {
   // on screen is now PROVISIONAL until the private node echoes it back with the
   // server's stamp (t), a failed write rolls the screen back to what the league
   // actually holds, and callers get told which happened.
+  /* One dead line must not hold the whole list hostage (Toby, 2 Sept 2026;
+     Tom Wilkowski, 16 Sept 2026 — same jam, this ladder). The desk refuses the
+     WHOLE list if a single line is doomed, and every edit — adding, deleting,
+     reordering — sends the whole list. So a man whose drop player had left his
+     squad could not add, could not delete, and was told about a player he was
+     not touching. There was no way out from inside the app.
+
+     A doomed line cannot land under any circumstance: Friday's run would skip
+     it exactly as the desk refuses it now. So drop it rather than let it lock
+     the list — and SAY SO, by name and by reason. Quietly editing a man's
+     ladder would be the worse fault of the two. */
+  const dead = arr.map(c => ({ c, why: deadClaim(c, mid) })).filter(x => x.why);
+  if (dead.length) {
+    arr = arr.filter(c => !dead.some(d => d.c === c));
+    toast(dead.length === 1
+      ? `Dropped a request that can no longer land — ${dead[0].why}.`
+      : `Dropped ${dead.length} requests that can no longer land — ${dead[0].why}, and ${dead.length - 1} more.`);
+  }
   const before = JSON.parse(JSON.stringify(state.claims || {}));
-  let confirmed = Promise.resolve(true);
+  // { ok, why }: a bare false could not carry the desk's reason, so the red
+  // sheet blamed the network for a refusal the league had explained (Tom and
+  // Pol, 16 Sept, both went looking at their own machines)
+  let confirmed = Promise.resolve({ ok: true, why: '' });
   if (netOn()) {
     const payload = arr.map(({ pending, t, ...c }) => c); // the server stamps what it accepts
     confirmed = serverAct('claimSet', { gwIndex: cur, claims: payload, ...(mid !== whoami && { asManager: mid }) })
-      .then(() => true)
-      .catch(() => { state.claims = before; save(); render(); return false; });
+      .then(() => ({ ok: true, why: '' }))
+      .catch(e => { state.claims = before; save(); render(); return { ok: false, why: e?.message || '' }; });
     // consolidation: the rolled-over bucket empties in the same breath, so the
     // private node ends up holding ONE list in ONE bucket. The server only
     // reaches back one week, which is as far back as a live bucket can exist
@@ -2924,15 +2966,22 @@ function setClaims(mid, arr) {
   return confirmed;
 }
 // the claim did not reach the league — say so, in red, instead of a receipt
-function claimFailedSheet(inP, outP) {
+/* `why` is the league's own words when it gave any. It used to be dropped on
+   the floor and every refusal read as a network fault, so Tom went looking at
+   his connection and Pol at his laptop while the desk had said plainly what was
+   wrong (16 Sept 2026). Only guess at the network when nobody told us. */
+function claimFailedSheet(inP, outP, why = '') {
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.id = 'claimFailed';
   ov.innerHTML = `<div class="card" style="max-width:420px;width:94%" role="dialog" aria-label="Claim not lodged">
     <h2 style="color:var(--red)">Claim NOT lodged</h2>
     ${dealRows(outP ? [outP] : [], inP ? [inP] : [])}
-    <p class="warn">The league did not receive this request. Nothing has been saved and it will not be in the run.</p>
-    <p class="muted" style="font-size:12px">Usually a dropped connection. Check you’re online, refresh the page and lodge it again. The Waiver list tab shows a tick against every request the league is actually holding.</p>
+    ${why
+      ? `<p class="warn">The league refused this request: ${esc(why)}</p>
+         <p class="muted" style="font-size:12px">Nothing has been saved and it will not be in the run. If that reason names a player you were not touching, it is an older request on your Waiver list that can no longer land — open the Waiver list tab, where it is marked <b>will not land</b>, and withdraw it.</p>`
+      : `<p class="warn">The league did not receive this request. Nothing has been saved and it will not be in the run.</p>
+         <p class="muted" style="font-size:12px">Usually a dropped connection. Check you’re online, refresh the page and lodge it again. The Waiver list tab shows a tick against every request the league is actually holding.</p>`}
     <div style="display:flex;gap:8px;margin-top:12px"><button class="btn small" id="cfDone" style="flex:1">OK</button></div>
   </div>`;
   document.body.appendChild(ov);
@@ -8742,19 +8791,13 @@ function viewTransfers() {
     // a claim that cannot land any more says so here rather than dying quietly
     // on Tuesday morning (Marc, 30 Aug 2026). The pen is the live case: Nico,
     // Disasi and Pinnock were claimable until the arrival rule was corrected.
-    const deadClaim = c => {
-      const p = PLAYER_BY_ID[c.in];
-      if (!p) return 'that player is no longer in the feed';
-      if (arrivalLocked(p)) return `${p.name} is in the holding pen — he goes to the Window Waiver, not this one`;
-      if (ownedIdsAt(transferGw()).has(c.in)) return `${p.name} has already been signed`;
-      return '';
-    };
+    const deadLine = c => deadClaim(c, mid);
     const claimRows = claims.map((c, k) => `
-      <div class="lrow claim-row${deadClaim(c) ? ' claim-dead' : ''}" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
+      <div class="lrow claim-row${deadLine(c) ? ' claim-dead' : ''}" style="font-size:12.5px" draggable="true" data-cdrag="${k}">
         <input class="auto-rank" type="number" min="1" max="${claims.length}" value="${k + 1}" data-claimrank="${k}" draggable="false"
           title="Type a number to move him there — everyone else shifts down" aria-label="${esc(PLAYER_BY_ID[c.in]?.name || 'this claim')} is number ${k + 1}. Type a number to move him."> <b>${pname(PLAYER_BY_ID[c.in])}</b>
         <span class="muted">in, ${pname(PLAYER_BY_ID[c.out])} out</span>
-        ${deadClaim(c) ? `<span class="tag claim-dead-tag" title="${esc(deadClaim(c))}">will not land</span>` : ''}
+        ${deadLine(c) ? `<span class="tag claim-dead-tag" title="${esc(deadLine(c))}">will not land</span>` : ''}
         ${netOn() ? (c.t ? `<span class="tag claim-saved" title="The league is holding this request">&#10003; saved</span>` : `<span class="tag warn-tag claim-unsaved" title="Not yet confirmed by the league">saving…</span>`) : ''}
         <span style="margin-left:auto;display:flex;gap:4px" class="claim-btns">
           <button class="btn ghost small icon-btn" data-claimup="${k}" title="Raise priority" ${k === 0 ? 'disabled' : ''} aria-label="Raise priority">&#9650;</button>
@@ -9423,6 +9466,13 @@ function bindTransfers() {
         const inP = PLAYER_BY_ID[inId], outP = PLAYER_BY_ID[outId];
         const startingByGw = GAMEWEEKS.map((_, g) => lineupFor(mid, g).includes(outId));
         if (b.dataset.waiv === '1') {
+          /* Every question the desk asks, asked here first, so a refusal names
+             the line you are actually lodging — and so the pruning inside
+             setClaims can only ever remove lines that were ALREADY dead, never
+             the one just asked for. (The Window ladder has done this since
+             Toby, 2 Sept 2026.) */
+          const bad = deadClaim({ in: inId, out: outId }, mid);
+          if (bad) { toast(bad); return; }
           if (!await confirmSheet({
             title: 'Lodge this claim?',
             body: dealRows([outP], [inP]),
@@ -9431,7 +9481,7 @@ function bindTransfers() {
           })) return;
           const saved = await setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           transfersView.out = null;
-          if (!saved) { claimFailedSheet(inP, outP); return; }
+          if (!saved.ok) { claimFailedSheet(inP, outP, saved.why); return; }
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
             note: `Saved with the league. Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
           return;

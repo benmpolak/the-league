@@ -29,6 +29,16 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
       auth: { user: () => ({ uid: 'u-test', email: 'ben@example.com' }), sendLink: () => Promise.resolve(), completeLink: () => Promise.resolve(false), signOut: () => Promise.resolve() },
     };
     const s = freshState(); s.phase = 'season'; s.draft.order = s.managers.map(m => m.id);
+    // A real squad for manager 1. Since 16 Sept a claim whose drop man is not
+    // in your squad is recognised as dead and pruned before it is sent, so a
+    // fixture with no squads at all would have every line below dropped and
+    // this file would be testing the save plumbing against an empty list.
+    let n = 0;
+    for (const [pos, want] of [['GK', 2], ['DF', 5], ['MF', 5], ['FW', 2]]) {
+      for (const q of PLAYERS.filter(x => x.pos === pos).slice(0, want)) {
+        s.draft.picks.push({ managerId: 1, playerId: q.id, code: q.code ?? null, n: ++n });
+      }
+    }
     window.onSharedSnapshot(JSON.parse(JSON.stringify({ phase: s.phase, managers: s.managers, settings: s.settings, draft: s.draft, lineups: {}, transfers: [], trades: [], covenants: [], waiverMeta: s.waiverMeta, adjustments: {}, shirtNums: {}, draftPool: null, windowDraft: null, tradeBlock: {}, benchOrders: {}, lobus: {}, hamCup: null })));
     window.onAuthChanged({ uid: 'u-test', email: 'ben@example.com' });
     window.onMembershipSnapshot({ managerId: 1, role: 'commissioner' });
@@ -36,7 +46,16 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
     window.__autoConfirm = true;
   });
   await sleep(300);
-  const ids = await p.evaluate(() => [PLAYERS[0].id, PLAYERS[1].id, PLAYERS[2].id, PLAYERS[3].id]);
+  // in = somebody free, out = somebody actually his, so the lines are ones the
+  // desk would take and the plumbing below is what is on trial
+  const ids = await p.evaluate(() => {
+    const sq = squadAt(1, transferGw());
+    const owned = new Set(sq.map(x => x.id));
+    const freeOf = pos => PLAYERS.filter(x => x.pos === pos && !owned.has(x.id))[0];
+    const mine = pos => sq.filter(x => x.pos === pos);
+    // like for like, twice over, so neither line trips the squad-shape rule
+    return [freeOf('DF').id, mine('DF')[0].id, freeOf('MF').id, mine('MF')[0].id];
+  });
 
   /* 1 — provisional until echoed */
   await p.evaluate(ids => { window._save1 = setClaims(1, [{ in: ids[0], out: ids[1] }]); }, ids);
@@ -53,7 +72,10 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   await p.evaluate(() => window._resolvers.shift().reject(new Error('Failed to fetch')));
   await sleep(100);
   const after = await p.evaluate(async () => ({ res: await window._save1, left: myClaims(1).length, toast: document.querySelector('#toast')?.textContent || '' }));
-  chk('a failed write reports false to the caller', after.res === false, JSON.stringify(after));
+  // { ok, why } rather than a bare false: a boolean could not carry the desk's
+  // reason, so every refusal was shown as a dropped connection (Tom, 16 Sept)
+  chk('a failed write reports the failure to the caller', after.res && after.res.ok === false, JSON.stringify(after));
+  chk('and hands back the reason the league gave', /fetch/i.test(after.res?.why || ''), after.res?.why);
   chk('and the list on screen rolls back to what the league holds (nothing)', after.left === 0, JSON.stringify(after));
   chk('the failure is toasted', /fetch|did not save/i.test(after.toast), after.toast);
 
@@ -62,7 +84,7 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   await sleep(50);
   await p.evaluate(() => window._resolvers.shift().resolve({ ok: true }));
   const res2 = await p.evaluate(() => window._save2);
-  chk('a confirmed write reports true', res2 === true);
+  chk('a confirmed write reports success', res2 && res2.ok === true, JSON.stringify(res2));
   await p.evaluate(ids => window.onPrivateSnapshot({ claims: { [currentGwIndex()]: [{ in: ids[0], out: ids[1], t: 1 }, { in: ids[2], out: ids[3], t: 2 }] } }), ids);
   await sleep(50);
   const html3 = await p.evaluate(() => document.body.innerHTML);
@@ -81,7 +103,7 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   const src = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
   const flow = src.slice(src.indexOf("title: 'Lodge this claim?'"), src.indexOf("title: 'Lodge this claim?'") + 900);
   chk('the Claim button awaits setClaims and shows the red sheet on failure before any receipt',
-    /const saved = await setClaims\(/.test(flow) && /if \(!saved\) \{ claimFailedSheet\(/.test(flow) && flow.indexOf('claimFailedSheet(') < flow.indexOf('receiptSheet('));
+    /const saved = await setClaims\(/.test(flow) && /if \(!saved\.ok\) \{ claimFailedSheet\(inP, outP, saved\.why\)/.test(flow) && flow.indexOf('claimFailedSheet(') < flow.indexOf('receiptSheet('));
   chk('the red sheet exists and says NOT lodged', /function claimFailedSheet/.test(src) && /Claim NOT lodged/.test(src));
 
   await browser.close();

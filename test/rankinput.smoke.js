@@ -40,13 +40,28 @@ const chk = (name, ok, detail = '') => {
     const mid = state.managers[0].id;
     whoami = mid;
 
-    // five claims off my own squad, so every row is legal and the only thing
-    // moving is the order
+    /* Seven claims off my own squad, every one LIKE FOR LIKE so the squad is
+       still legal after it and the only thing moving is the order. Position
+       used not to be matched here: the rows were illegal on shape, the desk
+       would have refused the lot, and since 16 Sept they are recognised as
+       dead and pruned before they are sent (Tom Wilkowski's lockout). The
+       comment always claimed they were legal; now they are. */
     const gw = transferGw();
     const squad = squadAt(mid, gw);
-    const spare = PLAYERS.filter(p => !ownedIdsAt(gw).has(p.id));
-    const list = [0, 1, 2, 3, 4].map(k => ({ in: spare[k].id, out: squad[k].id }));
+    const ownedNow = ownedIdsAt(gw);
+    const byPos = {};
+    for (const p of PLAYERS) {
+      if (ownedNow.has(p.id) || arrivalLocked(p)) continue;
+      (byPos[p.pos] = byPos[p.pos] || []).push(p);
+    }
+    const spare = squad.map(p => (byPos[p.pos] || []).shift()).filter(Boolean);
+    // pair k: squad[k] out, a free man of his own position in
+    const pairFor = k => ({ in: spare[k].id, out: squad[k].id });
+    const list = [0, 1, 2, 3, 4].map(pairFor);
     const names = ids => ids.map(c => PLAYER_BY_ID[c.in].name);
+    ok('(setup) every row below is one the desk would take',
+      [...list, pairFor(8), pairFor(9)].every(c => !deadClaim(c, mid)),
+      [...list, pairFor(8), pairFor(9)].map(c => deadClaim(c, mid)).filter(Boolean)[0] || 'all legal');
 
     // ---------- one list, one bucket (Wilko, 1 Sept 2026) ----------
     // A weekend claim lived in last week's bucket, resolved FIRST, and had
@@ -55,8 +70,7 @@ const chk = (name, ok, detail = '') => {
     // live claim in resolver order, and an edit must consolidate the lot.
     (() => {
       const cur = currentGwIndex();
-      state.claims = { [cur - 1]: { [mid]: [{ in: spare[9].id, out: squad[0].id }] },
-        [cur]: { [mid]: [{ in: spare[8].id, out: squad[1].id }] } };
+      state.claims = { [cur - 1]: { [mid]: [pairFor(9)] }, [cur]: { [mid]: [pairFor(8)] } };
       ok('the list shows the rolled-over claim, and ahead (resolver order)',
         names(myClaims(mid)).join(',') === `${spare[9].name},${spare[8].name}`, names(myClaims(mid)).join(','));
       setClaims(mid, [...myClaims(mid)].reverse());
