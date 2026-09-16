@@ -38,6 +38,17 @@ const chk = (name, ok, detail = '') => {
   const R = await page.evaluate(() => {
     state = buildDemoState();
     const ids = state.managers.map(m => m.id);
+    /* Seeded, because BOTH ends of this are random: the fabricated seasons
+       below, and playoffOdds itself, which is a Monte Carlo. Unseeded it went
+       red on main on 16 Sept 2026 — "91% at three rounds, 89% at eighteen" —
+       which is a tail draw, not a broken model: across 25 seeds the ordering
+       held 25 times out of 25, with medians of 84% at three rounds against
+       100% at eighteen. The overlap lives in the tails, so what the seed takes
+       away is the flakiness and not the finding. A gate that goes red on its
+       own once a fortnight is worse than no gate: it blocks a deploy at the
+       moment somebody needs one, and it teaches everybody to ignore a red. */
+    const seeded = seed => { let x = seed >>> 0; return () => (x = (x * 1664525 + 1013904223) >>> 0) / 4294967296; };
+    Math.random = seeded(20260916);
     const norm = (mu, sd) => mu + sd * Math.sqrt(-2 * Math.log(Math.random() || 1e-9)) * Math.cos(2 * Math.PI * Math.random());
     // drive playoffOdds off a fabricated season by standing in for the two
     // readers it uses — the same pair it reads the real season through
@@ -94,6 +105,9 @@ const chk = (name, ok, detail = '') => {
     R.dominant >= 95, `${R.dominant}%`);
   chk('an ordinary edge firms up as the weeks back it',
     R.edge18 > R.edge3, `${R.edge3}% at three rounds, ${R.edge18}% at eighteen`);
+  // and by a margin worth having — a one-point win would be noise dressed up
+  chk('and firms up by a margin, not by a point',
+    R.edge18 - R.edge3 >= 5, `${R.edge18 - R.edge3} points of firming`);
   chk('no page errors while reading the Crystal Ball', pageErrors.length === 0, pageErrors.join(' | '));
 
   console.log(`\n[crystal-ball] ${pass} passed, ${fail} failed`);
