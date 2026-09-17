@@ -8043,15 +8043,87 @@ function bindQueueDnD() {
   });
 }
 
+/* ----- has the pick delivered? -----
+   Marc, 17 Sept 2026: "add the current points scored, current rank, the
+   difference between where a player was drafted and their current rank, and a
+   green or red arrow showing if they are delivering over the draft position,
+   below the draft position or a grey flat line if they are in exactly the same
+   position."
+
+   The place is over the DRAFTED MEN ONLY, which is the only comparison that
+   means anything: a hundred and sixty-eight were taken, they stand one to a
+   hundred and sixty-eight on what they have scored, and that stands against
+   the pick they went at. Ranking them against the whole feed would drag every
+   pick down by however many free agents happen to be having a season, which
+   says something about the Trough and nothing about the draft.
+
+   Level scores SHARE a place, the way a league table shares a position — two
+   men on the same points cannot be one place apart, and inventing an order
+   between them would invent a verdict too.
+
+   Nothing is stored. It reads the match record, so it is right the moment a
+   round settles and needs no job to keep it that way. */
+function draftDelivery() {
+  const picks = toArr(state.draft?.picks);
+  const rows = picks.map(pk => ({ pk, p: PLAYER_BY_ID[pk.playerId] })).filter(x => x.p);
+  if (!rows.length) return null;
+  for (const r of rows) r.pts = playerPoints(r.p.id).pts;
+  // the standing: highest first, level scores sharing a place (1, 2, 2, 4)
+  const order = [...rows].sort((a, b) => b.pts - a.pts);
+  let place = 0, seen = 0, last = null;
+  for (const r of order) {
+    seen++;
+    if (last === null || r.pts !== last) { place = seen; last = r.pts; }
+    r.rank = place;
+  }
+  for (const r of rows) r.move = r.pk.n - r.rank;   // positive = better than his pick
+  return rows;
+}
+/* Up, down, or a flat line for a man exactly where he was taken. Pick one can
+   only ever draw level, which is right: there is nowhere above first. */
+function deliveryArrow(move) {
+  if (move > 0) return `<span class="deliver up" title="Scoring like a pick ${move} place${move === 1 ? '' : 's'} earlier">&#9650; ${move}</span>`;
+  if (move < 0) return `<span class="deliver down" title="Scoring like a pick ${-move} place${move === -1 ? '' : 's'} later">&#9660; ${-move}</span>`;
+  return `<span class="deliver level" title="Exactly where he was taken">&#9472; 0</span>`;
+}
 function viewDraftRecap() {
+  const rows = draftDelivery();
+  if (!rows) {
+    return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
+      <p class="muted" style="font-size:12.5px">No picks on record.</p></div>`;
+  }
+  const settled = [];
+  for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final') settled.push(i);
+  const played = settled.length;
+  const asAt = played
+    ? `Points and places as at GW${GAMEWEEKS[settled[played - 1]].n}, and they move every time a round settles.`
+    : 'No round has settled yet, so every man is on nought and standing exactly where he was taken.';
+  const best = rows.reduce((a, b) => (b.move > a.move ? b : a), rows[0]);
+  const worst = rows.reduce((a, b) => (b.move < a.move ? b : a), rows[0]);
+  const bare = p => String(p.name || '');
   return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
-    <p class="muted" style="margin-bottom:12px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
-    <div class="pick-log" style="max-height:none">
-    ${state.draft.picks.map(pk => {
-      const p = PLAYER_BY_ID[pk.playerId];
-      return `<div class="lrow"><span class="muted" style="width:38px">#${pk.n}</span><b style="width:130px">${esc(managerName(pk.managerId))}</b>${flagImg(p.team)} ${pname(p)} <span class="muted">· ${p.pos} · ${esc(p.team)}</span></div>`;
-    }).join('')}
-    </div></div>`;
+    <p class="muted" style="margin-bottom:4px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
+    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} Places are among the ${rows.length} men taken, not the whole feed &mdash; a pick is judged against the other picks.</p>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr>
+        <th class="num" title="Where he went in the draft">Pick</th>
+        <th>Drafted by</th>
+        <th>Player</th>
+        <th class="num" title="Points scored this season, in this league's scoring">Pts</th>
+        <th class="num" title="Where he stands on those points among everyone drafted">Now</th>
+        <th class="num" title="His pick number less his current place. Positive means he is outscoring where he went.">Swing</th>
+      </tr></thead>
+      <tbody>${rows.map(({ pk, p, pts, rank, move }) => `<tr>
+        <td class="num muted">#${pk.n}</td>
+        <td style="white-space:nowrap">${esc(managerName(pk.managerId))}</td>
+        <td style="white-space:nowrap">${flagImg(p.team)} ${pname(p)} <span class="muted" style="font-size:11px">${p.pos}</span></td>
+        <td class="num"><b>${pts}</b></td>
+        <td class="num muted">${rank}</td>
+        <td class="num">${deliveryArrow(move)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    ${played ? `<p class="muted" style="font-size:10.5px;margin-top:10px">The steal so far is ${esc(bare(best.p))} at pick ${best.pk.n}, scoring like a man taken ${best.move} place${best.move === 1 ? '' : 's'} earlier. The one nobody wants to discuss is ${esc(bare(worst.p))} at pick ${worst.pk.n}, ${-worst.move} place${worst.move === -1 ? '' : 's'} adrift of his own selection.</p>` : ''}
+  </div>`;
 }
 
 /* ----- my team (lineups + transfers) ----- */

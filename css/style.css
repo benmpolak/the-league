@@ -1791,3 +1791,13 @@ details[open] > .n6-summary::after { content: ' ▴'; }
    a thing still in play. */
 .prob-deadline { opacity: .82; margin-top: 8px; border-top: 1px solid var(--line, rgba(255,255,255,.08)); padding-top: 8px; }
 .prob-deadline .prob-bar span { filter: saturate(.55); }
+
+/* Draft Archive: is the pick delivering? (Marc, 17 Sept 2026). Green up,
+   red down, and a grey flat line for a man scoring exactly where he was
+   taken. The arrow carries the number, because a direction on its own tells
+   you the sign and not the size. Tabular figures so a column of swings reads
+   as a column and not as ragged text. */
+.deliver { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.deliver.up { color: var(--accent); }
+.deliver.down { color: var(--red); }
+.deliver.level { color: var(--muted); font-weight: 600; }
