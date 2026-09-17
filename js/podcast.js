@@ -70,6 +70,13 @@ window.Podcast = (() => {
     // Howard is on a hands-free in a van, not in the studio: slower, flatter,
     // and a touch lower than the professionals talking over him
     'Howard': { pitch: 0.86, rate: 0.9 },
+    /* The rest of the phone-in (Marc, 17 Sept 2026). Every caller needs its own
+       pitch and rate whether or not a voice is ever cast for it: a line with no
+       recording is spoken by the browser, and without these three more callers
+       would all arrive in one voice, which is worse than having one caller. */
+    'Denise': { pitch: 1.16, rate: 0.94 },        // unhurried, precise, lethal
+    'Callum': { pitch: 1.0, rate: 1.2 },          // on speaker, doing 40, late
+    'Barry': { pitch: 0.78, rate: 0.94 },         // rings about the parking
   };
 
   /* ---------- station idents ----------
@@ -385,8 +392,12 @@ window.Podcast = (() => {
 
   /* ---------- episode assembly ---------- */
   const theme = show => ({ t: 'theme', show, text: show === 'tt' ? '[BRASS STING. AIRHORN. A MAN SHOUTING OVER BOTH]' : '[SPARSE PIANO. A SINGLE CELLO. SOMEBODY SIGHS]' });
-  function adBreak(show, key, n) {
-    const inv = (typeof POD_ADS !== 'undefined' && POD_ADS[SHOWS[show].ads]) || [];
+  function adBreak(show, key, n, fixed) {
+    const all = (typeof POD_ADS !== 'undefined' && POD_ADS[SHOWS[show].ads]) || [];
+    // a fixed episode draws from the book as it stood when it was cut, or
+    // lengthening the inventory would orphan its recorded ad reads
+    const cut = typeof POD_ADS_AT_CUT === 'number' ? POD_ADS_AT_CUT : all.length;
+    const inv = fixed ? all.slice(0, cut) : all;
     if (!inv.length) return null;
     const ad = inv[hash(key + ':ad' + n) % inv.length];
     return { t: 'ad', show, brand: ad.brand, text: ad.read };
@@ -430,8 +441,8 @@ window.Podcast = (() => {
     ],
   };
   // one break, both ads, host in and host out
-  function adPod(showId, key) {
-    const a1 = adBreak(showId, key, 1), a2 = adBreak(showId, key, 2);
+  function adPod(showId, key, fixed) {
+    const a1 = adBreak(showId, key, 1, fixed), a2 = adBreak(showId, key, 2, fixed);
     if (!a1 && !a2) return [];
     const host = SHOWS[showId].host;
     const out = [say(host, pick(AD_IN[showId] || AD_IN.gfw, key + ':adin'))];
@@ -445,8 +456,8 @@ window.Podcast = (() => {
   /* Drop the break into the middle of a finished episode. Measured across the
      spoken blocks, and kept clear of the opening exchange and the sign-off so
      it never lands on "and that's the show". */
-  function insertAdPod(showId, key, B) {
-    const pod = adPod(showId, key);
+  function insertAdPod(showId, key, B, fixed) {
+    const pod = adPod(showId, key, fixed);
     if (!pod.length) return;
     let at = Math.max(3, Math.min(B.length - 2, Math.round(B.length / 2)));
     /* Don't cut a one-word reaction away from the line it answers. Jamie's
@@ -527,37 +538,225 @@ window.Podcast = (() => {
     'picking up a prescription in Prestwich village',
     'watching the wife\'s programme with the sound off',
   ];
-  /* Keys taking the call. He remembers him, which is the joke. */
-  function howardIn(key, kind, question) {
-    const first = kind === 'pilot';
-    // introduced the way a phone-in caller always is: name, then where he's
-    // ringing from, then straight to him (Marc, 18 Aug)
-    const intro = first
-      ? 'Right, let\'s get to the phones, because the lines have not stopped all afternoon. We\'ve got Howard from Prestwich. Howard in Prestwich, you\'re on talkTROUGH.'
-      : pick([
+  /* ---------- the rest of the phone-in ----------
+     Marc, 17 Sept 2026: "use some different callers... id like those characters
+     to be on rotation as the caller."
+
+     Howard was the whole switchboard, which made him a fixture rather than a
+     caller. Three more, and the shape of the CALL is what differs, not just the
+     wording — a phone-in is interesting because the next voice is a different
+     kind of person, not the same person phrased differently:
+
+       Howard   never asks the question. Rambles in from an errand, lands the
+                point sideways, hangs up to listen. First-time caller, weekly.
+       Denise   asks exactly one question, precisely, and waits for the answer.
+                Knows more than the panel and is far too polite to say so.
+       Callum   no pleasantries, straight in at speed, a statistic wrong by a
+                factor of ten, and gone before he finishes.
+       Barry    rings about the parking, or the pies, or the away end, and
+                arrives at a real point by accident on his way past.
+
+     All four are affectionate and specific, which is the rule Howard's note
+     lays down and the reason it works. Keep it if you add more: the moment one
+     becomes a caricature of a place or a kind of person it stops being funny
+     and starts being something else. */
+  const CALLERS = {
+    Howard: {
+      name: 'Howard', from: 'Prestwich',
+      intro: [
         'Let\'s go to the phones. Howard in Prestwich. Howard, you\'re on talkTROUGH.',
         'To the phones, and it\'s Howard from Prestwich again. Howard, you\'re on talkTROUGH.',
         'Line one, Howard in Prestwich. Howard, go ahead, you\'re on talkTROUGH.',
         'Howard\'s back. Howard from Prestwich, you\'re on talkTROUGH.',
         'We\'ll take one call. Howard, Prestwich. You\'re on talkTROUGH.',
-      ], key + ':hi');
-    // always the same shape: I was [dull thing] when I thought [the point]
-    const body = [
-      pick(HOWARD_OPENER, key + ':ho'),
-      `I was ${pick(HOWARD_DOING, key + ':hd')} when I thought, ${pick(HOWARD_THOUGHT, key + ':ht')}`,
-      question,
-      pick(HOWARD_SIGNOFF, key + ':hs'),
-    ].join(' ');
-    const answer = first
-      ? 'Well he\'s not wrong, Howard, and that\'s the thing — the people who actually WATCH the football know. Good caller, Prestwich.'
-      : pick([
+      ],
+      answer: [
         'Howard, you said that last week. You are not a first-time caller. You have NEVER been a first-time caller.',
         'Every week, Howard. EVERY WEEK he rings up from Prestwich and says first-time caller.',
         'Good call, Howard, and he\'s right, and nobody in that league will listen to him.',
         'That is the best point anyone has made on this show all season and it came from a man in a van in Prestwich.',
         'Howard. Howard. He\'s gone. He always goes.',
-      ], key + ':ha');
-    return [say('Richard Keyes', intro), say('Howard', body), say('Richard Keyes', answer)];
+      ],
+      // unchanged, deliberately: his text is the key his recordings hang on
+      body: (key, question) => [
+        pick(HOWARD_OPENER, key + ':ho'),
+        `I was ${pick(HOWARD_DOING, key + ':hd')} when I thought, ${pick(HOWARD_THOUGHT, key + ':ht')}`,
+        question,
+        pick(HOWARD_SIGNOFF, key + ':hs'),
+      ].join(' '),
+    },
+    Denise: {
+      name: 'Denise', from: 'Whitefield',
+      intro: [
+        'Next on the line, Denise in Whitefield. Denise, you\'re on talkTROUGH.',
+        'Let\'s go to Whitefield, where Denise is waiting. Denise, go ahead.',
+        'Line two, and it\'s Denise from Whitefield. Denise, you\'re on.',
+        'Denise in Whitefield. Denise, and I\'ll say now, she\'s usually right.',
+        'And now Denise, Whitefield. Denise, take your time, you always do.',
+      ],
+      answer: [
+        'Well. Yes. I mean — yes. She\'s right, isn\'t she. She\'s right.',
+        'Denise, that is a better question than anything I\'ve asked in nine years of this.',
+        'And there it is. Denise from Whitefield has done in forty seconds what three of us could not do in an hour.',
+        'I have nothing. I\'ve genuinely got nothing for her. Denise, thank you.',
+        'She\'s not shouting and she\'s not wrong, which on this show makes her a pioneer.',
+      ],
+      body: (key, question) => [
+        pick([
+          'Good afternoon, Richard. I won\'t keep you.',
+          'Afternoon. I\'ve got one question and then I\'ll let you get on.',
+          'Hello Richard. One thing, and I\'ll be brief.',
+          'Afternoon, Richard. I\'ve been listening and I\'ve written it down, so bear with me.',
+          'Hello Richard. Now, I\'m not going to shout at you, so you can relax.',
+        ], key + ':do'),
+        pick([
+          'I\'ve had the table up all week.',
+          'I keep a spreadsheet, which I know you\'ll find funny.',
+          'My husband\'s in that league and he has not worked this out either.',
+          'I\'ve been doing this since long before any of you were on the wireless.',
+          'I did the sums on the back of a shopping list, so do check them.',
+        ], key + ':dc'),
+        question,
+        pick([
+          'I\'ll hold, if that\'s alright. I\'d like the answer.',
+          'I\'ll wait. I\'m not hanging up until one of you has a go at that.',
+          'Take your time. I\'ve got all afternoon and you\'ve got four minutes.',
+          'And I\'d like a proper answer, please, not the one about passion.',
+          'I\'ll stay on, if I may. I\'ve waited eleven minutes, I can wait for an answer.',
+        ], key + ':ds'),
+      ].join(' '),
+    },
+    Callum: {
+      name: 'Callum', from: 'Salford',
+      intro: [
+        'Callum in Salford. Callum, you\'re on talkTROUGH, and be quick, lad.',
+        'Line three, Callum from Salford. Callum, go.',
+        'Let\'s squeeze in Callum in Salford. Callum — fast, please.',
+        'Callum, Salford. You\'re on. Thirty seconds.',
+        'Right, Callum in Salford, and Callum \u2014 slow down before you start.',
+      ],
+      answer: [
+        'He\'s gone. He drove into a tunnel. That\'s the second week running.',
+        'Callum, those numbers are nowhere NEAR right, but I admire the delivery.',
+        'I think he was on a bus. I think that whole thing came from a bus.',
+        'Right, well. Somewhere in there was a point and I\'d love to know what it was.',
+        'Callum, mate, take it off speaker. TAKE IT OFF SPEAKER.',
+      ],
+      body: (key, question) => [
+        pick([
+          'Yeah Richard, listen, right —',
+          'Rich, mate, yeah — can you hear me? Yeah —',
+          'Yeah no listen, right, so —',
+          'Richard — Rich — right, listen —',
+        ], key + ':co'),
+        pick([
+          'I\'ve looked at the numbers, yeah, and the numbers do not lie.',
+          'I\'ve got all the data, right, I\'ve got it in front of me now.',
+          'Everyone on that league group chat is saying it, right, EVERYONE.',
+          'I\'ve been saying this since the draft and nobody listened to me.',
+          'I do this for a living, well — not for a living, but you know what I mean.',
+        ], key + ':cc'),
+        question,
+        pick([
+          'So yeah, that\'s me, that\'s — hello? Rich? Are you —',
+          'So — sorry, I\'m just coming off the M60, hang on —',
+          'Anyway that\'s my point and I think you\'ll find —',
+          'So what I\'d say to that is — sorry, one sec, I\'ve got to —',
+        ], key + ':cs'),
+      ].join(' '),
+    },
+    Barry: {
+      name: 'Barry', from: 'Sale',
+      intro: [
+        'Barry in Sale. Barry, you\'re on talkTROUGH. What have we done now.',
+        'Line one, Barry from Sale. Barry — is this about the parking again.',
+        'Let\'s go to Barry in Sale. Barry, you\'re on, and please be about the football.',
+        'Barry\'s on. Barry from Sale. Barry, go ahead — briefly.',
+      ],
+      answer: [
+        'Barry. BARRY. That started as a complaint about a pie and finished as a proper point.',
+        'I don\'t know how he gets there, but he gets there. Every time. Barry from Sale.',
+        'He came for the parking and he stayed for the analysis. Cheers, Barry.',
+        'Four minutes on a car park and then THAT. Extraordinary man.',
+        'Barry, I\'ve got to go to an advert, but you\'re right, and I hate that you\'re right.',
+      ],
+      body: (key, question) => [
+        pick([
+          'Now then, Richard. Before I start — and this is related —',
+          'Richard. Right. Now I know you\'ll say this isn\'t about the football, but it is.',
+          'Hello Richard. I\'ve rung up about something else and I\'ll come to the football.',
+          'Richard, I want to raise something, and then I\'ll make my point.',
+          'Evening, Richard. Now I\'ve two complaints and one of them is football.',
+        ], key + ':bo'),
+        pick([
+          'four pound fifty for a pie. FOUR POUND FIFTY. And it was cold in the middle.',
+          'they\'ve shut the car park by the ground. Shut it. No notice, no sign, nothing.',
+          'the away end at ours has one working turnstile and a man with a clipboard.',
+          'they\'ve moved the kick-off again. Twelve thirty. On a SUNDAY. For the telly.',
+          'the tea was a pound eighty and it came in a cup you could see through.',
+          'there\'s a bloke behind me every week who reads the programme out loud.',
+          'the big screen has been broken since August and nobody will own up to it.',
+        ], key + ':bc'),
+        pick([
+          'And it\'s the same thing, isn\'t it. It\'s the same thing exactly.',
+          'And that\'s my point, because it\'s all the same problem.',
+          'Which brings me to it, because it\'s all connected.',
+          'And I\'ll tell you why that matters.',
+          'And it is exactly the same with this league of yours.',
+        ], key + ':bl'),
+        question,
+        pick([
+          'That\'s all. And sort the car park out.',
+          'And I\'ll say it again — four pound fifty.',
+          'Right, that\'s me. But I\'ve not finished about the turnstile.',
+          'Anyway. You\'ll not do anything about it, but I\'ve said it.',
+          'That\'s me done. But I\'ll be ringing again about that screen.',
+        ], key + ':bs'),
+      ].join(' '),
+    },
+  };
+  /* Who is on the line this week.
+
+     Howard keeps the pilot, the draft and GW1 permanently. That is not
+     sentiment: those four episodes have audio already cut, and a line's
+     recording is keyed to a hash of its text, so putting somebody else on
+     those calls would orphan takes that exist — including the hand-recorded
+     ones, which a render is not allowed to replace. The rotation starts where
+     the episodes are still being generated.
+
+     DO NOT pick the caller with pick()/hash(), however natural it looks.
+     hash() is FNV-1a, and for a shared key with a fixed suffix its low bits
+     are a deterministic function of the accumulator's low bits — so
+     hash(key + ':who') % 4 and hash(key + ':ho') % 4 are perfectly
+     correlated. Gating the roster on a mod-4 hash pinned every OTHER mod-4
+     pick in the call to one value: Howard used one opener for the whole
+     season, and his sixteen errands produced four. Anything whose length
+     shares a factor with the roster's collapses the same way. Measured, not
+     theorised; it cost an afternoon.
+
+     So the rota is arithmetic on the gameweek, which spends no hash entropy
+     at all. It is also better in its own right: perfectly even, predictable a
+     week ahead, and a week's preview and review get different callers. */
+  const CALLER_ROTA = ['Howard', 'Denise', 'Callum', 'Barry'];
+  function callerFor(kind, gw) {
+    if (kind === 'pilot' || kind === 'draft' || gw == null || gw <= 0) return CALLERS.Howard;
+    return CALLERS[CALLER_ROTA[(gw + (kind === 'review' ? 1 : 0)) % CALLER_ROTA.length]] || CALLERS.Howard;
+  }
+
+  /* Keys taking the call. He remembers him, which is the joke. */
+  function howardIn(key, kind, question, gw) {
+    const first = kind === 'pilot';
+    const who = callerFor(kind, gw);
+    // introduced the way a phone-in caller always is: name, then where he's
+    // ringing from, then straight to him (Marc, 18 Aug)
+    const intro = first
+      ? 'Right, let\'s get to the phones, because the lines have not stopped all afternoon. We\'ve got Howard from Prestwich. Howard in Prestwich, you\'re on talkTROUGH.'
+      : pick(who.intro, key + ':hi');
+    const body = who.body(key, question);
+    const answer = first
+      ? 'Well he\'s not wrong, Howard, and that\'s the thing — the people who actually WATCH the football know. Good caller, Prestwich.'
+      : pick(who.answer, key + ':ha');
+    return [say('Richard Keyes', intro), say(who.name, body), say('Richard Keyes', answer)];
   }
 
   function panel(key) {
@@ -578,7 +777,7 @@ window.Podcast = (() => {
     /* The break goes in HERE rather than inside each body, so all eight
        episodes get it in the same place and no future segment can quietly
        drift it back to a third of the way through. */
-    insertAdPod(showId, key, B);
+    insertAdPod(showId, key, B, kind === 'pilot' || kind === 'draft');
     return { id: `${showId}-${kind}${gw != null ? '-gw' + (gw + 1) : ''}`, show, kind, gw,
       title: built.title, dek: built.dek, blocks: B, words: B.reduce((t, b) => t + String(b.text || '').split(/\s+/).length, 0) };
   }
@@ -747,7 +946,7 @@ window.Podcast = (() => {
     }
     B.push(say('Andy Grey', 'And I\'ll be honest with you Richard, half of them will lose it on the BENCH. Not the eleven. The BENCH. It is the same every week and they never learn.'));
     if (tbl.length) B.push(say('Jamie O’Hara-Hara', `Top of the table: ${(teamName(tbl[0].id) || '').toUpperCase()}. And I'm not having it. I'm just NOT HAVING IT.`));
-    if (seg.phone !== false) howardIn(key, 'preview', `It's about this ${teamName(a)} and ${teamName(b)} game you keep calling the big one. ${mu.shared.length ? `They've both got ${mu.shared[0]} men in, you said so yourself, so it cancels out and we're all sat here watching a draw happen slowly.` : 'There\'s not a single player in common between them, and nobody has mentioned that all week.'} ${starA ? `And everyone's on about ${starA.name}. He's one man. ONE. You don't win a gameweek with one man, you win it with the four nobody talks about.` : 'It\'ll be decided by somebody nobody has heard of, it always is.'}`)
+    if (seg.phone !== false) howardIn(key, 'preview', `It's about this ${teamName(a)} and ${teamName(b)} game you keep calling the big one. ${mu.shared.length ? `They've both got ${mu.shared[0]} men in, you said so yourself, so it cancels out and we're all sat here watching a draw happen slowly.` : 'There\'s not a single player in common between them, and nobody has mentioned that all week.'} ${starA ? `And everyone's on about ${starA.name}. He's one man. ONE. You don't win a gameweek with one man, you win it with the four nobody talks about.` : 'It\'ll be decided by somebody nobody has heard of, it always is.'}`, i)
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'HOT TAKE TIME.'));
     B.push(say('Andy Grey', `HOT TAKE: ${(teamName(b) || '').toUpperCase()} do not have the bottle for this and I have been saying it since August. ${pick(TT_ROAR, key + ':r3')}.`));
@@ -800,7 +999,7 @@ window.Podcast = (() => {
     B.push(say('Andy Grey', `And ${(teamName(widest.w) || '').toUpperCase()} by ${widest.hi - widest.lo}. That is not a defeat, Richard, that is a MESSAGE.`));
     if (manOf) B.push(say('Richard Keyes', `${(manOf.p.name || '').toUpperCase()}. ${manOf.pts} POINTS. On his own. THAT is a footballer and I don't care what the numbers men say about him.`));
     B.push(say('Jamie O’Hara-Hara', 'HOT TAKE: half these lads are not even WATCHING the games. They are watching the APP. WATCH THE FOOTBALL, SON.'));
-    if (seg.phone !== false) howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`)
+    if (seg.phone !== false) howardIn(key, 'review', `You're about to do your Fraud of the Week, and I know who you're going to say. ${teamName(bottom.mid)}. ${bottom.pts} points. Well — he's had the same eleven out as the fella who won it, near enough, and one of them scored and one of them didn't. That's not fraud, Richard, that's a SATURDAY. ${manOf ? `And you gave ${manOf.p.name} all that praise for ${manOf.pts}. He was on the bench of three squads in that league. THREE.` : 'Half of this is luck and none of you will say it.'}`, i)
       .forEach(b => B.push(b));
     B.push(say('Richard Keyes', 'RIGHT. FRAUD OF THE WEEK.'));
     B.push(say('Andy Grey', `${(teamName(bottom.mid) || '').toUpperCase()}. ${bottom.pts} points. In a full gameweek. I don't want to hear about injuries, I don't want to hear about fixtures — FRAUD OF THE WEEK, and he knows it.`));

@@ -402,48 +402,166 @@ const chk = (name, ok, detail = '') => {
   chk('P11 a hand-recorded line plays its file; the rest fall back to the browser',
     Object.values(p11).every(Boolean), JSON.stringify(p11));
 
-  /* ---- P12: Howard. Marc, 18 Aug — one caller, one question, talkTROUGH
-     only, and he is the part a human records ---- */
+  /* ---- P12: the phone-in. Marc, 18 Aug gave us Howard — one caller, one
+     question, talkTROUGH only, and the part a human records. Marc, 17 Sept
+     2026 opened the switchboard: "use some different callers... id like those
+     characters to be on rotation as the caller."
+
+     So every property Howard had is now a property of whoever is ON, and two
+     new ones matter more than any of them: the rotation must never put
+     somebody else on an episode whose audio is already cut, and each caller
+     needs its own browser voice or four callers arrive as one man. ---- */
   const p12 = await page.evaluate(() => {
-    const lines = (show, kind, gw) => {
-      const ep = Podcast.episode(show, kind, gw);
-      return ep ? ep.blocks.filter(b => b.who === 'Howard') : null;
-    };
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const callersIn = ep => (ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : []);
     const kinds = [['pilot', null], ['draft', null], ['preview', 0], ['review', 0]];
-    const tt = kinds.map(([k, g]) => lines('tt', k, g));
-    const gfw = kinds.map(([k, g]) => lines('gfw', k, g));
+    const tt = kinds.map(([k, g]) => callersIn(Podcast.episode('tt', k, g)));
+    const gfw = kinds.map(([k, g]) => callersIn(Podcast.episode('gfw', k, g)));
     const ep = Podcast.episode('tt', 'review', 0);
+    const who = callersIn(ep)[0];
     return {
-      // exactly one call per talkTROUGH episode, every kind
-      onceEachTT: tt.every(l => l && l.length === 1),
-      // and never on the Gazette — he is a talkTROUGH caller
-      neverGfw: gfw.every(l => l && l.length === 0),
+      // exactly one call per talkTROUGH episode, every kind — never two voices
+      // on the line and never a silent switchboard
+      onceEachTT: tt.every(l => l.length === 1),
+      // and never on the Gazette — a phone-in is a talkTROUGH thing
+      neverGfw: gfw.every(l => l.length === 0),
       // Keys takes the call and answers it, so it plays as a phone-in
       framed: (() => {
-        const i = ep.blocks.findIndex(b => b.who === 'Howard');
+        const i = ep.blocks.findIndex(b => ROSTER.includes(b.who));
         return i > 0 && ep.blocks[i - 1].who === 'Richard Keyes'
           && !!ep.blocks[i + 1] && ep.blocks[i + 1].who === 'Richard Keyes';
       })(),
-      // ...and he is introduced the way callers are: name, then where from
-      fromPrestwich: kinds.every(([k, g]) => {
+      // ...and introduced the way callers are: name, then where from
+      namedAndPlaced: kinds.every(([k, g]) => {
         const e = Podcast.episode('tt', k, g);
-        const i = e.blocks.findIndex(b => b.who === 'Howard');
-        return /Howard/.test(e.blocks[i - 1].text) && /Prestwich/.test(e.blocks[i - 1].text);
+        const i = e.blocks.findIndex(b => ROSTER.includes(b.who));
+        const lead = e.blocks[i - 1].text, name = e.blocks[i].who;
+        const place = { Howard: 'Prestwich', Denise: 'Whitefield', Callum: 'Salford', Barry: 'Sale' }[name];
+        return lead.includes(name) && lead.includes(place);
       }),
-      // he is a first-time caller, permanently
-      firstTimer: /first[ -]time|first time/i.test(ep.blocks.find(b => b.who === 'Howard').text),
       // he says something about THIS gameweek, not a stock line
-      fromState: (() => {
-        const t = ep.blocks.find(b => b.who === 'Howard').text;
-        return state.managers.some(m => m.team && t.includes(m.team));
-      })(),
-      // and the player lists him with the cast, so his chip is on the sheet
-      onTheBill: [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))].includes('Howard'),
-      hasVoice: !!Podcast.VOICES['Howard'],
+      fromState: state.managers.some(m => m.team && who.text.includes(m.team)),
+      // and the player lists the caller with the cast, so his chip is on the sheet
+      onTheBill: [...new Set(ep.blocks.filter(b => b.t === 'speech').map(b => b.who))].includes(who.who),
+      // every caller has its own pitch and rate: with no recording the browser
+      // speaks the line, and without these the roster is one man four times
+      allVoiced: ROSTER.every(n => !!Podcast.VOICES[n]),
+      distinctVoices: new Set(ROSTER.map(n => `${Podcast.VOICES[n].pitch}/${Podcast.VOICES[n].rate}`)).size === ROSTER.length,
     };
   });
-  chk('P12 Howard phones talkTROUGH once an episode, never the Gazette',
+  chk('P12 one caller an episode on talkTROUGH, never the Gazette, named and placed',
     Object.values(p12).every(Boolean), JSON.stringify(p12));
+
+  /* ---- P12b: the rotation itself, and the audio it must not disturb.
+     A line's recording is keyed to a hash of its text, so putting a different
+     caller on an episode that has already been cut orphans real takes —
+     including the hand-recorded ones a render is forbidden to replace. The
+     pilots, the draft and GW1 are cut. They stay Howard's. ---- */
+  const p12b = await page.evaluate(() => {
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const caller = (kind, gw) => {
+      const ep = Podcast.episode('tt', kind, gw);
+      const c = ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : [];
+      return c.length === 1 ? c[0].who : null;
+    };
+    const weeks = [];
+    for (let g = 0; g < 20; g++) weeks.push([caller('preview', g), caller('review', g)]);
+    const seen = new Set(weeks.flat().filter(Boolean));
+    return {
+      // the episodes that already have audio keep the caller that recorded them
+      pilotIsHoward: caller('pilot', null) === 'Howard',
+      draftIsHoward: caller('draft', null) === 'Howard',
+      gw1IsHoward: weeks[0][0] === 'Howard' && weeks[0][1] === 'Howard',
+      // ...and from GW2 the rest of the switchboard gets a turn
+      rotates: seen.size === ROSTER.length,
+      everyoneUsed: ROSTER.every(n => seen.has(n)),
+      // a given week is the same caller however many times it is drawn, or the
+      // audio for that week would change under the renderer's feet
+      stable: [2, 5, 9, 14].every(g => caller('preview', g) === caller('preview', g)
+        && caller('review', g) === caller('review', g)),
+      // Howard keeps his running joke and nobody else claims it
+      howardFirstTimes: (() => {
+        for (let g = 1; g < 20; g++) for (const k of ['preview', 'review']) {
+          const ep = Podcast.episode('tt', k, g);
+          const c = ep.blocks.find(b => ROSTER.includes(b.who));
+          if (!c) return false;
+          const claims = /first[ -]?time/i.test(c.text);
+          if (claims && c.who !== 'Howard') return false;      // stolen
+          if (c.who === 'Howard' && !claims) return false;     // dropped
+        }
+        return true;
+      })(),
+      // each caller sounds like a different KIND of call, not one shape reworded
+      ownShapes: (() => {
+        const shapes = {};
+        for (let g = 1; g < 20; g++) for (const k of ['preview', 'review']) {
+          const ep = Podcast.episode('tt', k, g);
+          const c = ep.blocks.find(b => ROSTER.includes(b.who));
+          if (c) (shapes[c.who] = shapes[c.who] || new Set()).add(c.text.slice(0, 40));
+        }
+        // more than one opening per caller: the lines vary within a character
+        return Object.values(shapes).every(v => v.size > 1);
+      })(),
+    };
+  });
+  chk('P12b the rota spares the recorded episodes and gives everyone a turn',
+    Object.values(p12b).every(Boolean), JSON.stringify(p12b));
+
+  /* ---- P12c: a caller waiting for a voice must not cost anything or break
+     anything. render_pods refuses a run outright if a non-human character has
+     no voice id, so a new caller ships as `human` with none: the renderer skips
+     it, the browser speaks it, and Ben casts it when he likes. ---- */
+  const p12c = await page.evaluate(async () => {
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const cast = await (await fetch('audio/pod/cast.json', { cache: 'no-cache' })).json();
+    const c = cast.cast || {};
+    return {
+      allCast: ROSTER.every(n => !!c[n]),
+      // the gate render_pods applies: !human && !voice halts the whole render
+      noneHaltsTheRender: ROSTER.every(n => c[n].human || String(c[n].voice || '').trim()),
+      // and each one says what it is meant to sound like, which is what you
+      // cast against
+      allDirected: ROSTER.every(n => (c[n].direction || '').length > 40),
+      // every SPEAKING part in the shows has a chair, or a render throws
+      everySpeakerCast: (() => {
+        const specs = [['gfw', 'pilot', null], ['tt', 'pilot', null], ['gfw', 'draft', null], ['tt', 'draft', null]]
+          .concat([0, 1, 2, 3, 4].flatMap(g => [['gfw', 'preview', g], ['tt', 'preview', g], ['gfw', 'review', g], ['tt', 'review', g]]));
+        const who = new Set();
+        for (const [s, k, g] of specs) {
+          const ep = Podcast.episode(s, k, g);
+          if (ep) for (const b of ep.blocks) if (b.t === 'speech') who.add(b.who);
+        }
+        return [...who].every(n => !!c[n]);
+      })(),
+    };
+  });
+  chk('P12c a caller with no voice yet is cast, directed, and harmless to a render',
+    Object.values(p12c).every(Boolean), JSON.stringify(p12c));
+
+  /* ---- P12d: the advert book. Marc, 17 Sept 2026: "I want new adverts each
+     time." Two run per episode off one hash, so a small book repeats fast. ---- */
+  const p12d = await page.evaluate(() => {
+    const ads = ep => (ep ? ep.blocks.filter(b => b.t === 'ad') : []);
+    const runs = [];
+    for (const s of ['gfw', 'tt']) for (let g = 0; g < 20; g++) for (const k of ['preview', 'review']) {
+      const a = ads(Podcast.episode(s, k, g));
+      if (a.length) runs.push({ show: s, brands: a.map(x => x.brand) });
+    }
+    const brandsOf = s => new Set(runs.filter(r => r.show === s).flatMap(r => r.brands));
+    return {
+      // a break always carries two, and never the same advert twice
+      twoEach: runs.every(r => r.brands.length === 2),
+      neverRepeatsInABreak: runs.every(r => r.brands[0] !== r.brands[1]),
+      // and over a season each station gets through a real spread of its book
+      gfwSpread: brandsOf('gfw').size >= 12,
+      ttSpread: brandsOf('tt').size >= 12,
+      // the two stations never share an advertiser — the ads are how you tell
+      // the registers apart
+      noCrossover: [...brandsOf('gfw')].every(b => !brandsOf('tt').has(b)),
+    };
+  });
+  chk('P12d the ad book is deep enough that a listener is not sold the same thing weekly',
+    Object.values(p12d).every(Boolean), JSON.stringify(p12d));
 
   /* ---- P13c: the provenance store matches the audio it describes. It is what
      lets a stand-in be replaced while a real human take is untouchable, so if

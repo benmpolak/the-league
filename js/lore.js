@@ -405,7 +405,21 @@ const GAZETTE_INTERVIEWS = [
    The ads are the fastest way to tell the registers apart, so they are held
    here as inventory rather than buried in the generator. `read` is the ad as
    the host reads it; keep GFW ads worthy and slightly apologetic, and
-   talkTROUGH ads loud, physical and priced. */
+   talkTROUGH ads loud, physical and priced.
+
+   Marc, 17 Sept 2026: "I want new adverts each time." Two run per episode off
+   one deterministic hash, so with six in the book a listener met the same ad
+   every third show. Eighteen each is the fix: a full season of weekly previews
+   and reviews can get through them without a listener hearing one twice in a
+   month. Add to the bottom rather than reword the top — an advert's audio is
+   keyed to its text, so a changed word re-cuts that line and a new entry costs
+   nothing until it is drawn. */
+/* The pilots and the draft episodes were cut in August against the first six
+   of each book, and a line's recording is keyed to a hash of its text — so if
+   those fixed episodes drew from the longer book they would orphan takes that
+   already exist. They keep the first six. Everything generated weekly gets the
+   lot. Add to the BOTTOM and this number never has to move. */
+const POD_ADS_AT_CUT = 6;
 const POD_ADS = {
   gfw: [
     { brand: 'The Mind Of A Midfielder', read: 'a new eight-part series on the inner lives of holding midfielders, supported by the players’ union. No transfer gossip. No scores. Just men, sitting.' },
@@ -414,6 +428,18 @@ const POD_ADS = {
     { brand: 'Fair Kit', read: 'organic cotton shirts made in a factory the makers will name, with a wage they will also name. Available in away, and in a third kit nobody asked for.' },
     { brand: 'The Sunday Long Read', read: 'four thousand words on a full-back you have never seen play, filed from a train. Cancel any time, though nobody does.' },
     { brand: 'Allotment Weekly', read: 'because the season is long and the soil does not have an opinion about your bench.' },
+    { brand: 'The Second Yellow', read: 'a podcast in which two former referees discuss, gently, the decisions that ended their friendships. Recorded in a shed with the door open.' },
+    { brand: 'Rail Replacement Away Days', read: 'we cannot make the train run, but we can tell you the truth about it on Thursday instead of Saturday morning at the station.' },
+    { brand: 'The Turnstile Trust', read: 'preserving the last of the standing terraces, one bolt at a time. Donations welcome. Progress slow. Deliberately.' },
+    { brand: 'Pitchside Physio Monthly', read: 'the journal for the people who run on with the bag. Peer-reviewed, unglamorous, and read by absolutely everybody who matters.' },
+    { brand: 'Grassroots Grounds Fund', read: 'we drain pitches so that under-elevens can play on grass in February. There is no glamour in a drainage channel and we have made peace with that.' },
+    { brand: 'The Quiet Carriage', read: 'a supporters\u2019 coach with a no-singing policy, for the away fan who loves the club and not the coach. Flask provided.' },
+    { brand: 'Ledger &amp; Lamp', read: 'hand-bound notebooks for people who still write their line-up out before they submit it. Made in Stockport. Sold, mostly, to men over fifty.' },
+    { brand: 'The Non-League Ninety', read: 'a film about a groundsman, his mower, and a chairman who will not return his calls. Ninety minutes. No music. Some of it is very funny.' },
+    { brand: 'Fixture List Therapy', read: 'a service for supporters who read the fixtures in June and decide the season in an afternoon. Eight sessions. You will still do it.' },
+    { brand: 'The Wednesday Long Bath', read: 'ninety minutes of a former sweeper reading the 1974 league tables aloud. People find it settling. We have stopped asking why.' },
+    { brand: 'Kit Archive Quarterly', read: 'every away shirt of the 1990s, photographed properly, described honestly. The teal one is in here and we are not defending it.' },
+    { brand: 'The Long Walk To The Ground', read: 'audio essays recorded on the last mile in, by people who could have parked closer and chose not to.' },
   ],
   tt: [
     { brand: 'BRICKO POWER TOOLS', read: 'EIGHTEEN VOLTS OF PROPER BRITISH TORQUE. If it does not go through the wall, son, YOU ARE NOT PUSHING HARD ENOUGH. Bricko. GET IT DONE.' },
@@ -422,6 +448,18 @@ const POD_ADS = {
     { brand: 'GAFFER TAPE PLUS', read: 'ONE ROLL. FIXES EVERYTHING. Your gutter, your bumper, your hamstring — WE ARE NOT DOCTORS. Gaffer Tape Plus. TAPE IT AND FORGET IT.' },
     { brand: 'DRIVE-THRU CAR VALET', read: 'YOUR MOTOR, IMMACULATE, IN ELEVEN MINUTES. We do the alloys. We do them PROPERLY. Twenty-two pounds, cash, no appointment, no nonsense.' },
     { brand: 'BIG RON’S PATIO WORLD', read: 'SLABS. THOUSANDS OF THEM. Laid by men who have never once discussed their feelings and are, frankly, THRIVING.' },
+    { brand: 'MASSIVE STEVE\u2019S TYRE BARN', read: 'FOUR TYRES, FITTED, WHILE YOU HAVE A BREW. We do not do balloons for the kids and we do not do nonsense. MASSIVE STEVE. MASSIVE SAVINGS.' },
+    { brand: 'THE MEAT CAVE', read: 'A FREEZER FULL OF PROTEIN FOR NINETY POUNDS. Chicken, mince, and something called a MIXED BOX which I am not going to describe. IT IS ALL MEAT.' },
+    { brand: 'RAPID DRIVE THRU BARBERS', read: 'IN, DOWN TO A NUMBER TWO, OUT. Eleven minutes. NO CONVERSATION UNLESS YOU START IT. Nine pounds. SHARP LADS ONLY.' },
+    { brand: 'CONCRETE COLIN\u2019S DRIVEWAYS', read: 'TARMAC, BLOCK PAVE, RESIN \u2014 WHATEVER YOU WANT ON THE FRONT. Quote on Monday, LAID BY FRIDAY. Colin does not do dust sheets. Colin does DRIVEWAYS.' },
+    { brand: 'BIG GAS ENERGY BOILERS', read: 'YOUR BOILER IS FINISHED, SON. WE BOTH KNOW IT. Replaced in a day, twelve years\u2019 warranty, and a man called Dave who WILL take his shoes off.' },
+    { brand: 'THE PIE MOUNTAIN', read: 'TWELVE PIES. TWELVE POUNDS. Steak, chicken balti, and one we are legally required to call SAVOURY. IT IS A MOUNTAIN. OF PIES.' },
+    { brand: 'THUNDER VALLEY GO KARTS', read: 'FORTY MILES AN HOUR, SIX INCHES OFF THE FLOOR. Stag do, work do, ANY DO. Helmets provided. GRUDGES ARE YOUR OWN.' },
+    { brand: 'SKIP IT NOW', read: 'A SKIP, ON YOUR DRIVE, TOMORROW. Fill it with WHATEVER YOU LIKE and we will not ask. Eight yards. NINETY-FIVE QUID. IN IT GOES.' },
+    { brand: 'GRIZZLY PROTEIN', read: 'FOUR KILOS OF POWDER IN A TUB THE SIZE OF A BIN. Chocolate, or the other one. MIX IT WITH WATER LIKE A MAN.' },
+    { brand: 'AL\u2019S ALL-NIGHT MOT', read: 'MOT AT MIDNIGHT. Yes, MIDNIGHT. Because Al does not sleep and neither does your paperwork. Thirty-five pounds. NO APPOINTMENT.' },
+    { brand: 'MEGA MATTRESS WAREHOUSE', read: 'A MATTRESS SO FIRM IT IS BASICALLY A FLOOR. Delivered Sunday. TAKEN UPSTAIRS by two lads who WILL manage it. DOUBLE, ONE-NINETY-NINE.' },
+    { brand: 'PROPER WINDOWS DIRECT', read: 'TRIPLE GLAZED, FITTED IN A DAY, AND YOU WILL NEVER HEAR YOUR NEIGHBOURS AGAIN. That is the pitch. THAT IS THE WHOLE PITCH.' },
   ],
 };
 
