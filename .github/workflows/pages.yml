@@ -79,6 +79,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release_gate.js
+      # AFTER the gate, never before: release_gate.js refuses to run on a dirty
+      # checkout, and this deliberately dirties one. The stamp exists only in
+      # the uploaded artifact, never in a commit.
+      #
+      # Marc, 17 Sept 2026, on a deploy that had been green for hours: "i just
+      # see the previous version". The tags were plain js/app.js, so a cached
+      # copy kept running and the app could not tell. A content hash in the URL
+      # means a changed file has a URL nothing has ever cached.
+      - name: Stamp a content hash onto the asset URLs
+        if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}
+        run: node scripts/stamp_build.js
       - if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}
         uses: actions/configure-pages@v5
       - if: ${{ !steps.gate.outputs.skip && !steps.checks.outputs.skip }}

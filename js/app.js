@@ -14879,19 +14879,59 @@ if (state.phase === 'season') {
   // this the pre-season console showed a fixture section with nothing in it
   syncNow(false);
 }
-// stale-build watchdog: long-lived tabs and home-screen installs reload
-// themselves when a new version ships (never mid-draft — draft night is sacred)
+/* ----- stale-build watchdog -----
+   Long-lived tabs and home-screen installs reload themselves when a new
+   version ships (never mid-draft — draft night is sacred).
+
+   It used to ask the SERVER for app.js's etag, remember it, and ten minutes
+   later ask the server again — comparing the server against itself and never
+   against the build in front of the reader. A browser running a cached app.js
+   recorded the new etag on its first pass, concluded all was well, and said
+   nothing. Marc, 17 Sept 2026: "i just see the previous version, the draft
+   list and positions and nothing more", hours after that deploy went green.
+
+   So the running build now identifies itself. scripts/stamp_build.js writes a
+   content hash into every asset URL at deploy time, which means our own script
+   tag carries the hash of the code executing this line — and index.html, which
+   is the one file a cache cannot usefully hold on to, carries what the server
+   is serving. Comparing those two compares the reader's build against the real
+   one, which is the question that was always being asked and never answered.
+
+   Unstamped builds — a local checkout, the beta on the legacy Pages build —
+   keep the old etag behaviour. It is weaker, but it is not wrong there: with
+   nothing stamped there is no cached-URL trap to fall into. */
+const APP_BUILD = (() => {
+  try {
+    const own = document.querySelector('script[src*="js/app.js"]');
+    return new URL(own.getAttribute('src'), location.href).searchParams.get('v');
+  } catch { return null; }
+})();
 let appBuildTag = null;
+// what index.html says app.js should be, straight from the server
+async function servedBuild() {
+  const r = await fetch('index.html', { cache: 'no-store' });
+  if (!r.ok) return null;
+  const m = (await r.text()).match(/src="js\/app\.js\?v=([a-f0-9]+)"/);
+  return m ? m[1] : null;
+}
+function takeTheNewBuild() {
+  if (state.phase === 'draft' || document.querySelector('.overlay')) return;
+  toast('New club shop stock — updating…');
+  setTimeout(() => location.reload(), 1500);
+}
 async function checkBuild() {
   try {
+    if (APP_BUILD) {
+      // stamped: compare the code RUNNING against the code being served
+      const served = await servedBuild();
+      if (served && served !== APP_BUILD) takeTheNewBuild();
+      return;
+    }
     const r = await fetch('js/app.js', { method: 'HEAD', cache: 'no-store' });
     const tag = r.headers.get('etag') || r.headers.get('last-modified');
     if (!tag) return;
     if (appBuildTag === null) { appBuildTag = tag; return; }
-    if (tag !== appBuildTag && state.phase !== 'draft' && !document.querySelector('.overlay')) {
-      toast('New club shop stock — updating…');
-      setTimeout(() => location.reload(), 1500);
-    }
+    if (tag !== appBuildTag) takeTheNewBuild();
   } catch { /* offline — try again next cycle */ }
 }
 checkBuild();
