@@ -412,7 +412,7 @@ const chk = (name, ok, detail = '') => {
      somebody else on an episode whose audio is already cut, and each caller
      needs its own browser voice or four callers arrive as one man. ---- */
   const p12 = await page.evaluate(() => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
+    const ROSTER = ['Howard', 'Raymond', 'Yakolo'];
     const callersIn = ep => (ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : []);
     const kinds = [['pilot', null], ['draft', null], ['preview', 0], ['review', 0]];
     const tt = kinds.map(([k, g]) => callersIn(Podcast.episode('tt', k, g)));
@@ -436,8 +436,7 @@ const chk = (name, ok, detail = '') => {
         const e = Podcast.episode('tt', k, g);
         const i = e.blocks.findIndex(b => ROSTER.includes(b.who));
         const lead = e.blocks[i - 1].text, name = e.blocks[i].who;
-        const place = { Howard: 'Prestwich', Denise: 'Whitefield', Callum: 'Salford', Barry: 'Sale',
-          Raymond: 'North London', Yakolo: 'Abidjan' }[name];
+        const place = { Howard: 'Prestwich', Raymond: 'North London', Yakolo: 'Abidjan' }[name];
         return lead.includes(name) && lead.includes(place);
       }),
       // he says something about THIS gameweek, not a stock line
@@ -459,7 +458,7 @@ const chk = (name, ok, detail = '') => {
      including the hand-recorded ones a render is forbidden to replace. The
      pilots, the draft and GW1 are cut. They stay Howard's. ---- */
   const p12b = await page.evaluate(() => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
+    const ROSTER = ['Howard', 'Raymond', 'Yakolo'];
     const caller = (kind, gw) => {
       const ep = Podcast.episode('tt', kind, gw);
       const c = ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : [];
@@ -558,8 +557,11 @@ const chk = (name, ok, detail = '') => {
         const man = africans.find(n => x.t.includes(n));
         return ep.blocks.filter(b => b.who !== 'Yakolo').every(b => !String(b.text).includes(man));
       }),
-      // Raymond is cheerful, never sorry for itself — the register matters
-      rayNeverMaudlin: ray.every(x => !/problem|drink too much|ashamed|liver|shouldn.t drink/i.test(x.t)),
+      /* Raymond is cheerful, never sorry for itself — the register is the
+         whole reason he works. Phrases only, and specific ones: the first
+         version of this matched /liver/ and went red on the word Liverpool
+         in a state-derived question, which is a worse test than none. */
+      rayNeverMaudlin: ray.every(x => !/drink problem|drinks too much|shouldn.t drink|alcoholic|ashamed of myself|wasted my life|liver is/i.test(x.t)),
     };
   });
   chk('P12e Raymond has always been out, and Yakolo always names a man the panel missed',
@@ -629,7 +631,7 @@ const chk = (name, ok, detail = '') => {
      no voice id, so a new caller ships as `human` with none: the renderer skips
      it, the browser speaks it, and Ben casts it when he likes. ---- */
   const p12c = await page.evaluate(async () => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
+    const ROSTER = ['Howard', 'Raymond', 'Yakolo'];
     const cast = await (await fetch('audio/pod/cast.json', { cache: 'no-cache' })).json();
     const c = cast.cast || {};
     return {

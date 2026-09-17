@@ -26,17 +26,19 @@
     "every time. Hand-recorded takes still win wherever they exist and a",
     "render can never overwrite one, --force or not.",
     "",
-    "DENISE, CALLUM and BARRY are the rest of the phone-in (Marc, 17 Sept 2026).",
     "They are marked human with no voice, which means the renderer SKIPS them",
     "and costs nothing: their lines are spoken by the browser until you decide.",
     "Two ways to give them a voice, and it is your call which:",
-    "  a real person, like Howard  --clone \"Denise\" sample1.m4a sample2.m4a",
     "  a synthetic voice           set \"human\": false and paste a voice id",
     "Either way nothing breaks while they wait, and a hand-recorded take always",
     "wins over a rendered one.",
     "RAYMOND (North London) and YAKOLO (Abidjan) joined the phone-in on 17 Sept 2026,",
     "on the same terms: human with no voice, so the renderer skips them and they cost",
-    "nothing until you choose a voice for them."
+    "nothing until you choose a voice for them.",
+    "RAYMOND (North London) and YAKOLO (Abidjan) joined the phone-in on 17 Sept 2026.",
+    "Both are human with no voice, so the renderer skips them and they cost nothing",
+    "until you pick a voice: --clone \"Raymond\" sample.m4a for a real person, or",
+    "paste a voice id and set \"human\": false for a synthetic one."
   ],
   "cast": {
     "Rax Mushden": {
@@ -117,36 +119,6 @@
         "stability": 0.7,
         "similarity": 0.8,
         "style": 0.15
-      }
-    },
-    "Denise": {
-      "voice": "",
-      "human": true,
-      "direction": "An unhurried, courteous older woman phoning a radio station from her kitchen in Whitefield. Utterly calm. Knows more than the panel and is far too polite to say so. Asks one precise question and waits for the answer. Never raises her voice, which is why she wins.",
-      "settings": {
-        "stability": 0.72,
-        "similarity": 0.8,
-        "style": 0.2
-      }
-    },
-    "Callum": {
-      "voice": "",
-      "human": true,
-      "direction": "A young Salford lad on hands-free doing forty, on speaker, talking far too fast. Breathless, over-confident, quotes a statistic he has got badly wrong, and runs out of road mid-sentence. Cuts out rather than finishes.",
-      "settings": {
-        "stability": 0.3,
-        "similarity": 0.8,
-        "style": 0.6
-      }
-    },
-    "Barry": {
-      "voice": "",
-      "human": true,
-      "direction": "A gruff, deliberate older man from Sale who has rung the station to complain about the car park and will get to the football in his own time. Flat, unhurried, faintly aggrieved throughout. Lands a real point by accident on his way past.",
-      "settings": {
-        "stability": 0.68,
-        "similarity": 0.8,
-        "style": 0.25
       }
     },
     "Raymond": {
