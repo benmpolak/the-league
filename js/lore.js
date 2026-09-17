@@ -400,6 +400,37 @@ const GAZETTE_INTERVIEWS = [
   },
 ];
 
+/* ================= where a player is from =================
+   Marc, 17 Sept 2026, on the new talkTROUGH caller: Yakolo from Abidjan "should
+   always ask about the contribution of a particular african player in the week".
+
+   The player feed carries `nat`, which is FPL's own numeric region id and not a
+   country code — so the ids below were read off the feed rather than looked up:
+   take a cohort, look at who is in it, and the country is unmistakable. Nigeria
+   is Iwobi, Aina, Bassey and Onyeka; Ghana is Semenyo, Fatawu and Thomas-Asante.
+   Named here so the next person can check the working rather than trust it.
+
+   Yakolo never states a nationality on air, only asks after the man by name.
+   That is deliberate: if a cohort below is ever wrong, or FPL renumbers its
+   regions, the cost is a caller asking about the wrong player — a bad joke, not
+   the app telling the league something untrue about somebody.
+
+   An id that stops matching anybody simply drops out; the caller falls back to
+   whoever else is on the list. */
+const AFRICAN_NAT = new Set([
+  157, // Nigeria      — Iwobi, Aina, Bassey, Ajayi, Onyeka
+  81,  // Ghana        — Semenyo, Fatawu, Thomas-Asante, Yirenkyi, Osman
+  189, // Senegal      — N.Jackson, Ndiaye, Mendy, Diarra, Mbaye
+  54,  // Côte d'Ivoire— Touré, Diomande, Ouattara, I.Sangaré, Yalcouyé
+  145, // Morocco      — Mazraoui, Diop, Bouaddi, Chadi Riad, Talbi
+  50,  // DR Congo     — Wissa, Wan-Bissaka, Masuaku, Sadiki
+  3,   // Algeria      — Aït-Nouri, Belloumi, Hadjam
+  38,  // Cameroon     — Mbeumo, Baleba, Zepa
+  132, // Mali         — Doucouré, M.Sangaré
+  35,  // Burkina Faso — O.Dango
+  78,  // Gambia       — Minteh
+]);
+
 /* ================= The Podcunt Network — advertising =================
    Two shows, two audiences, two utterly different commercial departments.
    The ads are the fastest way to tell the registers apart, so they are held

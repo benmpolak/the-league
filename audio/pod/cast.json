@@ -33,7 +33,10 @@
     "  a real person, like Howard  --clone \"Denise\" sample1.m4a sample2.m4a",
     "  a synthetic voice           set \"human\": false and paste a voice id",
     "Either way nothing breaks while they wait, and a hand-recorded take always",
-    "wins over a rendered one."
+    "wins over a rendered one.",
+    "RAYMOND (North London) and YAKOLO (Abidjan) joined the phone-in on 17 Sept 2026,",
+    "on the same terms: human with no voice, so the renderer skips them and they cost",
+    "nothing until you choose a voice for them."
   ],
   "cast": {
     "Rax Mushden": {
@@ -142,6 +145,26 @@
       "direction": "A gruff, deliberate older man from Sale who has rung the station to complain about the car park and will get to the football in his own time. Flat, unhurried, faintly aggrieved throughout. Lands a real point by accident on his way past.",
       "settings": {
         "stability": 0.68,
+        "similarity": 0.8,
+        "style": 0.25
+      }
+    },
+    "Raymond": {
+      "voice": "",
+      "human": true,
+      "direction": "A warm, unhurried North London man in his sixties ringing a radio station from outside a pub, several pints into a very good evening. Cheerful, hospitable, slightly slurred, never maudlin. Tells you where he has been before he tells you what he thinks.",
+      "settings": {
+        "stability": 0.45,
+        "similarity": 0.8,
+        "style": 0.4
+      }
+    },
+    "Yakolo": {
+      "voice": "",
+      "human": true,
+      "direction": "A calm, precise, courteous man calling from Abidjan late at night. Excellent English, unhurried, warm. Quietly the best-informed person on the line and faintly baffled that nobody on the panel has noticed the player he is asking about. Never raises his voice.",
+      "settings": {
+        "stability": 0.7,
         "similarity": 0.8,
         "style": 0.25
       }

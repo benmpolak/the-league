@@ -412,7 +412,7 @@ const chk = (name, ok, detail = '') => {
      somebody else on an episode whose audio is already cut, and each caller
      needs its own browser voice or four callers arrive as one man. ---- */
   const p12 = await page.evaluate(() => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
     const callersIn = ep => (ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : []);
     const kinds = [['pilot', null], ['draft', null], ['preview', 0], ['review', 0]];
     const tt = kinds.map(([k, g]) => callersIn(Podcast.episode('tt', k, g)));
@@ -436,7 +436,8 @@ const chk = (name, ok, detail = '') => {
         const e = Podcast.episode('tt', k, g);
         const i = e.blocks.findIndex(b => ROSTER.includes(b.who));
         const lead = e.blocks[i - 1].text, name = e.blocks[i].who;
-        const place = { Howard: 'Prestwich', Denise: 'Whitefield', Callum: 'Salford', Barry: 'Sale' }[name];
+        const place = { Howard: 'Prestwich', Denise: 'Whitefield', Callum: 'Salford', Barry: 'Sale',
+          Raymond: 'North London', Yakolo: 'Abidjan' }[name];
         return lead.includes(name) && lead.includes(place);
       }),
       // he says something about THIS gameweek, not a stock line
@@ -458,7 +459,7 @@ const chk = (name, ok, detail = '') => {
      including the hand-recorded ones a render is forbidden to replace. The
      pilots, the draft and GW1 are cut. They stay Howard's. ---- */
   const p12b = await page.evaluate(() => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
     const caller = (kind, gw) => {
       const ep = Podcast.episode('tt', kind, gw);
       const c = ep ? ep.blocks.filter(b => ROSTER.includes(b.who)) : [];
@@ -471,7 +472,12 @@ const chk = (name, ok, detail = '') => {
       // the episodes that already have audio keep the caller that recorded them
       pilotIsHoward: caller('pilot', null) === 'Howard',
       draftIsHoward: caller('draft', null) === 'Howard',
+      // every round with audio already cut stays Howard's: GW1 both ways, and
+      // GW4's review, which Ben rendered on 16 Sept
       gw1IsHoward: weeks[0][0] === 'Howard' && weeks[0][1] === 'Howard',
+      gw4ReviewIsHoward: weeks[3][1] === 'Howard',
+      // Marc, 17 Sept: "Starting Raymond on the next one" — GW5's preview
+      raymondOpens: weeks[4][0] === 'Raymond',
       // ...and from GW2 the rest of the switchboard gets a turn
       rotates: seen.size === ROSTER.length,
       everyoneUsed: ROSTER.every(n => seen.has(n)),
@@ -481,7 +487,7 @@ const chk = (name, ok, detail = '') => {
         && caller('review', g) === caller('review', g)),
       // Howard keeps his running joke and nobody else claims it
       howardFirstTimes: (() => {
-        for (let g = 1; g < 20; g++) for (const k of ['preview', 'review']) {
+        for (let g = 4; g < 20; g++) for (const k of ['preview', 'review']) {
           const ep = Podcast.episode('tt', k, g);
           const c = ep.blocks.find(b => ROSTER.includes(b.who));
           if (!c) return false;
@@ -494,7 +500,7 @@ const chk = (name, ok, detail = '') => {
       // each caller sounds like a different KIND of call, not one shape reworded
       ownShapes: (() => {
         const shapes = {};
-        for (let g = 1; g < 20; g++) for (const k of ['preview', 'review']) {
+        for (let g = 4; g < 30; g++) for (const k of ['preview', 'review']) {
           const ep = Podcast.episode('tt', k, g);
           const c = ep.blocks.find(b => ROSTER.includes(b.who));
           if (c) (shapes[c.who] = shapes[c.who] || new Set()).add(c.text.slice(0, 40));
@@ -507,12 +513,123 @@ const chk = (name, ok, detail = '') => {
   chk('P12b the rota spares the recorded episodes and gives everyone a turn',
     Object.values(p12b).every(Boolean), JSON.stringify(p12b));
 
+  /* ---- P12e: Raymond and Yakolo. Marc, 17 Sept 2026 — Raymond from North
+     London "should preface every call talking about a night out he has had /
+     is having", and Yakolo from Abidjan "should always ask about the
+     contribution of a particular african player in the week". ---- */
+  const p12e = await page.evaluate(() => {
+    const callOf = (kind, gw, name) => {
+      const ep = Podcast.episode('tt', kind, gw);
+      const c = ep && ep.blocks.find(b => b.who === name);
+      return c ? c.text : null;
+    };
+    // walk a season and collect every call each of them makes
+    const grab = name => {
+      const out = [];
+      for (let g = 4; g < 33; g++) for (const k of ['preview', 'review']) {
+        const t = callOf(k, g, name);
+        if (t) out.push({ g, k, t });
+      }
+      return out;
+    };
+    const ray = grab('Raymond'), yak = grab('Yakolo');
+    const NIGHT = /Salisbury|Green Lanes|Wood Green|Bank of Friendship|Finsbury Park|Holloway|Palmers Green|Turnpike Lane|Bounds Green|pint|session|just up|darts/i;
+    const africans = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat)).map(p => p.name);
+    return {
+      // both of them actually get on the air
+      bothOnAir: ray.length > 3 && yak.length > 3,
+      // ...and both take previews AND reviews, which an even rota prevents
+      rayBothKinds: new Set(ray.map(x => x.k)).size === 2,
+      yakBothKinds: new Set(yak.map(x => x.k)).size === 2,
+      // Raymond leads with the night out, EVERY time, which is the brief
+      rayAlwaysBeenOut: ray.every(x => NIGHT.test(x.t)),
+      // and it is a different night, not one anecdote on a loop
+      rayVariesIt: new Set(ray.map(x => x.t.slice(0, 60))).size > 3,
+      // Yakolo names a real player from the feed's own African cohort
+      yakNamesAnAfrican: yak.every(x => africans.some(n => x.t.includes(n))),
+      // ...and asks after his contribution, which is the whole brief
+      yakAsksContribution: yak.every(x => /contribution|what did he actually do|explain his afternoon|he was not quiet/i.test(x.t)),
+      // he never claims a nationality on air — a wrong cohort must cost a bad
+      // joke, not a false statement about somebody
+      yakClaimsNoNationality: yak.every(x => !/Niger|Ghan|Senegal|Ivor|Moroc|Congo|Algeri|Cameroon|Malian|African/i.test(x.t)),
+      // and he is right about the panel: nobody on the desk said the name
+      yakPanelMissedHim: yak.every(x => {
+        const ep = Podcast.episode('tt', x.k, x.g);
+        const man = africans.find(n => x.t.includes(n));
+        return ep.blocks.filter(b => b.who !== 'Yakolo').every(b => !String(b.text).includes(man));
+      }),
+      // Raymond is cheerful, never sorry for itself — the register matters
+      rayNeverMaudlin: ray.every(x => !/problem|drink too much|ashamed|liver|shouldn.t drink/i.test(x.t)),
+    };
+  });
+  chk('P12e Raymond has always been out, and Yakolo always names a man the panel missed',
+    Object.values(p12e).every(Boolean), JSON.stringify(p12e));
+
+  /* ---- P12f: the African cohort behind Yakolo. It is read off the feed's own
+     region ids, so it has to actually resolve — an empty cohort would make him
+     a caller with no question. ---- */
+  const p12f = await page.evaluate(() => {
+    const pool = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat));
+    const byNat = {};
+    for (const p of pool) (byNat[p.nat] = byNat[p.nat] || []).push(p.name);
+    return {
+      cohortResolves: pool.length > 20,
+      everyIdMatchesSomebody: [...AFRICAN_NAT].every(id => (byNat[id] || []).length > 0),
+      // a sanity anchor: the Nigeria cohort should contain recognisable names,
+      // so a renumbering of FPL's regions shows up here rather than on air
+      nigeriaLooksRight: (byNat[157] || []).some(n => /Iwobi|Aina|Bassey|Ajayi|Onyeka/.test(n)),
+      ghanaLooksRight: (byNat[81] || []).some(n => /Semenyo|Fatawu|Thomas-Asante/.test(n)),
+      // and no cohort is the England-sized one, which would mean a wrong id
+      noneIsHuge: Object.values(byNat).every(v => v.length < 25),
+      size: pool.length,
+    };
+  });
+  chk('P12f the African cohort resolves off the feed and still looks like itself',
+    p12f.cohortResolves && p12f.everyIdMatchesSomebody && p12f.nigeriaLooksRight
+      && p12f.ghanaLooksRight && p12f.noneIsHuge, JSON.stringify(p12f));
+
+  /* ---- P12g: and a DIFFERENT man each week, which is the actual brief.
+     Against the live feed only GW1-4 have stats, so every call Yakolo has yet
+     to make falls back to the season's best and he names one player over and
+     over. That reads fine today and would be a dud all season, so settle some
+     rounds and insist he moves on. ---- */
+  const p12g = await page.evaluate(() => {
+    let seed = 31;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 4; i < 20; i++) {
+      const gwN = GAMEWEEKS[i].n, ps = {};
+      for (const q of PLAYERS) {
+        if (rnd() < 0.5) continue;
+        ps[q.id] = { min: 90, st: 1, g: rnd() < 0.15 ? 1 : 0, a: rnd() < 0.1 ? 1 : 0, cs: rnd() < 0.3 ? 1 : 0 };
+      }
+      state.matchStats['gw' + gwN] = { gw: i, label: GAMEWEEKS[i].label, final: true, playerStats: ps };
+      GAMEWEEKS[i].finished = true;
+    }
+    const names = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat)).map(p => p.name);
+    const named = [];
+    for (let g = 5; g < 20; g++) for (const k of ['preview', 'review']) {
+      const ep = Podcast.episode('tt', k, g);
+      const c = ep && ep.blocks.find(x => x.who === 'Yakolo');
+      if (c) named.push(names.find(n => c.text.includes(n)) || null);
+    }
+    return {
+      calls: named.length,
+      allNamed: named.length > 3 && named.every(Boolean),
+      // a different man essentially every time, not one name on a loop
+      distinct: new Set(named).size,
+      varies: new Set(named).size >= Math.max(3, named.length - 1),
+      who: [...new Set(named)].slice(0, 6),
+    };
+  });
+  chk('P12g Yakolo names a different man as the rounds settle',
+    p12g.allNamed && p12g.varies, JSON.stringify(p12g));
+
   /* ---- P12c: a caller waiting for a voice must not cost anything or break
      anything. render_pods refuses a run outright if a non-human character has
      no voice id, so a new caller ships as `human` with none: the renderer skips
      it, the browser speaks it, and Ben casts it when he likes. ---- */
   const p12c = await page.evaluate(async () => {
-    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry'];
+    const ROSTER = ['Howard', 'Denise', 'Callum', 'Barry', 'Raymond', 'Yakolo'];
     const cast = await (await fetch('audio/pod/cast.json', { cache: 'no-cache' })).json();
     const c = cast.cast || {};
     return {

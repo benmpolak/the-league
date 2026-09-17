@@ -77,6 +77,8 @@ window.Podcast = (() => {
     'Denise': { pitch: 1.16, rate: 0.94 },        // unhurried, precise, lethal
     'Callum': { pitch: 1.0, rate: 1.2 },          // on speaker, doing 40, late
     'Barry': { pitch: 0.78, rate: 0.94 },         // rings about the parking
+    'Raymond': { pitch: 0.9, rate: 0.88 },        // unhurried, and has had a few
+    'Yakolo': { pitch: 1.02, rate: 0.97 },        // precise, warm, knows more
   };
 
   /* ---------- station idents ----------
@@ -560,6 +562,31 @@ window.Podcast = (() => {
      lays down and the reason it works. Keep it if you add more: the moment one
      becomes a caricature of a place or a kind of person it stops being funny
      and starts being something else. */
+  /* Yakolo's man. The one African player who actually did something in the
+     round, picked from the feed's own region ids (AFRICAN_NAT in lore.js) and
+     that week's match record — so he asks about a real afternoon, and a
+     different man every week. The panel, of course, never mentioned him.
+
+     He is named, never labelled: no nationality is claimed on air, so a wrong
+     cohort costs a bad joke rather than the app saying something untrue about
+     somebody. An id that matches nobody simply drops out. */
+  function africanOfWeek(gwIdx) {
+    if (typeof AFRICAN_NAT === 'undefined' || typeof PLAYERS === 'undefined') return null;
+    const pool = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat));
+    if (!pool.length) return null;
+    if (gwIdx != null && typeof gwMinutes === 'function') {
+      const played = pool
+        .map(p => ({ p, pts: gwPlayerPoints(p.id, gwIdx), mins: gwMinutes(p.id, gwIdx) }))
+        .filter(x => x.mins > 0)
+        .sort((a, b) => b.pts - a.pts || b.mins - a.mins || a.p.name.localeCompare(b.p.name));
+      if (played.length) return played[0];
+    }
+    // nobody on the list kicked a ball: the best of them on the season, so he
+    // always has somebody to be right about
+    const best = [...pool].sort((a, b) => (b.pts || 0) - (a.pts || 0) || a.name.localeCompare(b.name))[0];
+    return best ? { p: best, pts: 0, mins: 0 } : null;
+  }
+
   const CALLERS = {
     Howard: {
       name: 'Howard', from: 'Prestwich',
@@ -714,6 +741,128 @@ window.Podcast = (() => {
         ], key + ':bs'),
       ].join(' '),
     },
+    Raymond: {
+      name: 'Raymond', from: 'North London',
+      intro: [
+        'Line two, Raymond in North London. Raymond, you’re on talkTROUGH.',
+        'Let’s go to Raymond, North London. Raymond, go ahead.',
+        'Raymond’s on the line from North London. Raymond, you’re on.',
+        'Raymond in North London — and Raymond, it is a Thursday afternoon. Remember that.',
+        'We’ll take Raymond, North London. Raymond, you’re on the radio.',
+      ],
+      answer: [
+        'Raymond, it is twenty past four on a Thursday. TWENTY PAST FOUR.',
+        'He’s right, mind. He is absolutely right, and he has been up since Tuesday.',
+        'Every week he rings from a different pub and every week he makes a better point than this panel.',
+        'Raymond, go and have a sit down. Lovely to hear from you.',
+        'I want it on the record that that is the most cheerful call we have ever taken.',
+        'Somewhere in North London a man has worked this entire league out on the back of a pump clip.',
+      ],
+      /* Marc, 17 Sept 2026: "he drinks a lot and should preface every call
+         talking about a night out he has had / is having". Written warm and
+         hospitable rather than sorry for itself. Raymond is having a lovely
+         time, he wants to tell you where he has been and who he saw, and the
+         football arrives when it arrives. Real North London, said fondly,
+         which is the rule Howard's note lays down. */
+      body: (key, question) => [
+        pick([
+          'Richard! Richard. How are you, mate.',
+          'Now then Richard. Lovely to get through.',
+          'Richard — Raymond. North London. Good afternoon to you.',
+          'Hello Richard, hello. How are we all.',
+          'RICHARD. It’s Raymond. You alright?',
+        ], key + ':ro'),
+        pick([
+          'I have had a NIGHT. Started in the Salisbury on Green Lanes and finished somewhere I could not name for you.',
+          'We were out in Wood Green last night. Out. My brother-in-law’s fiftieth. I have seen things.',
+          'I’m stood outside the Bank of Friendship as we speak, and I’ve a pint in my hand, I’ll be honest with you.',
+          'Long one last night. Finsbury Park, then Holloway Road, then a minicab I don’t remember booking.',
+          'We did the whole of Palmers Green. The WHOLE of it. Finished up eating chips on a wall at one in the morning.',
+          'I’m only just up, Richard. Bank holiday hours, and it is not a bank holiday.',
+          'Bit of a session with the lads from the darts. Turnpike Lane. Lovely people, terrible decisions.',
+          'I’ve come straight from the Bounds Green social and I am not what you would call fresh.',
+        ], key + ':rn'),
+        pick([
+          'And we were talking about this VERY THING at about half eleven.',
+          'And it came to me on the walk home. Plain as anything.',
+          'And there’s a fella in there, Dave, said the same, and he is never wrong.',
+          'And I said to the barman, I said, somebody wants to ring in about this.',
+          'And I have thought about nothing else since, which tells you something.',
+          'Anyway. That is not why I rang.',
+          'So my head is not perfect but my point stands, and here it is.',
+        ], key + ':rt'),
+        question,
+        pick([
+          'Anyway. Lovely to talk to you. I’m going for a lie down.',
+          'Right, I’m off. There’s a pint here going flat while I talk to you.',
+          'That’s me. Have a good afternoon, Richard, and mind how you go.',
+          'I’ll let you get on. Say hello to Andy for me, and tell him he’s wrong.',
+          'Cheers Richard. I’ll be listening, if I’m awake.',
+        ], key + ':rs'),
+      ].join(' '),
+    },
+    Yakolo: {
+      name: 'Yakolo', from: 'Abidjan',
+      intro: [
+        'We’ve got Yakolo on the line, ringing in from Abidjan. Yakolo, you’re on talkTROUGH.',
+        'All the way from Abidjan — Yakolo. Yakolo, go ahead.',
+        'Line one, Yakolo in Abidjan. Yakolo, you’re on.',
+        'Yakolo’s back, from Abidjan. Yakolo — and I think I know what this is about.',
+        'Let’s go international. Yakolo, Abidjan, you’re on talkTROUGH.',
+      ],
+      answer: [
+        'And not one of us had mentioned him. Not one. Thank you, Yakolo.',
+        'He watches more of this league from Abidjan than we manage from the studio.',
+        'Every week Yakolo names a man we have skated straight past. Every week.',
+        'That is better analysis than anything that has come off this desk today.',
+        'Yakolo, you are doing our job for us and doing it better. Ring again.',
+        'I have no answer for him. Andy? No. Nobody has an answer for him.',
+      ],
+      /* Marc, 17 Sept 2026: "he should always ask about the contribution of a
+         particular african player in the week". The joke lands on the PANEL and
+         not on him: he is the best-informed man on the line, unfailingly warm,
+         and mildly baffled that an hour of English radio covers the same six
+         names. He asks after the man by name and never claims a nationality. */
+      body: (key, question, gw) => {
+        const man = africanOfWeek(gw);
+        const who = man && man.p.name, club = man && man.p.club;
+        return [
+          pick([
+            'Good evening, Richard. I am listening from Abidjan.',
+            'Richard, hello. Yakolo, Abidjan. It is late here and I am still listening.',
+            'Hello Richard. Every week I listen to this programme, and every week I have the same question.',
+            'Good evening. I have been listening for one hour now.',
+            'Richard, my friend. Abidjan. I hope you are well.',
+          ], key + ':yo'),
+          who ? pick([
+            `You have talked for an hour and nobody has said the name ${who}.`,
+            `Not one of you has mentioned ${who} this afternoon. Not once.`,
+            `I am waiting, Richard, for somebody on that desk to say the words ${who}.`,
+            `${who} played for ${club} last time out, and you have not said his name.`,
+            `I have a question about ${who}, because your panel does not.`,
+          ], key + ':yc') : pick([
+            'You have talked for an hour about the same six players.',
+            'There are men in that league nobody on your desk has named all season.',
+            'I am waiting for one name that is not on the front of a newspaper.',
+          ], key + ':yc'),
+          question,
+          who ? pick([
+            'So tell me: what was his contribution? Properly. Not the headline.',
+            'What did he actually do? I would like it from you, not from the table.',
+            'Explain his afternoon to me. I watched it. I want to know whether you did.',
+            `So — his contribution. In your own words, Richard.`,
+            'And do not tell me he was quiet. I watched him. He was not quiet.',
+          ], key + ':yp') : 'So tell me about one player nobody on that desk has named.',
+          pick([
+            'I will hold. I have all night.',
+            'Thank you, Richard. I will listen to the answer.',
+            'That is all. Enjoy your programme.',
+            'I will ring again next week, and I expect it will be the same question.',
+            'Goodnight, Richard. Somebody should say his name before I go.',
+          ], key + ':ys'),
+        ].join(' ');
+      },
+    },
   };
   /* Who is on the line this week.
 
@@ -737,10 +886,35 @@ window.Podcast = (() => {
      So the rota is arithmetic on the gameweek, which spends no hash entropy
      at all. It is also better in its own right: perfectly even, predictable a
      week ahead, and a week's preview and review get different callers. */
-  const CALLER_ROTA = ['Howard', 'Denise', 'Callum', 'Barry'];
+/* Seven slots for six callers, and the seventh is deliberate. Stepping one
+   slot per EPISODE with an even-length rota locks every caller to one parity
+   for ever: six names over two episodes a week had Raymond previewing every
+   time and Yakolo never once getting a review — which is the half of the week
+   his question actually fits, since he asks what a man DID. An odd cycle walks
+   the parity round, so everybody takes both kinds of call.
+
+   Howard has the extra slot because his is the one voice on the roster that a
+   real person recorded. */
+  const CALLER_ROTA = ['Raymond', 'Howard', 'Yakolo', 'Denise', 'Callum', 'Barry', 'Howard'];
+  /* The first episode the rota applies to, as an EPISODE ordinal: gw index 4 is
+     GW5, times two, plus nought for the preview. Marc, 17 Sept 2026: "Starting
+     Raymond on the next one" — GW5's preview is the next episode due, and
+     nothing of GW5 has been cut, so he goes on at no cost.
+
+     Everything before it stays Howard's, and that is the audio talking rather
+     than sentiment: the pilots, the drafts, GW1 both ways and GW4's review all
+     have recordings, and a line's audio is keyed to a hash of its text. Move
+     this number DOWN and you orphan takes — including hand-recorded ones a
+     render is not allowed to replace. Moving it up is free. */
+  const ROTA_FROM = 4 * 2;
   function callerFor(kind, gw) {
-    if (kind === 'pilot' || kind === 'draft' || gw == null || gw <= 0) return CALLERS.Howard;
-    return CALLERS[CALLER_ROTA[(gw + (kind === 'review' ? 1 : 0)) % CALLER_ROTA.length]] || CALLERS.Howard;
+    if (kind === 'pilot' || kind === 'draft' || gw == null) return CALLERS.Howard;
+    // one episode after another, so no caller ever takes two calls in a row —
+    // which a plain gameweek modulus does at every preview/review boundary
+    const seq = gw * 2 + (kind === 'review' ? 1 : 0);
+    if (seq < ROTA_FROM) return CALLERS.Howard;
+    const n = CALLER_ROTA.length;
+    return CALLERS[CALLER_ROTA[((seq - ROTA_FROM) % n + n) % n]] || CALLERS.Howard;
   }
 
   /* Keys taking the call. He remembers him, which is the joke. */
@@ -752,7 +926,13 @@ window.Podcast = (() => {
     const intro = first
       ? 'Right, let\'s get to the phones, because the lines have not stopped all afternoon. We\'ve got Howard from Prestwich. Howard in Prestwich, you\'re on talkTROUGH.'
       : pick(who.intro, key + ':hi');
-    const body = who.body(key, question);
+    /* Callers who talk about what a player DID need the round that has been
+       played, which on a preview is the one before it. Asking "what was his
+       contribution" about a round still to kick off is nonsense, and it also
+       made Yakolo name the same man every week: with no stats for a round yet
+       to happen he fell all the way back to the season's top scorer. */
+    const played = kind === 'review' ? gw : (gw == null ? null : gw - 1);
+    const body = who.body(key, question, played);
     const answer = first
       ? 'Well he\'s not wrong, Howard, and that\'s the thing — the people who actually WATCH the football know. Good caller, Prestwich.'
       : pick(who.answer, key + ':ha');
