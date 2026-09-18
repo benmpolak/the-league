@@ -270,6 +270,32 @@ const chk = (name, ok, detail = '') => {
   chk('P6 an episode appears only once its publish time has passed',
     p6.noneEarly && p6.someLate, JSON.stringify(p6));
 
+  const studioTiming = await page.evaluate(() => {
+    const at = Podcast._previewAt(0), hour = 3600000;
+    const preview = rows => rows.some(e => e.show === 'tt' && e.kind === 'preview' && e.gw === 0);
+    const status = gwStatus;
+    try {
+      // Synthetic settlement: a future review must not enter the paid queue
+      // just because previews have look-ahead, even if its feed says final.
+      gwStatus = () => 'final';
+      const reviewAt = Podcast._reviewAt(0);
+      return {
+        summerMorning: preview(Podcast.renderQueue(at - hour, 3 * hour)),
+        winterMorning: preview(Podcast.renderQueue(at - 2 * hour, 3 * hour)),
+        notDaysAhead: !preview(Podcast.renderQueue(at - 4 * hour, 3 * hour)),
+        notPublishedEarly: !preview(Podcast.published(at - hour)),
+        noEarlyReview: !Podcast.renderQueue(reviewAt - hour, 3 * hour)
+          .some(e => e.kind === 'review' && e.gw === 0),
+        settledReview: Podcast.renderQueue(reviewAt, 3 * hour)
+          .some(e => e.kind === 'review' && e.gw === 0),
+        pausedShowStaysPaused: !Podcast.renderQueue(Podcast._previewAt(4) - hour, 3 * hour)
+          .some(e => e.show === 'gfw' && e.gw >= 1),
+      };
+    } finally { gwStatus = status; }
+  });
+  chk('studio prepares imminent previews without publishing early or pre-empting settlement',
+    Object.values(studioTiming).every(Boolean), JSON.stringify(studioTiming));
+
   /* ---- P7: the two registers genuinely differ on the same facts ---- */
   const p7 = await page.evaluate(() => {
     const g = Podcast.episode('gfw', 'draft', null), t = Podcast.episode('tt', 'draft', null);
@@ -355,6 +381,7 @@ const chk = (name, ok, detail = '') => {
   /* ---- P11: recorded audio. Real voices where they exist, browser voice
      where they don't, and never a request off this origin ---- */
   const p11 = await page.evaluate(async () => {
+    await _podRecPending;
     // whatever is published in the state the earlier checks left behind — the
     // pilot has retired by now, which is itself correct
     const pub = Podcast.published()[0];
@@ -377,13 +404,13 @@ const chk = (name, ok, detail = '') => {
     _podRec = null;
     window.fetch = u => { asked.push(String(u)); return Promise.resolve(new Response(JSON.stringify({ [ep.id]: { [oneN]: oneN + '.m4a' } }), { status: 200 })); };
     const rec = await podRecordings();
-    window.fetch = real;
     const src = podLineSrc(rec, ep.id, oneN);
     // a part-cut episode says so, rather than claiming to be fully recorded
     podcastSheet(ep.id);
     await new Promise(r => setTimeout(r, 60));
     const meta = document.querySelector('.pod-room #podMeta');
     const said = !!meta && /part recorded/.test(meta.textContent);
+    window.fetch = real;
     document.querySelectorAll('.pod-room').forEach(x => x.closest('.overlay')?.remove());
     _podRec = null;
     return {
@@ -401,6 +428,84 @@ const chk = (name, ok, detail = '') => {
   });
   chk('P11 a hand-recorded line plays its file; the rest fall back to the browser',
     Object.values(p11).every(Boolean), JSON.stringify(p11));
+
+  const recordingLoad = await page.evaluate(async () => {
+    await _podRecPending;
+    const realFetch = window.fetch, saved = _podRec, timelines = _podTl;
+    const manifest = { 'tt-test': { line: 'line.mp3' } };
+    const answer = () => new Response(JSON.stringify(manifest), { status: 200 });
+    try {
+      _podRec = null;
+      let release, requests = 0, finished = false;
+      window.fetch = () => { requests++; return new Promise(r => { release = r; }); };
+      const opening = podRecordings(true);
+      const playing = podRecordings(true).then(r => { finished = true; return r; });
+      await Promise.resolve();
+      const waitsForManifest = !finished && requests === 1;
+      release(answer());
+      const [a, b] = await Promise.all([opening, playing]);
+
+      _podRec = null;
+      requests = 0;
+      window.fetch = async () => ++requests === 1 ? new Response('', { status: 503 }) : answer();
+      await podRecordings();
+      const retry = await podRecordings();
+      const retriesFailure = requests === 2 && !!retry['tt-test'];
+
+      // An episode which was missing its audio gains it during this page's
+      // lifetime. Opening/playing again must also discard its null timeline.
+      _podRec = {};
+      _podTl = { 'tt-test': Promise.resolve(null) };
+      window.fetch = async () => answer();
+      const fresh = await podRecordings(true);
+      const newCutAppears = !!fresh['tt-test'] && !('tt-test' in _podTl);
+      window.fetch = async () => { throw Error('offline'); };
+      const offline = await podRecordings(true);
+      return {
+        waitsForManifest,
+        bothGetAudio: !!a['tt-test'] && !!b['tt-test'],
+        retriesFailure,
+        newCutAppears,
+        preservesLastGoodIndex: !!offline['tt-test'],
+      };
+    } finally { window.fetch = realFetch; _podRec = saved; _podTl = timelines; }
+  });
+  chk('audio loads atomically, retries failures and discovers new recordings without a reload',
+    Object.values(recordingLoad).every(Boolean), JSON.stringify(recordingLoad));
+
+  const playbackLoad = await page.evaluate(async () => {
+    await _podRecPending;
+    const saved = { fetch: window.fetch, Audio: window.Audio, timeline: podEpTimeline,
+      synth: Object.getOwnPropertyDescriptor(window, 'speechSynthesis'), rec: _podRec };
+    const played = [], spoken = [];
+    const block = { t: 'speech', who: 'Richard Keyes', text: 'A synthetic playback test.' };
+    const ep = { id: 'tt-test', show: { host: 'Richard Keyes' }, blocks: [block] };
+    const btn = document.createElement('button');
+    document.body.appendChild(btn);
+    try {
+      _podRec = null;
+      let release;
+      window.fetch = () => new Promise(r => { release = r; });
+      podEpTimeline = async () => null;
+      window.Audio = class { constructor(src) { this.src = src; } play() { played.push(this.src); return Promise.resolve(); } pause() {} };
+      Object.defineProperty(window, 'speechSynthesis', { configurable: true,
+        value: { getVoices: () => [], speak: u => spoken.push(u.text), cancel() {}, addEventListener() {} } });
+      const opening = podRecordings(true);
+      const playing = podPlay(ep, btn, null);
+      await Promise.resolve();
+      const waits = played.length === 0 && spoken.length === 0;
+      release(new Response(JSON.stringify({ 'tt-test': { [Podcast.lineKey(block)]: 'cast.mp3' } })));
+      await Promise.all([opening, playing]);
+      return { waits, recordedVoice: played[0] === 'audio/pod/tt-test/cast.mp3', noSubstitute: spoken.length === 0 };
+    } finally {
+      podStopSpeaking(); btn.remove();
+      window.fetch = saved.fetch; window.Audio = saved.Audio; podEpTimeline = saved.timeline; _podRec = saved.rec;
+      if (saved.synth) Object.defineProperty(window, 'speechSynthesis', saved.synth);
+      else delete window.speechSynthesis;
+    }
+  });
+  chk('pressing play during the index load plays the cast recording instead of browser speech',
+    Object.values(playbackLoad).every(Boolean), JSON.stringify(playbackLoad));
 
   /* ---- P12: the phone-in. Marc, 18 Aug gave us Howard — one caller, one
      question, talkTROUGH only, and the part a human records. Marc, 17 Sept
@@ -436,7 +541,7 @@ const chk = (name, ok, detail = '') => {
         const e = Podcast.episode('tt', k, g);
         const i = e.blocks.findIndex(b => ROSTER.includes(b.who));
         const lead = e.blocks[i - 1].text, name = e.blocks[i].who;
-        const place = { Howard: 'Prestwich', Raymond: 'North London', Yakolo: 'Abidjan' }[name];
+        const place = { Howard: 'Prestwich', Raymond: 'Romford', Yakolo: 'Abidjan' }[name];
         return lead.includes(name) && lead.includes(place);
       }),
       // he says something about THIS gameweek, not a stock line
@@ -512,8 +617,7 @@ const chk = (name, ok, detail = '') => {
   chk('P12b the rota spares the recorded episodes and gives everyone a turn',
     Object.values(p12b).every(Boolean), JSON.stringify(p12b));
 
-  /* ---- P12e: Raymond and Yakolo. Marc, 17 Sept 2026 — Raymond from North
-     London "should preface every call talking about a night out he has had /
+  /* ---- P12e: Raymond and Yakolo. Marc, 17 Sept 2026 — Raymond (Romford, corrected by Ben on 18 Sept) "should preface every call talking about a night out he has had /
      is having", and Yakolo from Abidjan "should always ask about the
      contribution of a particular african player in the week". ---- */
   const p12e = await page.evaluate(() => {
@@ -532,7 +636,7 @@ const chk = (name, ok, detail = '') => {
       return out;
     };
     const ray = grab('Raymond'), yak = grab('Yakolo');
-    const NIGHT = /Salisbury|Green Lanes|Wood Green|Bank of Friendship|Finsbury Park|Holloway|Palmers Green|Turnpike Lane|Bounds Green|pint|session|just up|darts/i;
+    const NIGHT = /Romford|Hornchurch|pub|social club|pint|session|just up|darts/i;
     const africans = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat)).map(p => p.name);
     return {
       // both of them actually get on the air
@@ -636,6 +740,9 @@ const chk = (name, ok, detail = '') => {
     const c = cast.cast || {};
     return {
       allCast: ROSTER.every(n => !!c[n]),
+      // Exact takes approved by Ben on 17 Sept, left unwired until this fix.
+      approvedRaymond: c.Raymond.voice === 'RDLen3xJimHO2jSEf3qL',
+      approvedYakolo: c.Yakolo.voice === 'LWOILCwreWREl2TqLwXv',
       // the gate render_pods applies: !human && !voice halts the whole render
       noneHaltsTheRender: ROSTER.every(n => c[n].human || String(c[n].voice || '').trim()),
       // and each one says what it is meant to sound like, which is what you

@@ -26,19 +26,14 @@
     "every time. Hand-recorded takes still win wherever they exist and a",
     "render can never overwrite one, --force or not.",
     "",
-    "They are marked human with no voice, which means the renderer SKIPS them",
-    "and costs nothing: their lines are spoken by the browser until you decide.",
-    "Two ways to give them a voice, and it is your call which:",
-    "  a synthetic voice           set \"human\": false and paste a voice id",
-    "Either way nothing breaks while they wait, and a hand-recorded take always",
-    "wins over a rendered one.",
-    "RAYMOND (North London) and YAKOLO (Abidjan) joined the phone-in on 17 Sept 2026,",
-    "on the same terms: human with no voice, so the renderer skips them and they cost",
-    "nothing until you choose a voice for them.",
-    "RAYMOND (North London) and YAKOLO (Abidjan) joined the phone-in on 17 Sept 2026.",
-    "Both are human with no voice, so the renderer skips them and they cost nothing",
-    "until you pick a voice: --clone \"Raymond\" sample.m4a for a real person, or",
-    "paste a voice id and set \"human\": false for a synthetic one."
+    "A human part with a voice id uses that approved voice for new lines.",
+    "A hand-recorded take always wins and is never overwritten.",
+    "A human part with no voice id is skipped until it is cast.",
+    "",
+    "RAYMOND uses the Romford Voice 1.1 take Ben approved on 17 Sept 2026.",
+    "YAKOLO uses the Nigerian Voice 1.1 take Ben approved on 17 Sept 2026,",
+    "while remaining the caller from Abidjan. Both approved voices were saved",
+    "in ElevenLabs that day and connected to the podcast on 18 Sept 2026."
   ],
   "cast": {
     "Rax Mushden": {
@@ -122,9 +117,9 @@
       }
     },
     "Raymond": {
-      "voice": "",
+      "voice": "RDLen3xJimHO2jSEf3qL",
       "human": true,
-      "direction": "A warm, unhurried North London man in his sixties ringing a radio station from outside a pub, several pints into a very good evening. Cheerful, hospitable, slightly slurred, never maudlin. Tells you where he has been before he tells you what he thinks.",
+      "direction": "A warm, cheeky football caller with a broad Romford/Essex accent: strong local vowels, dropped Hs and glottal Ts, a weathered, slightly gravelly edge and relaxed pub conversation. Naturally amused and down-to-earth, never polished or announcer-like. This is the Romford Voice 1.1 take approved by Ben on 17 September 2026.",
       "settings": {
         "stability": 0.45,
         "similarity": 0.8,
@@ -132,9 +127,9 @@
       }
     },
     "Yakolo": {
-      "voice": "",
+      "voice": "LWOILCwreWREl2TqLwXv",
       "human": true,
-      "direction": "A calm, precise, courteous man calling from Abidjan late at night. Excellent English, unhurried, warm. Quietly the best-informed person on the line and faintly baffled that nobody on the panel has noticed the player he is asking about. Never raises his voice.",
+      "direction": "A calm, precise, courteous caller from Abidjan with the Nigerian accent expressly selected by Ben. Warm, unhurried and quietly the best-informed person on the line. This is the Nigerian Voice 1.1 take approved by Ben on 17 September 2026.",
       "settings": {
         "stability": 0.7,
         "similarity": 0.8,

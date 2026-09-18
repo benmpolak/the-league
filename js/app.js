@@ -10692,23 +10692,34 @@ function podStopSpeaking() {
    so a phone recording can be dropped in as it is — `node scripts/render_pods.js
    --scan` rebuilds the manifest from whatever is on disk.
    Nothing here fetches from anywhere but this origin. */
-let _podRec = null; // episode id → { blockIndex: filename }; null until asked
-async function podRecordings() {
-  if (_podRec) return _podRec;
-  _podRec = {};
-  try {
-    const r = await fetch('audio/pod/index.json', { cache: 'no-cache' });
-    if (r.ok) {
+let _podRec = null; // episode id → { lineKey: filename }; null until asked
+let _podRecPending = null;
+function podRecordings(refresh = false) {
+  // Ben, 18 Sept: opening a pod and immediately pressing play used to see
+  // the empty placeholder while its manifest was still loading. It then
+  // read the whole show in browser voices. Share the completed request,
+  // retry failures, and refresh when opening/playing so new cuts are heard.
+  if (_podRecPending) return _podRecPending;
+  if (_podRec && !refresh) return Promise.resolve(_podRec);
+  _podRecPending = (async () => {
+    try {
+      const r = await fetch('audio/pod/index.json', { cache: 'no-cache' });
+      if (!r.ok) return _podRec || {};
       const j = await r.json();
+      if (!j || typeof j !== 'object') return _podRec || {};
+      const next = {};
       // the old shape was a bare list of fully-cut episodes; still honoured,
       // so a manifest written before the hand-recording work keeps playing
-      if (Array.isArray(j)) j.forEach(id => { _podRec[String(id)] = '*'; });
+      if (Array.isArray(j)) j.forEach(id => { next[String(id)] = '*'; });
       else if (j && typeof j === 'object') for (const [id, lines] of Object.entries(j)) {
-        if (lines && typeof lines === 'object') _podRec[id] = lines;
+        if (lines && typeof lines === 'object') next[id] = lines;
       }
-    }
-  } catch { /* no recordings shipped yet — the browser voice carries it */ }
-  return _podRec;
+      if (JSON.stringify(next) !== JSON.stringify(_podRec)) _podTl = {};
+      _podRec = next;
+    } catch { /* keep the last usable index; the next request retries */ }
+    return _podRec || {};
+  })().finally(() => { _podRecPending = null; });
+  return _podRecPending;
 }
 /* The file for one line, or null if nobody has recorded it yet.
    `key` is Podcast.lineKey(block) — the line's TEXT, not its position. Filing
@@ -10815,7 +10826,7 @@ function podcastSheet(id) {
   // say so when this one is the real thing, so nobody judges the hosts on a
   // read the browser did for them — and say when it is only part cut, so a
   // robot turning up halfway through isn't taken for a bug
-  podRecordings().then(async rec => {
+  podRecordings(true).then(async rec => {
     if (!ov.isConnected) return;
     const spoken = ep.blocks.map((b, n) => [b, n]).filter(([b]) => b.t !== 'theme');
     const cut = spoken.filter(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b))).length;
@@ -10931,7 +10942,7 @@ async function podPlay(ep, btn, nowEl, startSec) {
   const line = nowEl?.querySelector('.pod-now-line');
   const caption = (w, t) => { if (who) who.textContent = w || ''; if (line) line.textContent = t || ''; };
   if (_podStop) { podStopSpeaking(); btn.innerHTML = '&#9654; Listen'; caption('', 'Stopped. Press play to start again.'); return; }
-  const rec = await podRecordings();
+  const rec = await podRecordings(true);
   /* Scrub support (Ben, 16 Aug): when the timeline exists, the bar tracks
      playback and dragging it jumps. `gen` guards the walk — every async
      callback belongs to one generation, and a seek starts the next one, so a

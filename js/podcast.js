@@ -269,6 +269,14 @@ window.Podcast = (() => {
   }
   const latestFor = (showId, now = Date.now()) => published(now).find(e => e.show === showId) || null;
 
+  // Ben, 18 Sept: the morning render ran BEFORE the noon preview existed,
+  // so listeners got browser voices until the afternoon catch-up. Let the
+  // studio prepare imminent previews without publishing them early or
+  // moving a review ahead of the round's actual settlement.
+  const renderQueue = (now = Date.now(), previewLeadMs = 0) =>
+    published(now + Math.max(0, previewLeadMs)).filter(e =>
+      e.at == null || e.at <= now || e.kind === 'preview');
+
   /* ---------- fact desk ---------- */
   const squadOf = mid => (typeof managerSquad === 'function' ? managerSquad(mid) : []);
   // A new arrival has no previous-season evidence. Current FPL points must
@@ -608,13 +616,13 @@ window.Podcast = (() => {
       ].join(' '),
     },
     Raymond: {
-      name: 'Raymond', from: 'North London',
+      name: 'Raymond', from: 'Romford',
       intro: [
-        'Line two, Raymond in North London. Raymond, you’re on talkTROUGH.',
-        'Let’s go to Raymond, North London. Raymond, go ahead.',
-        'Raymond’s on the line from North London. Raymond, you’re on.',
-        'Raymond in North London — and Raymond, it is a Thursday afternoon. Remember that.',
-        'We’ll take Raymond, North London. Raymond, you’re on the radio.',
+        'Line two, Raymond in Romford. Raymond, you’re on talkTROUGH.',
+        'Let’s go to Raymond, Romford. Raymond, go ahead.',
+        'Raymond’s on the line from Romford. Raymond, you’re on.',
+        'Raymond in Romford — and Raymond, it is a Thursday afternoon. Remember that.',
+        'We’ll take Raymond, Romford. Raymond, you’re on the radio.',
       ],
       answer: [
         'Raymond, it is twenty past four on a Thursday. TWENTY PAST FOUR.',
@@ -622,31 +630,31 @@ window.Podcast = (() => {
         'Every week he rings from a different pub and every week he makes a better point than this panel.',
         'Raymond, go and have a sit down. Lovely to hear from you.',
         'I want it on the record that that is the most cheerful call we have ever taken.',
-        'Somewhere in North London a man has worked this entire league out on the back of a pump clip.',
+        'Somewhere in Romford a man has worked this entire league out on the back of a pump clip.',
       ],
       /* Marc, 17 Sept 2026: "he drinks a lot and should preface every call
          talking about a night out he has had / is having". Written warm and
          hospitable rather than sorry for itself. Raymond is having a lovely
          time, he wants to tell you where he has been and who he saw, and the
-         football arrives when it arrives. Real North London, said fondly,
+         football arrives when it arrives. Real Romford, said fondly,
          which is the rule Howard's note lays down. */
       body: (key, question) => [
         pick([
           'Richard! Richard. How are you, mate.',
           'Now then Richard. Lovely to get through.',
-          'Richard — Raymond. North London. Good afternoon to you.',
+          'Richard — Raymond. Romford. Good afternoon to you.',
           'Hello Richard, hello. How are we all.',
           'RICHARD. It’s Raymond. You alright?',
         ], key + ':ro'),
         pick([
-          'I have had a NIGHT. Started in the Salisbury on Green Lanes and finished somewhere I could not name for you.',
-          'We were out in Wood Green last night. Out. My brother-in-law’s fiftieth. I have seen things.',
-          'I’m stood outside the Bank of Friendship as we speak, and I’ve a pint in my hand, I’ll be honest with you.',
-          'Long one last night. Finsbury Park, then Holloway Road, then a minicab I don’t remember booking.',
-          'We did the whole of Palmers Green. The WHOLE of it. Finished up eating chips on a wall at one in the morning.',
+          'I have had a NIGHT. Started in Romford and finished somewhere I could not name for you.',
+          'We were out in Romford last night. Out. My brother-in-law’s fiftieth. I have seen things.',
+          'I’m stood outside the pub as we speak, and I’ve a pint in my hand, I’ll be honest with you.',
+          'Long one last night. Romford, then Hornchurch, then a minicab I don’t remember booking.',
+          'We did the whole of Romford. The WHOLE of it. Finished up eating chips on a wall at one in the morning.',
           'I’m only just up, Richard. Bank holiday hours, and it is not a bank holiday.',
-          'Bit of a session with the lads from the darts. Turnpike Lane. Lovely people, terrible decisions.',
-          'I’ve come straight from the Bounds Green social and I am not what you would call fresh.',
+          'Bit of a session with the lads from the darts. Romford. Lovely people, terrible decisions.',
+          'I’ve come straight from the social club and I am not what you would call fresh.',
         ], key + ':rn'),
         pick([
           'And we were talking about this VERY THING at about half eleven.',
@@ -1094,5 +1102,5 @@ window.Podcast = (() => {
   const episode = (showId, kind, gw) => build(showId, kind, gw);
   const latest = (showId, now) => { const e = latestFor(showId, now); return e ? build(e.show, e.kind, e.gw) : null; };
 
-  return { SHOWS, ON_AIR, VOICES, logoSvg, published, latest, episode, sayable, browserSay, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
+  return { SHOWS, ON_AIR, VOICES, logoSvg, published, renderQueue, latest, episode, sayable, browserSay, lineKey, _previewAt: previewAt, _reviewAt: reviewAt, _matchups: matchups, _draftTable: draftTable };
 })();

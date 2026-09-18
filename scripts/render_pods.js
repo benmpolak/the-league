@@ -112,6 +112,7 @@
  *   --force        re-render lines that already have a file (WILL overwrite)
  *   --dry          cost the job without casting or spending anything
  *   --max-chars N  refuse a run bigger than this (default 25000)
+ *   --ahead-hours N prepare previews due within N hours (default 0)
  *   --url          site to read the episodes from (default http://localhost:8749)
  *
  * ── ON ELEVENLABS (Ben's choice, 18 Aug) ──────────────────────────────────
@@ -147,6 +148,10 @@ const PARTS = flag('parts'), VOICES = flag('voices'), AUDITION = flag('audition'
 const CLONE = opt('clone', '');
 // a guard rail, not a budget: big jobs are fine, silent big jobs are not
 const MAX_CHARS = Math.max(0, parseInt(opt('max-chars', '25000'), 10) || 25000);
+const AHEAD_HOURS = Number(opt('ahead-hours', '0'));
+if (!Number.isFinite(AHEAD_HOURS) || AHEAD_HOURS < 0 || AHEAD_HOURS > 3) {
+  throw new Error('--ahead-hours must be between 0 and 3');
+}
 const AUDITION_LINE = opt('line',
   "Right. I'll tell you what it is, Richard. It's woke nonsense, and nobody complained when you posted your transfers in with a stamp on.");
 // anything a browser will play; the manifest carries the extension, so a phone
@@ -381,7 +386,7 @@ async function harvest() {
       }
     }
   });
-  const eps = await page.evaluate(() => Podcast.published().map(p => {
+  const eps = await page.evaluate(aheadHours => Podcast.renderQueue(Date.now(), aheadHours * 3600000).map(p => {
     const e = Podcast.episode(p.show, p.kind, p.gw);
     // Dated episodes are not rendered (Ben, 15 Sep 2026: "no need to put out
     // anything dated, don't waste the credits, just this week's gw review").
@@ -403,7 +408,7 @@ async function harvest() {
       blocks: e.blocks.map(b => ({ ...b,
         say: Podcast.sayable(b.t === 'ad' ? `${b.brand}. ${b.text}` : b.text),
         key: Podcast.lineKey(b) })) };
-  }));
+  }), AHEAD_HOURS);
   await browser.close();
   // --only is the override: name a dated episode and it renders anyway
   if (ONLY.length) return eps.filter(e => ONLY.includes(e.id));

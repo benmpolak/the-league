@@ -112,7 +112,7 @@ jobs:
         if: steps.gate.outputs.go == 'yes'
         env:
           CHROME_BIN: /usr/bin/google-chrome
-        run: node scripts/render_pods.js --dry --state "$RUNNER_TEMP/league-state.json" ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+        run: node scripts/render_pods.js --dry --ahead-hours 3 --state "$RUNNER_TEMP/league-state.json" ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
 
       - name: Render
         if: steps.gate.outputs.go == 'yes'
@@ -125,6 +125,7 @@ jobs:
             exit 1
           fi
           node scripts/render_pods.js \
+            --ahead-hours 3 \
             --state "$RUNNER_TEMP/league-state.json" \
             --max-chars "${{ inputs.max_chars || '25000' }}" \
             ${{ inputs.only && format('--only {0}', inputs.only) || '' }} \
