@@ -1078,6 +1078,12 @@
       "file": "1aan3hc.mp3",
       "voice": "RDLen3xJimHO2jSEf3qL",
       "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_v3",
+        "settings": {
+          "stability": 0.5
+        }
+      },
       "at": "2026-09-18"
     },
     "1wvd4u3": {
