@@ -113,6 +113,7 @@
  *   --dry          cost the job without casting or spending anything
  *   --max-chars N  refuse a run bigger than this (default 25000)
  *   --ahead-hours N prepare previews due within N hours (default 0)
+ *   --recover-since ISO fetch matching saved ElevenLabs audio, never render
  *   --url          site to read the episodes from (default http://localhost:8749)
  *
  * ── ON ELEVENLABS (Ben's choice, 18 Aug) ──────────────────────────────────
@@ -149,6 +150,10 @@ const CLONE = opt('clone', '');
 // a guard rail, not a budget: big jobs are fine, silent big jobs are not
 const MAX_CHARS = Math.max(0, parseInt(opt('max-chars', '25000'), 10) || 25000);
 const AHEAD_HOURS = Number(opt('ahead-hours', '0'));
+const RECOVER_SINCE = opt('recover-since', '');
+if (RECOVER_SINCE && (!ONLY.length || !Number.isFinite(Date.parse(RECOVER_SINCE)))) {
+  throw new Error('--recover-since requires a valid ISO date and explicit --only episode ids');
+}
 if (!Number.isFinite(AHEAD_HOURS) || AHEAD_HOURS < 0 || AHEAD_HOURS > 3) {
   throw new Error('--ahead-hours must be between 0 and 3');
 }
@@ -586,6 +591,10 @@ function doParts(eps) {
 }
 
 async function doRender(eps) {
+  if (RECOVER_SINCE && PROVIDER !== 'elevenlabs') throw Error('Recovery requires ElevenLabs');
+  const recover = RECOVER_SINCE && !DRY ? await require('./pod_history').historyReader({
+    since: RECOVER_SINCE, key: process.env.ELEVENLABS_API_KEY, model: CASTING.model || 'eleven_multilingual_v2',
+  }) : null;
   /* Fail before spending anything. On ElevenLabs a voice id is a long opaque
      string, so an empty or copied-across-from-OpenAI one is easy to miss and
      would otherwise show up as a wall of 400s halfway through a render. */
@@ -602,7 +611,7 @@ async function doRender(eps) {
      the job first and refusing anything unexpectedly large turns a surprise
      invoice into a question. Raise it deliberately with --max-chars when the
      big job IS the intention. */
-  if (!DRY) {
+  if (!DRY && !RECOVER_SINCE) {
     let due = 0, lines = 0;
     for (const ep of eps) for (const b of ep.blocks) {
       if (b.t === 'theme') continue;
@@ -621,7 +630,7 @@ async function doRender(eps) {
       process.exit(1);
     }
   }
-  if (PROVIDER === 'elevenlabs' && !DRY) {
+  if (PROVIDER === 'elevenlabs' && !DRY && !RECOVER_SINCE) {
     const known = new Set((await listVoices()).map(v => v.id));
     const wrong = Object.entries(CASTING.cast)
       .filter(([, c]) => !c.human && !known.has(String(c.voice).trim()));
@@ -632,7 +641,7 @@ async function doRender(eps) {
       process.exit(1);
     }
   }
-  let made = 0, skipped = 0, human = 0, stood = 0, chars = 0;
+  let made = 0, skipped = 0, human = 0, stood = 0, chars = 0, failed = 0;
   for (const ep of eps) {
     const dir = path.join(OUT, ep.id);
     fs.mkdirSync(dir, { recursive: true });
@@ -671,14 +680,16 @@ async function doRender(eps) {
       // the lines either side, so it knows where it is in the conversation
       const spoken = k => (ep.blocks[k] && ep.blocks[k].t !== 'theme') ? ep.blocks[k].say : '';
       const around = { prev: spoken(n - 1), next: spoken(n + 1) };
-      chars += text.length;
+      if (!RECOVER_SINCE) chars += text.length;
       if (DRY) { console.log(`  would render ${ep.id}/${b.key}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
       try {
-        fs.writeFileSync(path.join(dir, b.key + '.mp3'), await render(text, chair, direction, around));
+        fs.writeFileSync(path.join(dir, b.key + '.mp3'), recover
+          ? await recover(text, chair.voice) : await render(text, chair, direction, around));
         noteRendered(ep.id, b.key, b.key + '.mp3', chair.voice);
         made++;
         process.stdout.write(`  ${ep.id}/${b.key}.mp3  ${who}${mine && mine.voice !== voice ? '  (recast)' : ''}\n`);
       } catch (e) {
+        failed++;
         console.error(`  FAILED ${ep.id}/${n}: ${e.message}`);
       }
     }
@@ -701,10 +712,11 @@ async function doRender(eps) {
     orphans.forEach(o => console.log(`  ${o}`));
     console.log('Delete them once you are sure the wording is settled.');
   }
-  console.log(`\n${made} line(s) rendered${stood ? ` (${stood} by an understudy, waiting on a real take)` : ''}, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
+  console.log(`\n${made} line(s) ${RECOVER_SINCE ? 'recovered' : 'rendered'}${stood ? ` (${stood} by an understudy, waiting on a real take)` : ''}, ${skipped} already cut, ${human} left for a human, ${chars} characters billed.`);
   if (DRY) { console.log('(dry run — nothing written, nothing spent)'); return; }
   saveProvenance();
   writeManifest(scanManifest());
+  if (failed) throw Error(`${failed} line(s) failed; completed recordings saved for retry`);
 }
 
 (async () => {
