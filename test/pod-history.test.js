@@ -33,6 +33,15 @@ test('history access failures stop recovery', async () => {
   await assert.rejects(historyReader({ ...options, fetcher: async () => new Response('', { status: 403 }) }), /403/);
 });
 
+test('per-character model and settings must match before recording provenance', async () => {
+  const recover = await historyReader({ ...options, fetcher: async url => url.endsWith('/right/audio')
+    ? new Response('v3-mp3', { headers: { 'content-type': 'audio/mpeg' } })
+    : json({ history: [{ ...saved, model_id: 'eleven_v3', settings: { stability: 0.5 } }], has_more: false }) });
+  assert.equal((await recover(saved.text, saved.voice_id, 'eleven_v3', { stability: 0.5 })).toString(), 'v3-mp3');
+  await assert.rejects(recover(saved.text, saved.voice_id, 'eleven_v3', { stability: 1 }), /No matching/);
+  await assert.rejects(recover(saved.text, saved.voice_id, 'eleven_multilingual_v2', { stability: 0.5 }), /No matching/);
+});
+
 test('stalled pagination is rejected', async () => {
   await assert.rejects(historyReader({ ...options, fetcher: async () => json({ history: [], has_more: true, last_history_item_id: 'same' }) }), /stalled/);
 });

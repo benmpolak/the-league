@@ -53,7 +53,7 @@
  * ── WHAT IT WRITES ────────────────────────────────────────────────────────
  *
  *     audio/pod/<episode-id>/<line-key>.mp3
- *     audio/pod/index.json     ← { "<episode-id>": { "<line-key>": "<file>" } }
+ *     audio/pod/index.json     ← episode/line → { file, revision }
  *     audio/pod/rendered.json  ← which files WE cut, and with which voice
  *
  * One file per spoken line, filed under a hash of WHAT IS SAID rather than
@@ -133,6 +133,8 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer-core');
+const { voiceProfile, elevenBody, shouldRender } = require('./pod_voice');
+const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'audio', 'pod');
@@ -287,19 +289,7 @@ async function ttsEleven(text, voiceId, chair, around) {
   const key = process.env.ELEVENLABS_API_KEY;
   if (!key) throw new Error('ELEVENLABS_API_KEY is not set');
   if (!voiceId) throw new Error('no ElevenLabs voice id cast for this character — run --voices and paste the id into audio/pod/cast.json');
-  const s = chair.settings || {};
-  const body = {
-    text,
-    model_id: CASTING.model || 'eleven_multilingual_v2',
-    voice_settings: {
-      stability: s.stability ?? 0.4,
-      similarity_boost: s.similarity ?? 0.8,
-      style: s.style ?? 0.5,
-      use_speaker_boost: s.speakerBoost ?? true,
-    },
-  };
-  if (around && around.prev) body.previous_text = around.prev;
-  if (around && around.next) body.next_text = around.next;
+  const body = elevenBody(text, CASTING, chair, around);
   const fmt = CASTING.format || 'mp3_44100_64';
   const r = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${encodeURIComponent(fmt)}`, {
     method: 'POST',
@@ -435,7 +425,7 @@ function scanManifest() {
     for (const f of fs.readdirSync(dir)) {
       const n = path.basename(f, path.extname(f));
       if (!/^[a-z0-9]+$/i.test(n) || !PLAYABLE.includes(path.extname(f).toLowerCase())) continue;
-      lines[n] = f;
+      lines[n] = { file: f, revision: crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, f))).digest('hex').slice(0, 12) };
     }
     if (Object.keys(lines).length) index[ep] = lines;
   }
@@ -469,8 +459,8 @@ let PROV = (() => {
   try { return JSON.parse(fs.readFileSync(PROV_FILE, 'utf8')); } catch { return {}; }
 })();
 const provenance = (epId, n) => (PROV[epId] || {})[n] || (PROV[epId] || {})[String(n)] || null;
-function noteRendered(epId, n, file, voice) {
-  (PROV[epId] = PROV[epId] || {})[n] = { file, voice, provider: PROVIDER, at: new Date().toISOString().slice(0, 10) };
+function noteRendered(epId, n, file, voice, chair) {
+  (PROV[epId] = PROV[epId] || {})[n] = { file, voice, provider: PROVIDER, ...(PROVIDER === 'elevenlabs' ? { profile: voiceProfile(CASTING, chair) } : {}), at: new Date().toISOString().slice(0, 10) };
 }
 function saveProvenance() {
   // drop anything whose file has since gone, so the store can't rot
@@ -618,10 +608,7 @@ async function doRender(eps) {
       const chair = chairFor(b.t === 'ad' ? ep.host : b.who);
       const got = existing(ep.id, b.key), mine = provenance(ep.id, b.key);
       const voice = String(chair.voice || '').trim();
-      if (chair.human && got && !mine) continue;
-      if (!voice) continue;
-      if (got && (chair.human || !FORCE) && mine && mine.voice === voice) continue;
-      if (got && !chair.human && !FORCE && !mine) continue;
+      if (!shouldRender(got, mine, voice, FORCE, PROVIDER, CASTING, chair)) continue;
       due += b.say.length; lines++;
     }
     if (due > MAX_CHARS) {
@@ -653,28 +640,11 @@ async function doRender(eps) {
       const got = existing(ep.id, b.key);
       const mine = provenance(ep.id, b.key);   // did WE write that file, and with what voice
       const voice = String(chair.voice || '').trim();
-      if (chair.human) {
-        /* A hand-recorded line is NEVER overwritten, --force or not: the whole
-           point is that a render can't destroy a take somebody drove to a
-           quiet room to make. A file we rendered ourselves is a different
-           thing, and has to stay replaceable — otherwise a stand-in voice put
-           in today would permanently block the real cloned one arriving next
-           week, which is exactly the Howard case.
-
-           Marc, 18 Aug: "im not recording for howard, someone else is." The
-           pilots are fixed scripts and can be recorded once, but the weekly
-           episodes are generated from that week's results, so his question is
-           new every time. So a human part may ALSO carry a voice id: the
-           stand-in. It is used only where no real take exists, and the moment
-           one is dropped in, --scan makes it win. */
-        if (got && !mine) { skipped++; continue; }        // a real take. hands off.
-        if (!voice) { human++; continue; }                 // nobody cast, nothing to do
-        if (got && mine && mine.voice === voice && !FORCE) { skipped++; continue; }
-        stood++;
-      } else if (got && !FORCE && (!mine || mine.voice === voice)) {
-        // already cut by the voice currently cast — nothing to gain by paying again
-        skipped++; continue;
+      if (!shouldRender(got, mine, voice, FORCE, PROVIDER, CASTING, chair)) {
+        if (chair.human && !voice && !got) human++; else skipped++;
+        continue;
       }
+      if (chair.human) stood++;
       const text = b.say;   // pronunciation-corrected; b.text is the caption
       const direction = b.t === 'ad' ? (CASTING.adDirection[ep.show] || chair.direction) : chair.direction;
       // the lines either side, so it knows where it is in the conversation
@@ -684,8 +654,8 @@ async function doRender(eps) {
       if (DRY) { console.log(`  would render ${ep.id}/${b.key}.mp3  ${who} as ${chair.voice || '(NO VOICE CAST)'}  ${text.length} chars`); made++; continue; }
       try {
         fs.writeFileSync(path.join(dir, b.key + '.mp3'), recover
-          ? await recover(text, chair.voice) : await render(text, chair, direction, around));
-        noteRendered(ep.id, b.key, b.key + '.mp3', chair.voice);
+          ? await recover(text, chair.voice, voiceProfile(CASTING, chair).model, voiceProfile(CASTING, chair).settings) : await render(text, chair, direction, around));
+        noteRendered(ep.id, b.key, b.key + '.mp3', chair.voice, chair);
         made++;
         process.stdout.write(`  ${ep.id}/${b.key}.mp3  ${who}${mine && mine.voice !== voice ? '  (recast)' : ''}\n`);
       } catch (e) {

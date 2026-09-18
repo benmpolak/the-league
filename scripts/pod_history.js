@@ -19,8 +19,9 @@ async function historyReader({ since, key, model, fetcher = fetch }) {
     if (!Array.isArray(body.history)) throw Error('Invalid ElevenLabs history response');
     items.push(...body.history.filter(item => item.date_unix >= Math.floor(date / 1000)));
     if (!body.has_more) {
-      return async (text, voice) => {
-        const item = items.filter(row => row.text === text && row.voice_id === voice && row.model_id === model)
+      return async (text, voice, requestedModel = model, settings) => {
+        const item = items.filter(row => row.text === text && row.voice_id === voice && row.model_id === requestedModel
+          && (!settings || Object.entries(settings).every(([name, value]) => row.settings?.[name] === value)))
           .sort((a, b) => b.date_unix - a.date_unix)[0];
         if (!item) throw Error('No matching saved recording for voice ' + voice);
         const audio = await fetcher('https://api.elevenlabs.io/v1/history/' + encodeURIComponent(item.history_item_id) + '/audio', { headers, signal: AbortSignal.timeout(30000) });

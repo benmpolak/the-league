@@ -10692,7 +10692,7 @@ function podStopSpeaking() {
    so a phone recording can be dropped in as it is — `node scripts/render_pods.js
    --scan` rebuilds the manifest from whatever is on disk.
    Nothing here fetches from anywhere but this origin. */
-let _podRec = null; // episode id → { lineKey: filename }; null until asked
+let _podRec = null; // episode id → line key → filename or {file, revision}
 let _podRecPending = null;
 function podRecordings(refresh = false) {
   // Ben, 18 Sept: opening a pod and immediately pressing play used to see
@@ -10729,10 +10729,13 @@ function podLineSrc(rec, epId, key) {
   const lines = rec[epId];
   if (!lines || key == null) return null;
   if (lines === '*') return `audio/pod/${encodeURIComponent(epId)}/${key}.mp3`;
-  const f = lines[key] || lines[String(key)];
+  const entry = lines[key] || lines[String(key)];
+  const f = typeof entry === 'string' ? entry : entry?.file;
+  // Ben, 18 Sept: recutting the same words must bypass the old audio cache.
+  const revision = typeof entry?.revision === 'string' && /^[a-f0-9]{12}$/.test(entry.revision) ? '?v=' + entry.revision : '';
   // the manifest names a file inside the episode's own folder and nothing else
   if (!f || typeof f !== 'string' || /[\/\\]|\.\./.test(f)) return null;
-  return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}`;
+  return `audio/pod/${encodeURIComponent(epId)}/${encodeURIComponent(f)}${revision}`;
 }
 /* ---- the scrub bar ----
    Ben, 16 Aug: "can you make them scrubbable in the app?" The player walks the

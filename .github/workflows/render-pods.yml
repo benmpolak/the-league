@@ -104,7 +104,7 @@ jobs:
 
       - name: Check the scripts still parse
         if: steps.gate.outputs.go == 'yes'
-        run: npm run check && node --test test/pod-history.test.js
+        run: npm run check && node --test test/pod-history.test.js test/pod-voice.test.js
 
       - name: Fetch the current public league state
         if: steps.gate.outputs.go == 'yes'

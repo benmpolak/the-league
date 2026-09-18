@@ -417,6 +417,8 @@ const chk = (name, ok, detail = '') => {
       emptyByDefault: none === 0 && noneSrc,
       // the recorded line plays its file, keeping the extension it was given
       readsManifest: src === `audio/pod/${encodeURIComponent(ep.id)}/${oneN}.m4a`,
+      revisedAudio: podLineSrc({ [ep.id]: { [oneN]: { file: oneN + '.mp3', revision: 'abcdef123456' } } }, ep.id, oneN) === `audio/pod/${encodeURIComponent(ep.id)}/${oneN}.mp3?v=abcdef123456`,
+      noRevisedEscape: podLineSrc({ [ep.id]: { [oneN]: { file: '../bad.mp3', revision: 'abcdef123456' } } }, ep.id, oneN) === null,
       // ...and every other line still falls through to the browser voice
       restFallBack: spoken.filter(([b]) => Podcast.lineKey(b) !== oneN).every(([b]) => podLineSrc(rec, ep.id, Podcast.lineKey(b)) === null),
       // a manifest cannot point the player outside the episode's own folder
@@ -741,7 +743,7 @@ const chk = (name, ok, detail = '') => {
     return {
       allCast: ROSTER.every(n => !!c[n]),
       // Exact takes approved by Ben on 17 Sept, left unwired until this fix.
-      approvedRaymond: c.Raymond.voice === 'RDLen3xJimHO2jSEf3qL',
+      approvedRaymond: c.Raymond.voice === 'RDLen3xJimHO2jSEf3qL' && c.Raymond.model === 'eleven_v3',
       approvedYakolo: c.Yakolo.voice === 'LWOILCwreWREl2TqLwXv',
       // the gate render_pods applies: !human && !voice halts the whole render
       noneHaltsTheRender: ROSTER.every(n => c[n].human || String(c[n].voice || '').trim()),
@@ -805,7 +807,7 @@ const chk = (name, ok, detail = '') => {
         // every claim must point at a file the manifest actually serves
         const src = podLineSrc(rec, epId, n);
         if (!src) { orphan.push(`${epId}/${n}`); continue; }
-        if (!src.endsWith('/' + meta.file)) mismatched.push(`${epId}/${n}`);
+        if (!src.split('?')[0].endsWith('/' + meta.file)) mismatched.push(`${epId}/${n}`);
         if (!meta.voice) mismatched.push(`${epId}/${n} has no voice recorded`);
       }
     }
