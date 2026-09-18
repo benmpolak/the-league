@@ -5489,6 +5489,48 @@ function claimIdentity(mid) {
 
 let forceIdentity = false; // set when an action needs a signed-in manager first
 let linkSentTo = null;     // email a sign-in link was just sent to
+/* ----- why the desktop keeps forgetting you -----
+   Lee, 18 Sept 2026: "Getting very annoying to have to do the login copy and
+   paste link every week" — on desktop Chrome, several times a week, while the
+   installed app on his phone never asks.
+
+   Firebase keeps the session in IndexedDB, and a browser's default quota is
+   BEST-EFFORT: Chrome may evict it whenever it likes. An INSTALLED app is
+   promoted to persistent and exempt, which is exactly the difference between
+   his phone and his laptop.
+
+   So: ask. persist() answers instantly and never prompts — Chrome decides on
+   its own, granting it to sites it considers important (installed, bookmarked,
+   well used) and refusing the rest. It cannot hurt, and for anyone who already
+   qualifies it quietly ends the problem. For anyone it refuses, the sign-in
+   screen says so and offers the install, because a man being logged out weekly
+   deserves to know why rather than assume the app is broken. */
+let storageKept = null;    // null = not asked yet, true/false = Chrome's answer
+const storageWarning = () => storageKept === false ? `<p class="muted" id="whoKeep" style="font-size:11.5px;margin:2px 0 8px;line-height:1.45">
+  &#9888;&#65039; This browser has not promised to remember you, so it can drop your sign-in without warning &mdash; which is why it keeps asking. Installing the site as an app fixes it for good: in Chrome, the <b>&#8942;</b> menu &rarr; Cast, save and share &rarr; <b>Install page as app</b>. Your phone already does this, which is why the app never asks.</p>` : '';
+(async () => {
+  try {
+    if (!navigator.storage?.persist) return;
+    storageKept = await navigator.storage.persisted() || await navigator.storage.persist();
+  } catch { /* not available — the sign-in screen simply says nothing */ }
+  /* The answer arrives a beat AFTER the overlay has painted, so the line has
+     to be posted in rather than waited for. Re-rendering would do it, but it
+     would also wipe a half-typed address from under the reader, so slip the
+     paragraph into the open overlay instead and leave the rest alone. */
+  const box = $('#whoOverlay');
+  const slot = box && box.querySelector('details');
+  if (!storageWarning() || !slot || box.querySelector('#whoKeep')) return;
+  slot.insertAdjacentHTML('afterend', storageWarning());
+})();
+/* The address a link was last sent to. Deliberately OUR own key and not the
+   one sync.js keeps: that one is a working note for completing a link and is
+   wiped the moment it is spent, precisely so a wrong saved address cannot trap
+   a good link in a retry loop (sol P2, 22 Aug). This one only ever pre-fills a
+   text box the reader can see and edit, so it can never feed a sign-in by
+   itself and cannot bring that bug back. */
+const LAST_EMAIL_KEY = 'tl-last-email';
+const lastEmail = () => { try { return localStorage.getItem(LAST_EMAIL_KEY) || ''; } catch { return ''; } };
+const rememberEmail = e => { try { localStorage.setItem(LAST_EMAIL_KEY, e); } catch { /* fine */ } };
 function renderIdentity() {
   let ov = $('#whoOverlay');
   const needed = (netOn() && state.phase !== 'setup' && !whoami) || forceIdentity;
@@ -5539,7 +5581,7 @@ function renderIdentity() {
         ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>`
         : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
            <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
-             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" style="flex:1;min-width:0">
+             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" value="${esc(lastEmail())}" style="flex:1;min-width:0">
              <button class="btn" type="submit">Send link</button>
            </form>`}
       ${/* The rescue used to appear only in the same sitting as the send. One
@@ -5555,6 +5597,7 @@ function renderIdentity() {
         </form>
         ${linkSentTo ? '<button class="btn ghost small" id="whoResend">Different email</button>' : ''}
       </details>
+      ${storageWarning()}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
         <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
@@ -5601,7 +5644,7 @@ function renderIdentity() {
     if (!email) return;
     if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
     window.WCSync.auth.sendLink(email)
-      .then(() => { linkSentTo = email; renderIdentity(); })
+      .then(() => { rememberEmail(email); linkSentTo = email; renderIdentity(); })
       .catch(err => toast(err.message || 'Could not send the link — check the address.'));
   };
   // installed-app / wrong-browser rescue: the link itself, pasted by hand
