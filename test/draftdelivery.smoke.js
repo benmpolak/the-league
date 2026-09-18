@@ -54,14 +54,25 @@ const chk = (name, ok, detail = '') => {
       rows.every(r => r.move === r.pk.n - r.rank));
     t('the best scorer stands first',
       rows.find(r => r.rank === 1).pts === Math.max(...rows.map(r => r.pts)));
-    t('nobody is placed beyond the field he was drafted into',
-      rows.every(r => r.rank >= 1 && r.rank <= rows.length),
-      `1..${Math.max(...rows.map(r => r.rank))} of ${rows.length}`);
-    // the place is among the DRAFTED, not the feed: a man can top the archive
-    // while free agents outscore him, and that must not drag him down
-    t('the place counts drafted men only, not the whole feed',
-      rows.length < PLAYERS.length && rows.every(r => r.rank <= rows.length),
-      `${rows.length} drafted of ${PLAYERS.length} in the feed`);
+    t('nobody is placed beyond the field itself',
+      rows.every(r => r.rank >= 1 && r.rank <= PLAYERS.length),
+      `1..${Math.max(...rows.map(r => r.rank))} of ${PLAYERS.length}`);
+    /* Marc, 18 Sept 2026: "I want the ranking to include undrafted players."
+       It used to rank a pick among the other picks; it now ranks him among
+       everybody, which is the harsher and more useful reading — a pick is
+       only as good as what you could have had instead. */
+    t('the place counts the WHOLE feed, not just the men taken',
+      rows.fieldSize === PLAYERS.length && PLAYERS.length > rows.length,
+      `field ${rows.fieldSize}, drafted ${rows.length}`);
+    t('and a pick outscored by free agents is placed below them',
+      (() => {
+        // find a drafted man with undrafted players above him, and check his
+        // place leaves room for them
+        const draftedIds = new Set(rows.map(r => r.p.id));
+        const worst = rows.reduce((a, b) => (b.pts < a.pts ? b : a), rows[0]);
+        const freeAbove = PLAYERS.filter(p => !draftedIds.has(p.id) && playerPoints(p.id).pts > worst.pts).length;
+        return freeAbove > 0 && worst.rank > freeAbove;
+      })(), 'free agents are counted ahead of him');
     // level scores share a place, and a better score never gets a worse one
     (() => {
       const byPts = {};
@@ -114,8 +125,12 @@ const chk = (name, ok, detail = '') => {
       t('the first row prints its own pick, points and place',
         cells[0] === `#${first.pk.n}` && cells[3] === String(first.pts) && cells[4] === String(first.rank),
         cells.join(' | '));
-      t('and it says the places are among the drafted, not the feed',
-        /among the \d+ men taken/.test(card.textContent));
+      // the card must SAY what the places are over, or the column reads as a
+      // league-wide rank to one man and a draft rank to the next
+      t('and it says the places are over the whole league, not just the picks',
+        /among all \d+ players in the league/.test(card.textContent)
+        && new RegExp(`among all ${PLAYERS.length} players`).test(card.textContent),
+        (card.textContent.match(/Places are among[^.]*\./) || ['no line'])[0]);
       host.remove();
     })();
 

@@ -8050,16 +8050,23 @@ function bindQueueDnD() {
    below the draft position or a grey flat line if they are in exactly the same
    position."
 
-   The place is over the DRAFTED MEN ONLY, which is the only comparison that
-   means anything: a hundred and sixty-eight were taken, they stand one to a
-   hundred and sixty-eight on what they have scored, and that stands against
-   the pick they went at. Ranking them against the whole feed would drag every
-   pick down by however many free agents happen to be having a season, which
-   says something about the Trough and nothing about the draft.
+   The place is over EVERY player in the feed, drafted or not (Marc, 18 Sept
+   2026: "I want the ranking to include undrafted players"). It began as a
+   standing among the hundred and sixty-eight men taken, on the reasoning that
+   a pick should be judged against the other picks; he wants it judged against
+   the whole league, and he is right that it answers the more useful question.
+   A pick is only as good as what you could have had instead, and what you
+   could have had instead is the Trough.
+
+   It is a harsher number and deliberately so. The field is four times the
+   size, most of it men who barely play, so a drafted man having a quiet
+   season sinks a long way — two hundred-odd free agents above a pick is a
+   verdict on that pick, which is the point of the column.
 
    Level scores SHARE a place, the way a league table shares a position — two
    men on the same points cannot be one place apart, and inventing an order
-   between them would invent a verdict too.
+   between them would invent a verdict too. Over a field this size that means
+   big blocks of men on the same place, especially on nought.
 
    Nothing is stored. It reads the match record, so it is right the moment a
    round settles and needs no job to keep it that way. */
@@ -8067,16 +8074,25 @@ function draftDelivery() {
   const picks = toArr(state.draft?.picks);
   const rows = picks.map(pk => ({ pk, p: PLAYER_BY_ID[pk.playerId] })).filter(x => x.p);
   if (!rows.length) return null;
-  for (const r of rows) r.pts = playerPoints(r.p.id).pts;
-  // the standing: highest first, level scores sharing a place (1, 2, 2, 4)
-  const order = [...rows].sort((a, b) => b.pts - a.pts);
+  /* The standing is the WHOLE feed: highest first, level scores sharing a
+     place (1, 2, 2, 4). Scored once for every player rather than once per
+     pick, because playerPoints walks the entire match record each call. */
+  const field = PLAYERS.map(p => ({ id: p.id, pts: playerPoints(p.id).pts }))
+    .sort((a, b) => b.pts - a.pts);
+  const placeOf = new Map();
   let place = 0, seen = 0, last = null;
-  for (const r of order) {
+  for (const f of field) {
     seen++;
-    if (last === null || r.pts !== last) { place = seen; last = r.pts; }
-    r.rank = place;
+    if (last === null || f.pts !== last) { place = seen; last = f.pts; }
+    placeOf.set(f.id, place);
   }
-  for (const r of rows) r.move = r.pk.n - r.rank;   // positive = better than his pick
+  const ptsOf = new Map(field.map(f => [f.id, f.pts]));
+  for (const r of rows) {
+    r.pts = ptsOf.get(r.p.id) ?? 0;
+    r.rank = placeOf.get(r.p.id) ?? field.length;
+    r.move = r.pk.n - r.rank;                       // positive = better than his pick
+  }
+  rows.fieldSize = field.length;
   return rows;
 }
 /* Up, down, or a flat line for a man exactly where he was taken. Pick one can
@@ -8103,14 +8119,14 @@ function viewDraftRecap() {
   const bare = p => String(p.name || '');
   return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
     <p class="muted" style="margin-bottom:4px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
-    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} Places are among the ${rows.length} men taken, not the whole feed &mdash; a pick is judged against the other picks.</p>
+    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} Places are among all ${rows.fieldSize} players in the league, not just the ${rows.length} taken &mdash; a pick is judged against everybody you could have had instead.</p>
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr>
         <th class="num" title="Where he went in the draft">Pick</th>
         <th>Drafted by</th>
         <th>Player</th>
         <th class="num" title="Points scored this season, in this league's scoring">Pts</th>
-        <th class="num" title="Where he stands on those points among everyone drafted">Now</th>
+        <th class="num" title="Where he stands on those points among every player in the league, drafted or not">Now</th>
         <th class="num" title="His pick number less his current place. Positive means he is outscoring where he went.">Swing</th>
       </tr></thead>
       <tbody>${rows.map(({ pk, p, pts, rank, move }) => `<tr>
