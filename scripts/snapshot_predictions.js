@@ -111,11 +111,19 @@ function readLedger(file = OUT) {
 const NOTE = 'What the projection said at each deadline, recorded once and never revised. '
   + 'Written by scripts/snapshot_predictions.js; a round already here is never touched again. '
   + 'w/d/l are the first-named side\'s win, draw and loss chances; pa/pb the projected scores. '
+  + 'A round marked "rebuilt" was not captured at its deadline: it was reconstructed afterwards '
+  + 'by scripts/backfill_predictions.js and frozen, so that it stops moving. '
   + 'Do not edit by hand.';
 
 /* Fold one captured round into the ledger. Refuses a round already present and
    refuses a round whose odds do not add up, because half a record is worse
-   than none — a missing round can still be rebuilt, a wrong one cannot. */
+   than none — a missing round can still be rebuilt, a wrong one cannot.
+
+   `rebuilt` marks a round that was reconstructed after the fact rather than
+   caught at its deadline (Marc, 18 Sept 2026: "why does the prediction tracker
+   keep changing, that shouldnt be possible"). Freezing a reconstruction stops
+   it drifting, but it is NOT the same thing as a record, and the ledger says
+   which is which so the card can too. */
 function addRound(book, shot) {
   const rounds = book.rounds || (book.rounds = {});
   if (rounds[String(shot.n)]) throw Error(`GW${shot.n} is already in the ledger`);
@@ -128,7 +136,8 @@ function addRound(book, shot) {
   const sides = shot.games.flatMap(g => [g.a, g.b]);
   if (new Set(sides).size !== sides.length) throw Error(`GW${shot.n}: a manager appears in two ties`);
   book.note = NOTE;
-  rounds[String(shot.n)] = { deadline: shot.deadline, taken: shot.taken, games: shot.games };
+  rounds[String(shot.n)] = { deadline: shot.deadline, taken: shot.taken, games: shot.games,
+    ...(shot.rebuilt ? { rebuilt: true, newsGap: !!shot.newsGap } : {}) };
   return book;
 }
 

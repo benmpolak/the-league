@@ -11899,7 +11899,14 @@ function recordedPrediction(i) {
     const flip = g.a !== a;                       // published the other way up
     const o = flip ? { win: g.l, draw: g.d, loss: g.w } : { win: g.w, draw: g.d, loss: g.l };
     const call = o.win >= o.loss && o.win >= o.draw ? 'a' : o.loss >= o.draw ? 'b' : 'd';
+    /* `recorded` means the number is FIXED, which is all the card's arithmetic
+       cares about. `rebuilt` says how it got fixed: caught at the deadline, or
+       reconstructed afterwards and frozen. The difference is not cosmetic — a
+       rebuilt round marked `newsGap` was scored against the treatment room as
+       it stood when it was rebuilt, not as it stood that Saturday — so it is
+       carried through and printed rather than quietly averaged in. */
     return { a, b, o, call, conf: Math.max(o.win, o.draw, o.loss), recorded: true,
+      rebuilt: !!row.rebuilt, newsGap: !!row.newsGap,
       projA: flip ? g.pb : g.pa, projB: flip ? g.pa : g.pb, taken: row.taken || null };
   });
   return rows.every(Boolean) ? rows : null;
@@ -11934,16 +11941,38 @@ function predictionCard() {
       <p class="muted" style="font-size:12.5px">No settled round yet. The Committee has made no claims it can be held to.</p></div>`;
   }
   const byGw = settled.map(i => ({ i, rows: predictionsFor(i) }));
-  // rounds the frozen team news does not reach back to — named rather than
-  // glossed over, because those are the ones marked against today's flags
+  /* Three kinds of round, and the reader is owed the difference:
+       - caught at the deadline: what the Committee actually claimed
+       - rebuilt and frozen: a reconstruction that has at least stopped moving
+       - neither: still being rebuilt on every load, so still drifting
+     A round the team news does not reach back to is named either way, because
+     that one was marked against the flags of whenever it was computed rather
+     than the flags of that Saturday. */
   const recCount = byGw.filter(g => g.rows[0]?.recorded).length;
-  const newsGap = byGw.filter(g => !g.rows[0]?.recorded && !newsKnownAt(g.i)).map(g => g.i);
+  const rebuiltN = byGw.filter(g => g.rows[0]?.rebuilt).length;
+  const liveN = byGw.filter(g => !g.rows[0]?.recorded).length;
+  const newsGap = byGw.filter(g => g.rows[0]?.newsGap || (!g.rows[0]?.recorded && !newsKnownAt(g.i))).map(g => g.i);
   let run = 0, runOf = 0;
   for (const g of byGw) {
     g.right = g.rows.filter(r => r.right).length;
     run += g.right; runOf += g.rows.length;
     g.run = run; g.runOf = runOf;
   }
+  /* Marc, 18 Sept 2026: "why does the prediction tracker keep changing, that
+     shouldnt be possible." It could, and the reason was that nothing was
+     written down, so every round was re-derived on every load off inputs that
+     had moved underneath it. Now that rounds are frozen, the card has to say
+     WHICH kind each one is rather than letting a reconstruction pass for a
+     record — and has to keep saying so while any round is still drifting. */
+  const gwList = ns => ns.length === 1 ? 'GW' + ns[0] : 'GW' + ns.slice(0, -1).join(', GW') + ' and GW' + ns[ns.length - 1];
+  const kind = f => byGw.filter(f).map(g => GAMEWEEKS[g.i].n);
+  const caught = recCount - rebuiltN;
+  const said = [];
+  if (caught > 0) said.push(`${gwList(kind(g => g.rows[0]?.recorded && !g.rows[0]?.rebuilt))} ${caught === 1 ? 'is' : 'are'} the Committee's own ${caught === 1 ? 'word' : 'words'}, recorded at the deadline and never touched since`);
+  if (rebuiltN > 0) said.push(`${gwList(kind(g => g.rows[0]?.rebuilt))} ${rebuiltN === 1 ? 'predates that ledger and was' : 'predate that ledger and were'} rebuilt afterwards and frozen &mdash; a reconstruction rather than a claim, but ${rebuiltN === 1 ? 'it can' : 'they can'} no longer move`);
+  if (liveN > 0) said.push(`${gwList(kind(g => !g.rows[0]?.recorded))} ${liveN === 1 ? 'is' : 'are'} still rebuilt on every visit and can still shift as the feed changes`);
+  const provenance = (said.length ? said.join('. ').replace(/^./, c => c.toUpperCase()) + '.' : '')
+    + (rebuiltN || liveN ? ' A rebuild winds the season back to that deadline and asks the same projection that draws the win bar, blind to everything after it.' : '');
   const pct = (n, d) => d ? Math.round((n / d) * 100) : 0;
   const tick = ok => `<span class="${ok ? 'gold' : 'muted'}" style="font-weight:700">${ok ? '&#10003;' : '&#10007;'}</span>`;
 
@@ -11980,7 +12009,7 @@ function predictionCard() {
 
   return `<div class="card" style="margin-bottom:18px">
     <h2>Prediction Accuracy <span class="muted" style="font-weight:400;font-size:12px">${run} of ${runOf} &middot; ${pct(run, runOf)}%</span></h2>
-    <p class="muted" style="font-size:11.5px;margin:0 0 10px">${recCount ? `${recCount === byGw.length ? 'Every round below is' : `${recCount} of these ${byGw.length} rounds ${recCount === 1 ? 'is' : 'are'}`} the Committee's own words, recorded at the deadline and never touched since.${recCount < byGw.length ? ' The rest predate that ledger and are rebuilt: the season is wound back to the deadline and the same projection that draws the win bar is asked again, blind to everything after it.' : ''}` : 'Every round below is rebuilt from scratch: the season is wound back to that deadline and the same projection that draws the win bar is asked again, blind to everything after it. Rounds from here on are recorded at the deadline instead, so they can never drift.'}</p>
+    <p class="muted" style="font-size:11.5px;margin:0 0 10px">${provenance}</p>
 
     <p class="muted" style="font-size:11px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">Week by week</p>
     <div style="overflow-x:auto"><table class="pool-table">
@@ -12014,7 +12043,7 @@ function predictionCard() {
       </tr>`).join('')}</tbody>
     </table></div>
 
-    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. ${recCount === byGw.length ? '' : newsGap.length ? `The treatment room is wound back too, from the team news frozen at each deadline &mdash; except ${newsGap.map(i => 'GW' + GAMEWEEKS[i].n).join(', ')}, which ${newsGap.length === 1 ? 'predates' : 'predate'} that record and ${newsGap.length === 1 ? 'reads' : 'read'} today's flags instead.` : 'The treatment room is wound back too, from the team news frozen at each deadline.'} What cannot be wound back is the predicted line-ups, which are kept for the open round only, so a rebuilt projection does without them.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:10px">The call is whichever of win, draw or loss came out highest, so a tie is a result the Committee could have named rather than an excuse. ${newsGap.length ? `${newsGap.map(i => 'GW' + GAMEWEEKS[i].n).join(', ')} ${newsGap.length === 1 ? 'predates' : 'predate'} the team-news record, so ${newsGap.length === 1 ? 'it was' : 'they were'} marked against the flags as they stood when ${newsGap.length === 1 ? 'it was' : 'they were'} worked out rather than at the deadline.` : 'The treatment room is wound back too, from the team news frozen at each deadline.'} What cannot be wound back is the predicted line-ups, which are kept for the open round only, so a rebuilt projection does without them.</p>
   </div>`;
 }
 /* ----- who keeps turning up in those elevens -----
