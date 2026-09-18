@@ -364,8 +364,16 @@ const chk = (name, ok, detail = '') => {
         /rebuilt/.test(rowFor(GAMEWEEKS[0].n)?.textContent || ''));
       t('and does not call a recorded one rebuilt',
         !/rebuilt/.test(rowFor(gwN)?.textContent || ''));
-      t('the card counts how many rounds are the Committee\'s own words',
-        /1 of these 5 rounds is the Committee's own words/.test(txt), txt.slice(0, 220));
+      /* It used to COUNT the recorded rounds ("1 of these 5"). It now NAMES
+         them, which is the more useful reading once some rounds are recorded,
+         some frozen reconstructions and some still drifting — a count cannot
+         tell a reader which of the five the fixed one is. */
+      t('the card names the recorded round as the Committee\'s own',
+        new RegExp(`GW${gwN} is the Committee's own word, recorded at the deadline`).test(txt),
+        txt.slice(0, 220));
+      t('and names the others as still capable of shifting',
+        /still rebuilt on every visit and can still shift/.test(txt)
+        && !new RegExp(`GW${gwN}[^.]*still rebuilt`).test(txt));
       t('and a recorded round shows the projection it published',
         /proj 50&ndash;44|proj 50–44/.test(card.innerHTML));
 

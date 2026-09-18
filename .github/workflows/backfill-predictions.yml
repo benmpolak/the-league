@@ -1,0 +1,63 @@
+# Freeze the prediction rounds that were never captured at their deadline.
+#
+# Marc, 18 Sept 2026: "why does the prediction tracker keep changing, that
+# shouldnt be possible." It was changing because nothing before GW5 was ever
+# written down, so every earlier round was rebuilt from scratch on each page
+# load — off a feed that moves. scripts/backfill_predictions.js rebuilds each
+# settled round once and writes it to the ledger, after which it cannot move.
+#
+# ONE SHOT, BY HAND. There is no schedule here on purpose: this exists to fill
+# a hole that only exists once. From GW5 the deadline capture in fpl.yml does
+# the job properly, and a round already in the ledger is never rewritten, so
+# running this again is a no-op rather than a hazard.
+#
+# ORDER MATTERS. Do not run this until the app change that tells a frozen
+# RECONSTRUCTION apart from a real deadline RECORD is live. Run it before, and
+# the site will describe these rounds as "the Committee's own words, recorded
+# at the deadline", which is not what they are.
+name: Freeze the un-captured prediction rounds
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Print what would be written and change nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: backfill-predictions
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci --no-audit --no-fund
+      - name: Rebuild every settled round and freeze it
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: |
+          if [ "${{ inputs.dry }}" = "true" ]; then
+            node scripts/backfill_predictions.js --dry
+          else
+            node scripts/backfill_predictions.js
+          fi
+      - name: Commit the ledger
+        if: ${{ inputs.dry == false }}
+        run: |
+          git config user.name 'fpl-bot'
+          git config user.email 'actions@github.com'
+          git add data/predictions.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'predictions: freeze the rounds that were never captured'
+            git push
+          else
+            echo 'nothing to freeze — every settled round was already in the ledger'
+          fi
