@@ -4116,19 +4116,24 @@ function vidiLines(gwIdx) {
       score = ` — ${TEAM_BY_NAME[fx.home]?.short || fx.home} ${fx.hs}\u2013${fx.as} ${TEAM_BY_NAME[fx.away]?.short || fx.away}`;
     const at = fx ? `${TEAM_BY_NAME[fx.home]?.short || fx.home} v ${TEAM_BY_NAME[fx.away]?.short || fx.away}` : `GW${gwN}`;
     const sortKick = fx && fx.date ? Date.parse(fx.date) : 0;
-    out.push({ key: `${gwN}:${p.id}`, at, live, sortKick, pts,
+    const order = { at, live, sortKick, matchKey: String(fx?.id ?? p.team), playerName: p.name, playerId: p.id };
+    out.push({ key: `${gwN}:${p.id}`, ...order, pts,
       txt: `${bits.join(' \u00b7 ')} — ${p.name} (${p.club}) — ${who}${haul}${score}` });
     // the Lobus Klaxon: declarations are GONE (Marc, UAT night — "remove the
     // declare my lobus"); it fires off the certified registry instead, so the
     // gag needs no admin. Big units only. Derived like everything else, so the
     // line is on the tape for a man who scored before you opened the app.
     if ((s.g || 0) > 0 && p.pos === 'FW' && LOBUS_LIST.some(l => normName(p.name).includes(l)))
-      out.push({ key: `${gwN}:${p.id}:lobus`, at, live, sortKick, pts: 99,
+      out.push({ key: `${gwN}:${p.id}:lobus`, ...order, pts: 99,
         txt: `\u{1F6A8}\u{1F4EF} LOBUS KLAXON \u{1F4EF}\u{1F6A8} ${p.name} — certified lobus — has SCORED. Great feet for a big man.` });
   }
-  // live matches on top, then the most recent kickoff; within a match the
-  // biggest story first. Stable, and identical wherever it is computed.
-  out.sort((a, b) => (b.live - a.live) || (b.sortKick - a.sortKick) || (b.pts - a.pts) || a.key.localeCompare(b.key));
+  // Ben, 19 Sept: points updates shuffled old incidents and simultaneous
+  // kickoffs interleaved different games. Keep each match together, then
+  // players in name order, with a scorer's klaxon beside his own line.
+  out.sort((a, b) => (b.live - a.live) || (b.sortKick - a.sortKick)
+    || a.matchKey.localeCompare(b.matchKey, 'en', { numeric: true })
+    || a.playerName.localeCompare(b.playerName, 'en') || (a.playerId - b.playerId)
+    || a.key.localeCompare(b.key, 'en'));
   return out;
 }
 /* The klaxon SOUND still needs a before-and-after — a noise is a live moment,

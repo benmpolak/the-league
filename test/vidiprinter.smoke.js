@@ -151,6 +151,46 @@ let pass = 0, fail = 0;
         now && /RED CARD/.test(now.txt) && /booked/.test(now.txt), now ? now.txt.slice(0, 80) : 'gone');
     })();
 
+    /* Ben, 19 Sept: a clean-sheet points update must not promote an old
+       booking, and simultaneous kickoffs must not mix different matches. */
+    (() => {
+      const ev = matchday();
+      const defenders = PLAYERS.filter(p => p.pos === 'DF' && p.team === TEAMS[0].name).slice(0, 2);
+      t('two same-match defenders exist for the ordering regression', defenders.length === 2);
+      if (defenders.length !== 2) return;
+      ev.playerStats = Object.fromEntries(defenders.map(p => [p.id, { ...blank(), yc: 1 }]));
+      const before = vidiLines(0);
+      const lastId = before[1].playerId;
+      ev.playerStats[lastId].cs = 1;
+      const after = vidiLines(0);
+      t('clean-sheet points really changed in the ordering regression', after.find(l => l.playerId === lastId).pts > before[1].pts);
+      t('existing incidents keep their order when fantasy points change',
+        JSON.stringify(before.map(l => l.key)) === JSON.stringify(after.map(l => l.key)));
+      const keys = after.map(l => l.key);
+      ev.playerStats = Object.fromEntries(Object.entries(ev.playerStats).reverse());
+      t('arrival order does not change the tape', JSON.stringify(vidiLines(0).map(l => l.key)) === JSON.stringify(keys));
+    })();
+
+    (() => {
+      const ev = matchday();
+      const fixtures = state.fixtures.slice(0, 2);
+      const pairs = fixtures.map(f => PLAYERS.filter(p => p.pos === 'DF' && p.team === f.home).slice(0, 2));
+      t('two simultaneous fixtures have players for the grouping regression', pairs.every(ps => ps.length === 2));
+      if (!pairs.every(ps => ps.length === 2)) return;
+      ev.playerStats = {
+        [pairs[0][0].id]: { ...blank(), g: 3 }, [pairs[0][1].id]: { ...blank(), yc: 1 },
+        [pairs[1][0].id]: { ...blank(), g: 2 }, [pairs[1][1].id]: { ...blank(), a: 1 },
+      };
+      const lines = vidiLines(0);
+      const groups = lines.filter((l, i) => i === 0 || l.at !== lines[i - 1].at).map(l => l.at);
+      t('simultaneous matches stay in two contiguous groups', groups.length === 2 && new Set(groups).size === 2, groups.join(' | '));
+      fixtures[0].fp = true;
+      t('a live match remains above a finished match', vidiLines(0)[0].matchKey === String(fixtures[1].id));
+      fixtures[0].fp = false;
+      fixtures[1].date = new Date(Date.parse(fixtures[0].date) + 60000).toISOString();
+      t('more recent kickoffs still lead when both matches are live', vidiLines(0)[0].matchKey === String(fixtures[1].id));
+    })();
+
     /* ----- the fixture replaces the device clock ----- */
     (() => {
       const ev = matchday();
@@ -182,6 +222,8 @@ let pass = 0, fail = 0;
       t('a lobus who scored before you opened the app is on the tape',
         lines.some(l => /LOBUS KLAXON/.test(l.txt)),
         lines.map(l => l.txt.slice(0, 30)).join(' | ') || 'nothing');
+      t('the printed klaxon stays beside its scorer',
+        lines.findIndex(l => l.key.endsWith(':lobus')) === lines.findIndex(l => l.key === `1:${lob.id}`) + 1);
       // ...and rendering it must NOT set the klaxon off
       vidiCard(); vidiCard();
       t('but rendering historic goals never sounds the klaxon',

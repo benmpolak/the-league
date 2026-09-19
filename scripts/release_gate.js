@@ -11,7 +11,7 @@ const { execFileSync, spawnSync } = require('child_process');
 const { isDeepStrictEqual } = require('util');
 const Feed = require('../functions/feedcheck.js');
 const ROOT = path.resolve(__dirname, '..');
-const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', 'data/fixtures.json', 'data/teamnews.json', 'data/predictions.json']);
+const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', 'data/fixtures.json', 'data/teamnews.json', 'data/predictions.json', 'data/lineups.json']);
 // Rendered podcast audio and its manifests are data too (Ben, 16 Sept 2026).
 // The render bot commits them with the workflow token, which never triggers
 // the test workflow, so counting them as code left the gate with no test run
@@ -41,6 +41,34 @@ function runState(run, jobs = []) {
   return ['browser', 'emulator'].every(name => jobs.some(j => j.name === name && j.conclusion === 'success')) ? 'ready' : 'failed';
 }
 
+function validateLineups(book) {
+  const object = v => v && typeof v === 'object' && !Array.isArray(v);
+  const text = (v, max) => typeof v === 'string' && v.length <= max;
+  const date = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
+  if (!object(book)) throw Error('lineups.json must be an object');
+  // The app treats an empty optional feed as no scouting input.
+  if (!Object.keys(book).length) return;
+  if (!object(book.clubs)) throw Error('lineups.json must contain a clubs object');
+  if ((book.source != null && (!text(book.source, 200) || !/^https:\/\//.test(book.source)))
+    || (book.fetched != null && (!text(book.fetched, 40) || !Number.isFinite(Date.parse(book.fetched))))) throw Error('lineups.json has invalid source metadata');
+  // A forced fetch has no slot; the scheduled fetch names its deadline window.
+  if (book.slot != null && (!text(book.slot, 30) || !/^gw[1-9]\d?-T\d{1,3}h$/.test(book.slot))) throw Error('lineups.json has an invalid fetch slot');
+  const clubs = Object.entries(book.clubs);
+  if (clubs.length && (clubs.length < 12 || clubs.length > Feed.LIMITS.teams)) throw Error('lineups.json has an invalid club count');
+  for (const [code, row] of clubs) {
+    if (!/^[A-Z]{2,4}$/.test(code) || !object(row)) throw Error('lineups.json has an invalid club entry');
+    if (!Array.isArray(row.xi) || row.xi.length < 8 || row.xi.length > 11
+      || !row.xi.every(id => Number.isInteger(id) && id > 0 && id <= 99999999)
+      || new Set(row.xi).size !== row.xi.length) throw Error(`lineups.json ${code} has an invalid predicted XI`);
+    if ((row.named != null && (!Number.isInteger(row.named) || row.named < row.xi.length || row.named > 11))
+      || (row.unmatched != null && (!Array.isArray(row.unmatched) || row.unmatched.length > 11 || !row.unmatched.every(name => text(name, 120))))
+      || !(row.formation == null || text(row.formation, 40))
+      || !(row.updated == null || text(row.updated, 120))
+      || !(row.updatedOn == null || date(row.updatedOn))) throw Error(`lineups.json ${code} has invalid prediction metadata`);
+  }
+}
+
 function validateFeed(read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')) {
   const data = Feed.parseJson(read('data/data.json'), 'data.json', Feed.LIMITS.dataBytes);
   Feed.validateData(data);
@@ -48,6 +76,14 @@ function validateFeed(read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')) {
   Feed.validateFixtures(Feed.parseJson(read('data/fixtures.json'), 'fixtures.json', Feed.LIMITS.dataBytes));
   const news = Feed.parseJson(read('data/teamnews.json'), 'teamnews.json', Feed.LIMITS.dataBytes);
   if (!news || typeof news !== 'object' || Array.isArray(news)) throw Error('teamnews.json must be an object');
+  // Ben, 19 Sept 2026: Scout's bot does not trigger CI either. Validate its
+  // JSON output before reusing tested code, as for the other feed writers.
+  // Stale dates and transferred player IDs are valid: scoutXI handles age,
+  // and the prediction may outlive the player feed it was matched against.
+  let lineups;
+  try { lineups = read('data/lineups.json'); }
+  catch (e) { if (e.code !== 'ENOENT') throw e; } // The browser also accepts an absent optional feed.
+  if (lineups !== undefined) validateLineups(Feed.parseJson(lineups, 'lineups.json', Feed.LIMITS.dataBytes));
   // the deadline ledger. A bot writes it, so it rides the feed exception and
   // has to be checked here instead: a round's odds must add up, or the card
   // would be quoting the Committee on something it never said.
