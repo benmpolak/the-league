@@ -228,6 +228,12 @@ const chk = (name, ok, detail = '') => {
               const pick = [of[a], of[b2], of[c2]];
               if (new Set(pick.map(x => x.id)).size !== 3) continue;
               if (new Set(pick.map(x => x.team)).size !== 3) continue;
+              // Ben, 19 Sept 2026: different clubs can share a fixture (the
+              // synthetic schedule pairs City with United). Keep the idle
+              // man's match separate from both clubs we are about to whistle.
+              const idleFixtures = fxOf(pick[1].team);
+              if (!idleFixtures.length || idleFixtures.some(f => [pick[0], pick[2]]
+                .some(p => f.home === p.team || f.away === p.team))) continue;
               trio = pick;
             }
         if (trio) break;

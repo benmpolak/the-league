@@ -20,13 +20,20 @@ const base = process.env.TEST_BASE_URL || 'http://localhost:8125';
     await page.evaluate(() => {
       window._chDemoSeeded = true;
       demoGwOverride = 2; whoami = state.managers[0].id;
+      // Ben, 19 Sept 2026: the demo loads the latest real stats, which can
+      // move the feed beyond this test's GW3 inbox. Keep the media scenario
+      // synthetic so both surfaces use the explicitly selected demo round.
+      state.matchStats = {};
       state.mediaCases = {}; state.pressers = {}; state.posts = [];
       state.pressers[whoami] = { '1:pre': { t: Date.now(), answers: [{ tone: 'confident', text: '<img src=x onerror="window.XSS=1"> We go again.' }] } };
       state.view = 'media'; render();
     });
+    assert.equal(await page.evaluate(() => vidiRound() ?? currentGwIndex()), 2, 'the feed and inbox share the synthetic round');
     assert.equal(await page.$$eval('.club-inbox', xs => xs.length), 1);
     assert.equal(await page.$eval('#clubMediaSend', b => b.disabled), true);
     assert.equal(await page.$eval('.club-letter', e => e.querySelectorAll('img').length), 0);
+    // Centre the control above the fixed mobile navigation before the real click.
+    await page.$eval('input[value="ban"]', e => e.scrollIntoView({ block: 'center', behavior: 'instant' }));
     await page.click('input[value="ban"]');
     // An incoming snapshot/render must not lose the selected answer.
     await page.evaluate(() => render());
