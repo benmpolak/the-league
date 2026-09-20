@@ -11543,6 +11543,9 @@ function bindAwardsBits() {
       () => toast('Minutes copied — paste straight into the chat'),
       () => { window.prompt('Copy the Minutes:', txt); });
   };
+  // Marc, 20 Sept 2026: "i want to see why" — the verdict is no use without it
+  const cw = $('#cotwWhy');
+  if (cw) cw.onclick = () => { const last = lastFinalGw(); if (last >= 0) showCotwSheet(last); };
   const tm = $('#trmMore');
   if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
   document.querySelectorAll('[data-trmpos]').forEach(b => b.onclick = () => { trmView.pos = b.dataset.trmpos; render(); });
@@ -12151,6 +12154,12 @@ function lastFinalGw() {
 // on all twelve phones. The stenographer declines to print the title in full.
 //
 // The draw survives only for weeks where nobody did anything chargeable.
+/* Charges from here down are STANDING: not news, and true again next week
+   whatever anybody does. They still belong on the sheet — a quiet week has to
+   land somewhere — but they are the reason a rap sheet is mostly a constant,
+   so the working marks them and the reader can see how much of a verdict is
+   this week's conduct and how much is simply the state of a squad. */
+const COTW_STANDING_FROM = 17;
 const COTW_DRAWS = [
   'no reason was recorded',
   'the Committee declines to elaborate',
@@ -12344,7 +12353,26 @@ function cotwCharges(i) {
   }
   return out;
 }
-function cotwFor(i) {
+/* ----- the working, in full -----
+   Marc, 20 Sept 2026: "Ian has cunt of the week 5 times and i want to see why."
+   A verdict with no working is just an accusation, and the man wearing it has
+   no way to argue. So the whole reckoning is computed in ONE place and both
+   the verdict and the sheet on screen are read off it — a second routine for
+   "why" would eventually disagree with the one that decides, and then the card
+   would be explaining a verdict nobody reached.
+
+   It also names WHICH RULE decided it, because that turns out to be the
+   interesting part: the gravest charge settles it far less often than the
+   tiebreaks underneath do, and a reader who cannot see that will think he was
+   picked for the offence at the top of his sheet. */
+const COTW_STAGES = {
+  gravity: 'on the gravest charge of the week — no tiebreak needed',
+  weight: 'on the severity of the charge, the gravity being level',
+  rapCount: 'on the number of charges against him, the top charge being level',
+  rapWeight: 'on the total weight of his sheet, everything above it being level',
+  managerId: 'on the order of the manager list, everything else being dead level',
+};
+function cotwWorking(i) {
   if (!state.managers.length) return null;
   // no verdict on a round this device is only holding half of. Standing down
   // the minutes charges is not enough on its own — a stale phone would simply
@@ -12359,20 +12387,96 @@ function cotwFor(i) {
   if (sheet.length) {
     const rap = {};
     for (const c of sheet) {
-      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0 };
+      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0, standing: 0 };
       r.n++; r.w += c.weight;
+      if (c.gravity >= COTW_STANDING_FROM) r.standing++;
     }
     sheet.sort((a, b) => a.gravity - b.gravity || b.weight - a.weight
       || rap[b.id].n - rap[a.id].n || rap[b.id].w - rap[a.id].w || a.id - b.id);
     const top = sheet[0];
-    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1 };
+    /* Walk the same chain the sort just walked and note where the field
+       narrows to one man. Read off the sorted sheet rather than re-deciding:
+       whatever the sort did IS the answer, and this only reports it. */
+    const uniq = s => new Set(s.map(c => c.id)).size;
+    let pool = sheet.filter(c => c.gravity === top.gravity);
+    let stage = 'gravity';
+    if (uniq(pool) > 1) {
+      pool = pool.filter(c => c.weight === top.weight); stage = 'weight';
+      if (uniq(pool) > 1) {
+        const mx = Math.max(...pool.map(c => rap[c.id].n));
+        pool = pool.filter(c => rap[c.id].n === mx); stage = 'rapCount';
+        if (uniq(pool) > 1) {
+          const mw = Math.max(...pool.map(c => rap[c.id].w));
+          pool = pool.filter(c => rap[c.id].w === mw); stage = 'rapWeight';
+          if (uniq(pool) > 1) stage = 'managerId';
+        }
+      }
+    }
+    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1,
+      stage, sheet, rap,
+      // everyone who reached the last rung with him, him included
+      level: [...new Set(pool.map(c => c.id))],
+      mine: sheet.filter(c => c.id === top.id) };
   }
   // a week in which the league behaved itself. The trophy still needs a home,
   // so the Committee draws lots — seeded off the gameweek the way chantFor is,
   // because Math.random() would name a different man on every phone
   const seed = (i * 2246822519 + 3266489917) >>> 0;
   const m = state.managers[seed % state.managers.length];
-  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false } : null;
+  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false,
+    sheet: [], rap: {}, mine: [], level: [m.id] } : null;
+}
+// kept as a declaration, not a const: it is reached from render paths that run
+// before this point in the file and a temporal-dead-zone crash here would take
+// the whole Data room with it
+function cotwFor(i) { return cotwWorking(i); }
+/* ----- the charge sheet, opened up -----
+   Marc, 20 Sept 2026: "i want to see why." The card used to give the verdict
+   and a count of "other matters", which tells a man he has been convicted and
+   nothing about what of. This shows the lot: every charge against him, which
+   rule actually decided it, and who else was level when it did.
+
+   The last of those is the one that changes minds. Most weeks are not settled
+   by the offence printed at the top — they are settled by a tiebreak several
+   rungs below it, and a reader who cannot see that will assume the headline
+   charge is the reason he has it. */
+function showCotwSheet(i) {
+  const w = cotwWorking(i);
+  if (!w) return;
+  $('#cotwOverlay')?.remove();
+  const nm = id => esc(teamName(id) || managerName(id));
+  const charge = c => `<tr>
+    <td class="num muted" style="white-space:nowrap">${c.gravity}</td>
+    <td>${esc(c.why)}${c.gravity >= COTW_STANDING_FROM ? ' <span class="muted" style="font-size:10px">&middot; standing</span>' : ''}</td>
+    <td class="num muted">${c.weight}</td>
+  </tr>`;
+  const mineStanding = w.mine.filter(c => c.gravity >= COTW_STANDING_FROM).length;
+  const rivals = (w.level || []).filter(id => id !== w.id);
+  const body = !w.proven
+    ? `<p class="muted" style="font-size:12.5px">Nobody offended at all this week, so the Committee drew lots. There is no sheet, and no appeal.</p>`
+    : `<p style="font-size:12.5px;margin:0 0 10px">Decided <b>${COTW_STAGES[w.stage] || 'on the sheet'}</b>.</p>
+      ${rivals.length ? `<p class="muted" style="font-size:11.5px;margin:0 0 10px">Level with him at that point: ${rivals.map(nm).join(', ')}. ${w.stage === 'managerId' ? 'Nothing separated them at all, so it fell to the order of the manager list.' : 'He was separated from them by the rule above.'}</p>` : ''}
+      <p class="muted" style="font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.08em">Everything on his sheet (${w.mine.length})</p>
+      <div style="overflow-x:auto"><table class="pool-table">
+        <thead><tr><th style="width:12%">Grav</th><th>Charge</th><th style="width:14%">Weight</th></tr></thead>
+        <tbody>${w.mine.map(charge).join('')}</tbody>
+      </table></div>
+      <p class="muted" style="font-size:10.5px;margin-top:8px">${mineStanding} of these ${w.mine.length} are <b>standing</b> charges &mdash; true again next week whatever he does, because they describe a squad rather than a week. They count toward the tiebreak, which is why a man can keep collecting this without doing anything new.</p>`;
+  const ov = document.createElement('div');
+  ov.id = 'cotwOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card" style="max-width:520px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; the working</p>
+      <button class="btn ghost small" id="cotwClose">&#10005;</button>
+    </div>
+    <h2 style="margin:0 0 2px">&#128683; ${nm(w.id)}</h2>
+    <p class="muted" style="font-size:12px;margin:0 0 12px">${esc(w.why)}</p>
+    ${body}
+  </div>`;
+  ov.onclick = e => { if (e.target === ov || e.target.id === 'cotwClose') closeOv(ov); };
+  document.body.appendChild(ov);
+  pushOvState();
 }
 function weeklyAwards(last) {
   const scores = state.managers.map(m => ({ id: m.id, s: gwManagerPoints(m.id, last), waste: benchWaste(m.id, last) }));
@@ -12486,7 +12590,7 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
-      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''}`) : ''}
+      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''} <button class="btn ghost small" id="cotwWhy" style="margin-left:4px;vertical-align:middle">See the working</button>`) : ''}
     </div>
     ${cotw ? `<p class="muted" style="font-size:10.5px;margin-top:6px"><b>C*** of the Week:</b> charged on the week's evidence — team sheets, the transfer log, the fixture list and the clock — and ranked by gravity, not by score. You cannot earn it by playing badly, only by being annoying about it, and you keep it for as long as you keep earning it.${cotw.proven ? '' : ' Nobody offended this week, so the Committee drew lots.'} No appeal.</p>` : ''}
     ${sa ? `${sect('Season so far')}
