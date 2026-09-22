@@ -10107,15 +10107,45 @@ function transferWindowFacts(t, horizon) {
   }
   if (gws.length < horizon) return null; // window not complete — no judgement yet
   const batch = tradeBatchOf(t);
-  const sum = (pid, realised) => gws.reduce((tot, g) => {
+  /* ----- a deal is worth what it brought you WHILE YOU HELD IT -----
+     Marc, 22 Sept 2026: "it doesnt account for when a player you transfer in
+     is then released. you have ian taking murillo for simms as plus 10 but he
+     barely owned murillo."
+
+     Right, and it flattered every flip in the league. The window used to sum
+     six gameweeks of the incoming man whether he was still on the books or
+     long gone, so a manager could take a player, bin him a week later, and
+     still be credited with everything he went on to score for somebody else.
+
+     So: each incoming man counts only in the weeks he was actually owned, and
+     the deal's window CLOSES when the last man taken in it leaves. Both sides
+     are then read over that same shortened window — truncating only the
+     incoming half would swing the lie the other way, marking one week of
+     Murillo against six of Simms and calling every sale a disaster. */
+  const squadIds = new Map(gws.map(g => [g, new Set(squadAt(t.managerId, g).map(p => p && p.id))]));
+  const owned = (pid, g) => squadIds.get(g)?.has(pid);
+  const inIds = batch.map(b => b.inId).filter(id => PLAYER_BY_ID[id]);
+  const heldFor = pid => gws.filter(g => owned(pid, g));
+  // the deal is in force while he still holds at least one of the men he took
+  const live = gws.filter(g => inIds.some(id => owned(id, g)));
+  const sum = (pid, list, realised) => list.reduce((tot, g) => {
     if (realised && !effectiveXI(t.managerId, g).xi.includes(pid)) return tot;
     return tot + gwPlayerPoints(pid, g);
   }, 0);
-  const apps = pid => gws.reduce((n, g) => n + (appearedInGw(pid, g) ? 1 : 0), 0);
-  const inn = batch.map(b => ({ p: PLAYER_BY_ID[b.inId], pts: sum(b.inId), xi: sum(b.inId, true), apps: apps(b.inId) })).filter(x => x.p);
-  const out = batch.map(b => ({ p: PLAYER_BY_ID[b.outId], pts: sum(b.outId), apps: apps(b.outId) })).filter(x => x.p);
+  const apps = (pid, list) => list.reduce((n, g) => n + (appearedInGw(pid, g) ? 1 : 0), 0);
+  const inn = batch.map(b => {
+    const mine = heldFor(b.inId);
+    const gone = gws.filter(g => !mine.includes(g));
+    return { p: PLAYER_BY_ID[b.inId], pts: sum(b.inId, mine), xi: sum(b.inId, mine, true),
+      apps: apps(b.inId, mine), held: mine.length,
+      // what he went on to score once he was somebody else's problem. Not in
+      // the net — it is the sentence the league actually wants to read
+      after: sum(b.inId, gone) };
+  }).filter(x => x.p);
+  const out = batch.map(b => ({ p: PLAYER_BY_ID[b.outId], pts: sum(b.outId, live), apps: apps(b.outId, live) })).filter(x => x.p);
   const inPts = inn.reduce((a, x) => a + x.pts, 0), outPts = out.reduce((a, x) => a + x.pts, 0);
-  return { gws, inn, out, inPts, outPts, diff: inPts - outPts, batch };
+  return { gws, inn, out, inPts, outPts, diff: inPts - outPts, batch,
+    live: live.length, full: gws.length, shortened: live.length < gws.length };
 }
 function transferVerdict(wf, horizon) {
   const d = wf.diff;
@@ -10132,10 +10162,13 @@ function reportCardHtml(t) {
   const w6 = transferWindowFacts(t, 6);
   const windowRow = (wf, label) => {
     if (!wf) return '';
-    const inTxt = wf.inn.map(x => `${esc(x.p.name)} ${x.pts}${x.apps === 0 ? ' (never appeared)' : ''}${x.xi < x.pts ? ` — ${x.xi} of them in the XI` : ''}`).join(', ');
+    const inTxt = wf.inn.map(x => `${esc(x.p.name)} ${x.pts}${x.apps === 0 && x.held ? ' (never appeared)' : ''}${x.held === 0 ? ' (moved on before a ball was kicked)' : x.held < wf.full ? ` — held ${x.held} of ${wf.full}` : ''}${x.xi < x.pts ? ` — ${x.xi} of them in the XI` : ''}`).join(', ');
     const outTxt = wf.out.length ? wf.out.map(x => `${esc(x.p.name)} ${x.pts}${x.apps === 0 ? ' (never appeared)' : ''}`).join(', ') : '—';
+    // what he did after he was let go — the first thing anybody asks, and the
+    // number the old full-window sum used to quietly credit to this deal
+    const sold = wf.inn.filter(x => x.held < wf.full && x.after > 0);
     return `<div class="lrow" style="font-size:12px;flex-wrap:wrap"><span class="tag">${label}</span>
-      <span>in: <b>${inTxt}</b> &middot; out: ${outTxt} &middot; net <b>${wf.diff >= 0 ? '+' : ''}${wf.diff}</b> — <b>${esc(transferVerdict(wf, wf.gws.length))}</b></span></div>`;
+      <span>in: <b>${inTxt}</b> &middot; out: ${outTxt} &middot; net <b>${wf.diff >= 0 ? '+' : ''}${wf.diff}</b> — <b>${esc(transferVerdict(wf, wf.gws.length))}</b>${wf.shortened ? ` <span class="muted">(judged over the ${wf.live} gameweek${wf.live === 1 ? '' : 's'} he held ${wf.live === 1 ? 'him' : 'them'}, not ${wf.full})</span>` : ''}${sold.length ? ` <span class="muted">&middot; ${sold.map(x => `${esc(x.p.name)} scored ${x.after} after leaving`).join(', ')}</span>` : ''}</span></div>`;
   };
   const body = (w6 ? windowRow(w6, '6 GWs') : '') + (w3 ? windowRow(w3, '3 GWs') : '');
   return body || `<div class="lrow muted" style="font-size:12px">Report card opens after three completed gameweeks from GW${GAMEWEEKS[t.gw]?.n ?? '?'} — the Gazette does not judge early. Much.</div>`;
@@ -13799,7 +13832,7 @@ function tradeRecordCard() {
         <td>${deal(r.worst)}</td>
       </tr>`).join('')}</tbody>
     </table></div>
-    <p class="muted" style="font-size:10.5px;margin-top:6px">Net is points in minus points shipped, over each move's review window &mdash; six gameweeks where that has closed, three where it hasn't. ${tradeView.scope === 'trades' ? 'Trades only: the one move type with an opponent on the other end.' : 'All completed business, including waivers and the Trough &mdash; where the discard goes back to the pool and nobody gains.'}</p>
+    <p class="muted" style="font-size:10.5px;margin-top:6px">Net is points in minus points shipped, over each move's review window &mdash; six gameweeks where that has closed, three where it hasn't. A man you moved on again counts only for the weeks you actually held him, and the window closes with him: what he scored afterwards is somebody else's business, not your profit (Marc, 22 Sept 2026). ${tradeView.scope === 'trades' ? 'Trades only: the one move type with an opponent on the other end.' : 'All completed business, including waivers and the Trough &mdash; where the discard goes back to the pool and nobody gains.'}</p>
   </div>`;
 }
 function troughActivityCard() {
@@ -14576,7 +14609,7 @@ function showPlayerCard(pid) {
       for (const t of state.transfers) {
         if (t.inId === pid) {
           const wf = transferWindowFacts(t, 6) || transferWindowFacts(t, 3);
-          hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'taken on waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}${wf ? ` — the report card reads ${transferVerdict(wf, wf.gws.length)} (${wf.diff >= 0 ? '+' : ''}${wf.diff} over ${wf.gws.length})` : ''}`);
+          hist.push(`GW${GAMEWEEKS[t.gw].n}: ${t.trade ? 'traded to' : t.waiver ? 'taken on waivers by' : 'signed from the Trough by'} ${teamName(t.managerId)}${wf ? ` — the report card reads ${transferVerdict(wf, wf.gws.length)} (${wf.diff >= 0 ? '+' : ''}${wf.diff} over ${wf.live}${wf.shortened ? ` of ${wf.full}, the rest after he was moved on` : ''})` : ''}`);
         }
         else if (t.outId === pid && !t.trade) hist.push(`GW${GAMEWEEKS[t.gw].n}: dropped by ${teamName(t.managerId)}`);
       }
