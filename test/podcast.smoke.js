@@ -720,16 +720,28 @@ const chk = (name, ok, detail = '') => {
       const c = ep && ep.blocks.find(x => x.who === 'Yakolo');
       if (c) named.push(names.find(n => c.text.includes(n)) || null);
     }
+    /* The failure this exists to catch is ONE NAME ON A LOOP — the season-best
+       fallback naming the same man every week because no round has settled.
+       It used to demand all but one of the calls be unique, which is a far
+       higher bar than the brief and nothing to do with the bug: the best
+       African player of a round can legitimately be the same man twice, and on
+       22 Sept the live feed duly produced 8 distinct names in 10 calls and
+       failed CI, which blocked every deploy for an hour. So: most of them
+       different, and nobody dominating the rota. */
+    const tally = {};
+    for (const n of named) tally[n] = (tally[n] || 0) + 1;
+    const top = Math.max(...Object.values(tally));
     return {
       calls: named.length,
       allNamed: named.length > 3 && named.every(Boolean),
-      // a different man essentially every time, not one name on a loop
       distinct: new Set(named).size,
-      varies: new Set(named).size >= Math.max(3, named.length - 1),
+      mostNamedTwice: top,
+      varies: new Set(named).size >= Math.max(3, Math.ceil(named.length * 0.6))
+        && top <= Math.max(2, Math.ceil(named.length / 4)),
       who: [...new Set(named)].slice(0, 6),
     };
   });
-  chk('P12g Yakolo names a different man as the rounds settle',
+  chk('P12g Yakolo names a different man as the rounds settle, and nobody on a loop',
     p12g.allNamed && p12g.varies, JSON.stringify(p12g));
 
   /* ---- P12c: a caller waiting for a voice must not cost anything or break

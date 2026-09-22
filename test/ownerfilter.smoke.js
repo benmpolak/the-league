@@ -80,18 +80,24 @@ const chk = (name, ok, detail = '') => {
     state.view = 'transfers'; render();
     ok('the Trough has the same filter', !!document.querySelector('#trOwner'));
     const trText = () => (document.querySelector('#trResults') || document.body).textContent || '';
+    /* Who is actually ON the list, by id. Reading names out of the rendered
+       text cannot do this: "Raya" is a substring of "Rayan", so a squad member
+       called Rayan made the filter look leaky and failed CI on 22 Sept, which
+       blocked every deploy. Rows carry the player id, so ask for that. */
+    const trIds = () => new Set([...(document.querySelector('#trResults') || document.body)
+      .querySelectorAll('[data-pcard]')].map(e => +e.dataset.pcard));
     transfersView.owner = me; transfersView.limit = 300; render();
     const myMen = squadOf(me);
-    ok('it lists every man in the chosen squad', myMen.every(p => trText().includes(p.name)),
-      myMen.filter(p => !trText().includes(p.name)).map(p => p.name).join(', ') || 'all present');
+    ok('it lists every man in the chosen squad', myMen.every(p => trIds().has(p.id)),
+      myMen.filter(p => !trIds().has(p.id)).map(p => p.name).join(', ') || 'all present');
     const outsider = PLAYERS.find(p => !mine.has(p.id) && (p.pts || 0) > 20);
-    ok('and nobody outside it', outsider ? !trText().includes(outsider.name) : true,
+    ok('and nobody outside it', outsider ? !trIds().has(outsider.id) : true,
       outsider ? outsider.name : 'no outsider to test with');
     // a squad the Trough would normally hide entirely: owned men are not free agents
     transfersView.owner = him; render();
     ok('another manager\'s squad shows even though the Trough hides owned men by default',
-      squadOf(him).every(p => trText().includes(p.name)),
-      squadOf(him).filter(p => !trText().includes(p.name)).map(p => p.name).join(', ') || 'all present');
+      squadOf(him).every(p => trIds().has(p.id)),
+      squadOf(him).filter(p => !trIds().has(p.id)).map(p => p.name).join(', ') || 'all present');
     transfersView.owner = null; transfersView.limit = 20; render();
     ok('(control: off again and the Trough is the Trough)',
       !squadOf(him).every(p => trText().includes(p.name)));
