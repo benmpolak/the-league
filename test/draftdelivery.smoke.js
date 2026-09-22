@@ -64,15 +64,27 @@ const chk = (name, ok, detail = '') => {
     t('the place counts the WHOLE feed, not just the men taken',
       rows.fieldSize === PLAYERS.length && PLAYERS.length > rows.length,
       `field ${rows.fieldSize}, drafted ${rows.length}`);
+    /* This used to hunt the demo for a drafted man who happened to be outscored
+       by free agents. He does not exist: the demo only fabricates stats for men
+       who were DRAFTED, so every free agent sits on nought and the precondition
+       could never be met — it failed CI on 22 Sept and blocked every deploy.
+       Prove the mechanism instead of waiting for the data to show it: push
+       undrafted men above a pick and watch him fall by exactly that many. */
     t('and a pick outscored by free agents is placed below them',
       (() => {
-        // find a drafted man with undrafted players above him, and check his
-        // place leaves room for them
         const draftedIds = new Set(rows.map(r => r.p.id));
-        const worst = rows.reduce((a, b) => (b.pts < a.pts ? b : a), rows[0]);
-        const freeAbove = PLAYERS.filter(p => !draftedIds.has(p.id) && playerPoints(p.id).pts > worst.pts).length;
-        return freeAbove > 0 && worst.rank > freeAbove;
-      })(), 'free agents are counted ahead of him');
+        const mark = rows.find(r => r.rank > 1 && r.pts > 0) || rows[0];
+        const free = PLAYERS.filter(p => !draftedIds.has(p.id)).slice(0, 5);
+        if (!free.length) return false;
+        const gwN = GAMEWEEKS[0].n;
+        const ps = state.matchStats['gw' + gwN].playerStats;
+        const before = mark.rank;
+        for (const p of free) ps[p.id] = { min: 90, st: 1, g: 20, a: 20, cs: 1 };
+        const after = draftDelivery().find(r => r.p.id === mark.p.id).rank;
+        for (const p of free) delete ps[p.id];
+        const restored = draftDelivery().find(r => r.p.id === mark.p.id).rank;
+        return after === before + free.length && restored === before;
+      })(), 'five free agents leapfrogging a pick push him exactly five places down');
     // level scores share a place, and a better score never gets a worse one
     (() => {
       const byPts = {};
