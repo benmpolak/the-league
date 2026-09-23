@@ -9859,17 +9859,7 @@ function viewDash() {
           : `<b>${offersIn.length} offers</b> on your desk &mdash; your players are wanted men`}</span>
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
-      ${gazetteUnread() ? `<button type="button" class="gz-nudge" id="gzNudge">
-        <span class="gz-nudge-tag">NEW</span>
-        <span class="gz-nudge-copy"><b>${esc(String(progTodays()?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${(() => {
-          // the lead headline, lifted from the paper so the nudge can never
-          // promise a story the edition does not carry
-          const sc = document.createElement('div'); sc.innerHTML = progTodays()?.article || '';
-          const h = sc.querySelector('.prog-head')?.textContent || '';
-          return h ? ` &mdash; ${esc(h)}` : '';
-        })()}</span>
-        <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
-      </button>` : ''}
+      <div id="gazetteNudgeSlot" aria-live="polite">${gazetteNudge()}</div>
       ${(() => {
         // the press are waiting (Ben, 4 Sep: "it should flash up before game
         // week and after game week to do the pressers, not obligatory")
@@ -10367,6 +10357,7 @@ const progMasthead = (edition, gwN) => `<div class="prog-plate">
 </div>`;
 // what's on today's front step: {edition, gwN, article} or null
 function progTodays() {
+  if (typeof GazetteBreak !== 'undefined' && GazetteBreak.live()) return GazetteBreak.edition();
   const cur = currentGwIndex();
   const pick = (arr, seed) => arr[seed % arr.length];
   if ((gwDeadlinePassed(cur) || gwUnderway(cur)) && gwStatus(cur) !== 'final') {
@@ -10403,9 +10394,59 @@ function progTodays() {
    gameweek, so the marker clears itself the moment a new one goes to press.
    Per-device, like every other 'seen' stamp here — no backend, nothing shared. */
 const GZ_SEEN_KEY = `${LS_NS}-gazette-seen`;
-const gazetteEditionId = () => { const t = progTodays(); return t ? `${t.edition}:${t.gwN ?? '-'}` : ''; };
+const gazetteEditionId = () => { const t = progTodays(); return t ? (t.key || `${t.edition}:${t.gwN ?? '-'}`) : ''; };
 const gazetteUnread = () => { const id = gazetteEditionId(); return !!id && localStorage.getItem(GZ_SEEN_KEY) !== id; };
 const markGazetteRead = () => { const id = gazetteEditionId(); if (id) localStorage.setItem(GZ_SEEN_KEY, id); };
+// Ben, 23 Sept: release notification uses the existing in-app notice, even
+// on an already-open page. Update only notice DOM: no lost typing or overlays.
+function gazetteNudge() {
+  if (!gazetteUnread()) return '';
+  const today = progTodays();
+  const scratch = document.createElement('div'); scratch.innerHTML = today?.article || '';
+  const headline = scratch.querySelector('.prog-head')?.textContent || '';
+  return `<button type="button" class="gz-nudge" id="gzNudge">
+    <span class="gz-nudge-tag">NEW</span>
+    <span class="gz-nudge-copy"><b>${esc(String(today?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${headline ? ` &mdash; ${esc(headline)}` : ''}</span>
+    <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+  </button>`;
+}
+function bindGazetteNudge() {
+  const notice = $('#gzNudge');
+  if (notice) notice.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+}
+let gazetteNoticeEdition = '';
+let gazetteReleaseTimer = null;
+function refreshGazetteReleaseNotice() {
+  if (document.hidden) return;
+  const id = gazetteEditionId();
+  if (id === gazetteNoticeEdition) return;
+  gazetteNoticeEdition = id;
+  if (state.phase !== 'season') return;
+  const slot = $('#gazetteNudgeSlot');
+  if (slot) { slot.innerHTML = gazetteNudge(); bindGazetteNudge(); }
+  const home = document.querySelector('#nav [data-view="dash"]');
+  if (!home) return;
+  const dot = home.querySelector('.nav-dot');
+  const unread = whoami && whoami !== -1 && gazetteUnread();
+  if (unread && !dot) {
+    const badge = document.createElement('span');
+    badge.className = 'nav-dot'; badge.textContent = '1';
+    badge.title = 'Needs your attention'; badge.setAttribute('aria-label', '1 item need attention');
+    home.appendChild(badge);
+  } else if (!unread) dot?.remove();
+}
+function scheduleGazetteReleaseNotice() {
+  clearTimeout(gazetteReleaseTimer);
+  gazetteReleaseTimer = null;
+  if (typeof GazetteBreak === 'undefined' || !GazetteBreak.publicationReady()) return;
+  const remaining = Date.parse(GAZETTE_BREAK_CONTENT.publishAt) - Date.now();
+  if (remaining <= 0) return;
+  gazetteReleaseTimer = setTimeout(() => {
+    gazetteReleaseTimer = null;
+    refreshGazetteReleaseNotice();
+    scheduleGazetteReleaseNotice();
+  }, Math.min(remaining, 2147483647));
+}
 // the WhatsApp drop — the group chat is how this league actually finds out
 // anything (the Minutes and the GW preview already work exactly this way)
 function gazetteShareText() {
@@ -10535,11 +10576,16 @@ function gazetteEditions() {
     if (art) eds.push({ key: 'window', kind: 'window', edition: Gazette.windowRun() ? 'window waiver result' : 'window waiver special', gwN: null, gw: null,
       printed: Gazette.WINDOW_SPECIAL_FROM, article: () => art });
   }
+  if (typeof GazetteBreak !== 'undefined') {
+    const special = GazetteBreak.archive();
+    if (special) eds.push(special);
+  }
   return eds.sort((a, b) => b.printed - a.printed);
 }
 // which edition in the log is the one progTodays() serves as the paper
 function gazetteLeadKey(today) {
   if (!today) return null;
+  if (today.key) return today.key;
   if (today.edition === 'matchday edition') return `md${currentGwIndex()}`;
   if (today.edition === 'review edition') return `rev${today.gw}`;
   if (today.edition === 'post-draft special') return 'special';
@@ -10559,8 +10605,8 @@ function gazetteSheet(gwIdx = null) {
   // named pre-season editions (they live in the archive forever — the
   // Post-Draft Special must not vanish the day GW1 settles; Ben, GW1 night)
   let showing = today, atKey = null;
-  if (gwIdx === 'special' || gwIdx === 'preview' || gwIdx === 'window') {
-    const e = eds.find(x => x.kind === gwIdx);
+  if (typeof gwIdx === 'string') {
+    const e = eds.find(x => x.key === gwIdx);
     if (e) { showing = { edition: `${e.edition} — from the archive`, gwN: e.gwN, article: e.article(), gw: null }; atKey = e.key; }
   } else if (gwIdx != null && settled.includes(gwIdx)) {
     showing = { edition: gwIdx === today?.gw ? 'review edition' : 'review edition — from the archive', gwN: GAMEWEEKS[gwIdx].n, article: reviewArticle(gwIdx, pick), gw: gwIdx };
@@ -10586,13 +10632,13 @@ function gazetteSheet(gwIdx = null) {
   // vanished the whole nav when you were READING the only archived edition
   // while today's paper was a different one, stranding the reader in the
   // archive with no way back (product review #5, went red 21 Aug).
-  const named = eds.filter(e => e.kind === 'special' || e.kind === 'preview' || e.kind === 'window');
+  const named = eds.filter(e => e.kind === 'special' || e.kind === 'preview' || e.kind === 'window' || e.kind === 'break');
   const showToday = atKey != null && today;
   const archNav = settled.some(i => `rev${i}` !== atKey) || named.some(e => e.key !== atKey) || showToday ? `
     <div class="prog-arch">
       <span class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.12em">From the archive</span>
       ${settled.map(i => `<button class="btn ghost small" data-progw="${i}" ${atKey === `rev${i}` ? 'disabled' : ''}>GW${GAMEWEEKS[i].n}</button>`).join('')}
-      ${named.map(e => `<button class="btn ghost small" data-progw="${e.key}" ${atKey === e.key ? 'disabled' : ''}>${e.kind === 'special' ? 'Draft Special' : e.kind === 'window' ? 'Window Waiver' : 'Season Preview'}</button>`).join('')}
+      ${named.map(e => `<button class="btn ghost small" data-progw="${esc(e.key)}" ${atKey === e.key ? 'disabled' : ''}>${e.kind === 'special' ? 'Draft Special' : e.kind === 'window' ? 'Window Waiver' : e.kind === 'break' ? 'International Break' : 'Season Preview'}</button>`).join('')}
       ${showToday ? '<button class="btn small" data-progw="today">Today&rsquo;s paper</button>' : ''}
     </div>` : '';
   const replacing = !!document.querySelector('.gazette-room');
@@ -10611,9 +10657,17 @@ function gazetteSheet(gwIdx = null) {
   if (!replacing) pushOvState();
   ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   ov.querySelector('#gzClose').onclick = () => closeOv(ov);
+  // Ben, 23 Sept: contents links scroll inside the paper. Native hash changes
+  // would trigger the app's popstate handler and fold the reading room.
+  ov.querySelectorAll('.prog-break-nav a').forEach(link => link.onclick = e => {
+    e.preventDefault();
+    const id = link.getAttribute('href')?.slice(1);
+    const article = [...ov.querySelectorAll('[data-break-article]')].find(node => node.id === id);
+    article?.scrollIntoView({ block: 'start' });
+  });
   ov.querySelectorAll('[data-progw]').forEach(b => b.onclick = () => {
     const v = b.dataset.progw;
-    gazetteSheet(v === 'today' ? null : (v === 'special' || v === 'preview' || v === 'window') ? v : +v);
+    gazetteSheet(v === 'today' ? null : /^\d+$/.test(v) ? +v : v);
   });
   ov.querySelectorAll('[data-podopen]').forEach(b => b.onclick = e => {
     e.stopPropagation();
@@ -12531,8 +12585,7 @@ function bindCunthangerCard() {
 function bindDash() {
   bindInstall();
   bindCunthangerCard();
-  const gzn = $('#gzNudge');
-  if (gzn) gzn.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  bindGazetteNudge();
   const ofn = $('#offerNudge');
   if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
   const fb = $('#foundBtn');
@@ -14890,6 +14943,8 @@ async function manageWakeLock() {
 // re-arm the wake lock, and reconcile any league change that landed while away
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
+  refreshGazetteReleaseNotice();
+  scheduleGazetteReleaseNotice();
   manageWakeLock();
   if (state.phase === 'season' && netOn()) syncNow(false);
   if (_snapSeen && netOn() && !demoMode) applySharedSnapshot(_snapLatest);
@@ -14906,6 +14961,8 @@ document.addEventListener('visibilitychange', () => {
   else if (state.phase === 'draft') state.view = 'draft'; // a live draft opens on the console, never the dashboard (Toby, sandbox)
 }
 render();
+gazetteNoticeEdition = gazetteEditionId();
+scheduleGazetteReleaseNotice();
 manageWakeLock();
 // stale save detected at load: offer recovery rather than a subtly-broken game
 if (staleSave) showStaleBar();

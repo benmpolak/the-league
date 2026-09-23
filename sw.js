@@ -14,7 +14,7 @@ const LEGACY = ['the-league-shell-v1', 'the-league-shell-v2']; // pre-prefix nam
 const SHELL = [
   './', './index.html', './css/style.css',
   './js/hostguard.js', './js/data.js', './js/history25.js', './js/lore.js',
-  './js/engine.js', './js/club-media.js', './js/cunthanger.js', './js/app.js', './js/gazette.js', './js/podcast.js', './js/sync.js',
+  './js/engine.js', './js/club-media.js', './js/cunthanger.js', './js/app.js', './js/gazette.js', './js/gazette-break-content.js', './js/gazette-break.js', './js/podcast.js', './js/sync.js',
   './manifest.json', './icons/icon-192.png', './icons/icon-512.png',
   // the sandbox's own name and crest, so the practice app is still telling
   // itself apart from the real one on a dead train
