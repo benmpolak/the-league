@@ -7682,7 +7682,20 @@ function draftDeadlineTiming(deadline, now = Date.now() + (window.__serverTimeOf
 }
 function bindDraft() {
   clearInterval(clockTimer);
-  if (state.phase === 'season') return;
+  if (state.phase === 'season') {
+    /* The season-phase console is the recap, and until now it had no handlers
+       at all — the early return below was the whole of bindDraft for a finished
+       draft. Marc, 28 Sept 2026: the tab strip and the tap-for-players rows. */
+    document.querySelectorAll('[data-recaptab]').forEach(b => b.onclick = () => {
+      recapView = b.dataset.recaptab; render();
+    });
+    document.querySelectorAll('[data-dbrow]').forEach(row => row.onclick = () => {
+      const bd = $(`#db-${row.dataset.dbrow}`);
+      if (bd) bd.style.display = bd.style.display === 'none' ? '' : 'none'; // '' = table-row
+    });
+    bindPitchLinks();
+    return;
+  }
   // pin a slim clock to the top once the big board scrolls out of sight
   const oc = document.querySelector('.on-clock'), cs = $('#clockStrip');
   if (oc && cs) {
@@ -8107,10 +8120,137 @@ function deliveryArrow(move) {
   if (move < 0) return `<span class="deliver down" title="Scoring like a pick ${-move} place${move === -1 ? '' : 's'} later">&#9660; ${-move}</span>`;
   return `<span class="deliver level" title="Exactly where he was taken">&#9472; 0</span>`;
 }
+/* ----- the draft, totalled up by team -----
+   Marc, 28 Sept 2026: "a tab that shows a league table of points scored by
+   each teams 14 drafted players to date... click on each team and see which
+   player is getting those points as we have in the season ledger."
+
+   This is a verdict on a DRAFT, not on a season, and the difference is the
+   whole point of it: a man counts for the manager who took him whether he is
+   still on his books or was shipped out in August. That is deliberate and it
+   is the same number the Draft Archive prints next to each pick — the two tabs
+   sit in the same console and must not tell different stories.
+
+   It is therefore NOT the Season Ledger's total, which counts only points
+   banked from the starting XI by the squad as it stands. A man can be a fine
+   pick and a wasted one. Both figures are carried here so the gap is visible
+   rather than confusing: `pts` is what the fourteen scored, `kept` how many
+   are still yours.
+
+   Built off draftDelivery() rather than walking the picks again, so the places
+   and points are literally the archive's own. */
+function draftBoard() {
+  const rows = draftDelivery();
+  if (!rows) return null;
+  const owned = new Map(state.managers.map(m => [m.id, new Set(managerSquad(m.id).map(p => p.id))]));
+  const byMid = new Map();
+  for (const r of rows) {
+    const mid = r.pk.managerId;
+    if (!byMid.has(mid)) byMid.set(mid, []);
+    byMid.get(mid).push({ ...r, owned: !!owned.get(mid)?.has(r.p.id) });
+  }
+  const board = state.managers
+    .filter(m => byMid.has(m.id))
+    .map(m => {
+      const picks = byMid.get(m.id).sort((a, b) => b.pts - a.pts || a.pk.n - b.pk.n);
+      const pts = picks.reduce((t, x) => t + x.pts, 0);
+      return { m, picks, pts, kept: picks.filter(x => x.owned).length,
+        best: picks[0] || null, banked: managerPoints(m.id) };
+    })
+    .sort((a, b) => b.pts - a.pts || a.m.id - b.m.id);
+  // competition ranking: level totals share a place (1, 2, 2, 4)
+  let place = 0, seen = 0, last = null;
+  for (const row of board) {
+    seen++;
+    if (last === null || row.pts !== last) { place = seen; last = row.pts; }
+    row.rank = place;
+  }
+  board.fieldSize = rows.fieldSize;
+  return board;
+}
+function viewDraftLeague() {
+  const board = draftBoard();
+  if (!board) {
+    return `<div class="card">${draftConsoleTabs('table')}
+      <p class="muted" style="font-size:12.5px">No picks on record.</p></div>`;
+  }
+  const settled = [];
+  for (let i = 0; i < GAMEWEEKS.length; i++) if (gwStatus(i) === 'final') settled.push(i);
+  const asAt = settled.length
+    ? `As at GW${GAMEWEEKS[settled[settled.length - 1]].n}, updated every time a round settles.`
+    : 'No round has settled yet, so every draft is on nought.';
+  const size = board[0] ? board[0].picks.length : 0;
+  return `<div class="card toplist">${draftConsoleTabs('table')}
+    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} This is what the men you DRAFTED have scored &mdash; every one of them, whether you still hold him or shipped him out in August. It is a mark on your draft, not on your season: points you actually banked are in the Season Ledger, and the gap between the two is squad management. Tap a team for the men behind the number.</p>
+    <div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr>
+        <th class="num">#</th><th>Team</th>
+        <th class="num" title="Men from this draft still on the books">Kept</th>
+        <th class="num act" title="Total scored by every man this team drafted">Points</th>
+      </tr></thead>
+      <tbody>
+      ${board.map(({ m, picks, pts, kept, rank }) => `
+        <tr data-dbrow="${m.id}" style="cursor:pointer">
+          <td class="num muted">${rank}</td>
+          <td style="white-space:nowrap">${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span></td>
+          <td class="num muted">${kept}<span class="muted" style="font-size:10.5px">/${picks.length}</span></td>
+          <td class="num gold act"><b>${pts}</b></td>
+        </tr>
+        <tr class="bd-tr" id="db-${m.id}" style="display:none"><td colspan="4">
+          <div class="squad-row muted" style="font-size:10.5px;letter-spacing:.05em;text-transform:uppercase">
+            <span style="flex:1"></span>
+            <span style="flex:none;width:40px;text-align:right" title="Where he went in the draft">Pick</span>
+            <span style="flex:none;width:54px;text-align:right" title="His pick number less where he now stands among every player in the league">Swing</span>
+            <span style="flex:none;width:40px;text-align:right;margin-left:0">Pts</span>
+          </div>
+          ${picks.map(({ pk, p, pts: cp, move, owned }) => `
+            <div class="squad-row"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${photoImg(p)}
+            <span>${esc(p.name)}</span>
+            <span class="muted" style="margin-left:8px;font-size:11.5px">${esc(p.club)}</span>
+            ${owned ? '<span class="tag">Owned</span>' : '<span class="tag" style="opacity:.6" title="Drafted by this team but no longer on the books — his points still count toward the draft">Gone</span>'}
+            <span class="muted" style="flex:none;margin-left:auto;width:40px;text-align:right;font-variant-numeric:tabular-nums">#${pk.n}</span>
+            <span style="flex:none;width:54px;text-align:right">${deliveryArrow(move)}</span>
+            <span class="sp-pts" style="flex:none;width:40px;margin-left:0;text-align:right">${cp}</span></div>`).join('')}
+          <p class="muted" style="font-size:11px;margin:6px 0 4px">All ${picks.length} picks, biggest earner first. Swing is his pick number less where he now stands among all ${board.fieldSize} players in the league. A man marked Gone was drafted here and traded or dropped since; his points still count toward this draft, because the pick was still made.</p>
+        </td></tr>`).join('')}
+      </tbody>
+    </table></div>
+    ${size ? `<p class="muted" style="font-size:10.5px;margin-top:8px">${esc(draftBoardVerdict(board))}</p>` : ''}
+  </div>`;
+}
+// the one line worth reading if you read nothing else
+function draftBoardVerdict(board) {
+  if (board.length < 2) return '';
+  const nm = r => r.m.team || r.m.name;
+  const top = board[0], bottom = board[board.length - 1];
+  const gap = top.pts - bottom.pts;
+  let out = `${nm(top)} drafted best on the numbers, ${gap} clear of ${nm(bottom)}`
+    + `${top.best && top.pts ? `, and ${top.best.p.name} is ${Math.round((top.best.pts / top.pts) * 100)}% of it` : ''}.`;
+  /* Only remark on the churn when there IS some. Sorting for the lowest keeper
+     and printing it regardless named the leader twice in one sentence and made
+     a fuss of 13 of 14, which is nobody dismantling anything. */
+  const bled = [...board].sort((a, b) => (a.kept / a.picks.length) - (b.kept / b.picks.length))[0];
+  if (bled && bled !== top && bled.picks.length - bled.kept >= 3) {
+    out += ` ${nm(bled)} has kept only ${bled.kept} of ${bled.picks.length}, which is either ruthless or an admission.`;
+  }
+  return out;
+}
+/* The console's two readings of the same draft: pick by pick, or totted up by
+   team. One tab strip so they cannot drift apart visually either. */
+function draftConsoleTabs(which) {
+  const tab = (key, label) => `<button class="btn small ${which === key ? '' : 'ghost'}" data-recaptab="${key}">${label}</button>`;
+  return `<h2>The Draft Console <span class="muted" style="font-weight:400;font-size:12px">${which === 'table' ? 'how each draft is doing' : 'pick by pick'}</span></h2>
+    <div class="pool-controls" style="margin:0 0 10px">${tab('table', 'By Team')}${tab('archive', 'Draft Archive')}</div>`;
+}
+/* Opens on the Archive, which is what the console has always shown. Marc asked
+   for the table as a TAB, not as a replacement, and quietly changing what the
+   page opens on is more than he asked for — it is one tap away instead. */
+let recapView = 'archive';
 function viewDraftRecap() {
+  if (recapView === 'table') return viewDraftLeague();
   const rows = draftDelivery();
   if (!rows) {
-    return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
+    return `<div class="card">${draftConsoleTabs('archive')}
       <p class="muted" style="font-size:12.5px">No picks on record.</p></div>`;
   }
   const settled = [];
@@ -8122,7 +8262,7 @@ function viewDraftRecap() {
   const best = rows.reduce((a, b) => (b.move > a.move ? b : a), rows[0]);
   const worst = rows.reduce((a, b) => (b.move < a.move ? b : a), rows[0]);
   const bare = p => String(p.name || '');
-  return `<div class="card"><h2>The Draft Console &mdash; Draft Archive</h2>
+  return `<div class="card">${draftConsoleTabs('archive')}
     <p class="muted" style="margin-bottom:4px">All ${totalPicks()} picks are in. The recordings have been sealed.</p>
     <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} Places are among all ${rows.fieldSize} players in the league, not just the ${rows.length} taken &mdash; a pick is judged against everybody you could have had instead.</p>
     <div style="overflow-x:auto"><table class="pool-table">

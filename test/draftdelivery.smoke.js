@@ -44,6 +44,10 @@ const chk = (name, ok, detail = '') => {
 
     state = buildDemoState();
     state.phase = 'season';
+    // this file is about the ARCHIVE tab, so ask for it rather than relying on
+    // which tab the console happens to open on (Marc, 28 Sept 2026: the By Team
+    // tab landed beside it, and a default is not something a test should assume)
+    recapView = 'archive';
     myId = whoami = state.managers[0].id;
 
     /* ----- the standing ----- */
