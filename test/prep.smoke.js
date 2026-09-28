@@ -479,6 +479,8 @@ const chk = (name, ok, detail = '') => {
       teaser: !!card?.querySelector('.prog-head-lead'), room: !!room,
       words: art ? art.textContent.trim().split(/\s+/).length : 0,
       edition: room?.querySelector('.prog-date')?.textContent || '',
+      // Ben, 28 Sept: specials are valid editions too; check the actual title.
+      expectedEdition: progTodays()?.edition || '',
       noPriceGag: !/your dignity|price:/i.test(room?.querySelector('.prog-date')?.textContent || ''),
       frontDesign: !!card?.querySelector('.ch-wordmark') && /CUNTHANGER MEDIA/.test(card.querySelector('.ch-wordmark').textContent)
         && !!card?.querySelector('.prog-front-by') && !!card?.querySelector('.prog-read'),
@@ -495,7 +497,7 @@ const chk = (name, ok, detail = '') => {
     return out;
   });
   chk('P8g Gazette front page teases; the reading room prints the real article',
-    p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && /edition/.test(p8g.edition)
+    p8g.card && p8g.mast && p8g.teaser && p8g.room && p8g.words > 40 && p8g.expectedEdition && p8g.edition.startsWith(p8g.expectedEdition)
       && p8g.noPriceGag && p8g.frontDesign, JSON.stringify(p8g));
   chk('P8g Latest Business fills the dashboard attention-column gap',
     p8g.order === true && p8g.compact === true, JSON.stringify(p8g));
