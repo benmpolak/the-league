@@ -2,14 +2,41 @@
  * Frozen GW1-5 editorial copy. Ian’s twelve supplied answers are preserved verbatim, apart from whitespace.
  * Editorially complete; scheduled publication remains time-gated until Friday noon BST.
  */
+/* Ben, 28 September 2026: publish the approved City inquiry as the lead.
+ * Gazette copy only; no scoring, tables, play-offs or honours are changed. */
 const GAZETTE_BREAK_CONTENT = {
   "id": "international-break-2026-09",
   "publishAt": "2026-09-25T11:00:00Z",
   "ready": true,
   "edition": "international-break special",
-  "headline": "I’M IN THE CONVERSATION",
-  "standfirst": "Ian Tussie faces the Gazette. Our writers assess the first five rounds, investigate Singer’s winless start and open the recruitment books. Plus: Barney Ronaldo attempts a weekend without club football.",
+  "headline": "UNAUTHORISED PERSON IN THE FINAL",
+  "standfirst": "Iain’s titles under review as Committee investigates whether he qualified for the play-offs in the first place",
   "articles": [
+    {
+      "id": "city-inquiry",
+      "head": "UNAUTHORISED PERSON IN THE FINAL",
+      "intro": [
+        "Following Manchester City’s reported guilty verdict, The League has opened an entirely disproportionate investigation into every fantasy point earned by a City player during the affected seasons.",
+        "The inquiry will consider removing those points retrospectively, recalculating every result and reissuing the league tables. Particular attention will be paid to Ian Tussie, whose recruitment policy over the years has largely consisted of checking whether a player works for Manchester City.",
+        "“The Premier League is examining financial irregularities,” a Committee spokesman explained. “We are examining why Iain always had three of the bastards.”",
+        "Under the proposal, goals, assists, clean sheets and appearance points would all be removed. Even the two points for turning up would go. The Committee’s position is that turning up for Manchester City may itself have constituted an unfair advantage.",
+        "The implications for CF Iain FC are considerable. On the inquiry’s preferred interpretation, Tussie would not merely lose his titles. He would never have qualified for the play-offs in which he won them.",
+        "This would change his official status from “two-time champion” to “unauthorised person in the final”.",
+        "“You cannot win a competition you were not supposed to be in,” said the spokesman. “At that point you are just a man holding something.”",
+        "An initial attempt to reconstruct Tussie’s seasons without City players reportedly left investigators looking at a goalkeeper, two bookings and a disappointing afternoon from someone at Crystal Palace. The spreadsheet then asked whether they wished to delete the club.",
+        "The Committee has declined to identify which managers might inherit the titles, although several members have already submitted proposed corrections to their biographies. One has requested an open-top bus. Another is seeking compensation for a celebration he would have had in 2018.",
+        "Tussie’s habitual selection of City players will be examined under a newly invented offence of “aggravated benefit from the obvious”. Investigators stress that supporting City is not itself against League rules, although a working group has been established.",
+        "The inquiry will also consider whether any historic boasting must be withdrawn. Under the proposed Bragging Restitution Scheme, affected managers could be required to return to old conversations and replace “two titles, mate” with “I enjoyed participating in the regular season”.",
+        "Any appeal would be heard by an independent panel consisting of three managers who finished immediately below Iain. The Committee has defended their appointment on the basis that nobody has spent longer thinking about the matter.",
+        "No points have been deducted, no tables amended and no titles removed. The investigation remains ongoing, and The League is keeping all options open as the Premier League process unfolds.",
+        "The trophy engraver has nevertheless been asked to keep Monday free.",
+        "Only last week, Tussie told this newspaper: “I’m in the conversation.”",
+        "The Committee is now establishing whether he was in the competition."
+      ],
+      "sections": [],
+      "closing": [],
+      "nav": "City inquiry"
+    },
     {
       "id": "ian",
       "kicker": "MEET THE MANAGERS · No. 2",
