@@ -67,7 +67,8 @@ const chk = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  $
     // REAL calendar settles one of them (GW2 blew on 31 Aug) lastFinalGw
     // moves and the dashboard follows. Compare against the edition the
     // paper actually printed today, not the one this test happens to study.
-    const d2 = document.createElement('div'); d2.innerHTML = Gazette.review(lastFinalGw());
+    // Ben, 28 Sept: a published special can lead instead of the latest review.
+    const d2 = document.createElement('div'); d2.innerHTML = progTodays()?.article || '';
     // ...and the splash lifts the FIRST head of that paper — a BREAKING story
     // (Waivergate, 8 Sept 2026) leads over the match report when one is set.
     const leadToday = d2.querySelector('.prog-head')?.textContent || '';
