@@ -8139,6 +8139,28 @@ function deliveryArrow(move) {
 
    Built off draftDelivery() rather than walking the picks again, so the places
    and points are literally the archive's own. */
+/* Everything the men on your books scored while they were on them, bench
+   included.
+
+   Marc, 29 Sept 2026: "total actual points including those left on the bench,
+   this is actually the better comparison because if you retained your squad you
+   dont know what team you would have picked."
+
+   He is right, and it is the sharper of the two gaps. Draft counts all fourteen
+   men a manager took; Actual counts only the eleven he fielded on the day. They
+   are not the same kind of number, so most of the distance between them is the
+   three men sitting out every week rather than anything anybody decided. This
+   counts all fourteen he HELD, week by week, which is the like-for-like reading
+   of the same question — did the squad you ended up with beat the squad you
+   drafted, selection set aside. */
+function squadTotalWithBench(mid) {
+  let pts = 0;
+  for (let i = 0; i < GAMEWEEKS.length; i++) {
+    if (!gwUnderway(i)) continue;           // an unplayed round proves nothing
+    for (const p of squadAt(mid, i)) pts += gwPlayerPoints(p.id, i);
+  }
+  return pts;
+}
 function draftBoard() {
   const rows = draftDelivery();
   if (!rows) return null;
@@ -8155,7 +8177,8 @@ function draftBoard() {
       const picks = byMid.get(m.id).sort((a, b) => b.pts - a.pts || a.pk.n - b.pk.n);
       const pts = picks.reduce((t, x) => t + x.pts, 0);
       return { m, picks, pts, kept: picks.filter(x => x.owned).length,
-        best: picks[0] || null, banked: managerPoints(m.id) };
+        best: picks[0] || null, banked: managerPoints(m.id),
+        squad: squadTotalWithBench(m.id) };
     })
     .sort((a, b) => b.pts - a.pts || a.m.id - b.m.id);
   // competition ranking: level totals share a place (1, 2, 2, 4)
@@ -8181,22 +8204,30 @@ function viewDraftLeague() {
     : 'No round has settled yet, so every draft is on nought.';
   const size = board[0] ? board[0].picks.length : 0;
   return `<div class="card toplist">${draftConsoleTabs('table')}
-    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} This is what the men you DRAFTED have scored &mdash; every one of them, whether you still hold him or shipped him out in August. It is a mark on your draft, not on your season: points you actually banked are in the Season Ledger, and the gap between the two is squad management. Tap a team for the men behind the number.</p>
+    <p class="muted" style="font-size:11.5px;margin-bottom:12px">${esc(asAt)} <b>Draft</b> is what the men you DRAFTED have scored &mdash; every one of them, whether you still hold him or shipped him out in August. <b>Actual</b> is your real season total, the one the league table ranks you on: points banked from your starting XI. <b>Diff</b> is the gap between them, and it is nearly always negative for a dull reason: you draft fourteen and field eleven, so three men score for nobody every week. <b>Squad</b> is the honest answer to that &mdash; everything your men scored while they were yours, bench included, all fourteen of them &mdash; and <b>Squad diff</b> is the comparison worth having: the fourteen you ended up with against the fourteen you drafted, selection set aside. Positive there means your business has improved on your draft. Tap a team for the men behind it.</p>
     <div style="overflow-x:auto"><table class="pool-table">
       <thead><tr>
         <th class="num">#</th><th>Team</th>
         <th class="num" title="Men from this draft still on the books">Kept</th>
-        <th class="num act" title="Total scored by every man this team drafted">Points</th>
+        <th class="num act" title="Total scored by every man this team drafted, whether or not he is still here">Draft</th>
+        <th class="num" title="The team's actual season points, exactly as the league table counts them: banked from the starting XI">Actual</th>
+        <th class="num" title="Actual less draft. Nearly always negative — fourteen men drafted, eleven fielded — so most of it is the bench rather than anything anybody decided.">Diff</th>
+        <th class="num" title="Everything the men on this team's books scored while they were on them, bench included — all fourteen, not just the eleven picked">Squad</th>
+        <th class="num" title="Squad less draft: the fourteen you ended up with against the fourteen you drafted, selection set aside. The fairer of the two comparisons.">Squad diff</th>
       </tr></thead>
       <tbody>
-      ${board.map(({ m, picks, pts, kept, rank }) => `
+      ${board.map(({ m, picks, pts, kept, rank, banked, squad }) => `
         <tr data-dbrow="${m.id}" style="cursor:pointer">
           <td class="num muted">${rank}</td>
           <td style="white-space:nowrap">${kitSvg(m.id)} <b>${esc(m.team || m.name)}</b> <span class="muted" style="font-size:11px">${esc(m.name)}</span></td>
           <td class="num muted">${kept}<span class="muted" style="font-size:10.5px">/${picks.length}</span></td>
           <td class="num gold act"><b>${pts}</b></td>
+          <td class="num">${banked}</td>
+          <td class="num">${draftGap(banked - pts)}</td>
+          <td class="num">${squad}</td>
+          <td class="num">${draftGap(squad - pts)}</td>
         </tr>
-        <tr class="bd-tr" id="db-${m.id}" style="display:none"><td colspan="4">
+        <tr class="bd-tr" id="db-${m.id}" style="display:none"><td colspan="8">
           <div class="squad-row muted" style="font-size:10.5px;letter-spacing:.05em;text-transform:uppercase">
             <span style="flex:1"></span>
             <span style="flex:none;width:40px;text-align:right" title="Where he went in the draft">Pick</span>
@@ -8217,6 +8248,25 @@ function viewDraftLeague() {
     </table></div>
     ${size ? `<p class="muted" style="font-size:10.5px;margin-top:8px">${esc(draftBoardVerdict(board))}</p>` : ''}
   </div>`;
+}
+/* Actual less draft (Marc, 29 Sept 2026: "a column showing actual score and
+   another showing the difference between the 2").
+
+   NEGATIVE is not the exception, it is the rule, and the copy on the card says
+   so rather than implying a reproach: a squad is fourteen men and an XI is
+   eleven, so three of them score for nobody every single week before squad
+   management enters into it at all. Anyone traded away keeps scoring elsewhere
+   on top of that. The column earns its place by comparing teams — every side
+   carries the same fourteen-for-eleven arithmetic, so the spread between a -2
+   and a -15 is real information. POSITIVE can only come from business done
+   since the draft: waivers, the Trough, a trade that landed.
+
+   Same three colours as the swing arrow so the console reads as one thing, but
+   no arrow glyph: this is a quantity, not a movement up or down a board. */
+function draftGap(n) {
+  if (n > 0) return `<span class="deliver up" title="Banked ${n} more than this draft produced — business done since the draft">+${n}</span>`;
+  if (n < 0) return `<span class="deliver down" title="${-n} of this draft's points never reached the team: benched, or scored elsewhere after being moved on">${n}</span>`;
+  return `<span class="deliver level" title="Banked exactly what the draft produced">0</span>`;
 }
 // the one line worth reading if you read nothing else
 function draftBoardVerdict(board) {

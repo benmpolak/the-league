@@ -115,6 +115,137 @@ const chk = (name, ok, detail = '') => {
         differs > 0, `${differs} of ${board.length} teams differ`);
       t('every team\'s draft total is tracked separately from what it banked',
         board.every(r => Number.isFinite(r.pts) && Number.isFinite(r.banked)));
+      /* Marc, 29 Sept 2026: "a column showing actual score and another showing
+         the difference between the 2". Actual must be the league's own number,
+         not a third one computed here — if this drifts from the standings, the
+         two pages accuse each other of lying. */
+      t('Actual is exactly what the rest of the site calls a season total',
+        board.every(r => r.banked === managerPoints(r.m.id)));
+    })();
+
+    /* ----- the gap cell ----- */
+    (() => {
+      const box = document.createElement('div');
+      document.body.appendChild(box);
+      const read = n => { box.innerHTML = draftGap(n); return box.firstElementChild; };
+      const up = read(7), down = read(-4), level = read(0);
+      t('a team that banked more than it drafted reads positive',
+        up.classList.contains('up') && /\+7/.test(up.textContent), up.textContent);
+      t('a team that banked less reads negative, with the sign',
+        down.classList.contains('down') && /-4/.test(down.textContent), down.textContent);
+      t('and dead level reads nought', level.classList.contains('level') && /^0$/.test(level.textContent.trim()));
+      box.innerHTML = `${draftGap(3)}${draftGap(-3)}${draftGap(0)}`;
+      const cols = [...box.querySelectorAll('.deliver')].map(e => getComputedStyle(e).color);
+      t('the three are told apart by colour, not only by sign', new Set(cols).size === 3, cols.join(' '));
+      box.remove();
+    })();
+
+    /* ----- the diff is Actual less Draft, and POSITIVE is reachable -----
+       In an ordinary week every gap is negative: fourteen drafted, eleven
+       fielded. That makes it easy to ship a column that only ever goes one way
+       and never notice it could not go the other, so force it. */
+    (() => {
+      t('the diff on screen is Actual less Draft for every team', (() => {
+        recapView = 'table'; state.view = 'draft'; render();
+        return [...document.querySelectorAll('[data-dbrow]')].every(tr => {
+          const r = board.find(x => x.m.id === +tr.dataset.dbrow);
+          const shown = parseInt(tr.cells[5].textContent.replace('+', ''), 10);
+          return shown === r.banked - r.pts && parseInt(tr.cells[4].textContent, 10) === r.banked;
+        });
+      })());
+      t('(control) an ordinary season leaves every team short of its own draft',
+        board.every(r => r.banked - r.pts <= 0),
+        board.map(r => r.banked - r.pts).join(','));
+      // now hand one team a big signing it never drafted, and the gap must flip
+      const victim = board[board.length - 1];
+      const undrafted = PLAYERS.find(p => !state.draft.picks.some(k => k.playerId === p.id));
+      const keep = state.transfers, keepL = JSON.stringify(state.lineups[victim.m.id] || {});
+      state.transfers = [...keep,
+        { managerId: victim.m.id, inId: undrafted.id, outId: victim.picks[victim.picks.length - 1].p.id, gw: 0, t: 500 }];
+      const gwN = GAMEWEEKS[0].n;
+      state.matchStats['gw' + gwN].playerStats[undrafted.id] = { min: 90, st: 1, g: 40, a: 40, cs: 1 };
+      state.lineups[victim.m.id] = { 0: legalizeXI([undrafted.id], squadAt(victim.m.id, 0)) };
+      const after = draftBoard().find(r => r.m.id === victim.m.id);
+      t('a big signing he never drafted pushes the gap positive',
+        after.banked - after.pts > 0, `${victim.banked - victim.pts} -> ${after.banked - after.pts}`);
+      delete state.matchStats['gw' + gwN].playerStats[undrafted.id];
+      state.transfers = keep;
+      state.lineups[victim.m.id] = JSON.parse(keepL);
+    })();
+
+    /* ----- Squad: the same fourteen, bench included -----
+       Marc, 29 Sept 2026: "total actual points including those left on the
+       bench, this is actually the better comparison because if you retained
+       your squad you dont know what team you would have picked." So Squad has
+       to count men a manager HELD whether or not he picked them, and the gap to
+       Draft has to move when the squad stops being the drafted squad. */
+    (() => {
+      t('Squad counts the bench, so it is never less than the XI banked',
+        board.every(r => r.squad >= r.banked),
+        board.map(r => `${r.squad}>=${r.banked}`).slice(0, 3).join(' '));
+      t('and it agrees with a walk of the squad, week by week', (() => {
+        const r = board[0];
+        let sum = 0;
+        for (let i = 0; i < GAMEWEEKS.length; i++) {
+          if (!gwUnderway(i)) continue;
+          for (const p of squadAt(r.m.id, i)) sum += gwPlayerPoints(p.id, i);
+        }
+        return r.squad === sum;
+      })());
+      /* Before anyone has traded, the squad IS the drafted fourteen, so the gap
+         is nought — which makes it easy to ship a column that is always nought
+         and never notice. Settle some rounds, trade a scorer away, and it has
+         to move: his later points stay on the DRAFT and leave the SQUAD. */
+      let seed = 5;
+      const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+      const touched = [];
+      for (let i = 1; i < 4 && i < GAMEWEEKS.length; i++) {
+        const gwN = GAMEWEEKS[i].n, ps = {};
+        for (const pk of state.draft.picks) {
+          const pl = PLAYER_BY_ID[pk.playerId];
+          ps[pl.id] = { min: 90, st: 1, g: rnd() < .2 ? 1 : 0, a: rnd() < .1 ? 1 : 0, cs: rnd() < .3 ? 1 : 0 };
+        }
+        state.matchStats['gw' + gwN] = { gw: i, label: GAMEWEEKS[i].label, final: true, playerStats: ps };
+        GAMEWEEKS[i].finished = true;
+        for (const f of state.fixtures) if (f.gw === gwN) f.finished = true;
+        touched.push({ i, gwN });
+      }
+      const mid = state.managers[0].id, other = state.managers[1].id;
+      const was = draftBoard().find(r => r.m.id === mid);
+      t('(control) with nobody traded, the squad IS the draft',
+        was.squad === was.pts, `squad ${was.squad} vs draft ${was.pts}`);
+      const give = was.picks.find(x => x.pts > 0);
+      const get = draftBoard().find(r => r.m.id === other).picks.slice(-1)[0];
+      const keep = state.transfers;
+      state.transfers = [...keep,
+        { managerId: mid, inId: get.p.id, outId: give.p.id, gw: 2, t: 9000, trade: 'T9' },
+        { managerId: other, inId: give.p.id, outId: get.p.id, gw: 2, t: 9000, trade: 'T9' }];
+      const now = draftBoard().find(r => r.m.id === mid);
+      t('trading a scorer away leaves the DRAFT total alone',
+        now.pts === was.pts, `${was.pts} -> ${now.pts}`);
+      t('but takes his later points off the SQUAD total',
+        now.squad < was.squad, `${was.squad} -> ${now.squad}`);
+      t('so Squad diff goes negative — the fourteen you have are worth less than the fourteen you took',
+        now.squad - now.pts < 0, `${was.squad - was.pts} -> ${now.squad - now.pts}`);
+      // and the man he received counts toward HIS squad, though he never drafted him
+      const them = draftBoard().find(r => r.m.id === other);
+      t('a man arriving counts on the receiving team\'s squad without joining its draft',
+        them.squad > 0 && !them.picks.some(x => x.p.id === give.p.id));
+      // the column is on screen and equals squad less draft
+      recapView = 'table'; state.view = 'draft'; render();
+      t('the Squad and Squad diff columns print those numbers', (() => {
+        const fresh = draftBoard();
+        return [...document.querySelectorAll('[data-dbrow]')].every(tr => {
+          const r = fresh.find(x => x.m.id === +tr.dataset.dbrow);
+          return parseInt(tr.cells[6].textContent, 10) === r.squad
+            && parseInt(tr.cells[7].textContent.replace('+', ''), 10) === r.squad - r.pts;
+        });
+      })());
+      t('and the card says which comparison is the fairer one',
+        /the comparison worth having/.test(document.querySelector('.card').textContent));
+      state.transfers = keep;
+      for (const { i, gwN } of touched) { delete state.matchStats['gw' + gwN]; GAMEWEEKS[i].finished = false;
+        for (const f of state.fixtures) if (f.gw === gwN) f.finished = false; }
     })();
 
     /* ----- the card, and the tap-through ----- */
