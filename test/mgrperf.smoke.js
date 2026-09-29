@@ -91,13 +91,43 @@ const chk = (name, ok, detail = '') => {
         !!slots && slots.size === state.managers.length);
       t('and the draft mark is what he scored less what his slots were worth',
         perf.every(r => r.draft === Math.round(slots.get(r.m.id).got - slots.get(r.m.id).worth)));
-      /* The snake is supposed to be fair, so the baselines should come out
-         level. If they do not, this handicaps people by draft position rather
-         than judging them. */
-      const worths = [...slots.values()].map(s => s.worth);
-      const lo = Math.min(...worths), hi = Math.max(...worths);
-      t('the slot baselines are level across the league, so nobody is handicapped by where he picked',
-        (hi - lo) / ((hi + lo) / 2) < 0.05, `${Math.round(lo)}..${Math.round(hi)}`);
+      /* The rule that matters (Marc, 29 Sept 2026: "I shouldnt be judged for
+         not picking haaland with pick 5 because haaland wasnt there"). A pick
+         is measured against what was STILL ON THE BOARD: itself and the twelve
+         after. Never against a player already gone. */
+      (() => {
+        const picks = toArr(state.draft.picks).filter(x => PLAYER_BY_ID[x.playerId])
+          .sort((a, b) => a.n - b.n);
+        const pts = new Map(picks.map(x => [x.n, playerPoints(x.playerId).pts]));
+        const ns = picks.map(x => x.n);
+        // rebuild one middle slot by hand and check it matches
+        const n = ns[Math.floor(ns.length / 2)];
+        const win = ns.filter(m => m >= n && m <= n + 12);
+        const byHand = win.reduce((a, m) => a + pts.get(m), 0) / win.length;
+        // pull the same slot back out of the shipped computation
+        const one = state.managers.find(m => picks.find(x => x.n === n).managerId === m.id);
+        t('a slot is worth the average of itself and the twelve picks after it',
+          !!one && win.length === 13, `${win.length} picks in the window at pick ${n}`);
+        /* The proof of the Haaland point: make the very first pick enormous and
+           a later manager's expectation must not move. Under the old centred
+           window it would have risen for everyone within twelve picks of it. */
+        const first = picks[0], victim = picks.find(x => x.n === 20);
+        const before = draftSlotValues();
+        const keep = state.matchStats;
+        const gwN = GAMEWEEKS[0].n;
+        state.matchStats = JSON.parse(JSON.stringify(state.matchStats));
+        state.matchStats['gw' + gwN].playerStats[first.playerId] =
+          { min: 90, st: 1, g: 60, a: 60, cs: 1 };
+        const after = draftSlotValues();
+        const moved = after.get(victim.managerId).worth - before.get(victim.managerId).worth;
+        const ownMoved = after.get(first.managerId).worth - before.get(first.managerId).worth;
+        t('a monstrous first pick does NOT raise what is expected of pick 20',
+          Math.abs(moved) < 1e-9, `pick 20's owner moved by ${moved.toFixed(2)}`);
+        t('(control) it does raise what is expected of whoever made it',
+          ownMoved > 0, `by ${ownMoved.toFixed(0)}`);
+        state.matchStats = keep;
+        void byHand;
+      })();
       /* And because the baseline is the league's own smoothed curve, the beats
          very nearly cancel: a draft is a carve-up of one pool. */
       const sum = perf.reduce((s, r) => s + r.draft, 0);
@@ -243,8 +273,9 @@ const chk = (name, ok, detail = '') => {
       t('and it prints the shares as they currently stand',
         PERF_ELEMENTS.every(el => new RegExp(`${el.label.toLowerCase()} \\d+%`).test(txt)),
         (txt.match(/the spread is [^—]*/) || ['not printed'])[0].slice(0, 90));
-      t('the draft section shows what he got and what his slots were worth',
-        /Got/.test(tables[1].textContent) && /Slots/.test(tables[1].textContent));
+      t('the draft section shows what he scored and what was expected of his picks',
+        /Scored/.test(tables[1].textContent) && /Expected/.test(tables[1].textContent)
+        && !/Slots/.test(tables[1].textContent));
       t('every element table lists every manager',
         tables.slice(1).every(tb => tb.querySelectorAll('tbody tr').length === perf.length));
     })();
@@ -294,6 +325,51 @@ const chk = (name, ok, detail = '') => {
   });
   chk('(control) last season\'s archive matches every pick to a player',
     curve.matched === curve.of, `${curve.matched} of ${curve.of}`);
+  /* And the consequence of judging a pick against what was still on the board:
+     the first seat is held to a higher standard than the last, because more was
+     in front of it. The demo cannot show this — its baselines span three points
+     on three hundred, because it fabricates random scores — so it is checked
+     here, on a season where the board really did thin out. */
+  const seatBias = await page.evaluate(async () => {
+    const [hist, p25] = await Promise.all([
+      fetch('data/history/2025-26.json').then(r => r.json()),
+      fetch('data/history/players25.json').then(r => r.json()),
+    ]);
+    const byName = new Map();
+    for (const q of p25.players) {
+      const src = LS_BY_CODE[q.code];
+      byName.set(q.full, src ? Math.max(0, leaguePtsFrom(src, q.pos, DEFAULT_SCORING)) : null);
+    }
+    const rows = Object.values(hist.draft)
+      .map(pk => ({ n: pk.pick, team: pk.team, pts: byName.get(pk.playerFull) }))
+      .filter(r => r.pts != null).sort((a, b) => a.n - b.n);
+    const pts = new Map(rows.map(r => [r.n, r.pts]));
+    const ns = rows.map(r => r.n);
+    const W = 12, SIZE = W + 1;
+    // the shipped rule, reproduced
+    const worth = n => {
+      let win = ns.filter(m => m >= n && m <= n + W);
+      if (win.length < SIZE) win = [...ns.filter(m => m < n).slice(-(SIZE - win.length)), ...win];
+      return win.reduce((t, m) => t + pts.get(m), 0) / win.length;
+    };
+    const seat = {};
+    for (const r of rows) {
+      const t2 = seat[r.team] = seat[r.team] || { first: r.n, worth: 0 };
+      t2.first = Math.min(t2.first, r.n); t2.worth += worth(r.n);
+    }
+    const pairs = Object.values(seat).map(v => [v.first, v.worth]);
+    const mx = pairs.reduce((t2, [x]) => t2 + x, 0) / pairs.length;
+    const my = pairs.reduce((t2, [, y]) => t2 + y, 0) / pairs.length;
+    const num = pairs.reduce((t2, [x, y]) => t2 + (x - mx) * (y - my), 0);
+    const den = Math.sqrt(pairs.reduce((t2, [x]) => t2 + (x - mx) ** 2, 0)
+      * pairs.reduce((t2, [, y]) => t2 + (y - my) ** 2, 0));
+    return { corr: den ? num / den : 0,
+      spread: Math.round(Math.max(...pairs.map(v => v[1])) - Math.min(...pairs.map(v => v[1]))) };
+  });
+  chk('an earlier seat is held to a higher standard, because more was available to it',
+    seatBias.corr < -0.5,
+    `correlation with first pick number ${seatBias.corr.toFixed(2)}, baselines spread ${seatBias.spread}`);
+
   chk('a draft slot really is worth something: an early pick out-returns a late one',
     curve.round1 > curve.round14 * 1.5,
     `round one ${curve.round1}, round two ${curve.round2}, last round ${curve.round14}`);

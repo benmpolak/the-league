@@ -13735,9 +13735,9 @@ function formStandings(n) {
    the pinning but still measured everybody against each other. Both were
    relative dressed as absolute. */
 const PERF_ELEMENTS = [
-  { key: 'draft', label: 'Draft', hi: true, raw: 'Beat',
+  { key: 'draft', label: 'Draft', hi: true, raw: 'Diff',
     title: 'Points his fourteen have scored above or below what his draft slots were worth',
-    blurb: 'Every pick in the league is worth something by where it fell &mdash; an early pick returns more than a late one. Add up what this manager\'s own fourteen slots were worth and compare it with what his men actually scored. Positive means he found value the board had not priced; nought means he did exactly what his picks were worth.' },
+    blurb: 'Each pick is judged against what was STILL ON THE BOARD when it was made &mdash; that pick and the twelve after it. Nobody is marked down for missing a player who had already gone. Add that up across his fourteen and compare it with what his men actually scored: positive means he took better than what was in front of him, negative means he did not.' },
   { key: 'bench', label: 'Bench', hi: true, raw: 'Wasted',
     title: 'Points lost by leaving a better man on the bench. Always nought or worse.',
     blurb: 'The best legal eleven he could have fielded each week, less the eleven he did. It only moves when somebody on the bench outscored a starter, so it is selection and nothing else. Nought is a perfect season of picking.' },
@@ -13745,9 +13745,41 @@ const PERF_ELEMENTS = [
     title: 'Net points won across all his completed business: trades, waiver claims and Trough signings alike',
     blurb: 'Net across every completed move &mdash; trades, waiver claims and Trough signings &mdash; exactly as the Trade Record scores them under All moves. A manager who has done no business and one who has done plenty and come out level are the same number here, which is right: nought is nought however you arrive at it.' },
 ];
-/* What each slot in the draft was worth, read off this season's own board.
-   Smoothed over the picks either side, because one pick is a single player
-   having a season and the curve is what a slot is worth in general. */
+/* What a pick was worth, read off this season's own board — and judged only
+   against what was STILL THERE when it was made.
+
+   Marc, 29 Sept 2026: "I shouldnt be judged for not picking haaland with pick
+   5 because haaland wasnt there."
+
+   That sank the first version of this, which averaged the twelve picks either
+   side of yours. Pick 5 was being measured partly against picks 1 to 4 — men
+   who were off the board before that manager sat down. Indefensible, however
+   tidy the arithmetic came out.
+
+   So the window looks FORWARD: this pick and the twelve after it. That is the
+   board as it actually stood — take the best of what is in front of you and you
+   beat it, take the fourth best and you do not. At the very end of the draft
+   there are not twelve picks left, so it tops up backwards to keep the sample
+   the same size; Marc again, and he is right: "Not perfect but better to get
+   the end wrong than the beginning."
+
+   One consequence, measured on last season's draft and worth knowing rather
+   than being surprised by. The baseline now tracks draft seat hard (the
+   correlation runs to -0.84, against -0.23 for the centred window): pick one's
+   window covers the richest stretch on the board, so the first seat is held to
+   a high standard, while a late seat picking after the turn is held to a lower
+   one. That is not a handicap creeping in, it is the whole point — seat one
+   COULD have taken Haaland and should answer for it.
+
+   The other consequence is cosmetic: because the best man available usually
+   outscores the average of the next twelve, everybody beats their board a
+   little and the beats no longer cancel to nothing (+429 across last season
+   rather than +47). That is a constant shift, not a distortion of who is ahead
+   of whom, so it is left alone rather than fudged out.
+
+   Smoothing over twelve at all is deliberate: a single pick is one player
+   having one season, and the question is what a slot was worth, not what one
+   man did with it. */
 const PERF_SLOT_WINDOW = 12;
 function draftSlotValues() {
   const picks = toArr(state.draft?.picks)
@@ -13756,11 +13788,14 @@ function draftSlotValues() {
   if (!picks.length) return null;
   const pts = new Map(picks.map(x => [x.n, playerPoints(x.p.id).pts]));
   const ns = [...pts.keys()].sort((a, b) => a - b);
+  const size = PERF_SLOT_WINDOW + 1;          // this pick and the twelve after
   const worth = new Map();
   for (const n of ns) {
-    let t = 0, c = 0;
-    for (const m of ns) if (Math.abs(m - n) <= PERF_SLOT_WINDOW) { t += pts.get(m); c++; }
-    worth.set(n, c ? t / c : 0);
+    let win = ns.filter(m => m >= n && m <= n + PERF_SLOT_WINDOW);
+    // the last rounds have nothing left in front of them: make the sample up
+    // from behind rather than judging them on three picks
+    if (win.length < size) win = [...ns.filter(m => m < n).slice(-(size - win.length)), ...win];
+    worth.set(n, win.length ? win.reduce((t, m) => t + pts.get(m), 0) / win.length : 0);
   }
   const byMid = new Map();
   for (const x of picks) {
@@ -13878,7 +13913,7 @@ function managerPerformanceCard() {
   const detail = els.map(el => {
     const order = [...perf].sort((a, b) => b[el.key] - a[el.key]);
     const extra = el.key === 'draft'
-      ? '<th class="num" title="What his fourteen actually scored">Got</th><th class="num" title="What his fourteen draft slots were worth">Slots</th>'
+      ? '<th class="num" title="What his fourteen men have actually scored">Scored</th><th class="num" title="What those fourteen picks could have been expected to return, judged on what was still on the board each time">Expected</th>'
       : el.key === 'trade' ? '<th class="num" title="Completed moves judged">Moves</th>' : '';
     return `<p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">${esc(el.label)} &middot; ${pc(perf.share[el.key])}% of the spread right now</p>
       <p class="muted" style="font-size:11px;margin:0 0 6px">${el.blurb}</p>
