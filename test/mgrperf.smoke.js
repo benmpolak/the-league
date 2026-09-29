@@ -148,26 +148,87 @@ const chk = (name, ok, detail = '') => {
         found ? `${found[2]} pts apart -> ${Math.abs(found[0].score.draft - found[1].score.draft).toFixed(2)} of a possible ${PERF_WEIGHT.toFixed(1)} (a ladder would force ${ladderStep.toFixed(2)})` : 'no close pair found');
     })();
 
-    /* ----- the ends of each scale, and the direction of each one ----- */
+    /* ----- the ends of each scale, and the direction of each one -----
+       Marc, 29 Sept 2026: "the 0s and the 33.3s are carrying too much
+       weighting. Can you estimate what a realistic minimum and maximum is for
+       each one and then rescore everyone." So the scale now runs a third past
+       the field at each end, and the whole point is that finishing last no
+       longer scores nought and leading no longer scores the lot. ----- */
     (() => {
       for (const el of PERF_ELEMENTS) {
         const { lo, hi } = perf.scales[el.key];
-        const bestRaw = el.hi ? hi : lo, worstRaw = el.hi ? lo : hi;
+        const bestRaw = el.hi ? Math.max(...perf.map(r => r[el.key])) : Math.min(...perf.map(r => r[el.key]));
+        const worstRaw = el.hi ? Math.min(...perf.map(r => r[el.key])) : Math.max(...perf.map(r => r[el.key]));
         const best = perf.find(r => r[el.key] === bestRaw), worst = perf.find(r => r[el.key] === worstRaw);
-        t(`${el.label}: the best figure takes the full ${PERF_WEIGHT.toFixed(1)}`,
-          close(best.score[el.key], PERF_WEIGHT), `${bestRaw} -> ${best.score[el.key].toFixed(2)}`);
-        t(`${el.label}: the worst figure takes nought`,
-          close(worst.score[el.key], 0), `${worstRaw} -> ${worst.score[el.key].toFixed(2)}`);
+        t(`${el.label}: the band runs past the field at both ends`,
+          lo < Math.min(...perf.map(r => r[el.key])) || hi > Math.max(...perf.map(r => r[el.key]))
+          || el.key === 'bench',
+          `field ${Math.min(...perf.map(r => r[el.key]))}..${Math.max(...perf.map(r => r[el.key]))}, band ${lo}..${hi}`);
+        t(`${el.label}: leading it does not hand over the whole ${PERF_WEIGHT.toFixed(1)}`,
+          best.score[el.key] < PERF_WEIGHT - 1e-9, `${bestRaw} -> ${best.score[el.key].toFixed(2)}`);
+        t(`${el.label}: coming last on it is not scored as nothing`,
+          worst.score[el.key] > 1e-9, `${worstRaw} -> ${worst.score[el.key].toFixed(2)}`);
+        // and the mark still moves with the number, which is the original brief
+        t(`${el.label}: a better figure still scores better`,
+          best.score[el.key] > worst.score[el.key]);
       }
+      /* Nought wastage is a real achievement rather than merely the best of a
+         bad lot, so THAT end is anchored and does pay full marks. */
+      (() => {
+        /* Constructing a flawless season is harder than it looks — sorting a
+           squad by points and legalising it does not reliably reproduce
+           optimalXI's best legal shape — so test the contract directly: the
+           good end of this element is anchored at nought, and nought pays the
+           lot. That is the property, and it does not need a fake season. */
+        t('the good end of bench wastage is anchored at nought, not at the best in the league',
+          perf.scales.bench.lo === 0,
+          `band ${perf.scales.bench.lo}..${perf.scales.bench.hi}, best in the league wasted ${Math.min(...perf.map(r => r.bench))}`);
+        const { lo, hi } = perf.scales.bench;
+        const scoreAt = v => ((hi - v) / (hi - lo)) * PERF_WEIGHT;
+        t('so a season with nothing left on the bench would take full marks',
+          close(scoreAt(0), PERF_WEIGHT), scoreAt(0).toFixed(2));
+        t('and the man who wasted least falls short of it, because he wasted something',
+          Math.min(...perf.map(r => r.bench)) > 0
+            ? perf.find(r => r.bench === Math.min(...perf.map(x => x.bench))).score.bench < PERF_WEIGHT
+            : true);
+      })();
+      /* The draft band is EVIDENCE, not a feel (Marc, 29 Sept 2026: "Could you
+         use last years data to help, certainly on the draft score perhaps?").
+         2025/26's archived draft is a full season of this league's own picks,
+         and the twelve 14-man hauls ran 79.5% to 119% of the league mean. The
+         band is those margins around the CURRENT mean, so it scales with the
+         season instead of being a fixed number that is wrong in September. */
+      (() => {
+        const mean = perf.reduce((t, r) => t + r.draft, 0) / perf.length;
+        const { lo, hi } = perf.scales.draft;
+        t('the draft band is the league average widened by last season\'s margins',
+          Math.abs(lo - mean * PERF_DRAFT_BAND[0]) <= 1 && Math.abs(hi - mean * PERF_DRAFT_BAND[1]) <= 1,
+          `mean ${mean.toFixed(0)}, band ${lo}..${hi}, expected ${(mean * PERF_DRAFT_BAND[0]).toFixed(0)}..${(mean * PERF_DRAFT_BAND[1]).toFixed(0)}`);
+        t('and those margins are the ones last season actually produced',
+          PERF_DRAFT_BAND[0] >= 0.75 && PERF_DRAFT_BAND[0] <= 0.85
+          && PERF_DRAFT_BAND[1] >= 1.15 && PERF_DRAFT_BAND[1] <= 1.25,
+          `[${PERF_DRAFT_BAND.join(', ')}] against last season's 0.795..1.19`);
+        t('it moves with the season rather than sitting at a fixed figure',
+          lo > 0 && hi > lo && lo < mean && hi > mean);
+        t('and the card cites last season for it',
+          /last season's drafts landed between/.test(perf.scales.draft.why));
+      })();
+
       /* The sign trap. Bench wastage is a cost, so the man who threw away LEAST
          must score most. Inverted by accident and this page would crown the
          worst manager in the league. */
       const leastWaste = perf.reduce((a, b) => (b.bench < a.bench ? b : a), perf[0]);
       const mostWaste = perf.reduce((a, b) => (b.bench > a.bench ? b : a), perf[0]);
       t('bench wastage runs backwards: least wasted scores most',
-        leastWaste.score.bench > mostWaste.score.bench
-        && close(leastWaste.score.bench, PERF_WEIGHT) && close(mostWaste.score.bench, 0),
+        leastWaste.score.bench > mostWaste.score.bench,
         `${leastWaste.bench} -> ${leastWaste.score.bench.toFixed(1)} vs ${mostWaste.bench} -> ${mostWaste.score.bench.toFixed(1)}`);
+      /* And the headline complaint, stated directly: no element may be pinned
+         to either end by the mere fact of somebody having to come last. */
+      t('nobody is handed a nought or a maximum just for finishing last or first',
+        perf.every(r => PERF_ELEMENTS.every(el =>
+          r.score[el.key] > 1e-9 && r.score[el.key] < PERF_WEIGHT - 1e-9)),
+        perf.flatMap(r => PERF_ELEMENTS.map(el => r.score[el.key]))
+          .filter(v => v <= 1e-9 || v >= PERF_WEIGHT - 1e-9).length + ' at an extreme');
     })();
 
     /* ----- the total ----- */
@@ -238,8 +299,9 @@ const chk = (name, ok, detail = '') => {
           return rows.every((tr, i) => tr.cells[1].textContent.trim() === (order[i].m.team || order[i].m.name));
         });
       })());
-      t('the card says the marks are relative to best and worst, not to position',
-        /scaled between the best and worst figures in the league rather than by finishing order/.test(txt));
+      t('the card says the marks are against what was achievable, not against who came last',
+        /scored against what was ACHIEVABLE on it rather than against whoever happened to come last/.test(txt)
+        && /nobody is handed nought merely for finishing twelfth/.test(txt));
     })();
 
     /* ----- the tabs ----- */
