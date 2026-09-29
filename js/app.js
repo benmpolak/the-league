@@ -5489,48 +5489,6 @@ function claimIdentity(mid) {
 
 let forceIdentity = false; // set when an action needs a signed-in manager first
 let linkSentTo = null;     // email a sign-in link was just sent to
-/* ----- why the desktop keeps forgetting you -----
-   Lee, 18 Sept 2026: "Getting very annoying to have to do the login copy and
-   paste link every week" — on desktop Chrome, several times a week, while the
-   installed app on his phone never asks.
-
-   Firebase keeps the session in IndexedDB, and a browser's default quota is
-   BEST-EFFORT: Chrome may evict it whenever it likes. An INSTALLED app is
-   promoted to persistent and exempt, which is exactly the difference between
-   his phone and his laptop.
-
-   So: ask. persist() answers instantly and never prompts — Chrome decides on
-   its own, granting it to sites it considers important (installed, bookmarked,
-   well used) and refusing the rest. It cannot hurt, and for anyone who already
-   qualifies it quietly ends the problem. For anyone it refuses, the sign-in
-   screen says so and offers the install, because a man being logged out weekly
-   deserves to know why rather than assume the app is broken. */
-let storageKept = null;    // null = not asked yet, true/false = Chrome's answer
-const storageWarning = () => storageKept === false ? `<p class="muted" id="whoKeep" style="font-size:11.5px;margin:2px 0 8px;line-height:1.45">
-  &#9888;&#65039; This browser has not promised to remember you, so it can drop your sign-in without warning &mdash; which is why it keeps asking. Installing the site as an app fixes it for good: in Chrome, the <b>&#8942;</b> menu &rarr; Cast, save and share &rarr; <b>Install page as app</b>. Your phone already does this, which is why the app never asks.</p>` : '';
-(async () => {
-  try {
-    if (!navigator.storage?.persist) return;
-    storageKept = await navigator.storage.persisted() || await navigator.storage.persist();
-  } catch { /* not available — the sign-in screen simply says nothing */ }
-  /* The answer arrives a beat AFTER the overlay has painted, so the line has
-     to be posted in rather than waited for. Re-rendering would do it, but it
-     would also wipe a half-typed address from under the reader, so slip the
-     paragraph into the open overlay instead and leave the rest alone. */
-  const box = $('#whoOverlay');
-  const slot = box && box.querySelector('details');
-  if (!storageWarning() || !slot || box.querySelector('#whoKeep')) return;
-  slot.insertAdjacentHTML('afterend', storageWarning());
-})();
-/* The address a link was last sent to. Deliberately OUR own key and not the
-   one sync.js keeps: that one is a working note for completing a link and is
-   wiped the moment it is spent, precisely so a wrong saved address cannot trap
-   a good link in a retry loop (sol P2, 22 Aug). This one only ever pre-fills a
-   text box the reader can see and edit, so it can never feed a sign-in by
-   itself and cannot bring that bug back. */
-const LAST_EMAIL_KEY = 'tl-last-email';
-const lastEmail = () => { try { return localStorage.getItem(LAST_EMAIL_KEY) || ''; } catch { return ''; } };
-const rememberEmail = e => { try { localStorage.setItem(LAST_EMAIL_KEY, e); } catch { /* fine */ } };
 function renderIdentity() {
   let ov = $('#whoOverlay');
   const needed = (netOn() && state.phase !== 'setup' && !whoami) || forceIdentity;
@@ -5581,7 +5539,7 @@ function renderIdentity() {
         ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>`
         : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
            <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
-             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" value="${esc(lastEmail())}" style="flex:1;min-width:0">
+             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" style="flex:1;min-width:0">
              <button class="btn" type="submit">Send link</button>
            </form>`}
       ${/* The rescue used to appear only in the same sitting as the send. One
@@ -5597,7 +5555,6 @@ function renderIdentity() {
         </form>
         ${linkSentTo ? '<button class="btn ghost small" id="whoResend">Different email</button>' : ''}
       </details>
-      ${storageWarning()}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
         <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
@@ -5644,7 +5601,7 @@ function renderIdentity() {
     if (!email) return;
     if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
     window.WCSync.auth.sendLink(email)
-      .then(() => { rememberEmail(email); linkSentTo = email; renderIdentity(); })
+      .then(() => { linkSentTo = email; renderIdentity(); })
       .catch(err => toast(err.message || 'Could not send the link — check the address.'));
   };
   // installed-app / wrong-browser rescue: the link itself, pasted by hand
@@ -11796,9 +11753,6 @@ function bindAwardsBits() {
       () => toast('Minutes copied — paste straight into the chat'),
       () => { window.prompt('Copy the Minutes:', txt); });
   };
-  // Marc, 20 Sept 2026: "i want to see why" — the verdict is no use without it
-  const cw = $('#cotwWhy');
-  if (cw) cw.onclick = () => { const last = lastFinalGw(); if (last >= 0) showCotwSheet(last); };
   const tm = $('#trmMore');
   if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
   document.querySelectorAll('[data-trmpos]').forEach(b => b.onclick = () => { trmView.pos = b.dataset.trmpos; render(); });
@@ -12407,12 +12361,6 @@ function lastFinalGw() {
 // on all twelve phones. The stenographer declines to print the title in full.
 //
 // The draw survives only for weeks where nobody did anything chargeable.
-/* Charges from here down are STANDING: not news, and true again next week
-   whatever anybody does. They still belong on the sheet — a quiet week has to
-   land somewhere — but they are the reason a rap sheet is mostly a constant,
-   so the working marks them and the reader can see how much of a verdict is
-   this week's conduct and how much is simply the state of a squad. */
-const COTW_STANDING_FROM = 17;
 const COTW_DRAWS = [
   'no reason was recorded',
   'the Committee declines to elaborate',
@@ -12606,26 +12554,7 @@ function cotwCharges(i) {
   }
   return out;
 }
-/* ----- the working, in full -----
-   Marc, 20 Sept 2026: "Ian has cunt of the week 5 times and i want to see why."
-   A verdict with no working is just an accusation, and the man wearing it has
-   no way to argue. So the whole reckoning is computed in ONE place and both
-   the verdict and the sheet on screen are read off it — a second routine for
-   "why" would eventually disagree with the one that decides, and then the card
-   would be explaining a verdict nobody reached.
-
-   It also names WHICH RULE decided it, because that turns out to be the
-   interesting part: the gravest charge settles it far less often than the
-   tiebreaks underneath do, and a reader who cannot see that will think he was
-   picked for the offence at the top of his sheet. */
-const COTW_STAGES = {
-  gravity: 'on the gravest charge of the week — no tiebreak needed',
-  weight: 'on the severity of the charge, the gravity being level',
-  rapCount: 'on the number of charges against him, the top charge being level',
-  rapWeight: 'on the total weight of his sheet, everything above it being level',
-  managerId: 'on the order of the manager list, everything else being dead level',
-};
-function cotwWorking(i) {
+function cotwFor(i) {
   if (!state.managers.length) return null;
   // no verdict on a round this device is only holding half of. Standing down
   // the minutes charges is not enough on its own — a stale phone would simply
@@ -12640,96 +12569,20 @@ function cotwWorking(i) {
   if (sheet.length) {
     const rap = {};
     for (const c of sheet) {
-      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0, standing: 0 };
+      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0 };
       r.n++; r.w += c.weight;
-      if (c.gravity >= COTW_STANDING_FROM) r.standing++;
     }
     sheet.sort((a, b) => a.gravity - b.gravity || b.weight - a.weight
       || rap[b.id].n - rap[a.id].n || rap[b.id].w - rap[a.id].w || a.id - b.id);
     const top = sheet[0];
-    /* Walk the same chain the sort just walked and note where the field
-       narrows to one man. Read off the sorted sheet rather than re-deciding:
-       whatever the sort did IS the answer, and this only reports it. */
-    const uniq = s => new Set(s.map(c => c.id)).size;
-    let pool = sheet.filter(c => c.gravity === top.gravity);
-    let stage = 'gravity';
-    if (uniq(pool) > 1) {
-      pool = pool.filter(c => c.weight === top.weight); stage = 'weight';
-      if (uniq(pool) > 1) {
-        const mx = Math.max(...pool.map(c => rap[c.id].n));
-        pool = pool.filter(c => rap[c.id].n === mx); stage = 'rapCount';
-        if (uniq(pool) > 1) {
-          const mw = Math.max(...pool.map(c => rap[c.id].w));
-          pool = pool.filter(c => rap[c.id].w === mw); stage = 'rapWeight';
-          if (uniq(pool) > 1) stage = 'managerId';
-        }
-      }
-    }
-    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1,
-      stage, sheet, rap,
-      // everyone who reached the last rung with him, him included
-      level: [...new Set(pool.map(c => c.id))],
-      mine: sheet.filter(c => c.id === top.id) };
+    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1 };
   }
   // a week in which the league behaved itself. The trophy still needs a home,
   // so the Committee draws lots — seeded off the gameweek the way chantFor is,
   // because Math.random() would name a different man on every phone
   const seed = (i * 2246822519 + 3266489917) >>> 0;
   const m = state.managers[seed % state.managers.length];
-  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false,
-    sheet: [], rap: {}, mine: [], level: [m.id] } : null;
-}
-// kept as a declaration, not a const: it is reached from render paths that run
-// before this point in the file and a temporal-dead-zone crash here would take
-// the whole Data room with it
-function cotwFor(i) { return cotwWorking(i); }
-/* ----- the charge sheet, opened up -----
-   Marc, 20 Sept 2026: "i want to see why." The card used to give the verdict
-   and a count of "other matters", which tells a man he has been convicted and
-   nothing about what of. This shows the lot: every charge against him, which
-   rule actually decided it, and who else was level when it did.
-
-   The last of those is the one that changes minds. Most weeks are not settled
-   by the offence printed at the top — they are settled by a tiebreak several
-   rungs below it, and a reader who cannot see that will assume the headline
-   charge is the reason he has it. */
-function showCotwSheet(i) {
-  const w = cotwWorking(i);
-  if (!w) return;
-  $('#cotwOverlay')?.remove();
-  const nm = id => esc(teamName(id) || managerName(id));
-  const charge = c => `<tr>
-    <td class="num muted" style="white-space:nowrap">${c.gravity}</td>
-    <td>${esc(c.why)}${c.gravity >= COTW_STANDING_FROM ? ' <span class="muted" style="font-size:10px">&middot; standing</span>' : ''}</td>
-    <td class="num muted">${c.weight}</td>
-  </tr>`;
-  const mineStanding = w.mine.filter(c => c.gravity >= COTW_STANDING_FROM).length;
-  const rivals = (w.level || []).filter(id => id !== w.id);
-  const body = !w.proven
-    ? `<p class="muted" style="font-size:12.5px">Nobody offended at all this week, so the Committee drew lots. There is no sheet, and no appeal.</p>`
-    : `<p style="font-size:12.5px;margin:0 0 10px">Decided <b>${COTW_STAGES[w.stage] || 'on the sheet'}</b>.</p>
-      ${rivals.length ? `<p class="muted" style="font-size:11.5px;margin:0 0 10px">Level with him at that point: ${rivals.map(nm).join(', ')}. ${w.stage === 'managerId' ? 'Nothing separated them at all, so it fell to the order of the manager list.' : 'He was separated from them by the rule above.'}</p>` : ''}
-      <p class="muted" style="font-size:11px;margin:12px 0 4px;text-transform:uppercase;letter-spacing:.08em">Everything on his sheet (${w.mine.length})</p>
-      <div style="overflow-x:auto"><table class="pool-table">
-        <thead><tr><th style="width:12%">Grav</th><th>Charge</th><th style="width:14%">Weight</th></tr></thead>
-        <tbody>${w.mine.map(charge).join('')}</tbody>
-      </table></div>
-      <p class="muted" style="font-size:10.5px;margin-top:8px">${mineStanding} of these ${w.mine.length} are <b>standing</b> charges &mdash; true again next week whatever he does, because they describe a squad rather than a week. They count toward the tiebreak, which is why a man can keep collecting this without doing anything new.</p>`;
-  const ov = document.createElement('div');
-  ov.id = 'cotwOverlay';
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="card" style="max-width:520px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; the working</p>
-      <button class="btn ghost small" id="cotwClose">&#10005;</button>
-    </div>
-    <h2 style="margin:0 0 2px">&#128683; ${nm(w.id)}</h2>
-    <p class="muted" style="font-size:12px;margin:0 0 12px">${esc(w.why)}</p>
-    ${body}
-  </div>`;
-  ov.onclick = e => { if (e.target === ov || e.target.id === 'cotwClose') closeOv(ov); };
-  document.body.appendChild(ov);
-  pushOvState();
+  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false } : null;
 }
 function weeklyAwards(last) {
   const scores = state.managers.map(m => ({ id: m.id, s: gwManagerPoints(m.id, last), waste: benchWaste(m.id, last) }));
@@ -12843,7 +12696,7 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
-      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''} <button class="btn ghost small" id="cotwWhy" style="margin-left:4px;vertical-align:middle">See the working</button>`) : ''}
+      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''}`) : ''}
     </div>
     ${cotw ? `<p class="muted" style="font-size:10.5px;margin-top:6px"><b>C*** of the Week:</b> charged on the week's evidence — team sheets, the transfer log, the fixture list and the clock — and ranked by gravity, not by score. You cannot earn it by playing badly, only by being annoying about it, and you keep it for as long as you keep earning it.${cotw.proven ? '' : ' Nobody offended this week, so the Committee drew lots.'} No appeal.</p>` : ''}
     ${sa ? `${sect('Season so far')}
