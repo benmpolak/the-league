@@ -1,25 +1,20 @@
-/* Managerial Performance (Marc, 29 Sept 2026: "a manager performance ranking
- * into the league section... based on three factors. All weighted 33.3% each.
- * I want each persons performance to be normalized to a total of 100 possible
- * points based on those three things, NOT WEIGHTED BY THE RANKING, weighted by
- * the actual score on that element relative to the best and worst on that
- * topic. 1 - 14 man draft team score. 2. Bench wastage (only when a player on
- * the bench scores more than a starting player). 3. Trading."), widened the
- * same day to "trades, waiver and trough picks".
+/* Managerial Performance (Marc, 29 Sept 2026, over three attempts).
  *
- * The emphasis is his and it is the whole design, so it is what gets attacked
- * hardest here. A rank-weighted table hands out the same ladder of marks
- * whether the field is strung out over two hundred points or packed into three,
- * and that is exactly what he asked not to have. So:
+ * The brief settled at: three things a manager controls, each measured in
+ * POINTS from a nought that means something, added up. No weighting, because
+ * once they share a unit there is nothing to weight — "should it just be on
+ * raw points earned meaning that even the 3 way split could change over time".
  *
- *   - every score is checked against the min-max formula on the REAL spread,
- *     which a rank-based score could not satisfy
- *   - and two managers who are close on an element must score close on it even
- *     when several places separate them, which is the behaviour a ladder gets
- *     wrong and the one Marc actually wants
+ * What gets attacked hardest here is the thing the first two attempts got
+ * wrong. Both scored managers against EACH OTHER while presenting the result as
+ * an absolute mark, so the leader took full marks however little separated him:
+ * "i dont think toby should get 33.3 for the draft because we dont really know
+ * how good his draft was, we just know it was better than everyone elses."
  *
- * The other trap is direction: bench wastage is a COST, so low must be good. A
- * sign error there would quietly reward the worst manager in the league.
+ * So the tests insist on the property that fixes it: each element's nought is a
+ * real reference point rather than the bottom of the field, and the draft's is
+ * the one that had to be invented — what a manager's own draft slots were
+ * worth, read off the league's own curve.
  *
  * Run against any side-port server with TEST_BASE_URL=http://127.0.0.1:8749.
  */
@@ -47,16 +42,12 @@ const chk = (name, ok, detail = '') => {
   const log = await page.evaluate(() => {
     const log = [];
     const t = (name, ok, detail = '') => log.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`);
-    const close = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
-    // the Data Room's tab strip is a .card of its own and renders first
     const perfCard = () => [...document.querySelectorAll('.card')]
       .find(c => /Managerial Performance/.test(c.querySelector('h2')?.textContent || ''));
 
     state = buildDemoState(); state.phase = 'season';
     myId = whoami = state.managers[0].id;
 
-    /* five settled rounds and a couple of trades, so all three elements have a
-       real spread rather than a dead heat */
     let seed = 11;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     for (let i = 1; i < 6 && i < GAMEWEEKS.length; i++) {
@@ -81,194 +72,158 @@ const chk = (name, ok, detail = '') => {
     t('(setup) every manager is scored', !!perf && perf.length === state.managers.length,
       perf ? String(perf.length) : 'null');
     if (!perf) return log;
-    t('(setup) all three elements have a real spread to work with',
-      PERF_ELEMENTS.every(el => !perf.scales[el.key].flat),
-      PERF_ELEMENTS.map(el => `${el.label} ${perf.scales[el.key].lo}..${perf.scales[el.key].hi}`).join(' | '));
+    t('three elements, and every one of them in whole points',
+      PERF_ELEMENTS.length === 3 && PERF_ELEMENTS.every(el => perf.every(r => Number.isInteger(r[el.key]))));
+    t('the total is simply the three added up, with nothing weighting them',
+      perf.every(r => r.total === PERF_ELEMENTS.reduce((s, el) => s + r[el.key], 0)));
+    t('the table is ordered by total, best first',
+      perf.every((r, i) => i === 0 || perf[i - 1].total >= r.total));
+    t('level totals share a place', (() => {
+      const by = {};
+      for (const r of perf) (by[r.total] = by[r.total] || []).push(r.rank);
+      return Object.values(by).every(v => new Set(v).size === 1);
+    })());
 
-    /* ----- the three elements are the ones Marc named, off the pages that own them ----- */
+    /* ----- the draft has a real nought now: what your slots were worth ----- */
     (() => {
-      const board = draftBoard();
-      /* Marc, 29 Sept 2026: "by trades i mean trades, waiver and trough picks"
-         — so the element is ALL completed business, not the trade-only reading
-         the Trade Record opens on. Reading the wrong scope here would silently
-         drop every waiver claim and Trough signing in the league. */
+      const slots = draftSlotValues();
+      t('every manager gets a slot valuation off his own picks',
+        !!slots && slots.size === state.managers.length);
+      t('and the draft mark is what he scored less what his slots were worth',
+        perf.every(r => r.draft === Math.round(slots.get(r.m.id).got - slots.get(r.m.id).worth)));
+      /* The snake is supposed to be fair, so the baselines should come out
+         level. If they do not, this handicaps people by draft position rather
+         than judging them. */
+      const worths = [...slots.values()].map(s => s.worth);
+      const lo = Math.min(...worths), hi = Math.max(...worths);
+      t('the slot baselines are level across the league, so nobody is handicapped by where he picked',
+        (hi - lo) / ((hi + lo) / 2) < 0.05, `${Math.round(lo)}..${Math.round(hi)}`);
+      /* And because the baseline is the league's own smoothed curve, the beats
+         very nearly cancel: a draft is a carve-up of one pool. */
+      const sum = perf.reduce((s, r) => s + r.draft, 0);
+      const scale = Math.max(...perf.map(r => Math.abs(r.draft)));
+      t('the beats cancel out across the league, as a carve-up of one pool must',
+        Math.abs(sum) < scale, `sum ${sum} against a biggest beat of ${scale}`);
+      /* The premise of the whole element is that a slot HAS a value — that an
+         early pick returns more than a late one. The demo cannot show it: it
+         drafts in rating order but then fabricates random stats, so its curve
+         is flat and a beat there is just raw points less the league average.
+         The proof has to come from real football, so it is checked against
+         last season's archive further down this file. */
+    })();
+
+    /* ----- nought means something on all three ----- */
+    (() => {
+      t('bench is a cost, so it is never positive', perf.every(r => r.bench <= 0));
+      t('(control) somebody is currently wasting bench points',
+        perf.some(r => r.bench < 0), perf.map(r => r.bench).join(','));
+      t('and the man who wasted least has the best bench mark', (() => {
+        const best = perf.reduce((a, b) => (b.bench > a.bench ? b : a), perf[0]);
+        return best.wasted === Math.min(...perf.map(r => r.wasted));
+      })());
+      // business: doing nothing and breaking even must read the same
+      const zeros = perf.filter(r => r.trade === 0);
+      t('doing no business and breaking even on plenty score the same',
+        zeros.length < 2 || new Set(zeros.map(r => r.trade)).size === 1,
+        `${zeros.length} managers on nought`);
+      t('business straddles nought rather than starting at the worst in the league',
+        perf.some(r => r.trade > 0) || perf.some(r => r.trade < 0));
+      t('and the draft straddles it too — beating your slots is possible and so is missing them',
+        perf.some(r => r.draft > 0) && perf.some(r => r.draft < 0),
+        `${perf.filter(r => r.draft > 0).length} above, ${perf.filter(r => r.draft < 0).length} below`);
+    })();
+
+    /* ----- the weighting floats, and is reported rather than set ----- */
+    (() => {
+      t('a share is published for each element', PERF_ELEMENTS.every(el => Number.isFinite(perf.share[el.key])));
+      t('the shares add up to the whole',
+        Math.abs(PERF_ELEMENTS.reduce((s, el) => s + perf.share[el.key], 0) - 100) < 1e-6,
+        PERF_ELEMENTS.map(el => `${el.label} ${perf.share[el.key].toFixed(1)}%`).join(', '));
+      t('and each share is that element\'s own spread, not a constant',
+        PERF_ELEMENTS.every(el => {
+          const vals = perf.map(r => r[el.key]);
+          return perf.spread[el.key] === Math.max(...vals) - Math.min(...vals);
+        }));
+      /* The point of the redesign: the split is NOT a third each. If this
+         assertion starts failing, somebody has reintroduced a fixed weighting
+         (Marc, 29 Sept 2026: "even the 3 way split could change over time"). */
+      t('(control) the split is not three equal thirds',
+        PERF_ELEMENTS.some(el => Math.abs(perf.share[el.key] - 100 / 3) > 5),
+        PERF_ELEMENTS.map(el => `${Math.round(perf.share[el.key])}%`).join('/'));
+    })();
+
+    /* ----- the two readings (Marc, 29 Sept 2026: "managerial performance
+       since the draft being just bench wastage and business and ignore the
+       draft. Given that the draft was a one off event you cant really do
+       anything about it now") ----- */
+    (() => {
+      const all = managerPerformance('all'), since = managerPerformance('since');
+      t('both readings are offered', Object.keys(PERF_VIEWS).length === 2
+        && PERF_VIEWS.all.keys.length === 3 && PERF_VIEWS.since.keys.length === 2);
+      t('since the draft drops the draft and keeps the other two',
+        !PERF_VIEWS.since.keys.includes('draft')
+        && PERF_VIEWS.since.keys.includes('bench') && PERF_VIEWS.since.keys.includes('trade'));
+      t('its total is bench plus business, with the draft left out',
+        since.every(r => r.total === r.bench + r.trade));
+      t('and the whole-season total still counts all three',
+        all.every(r => r.total === r.draft + r.bench + r.trade));
+      // the underlying numbers are the same — only what is added up changes
+      t('the two readings share their figures rather than recomputing them',
+        since.every(r => {
+          const a = all.find(x => x.m.id === r.m.id);
+          return a.bench === r.bench && a.trade === r.trade && a.draft === r.draft;
+        }));
+      /* The control that makes the feature worth having: dropping the draft has
+         to actually change who is top, or there was no point asking for it. */
+      t('(control) the two readings genuinely disagree about the order',
+        all[0].m.id !== since[0].m.id
+        || all.map(r => r.m.id).join() !== since.map(r => r.m.id).join(),
+        `whole season leads ${all[0].m.team}, since the draft leads ${since[0].m.team}`);
+      t('the shares are recomputed over the two that remain, and still total 100',
+        Math.abs(PERF_VIEWS.since.keys.reduce((s2, k) => s2 + since.share[k], 0) - 100) < 1e-6
+        && since.share.draft === undefined,
+        PERF_VIEWS.since.keys.map(k => `${k} ${Math.round(since.share[k])}%`).join(', '));
+      t('and every place is recomputed too, not carried over',
+        since.every((r, i) => i === 0 || since[i - 1].total >= r.total));
+    })();
+
+    /* ----- the toggle on the card ----- */
+    (() => {
+      perfView = 'all'; dataView.tab = 'managers'; state.view = 'data'; render();
+      t('the card offers both readings', document.querySelectorAll('[data-perfview]').length === 2);
+      t('(control) the whole-season card shows a draft column',
+        [...perfCard().querySelectorAll('thead th')].some(x => x.textContent.trim() === 'Draft'));
+      document.querySelector('[data-perfview="since"]').click();
+      const card = perfCard();
+      const heads = [...card.querySelectorAll('thead th')].map(x => x.textContent.trim());
+      t('switching to since the draft drops the draft column',
+        perfView === 'since' && !heads.includes('Draft')
+        && heads.includes('Bench') && heads.includes('Business'), heads.join('|'));
+      t('and drops its section underneath as well',
+        card.querySelectorAll('table').length === 3,
+        `${card.querySelectorAll('table').length} tables`);
+      t('the card says why the draft is left out',
+        /nobody can replay it/.test(card.textContent));
+      t('and par no longer mentions the draft slots',
+        !/drafted exactly to the value of your slots/.test(card.textContent));
+      document.querySelector('[data-perfview="all"]').click();
+      t('and back again', perfView === 'all'
+        && [...perfCard().querySelectorAll('thead th')].some(x => x.textContent.trim() === 'Draft'));
+    })();
+
+    /* ----- it reads off the pages that own the numbers ----- */
+    (() => {
       const tally = tradeTally('all');
-      const tradesOnly = tradeTally('trades');
-      t('the draft figure is the Draft Console\'s own By Team total',
-        perf.every(r => r.draft === board.find(x => x.m.id === r.m.id).pts));
-      t('the bench figure is the season bench wastage, not a fresh reading',
-        perf.every(r => r.bench === seasonBenchWaste(r.m.id)));
-      t('the business figure is the Trade Record\'s own net, over ALL moves',
+      t('business is the Trade Record\'s own net over all moves',
         perf.every(r => r.trade === (tally[r.m.id]?.net ?? 0)));
-      t('(control) that is a wider net than trades alone', (() => {
-        const wider = perf.some(r => (tally[r.m.id]?.n ?? 0) > (tradesOnly[r.m.id]?.n ?? 0));
-        return wider;
-      })(), `all-moves deals ${Object.values(tally).reduce((t2, r) => t2 + r.n, 0)} vs trades-only ${Object.values(tradesOnly).reduce((t2, r) => t2 + r.n, 0)}`);
-      t('and a manager who has done no business scores the same as one who came out level', (() => {
-        // nought is nought however you arrive at it (Marc, 29 Sept 2026)
-        const zeros = perf.filter(r => r.trade === 0);
-        return zeros.length < 2 || new Set(zeros.map(r => r.score.trade.toFixed(9))).size === 1;
-      })());
-      t('and there are exactly three elements, 33.3 each',
-        PERF_ELEMENTS.length === 3 && close(PERF_WEIGHT * 3, 100),
-        `${PERF_ELEMENTS.length} x ${PERF_WEIGHT}`);
+      t('bench is the season bench wastage, negated',
+        perf.every(r => r.bench === -seasonBenchWaste(r.m.id)));
+      const board = draftBoard();
+      t('and what the fourteen scored is the Draft Console\'s own total',
+        perf.every(r => r.got === board.find(x => x.m.id === r.m.id).pts));
     })();
 
-    /* ----- NOT BY THE RANKING. The headline requirement. ----- */
-    (() => {
-      let ok = 0, n = 0;
-      for (const el of PERF_ELEMENTS) {
-        const { lo, hi } = perf.scales[el.key];
-        for (const r of perf) {
-          n++;
-          const frac = el.hi ? (r[el.key] - lo) / (hi - lo) : (hi - r[el.key]) / (hi - lo);
-          if (close(r.score[el.key], frac * PERF_WEIGHT, 1e-9)) ok++;
-        }
-      }
-      t('every score is the actual figure scaled between best and worst', ok === n, `${ok}/${n}`);
-      // and it is NOT the ladder: an evenly-spaced ladder would put the second
-      // man a fixed step below the first on every element, whatever the numbers
-      const ladderStep = PERF_WEIGHT / (perf.length - 1);
-      const draftOrder = [...perf].sort((a, b) => b.draft - a.draft);
-      const gaps = draftOrder.slice(1).map((r, i) => draftOrder[i].score.draft - r.score.draft);
-      t('(control) the steps between managers are UNEVEN, as real numbers are',
-        new Set(gaps.map(g => Math.round(g * 100))).size > 2,
-        `${gaps.length} steps, ${new Set(gaps.map(g => Math.round(g * 100))).size} distinct, a ladder would give 1 of ${ladderStep.toFixed(2)}`);
-      /* The behaviour that matters: two men close on an element score close on
-         it, even if the table puts several places between them. */
-      const byDraft = [...perf].sort((a, b) => b.draft - a.draft);
-      let found = null;
-      for (let i = 0; i < byDraft.length - 1; i++) {
-        const gapRaw = byDraft[i].draft - byDraft[i + 1].draft;
-        const spread = perf.scales.draft.hi - perf.scales.draft.lo;
-        if (gapRaw <= spread * 0.06) { found = [byDraft[i], byDraft[i + 1], gapRaw]; break; }
-      }
-      t('two managers close on an element score close on it, whatever their places',
-        !!found && Math.abs(found[0].score.draft - found[1].score.draft) < ladderStep,
-        found ? `${found[2]} pts apart -> ${Math.abs(found[0].score.draft - found[1].score.draft).toFixed(2)} of a possible ${PERF_WEIGHT.toFixed(1)} (a ladder would force ${ladderStep.toFixed(2)})` : 'no close pair found');
-    })();
-
-    /* ----- the ends of each scale, and the direction of each one -----
-       Marc, 29 Sept 2026: "the 0s and the 33.3s are carrying too much
-       weighting. Can you estimate what a realistic minimum and maximum is for
-       each one and then rescore everyone." So the scale now runs a third past
-       the field at each end, and the whole point is that finishing last no
-       longer scores nought and leading no longer scores the lot. ----- */
-    (() => {
-      for (const el of PERF_ELEMENTS) {
-        const { lo, hi } = perf.scales[el.key];
-        const bestRaw = el.hi ? Math.max(...perf.map(r => r[el.key])) : Math.min(...perf.map(r => r[el.key]));
-        const worstRaw = el.hi ? Math.min(...perf.map(r => r[el.key])) : Math.max(...perf.map(r => r[el.key]));
-        const best = perf.find(r => r[el.key] === bestRaw), worst = perf.find(r => r[el.key] === worstRaw);
-        t(`${el.label}: the band runs past the field at both ends`,
-          lo < Math.min(...perf.map(r => r[el.key])) || hi > Math.max(...perf.map(r => r[el.key]))
-          || el.key === 'bench',
-          `field ${Math.min(...perf.map(r => r[el.key]))}..${Math.max(...perf.map(r => r[el.key]))}, band ${lo}..${hi}`);
-        t(`${el.label}: leading it does not hand over the whole ${PERF_WEIGHT.toFixed(1)}`,
-          best.score[el.key] < PERF_WEIGHT - 1e-9, `${bestRaw} -> ${best.score[el.key].toFixed(2)}`);
-        t(`${el.label}: coming last on it is not scored as nothing`,
-          worst.score[el.key] > 1e-9, `${worstRaw} -> ${worst.score[el.key].toFixed(2)}`);
-        // and the mark still moves with the number, which is the original brief
-        t(`${el.label}: a better figure still scores better`,
-          best.score[el.key] > worst.score[el.key]);
-      }
-      /* Nought wastage is a real achievement rather than merely the best of a
-         bad lot, so THAT end is anchored and does pay full marks. */
-      (() => {
-        /* Constructing a flawless season is harder than it looks — sorting a
-           squad by points and legalising it does not reliably reproduce
-           optimalXI's best legal shape — so test the contract directly: the
-           good end of this element is anchored at nought, and nought pays the
-           lot. That is the property, and it does not need a fake season. */
-        t('the good end of bench wastage is anchored at nought, not at the best in the league',
-          perf.scales.bench.lo === 0,
-          `band ${perf.scales.bench.lo}..${perf.scales.bench.hi}, best in the league wasted ${Math.min(...perf.map(r => r.bench))}`);
-        const { lo, hi } = perf.scales.bench;
-        const scoreAt = v => ((hi - v) / (hi - lo)) * PERF_WEIGHT;
-        t('so a season with nothing left on the bench would take full marks',
-          close(scoreAt(0), PERF_WEIGHT), scoreAt(0).toFixed(2));
-        t('and the man who wasted least falls short of it, because he wasted something',
-          Math.min(...perf.map(r => r.bench)) > 0
-            ? perf.find(r => r.bench === Math.min(...perf.map(x => x.bench))).score.bench < PERF_WEIGHT
-            : true);
-      })();
-      /* The draft band is EVIDENCE, not a feel (Marc, 29 Sept 2026: "Could you
-         use last years data to help, certainly on the draft score perhaps?").
-         2025/26's archived draft is a full season of this league's own picks,
-         and the twelve 14-man hauls ran 79.5% to 119% of the league mean. The
-         band is those margins around the CURRENT mean, so it scales with the
-         season instead of being a fixed number that is wrong in September. */
-      (() => {
-        const mean = perf.reduce((t, r) => t + r.draft, 0) / perf.length;
-        const { lo, hi } = perf.scales.draft;
-        t('the draft band is the league average widened by last season\'s margins',
-          Math.abs(lo - mean * PERF_DRAFT_BAND[0]) <= 1 && Math.abs(hi - mean * PERF_DRAFT_BAND[1]) <= 1,
-          `mean ${mean.toFixed(0)}, band ${lo}..${hi}, expected ${(mean * PERF_DRAFT_BAND[0]).toFixed(0)}..${(mean * PERF_DRAFT_BAND[1]).toFixed(0)}`);
-        t('and those margins are the ones last season actually produced',
-          PERF_DRAFT_BAND[0] >= 0.75 && PERF_DRAFT_BAND[0] <= 0.85
-          && PERF_DRAFT_BAND[1] >= 1.15 && PERF_DRAFT_BAND[1] <= 1.25,
-          `[${PERF_DRAFT_BAND.join(', ')}] against last season's 0.795..1.19`);
-        t('it moves with the season rather than sitting at a fixed figure',
-          lo > 0 && hi > lo && lo < mean && hi > mean);
-        t('and the card cites last season for it',
-          /last season's drafts landed between/.test(perf.scales.draft.why));
-      })();
-
-      /* The sign trap. Bench wastage is a cost, so the man who threw away LEAST
-         must score most. Inverted by accident and this page would crown the
-         worst manager in the league. */
-      const leastWaste = perf.reduce((a, b) => (b.bench < a.bench ? b : a), perf[0]);
-      const mostWaste = perf.reduce((a, b) => (b.bench > a.bench ? b : a), perf[0]);
-      t('bench wastage runs backwards: least wasted scores most',
-        leastWaste.score.bench > mostWaste.score.bench,
-        `${leastWaste.bench} -> ${leastWaste.score.bench.toFixed(1)} vs ${mostWaste.bench} -> ${mostWaste.score.bench.toFixed(1)}`);
-      /* And the headline complaint, stated directly: no element may be pinned
-         to either end by the mere fact of somebody having to come last. */
-      t('nobody is handed a nought or a maximum just for finishing last or first',
-        perf.every(r => PERF_ELEMENTS.every(el =>
-          r.score[el.key] > 1e-9 && r.score[el.key] < PERF_WEIGHT - 1e-9)),
-        perf.flatMap(r => PERF_ELEMENTS.map(el => r.score[el.key]))
-          .filter(v => v <= 1e-9 || v >= PERF_WEIGHT - 1e-9).length + ' at an extreme');
-    })();
-
-    /* ----- the total ----- */
-    (() => {
-      t('the total is the three elements added up',
-        perf.every(r => close(r.total, PERF_ELEMENTS.reduce((s, el) => s + r.score[el.key], 0))));
-      t('nobody can score above 100 or below 0',
-        perf.every(r => r.total >= -1e-9 && r.total <= 100 + 1e-9),
-        `${Math.min(...perf.map(r => r.total)).toFixed(1)}..${Math.max(...perf.map(r => r.total)).toFixed(1)}`);
-      t('the table is ordered by total, best first',
-        perf.every((r, i) => i === 0 || perf[i - 1].total >= r.total));
-      t('level totals share a place', (() => {
-        const by = {};
-        for (const r of perf) (by[r.total.toFixed(6)] = by[r.total.toFixed(6)] || []).push(r.rank);
-        return Object.values(by).every(v => new Set(v).size === 1);
-      })());
-      // a man top of all three would score exactly 100; nobody here should
-      t('(control) nobody is top of everything, so no perfect hundred',
-        !perf.some(r => close(r.total, 100)), perf[0].total.toFixed(1));
-    })();
-
-    /* ----- a dead heat on an element ----- */
-    (() => {
-      const keep = state.transfers;
-      /* Clearing only the TRADES no longer makes a dead heat: the element counts
-         all business, so waiver claims and Trough signings keep it alive. Empty
-         the ledger entirely (Marc, 29 Sept 2026 widened the scope). */
-      state.transfers = [];
-      const flatPerf = managerPerformance();
-      t('an element nobody differs on is flagged rather than faked',
-        flatPerf.scales.trade.flat === true);
-      t('and everybody takes full marks on it instead of an invented winner',
-        flatPerf.every(r => close(r.score.trade, PERF_WEIGHT)));
-      dataView.tab = 'managers'; state.view = 'data'; render();
-      t('the card admits when an element is separating nobody',
-        /separates nobody yet/.test(perfCard().textContent));
-      state.transfers = keep;
-    })();
-
-    /* ----- the card: headline first, then the three beneath ----- */
+    /* ----- the card ----- */
     (() => {
       dataView.tab = 'managers'; state.view = 'data'; render();
       const card = perfCard();
@@ -277,52 +232,32 @@ const chk = (name, ok, detail = '') => {
       const heads = [...tables[0].querySelectorAll('thead th')].map(x => x.textContent.trim());
       t('the headline carries the three elements and a total',
         PERF_ELEMENTS.every(el => heads.includes(el.label)) && heads.includes('Total'), heads.join('|'));
-      t('a row per manager in the headline',
-        tables[0].querySelectorAll('tbody tr').length === perf.length);
-      // the printed totals are the computed ones
-      t('the totals on screen are the totals computed', (() => {
-        return [...tables[0].querySelectorAll('tbody tr')].every((tr, i) =>
-          Math.abs(parseFloat(tr.cells[tr.cells.length - 1].textContent) - perf[i].total) < 0.06);
-      })());
-      // and each element gets its raw figures and its own ranking below
-      const txt = card.textContent;
-      t('each element has its own section, raw and ranked',
-        PERF_ELEMENTS.every(el => new RegExp(`${el.label}\\s*·\\s*worth`).test(txt.replace(/\s+/g, ' '))
-          || txt.includes(`${el.label} · worth`)), '');
-      t('the element tables show every manager\'s raw figure',
-        tables.slice(1).every(tb => tb.querySelectorAll('tbody tr').length === perf.length),
-        tables.slice(1).map(tb => tb.querySelectorAll('tbody tr').length).join('/'));
-      t('and each element table is ranked on its own element', (() => {
-        return PERF_ELEMENTS.every((el, k) => {
-          const rows = [...tables[k + 1].querySelectorAll('tbody tr')];
-          const order = [...perf].sort((a, b) => el.hi ? b[el.key] - a[el.key] : a[el.key] - b[el.key]);
-          return rows.every((tr, i) => tr.cells[1].textContent.trim() === (order[i].m.team || order[i].m.name));
-        });
-      })());
-      t('the card says the marks are against what was achievable, not against who came last',
-        /scored against what was ACHIEVABLE on it rather than against whoever happened to come last/.test(txt)
-        && /nobody is handed nought merely for finishing twelfth/.test(txt));
+      t('the totals on screen are the totals computed',
+        [...tables[0].querySelectorAll('tbody tr')].every((tr, i) =>
+          parseInt(tr.cells[tr.cells.length - 1].textContent.replace('+', ''), 10) === perf[i].total));
+      const txt = card.textContent.replace(/\s+/g, ' ');
+      t('the card says nought is par, not the bottom of the league',
+        /Nought is par/.test(txt) && /most of these are negative/.test(txt));
+      t('it explains there is no weighting to argue about',
+        /here is no weighting to argue about/.test(txt));   // capitalised mid-rewrite
+      t('and it prints the shares as they currently stand',
+        PERF_ELEMENTS.every(el => new RegExp(`${el.label.toLowerCase()} \\d+%`).test(txt)),
+        (txt.match(/the spread is [^—]*/) || ['not printed'])[0].slice(0, 90));
+      t('the draft section shows what he got and what his slots were worth',
+        /Got/.test(tables[1].textContent) && /Slots/.test(tables[1].textContent));
+      t('every element table lists every manager',
+        tables.slice(1).every(tb => tb.querySelectorAll('tbody tr').length === perf.length));
     })();
 
-    /* ----- the tabs ----- */
+    /* ----- it sits in the Data Room, and the league table is untouched ----- */
     (() => {
-      /* Marc, 29 Sept 2026: "The tab can just be a separate tab in the data
-         room, not part of the league tab." So it is one of the Data Room's own
-         tabs, and the league table is left exactly as it was. */
       state.view = 'data'; dataView.tab = 'players'; render();
-      t('the Data Room offers a Managers tab',
-        !!document.querySelector('[data-dtab="managers"]'));
+      t('the Data Room offers a Managers tab', !!document.querySelector('[data-dtab="managers"]'));
       document.querySelector('[data-dtab="managers"]').click();
-      t('and it opens the performance card',
-        dataView.tab === 'managers'
-        && !!perfCard());
-      document.querySelector('[data-dtab="league"]').click();
-      t('another Data Room tab still works', dataView.tab === 'league');
-      // and the league table itself is untouched — no tab strip was added to it
+      t('and it opens the performance card', dataView.tab === 'managers' && !!perfCard());
       state.view = 'table'; render();
       t('the league table has no performance tab bolted onto it',
-        !!document.querySelector('[data-mgr-row]')
-        && !document.querySelector('[data-leaguetab]'));
+        !!document.querySelector('[data-mgr-row]') && !document.querySelector('[data-leaguetab]'));
       dataView.tab = 'managers'; state.view = 'data'; render();
     })();
 
@@ -331,20 +266,48 @@ const chk = (name, ok, detail = '') => {
 
   for (const line of log) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));
 
-  // nothing settled at all: it must say so rather than divide by zero
+  /* ----- the premise, on real football -----
+     Slot value is what the draft element is built on, and only a real season
+     can show it. 2025/26's archived draft plus a full season of stats: if an
+     early pick does not out-return a late one there, the baseline is a fiction
+     and the element should not exist. ----- */
+  const curve = await page.evaluate(async () => {
+    const [hist, p25] = await Promise.all([
+      fetch('data/history/2025-26.json').then(r => r.json()),
+      fetch('data/history/players25.json').then(r => r.json()),
+    ]);
+    const byName = new Map();
+    for (const q of p25.players) {
+      const src = LS_BY_CODE[q.code];
+      byName.set(q.full, src ? Math.max(0, leaguePtsFrom(src, q.pos, DEFAULT_SCORING)) : null);
+    }
+    const rows = Object.values(hist.draft)
+      .map(pk => ({ n: pk.pick, pts: byName.get(pk.playerFull) }))
+      .filter(r => r.pts != null);
+    const avg = a => a.length ? a.reduce((t, r) => t + r.pts, 0) / a.length : 0;
+    return {
+      matched: rows.length, of: Object.values(hist.draft).length,
+      round1: Math.round(avg(rows.filter(r => r.n <= 12))),
+      round2: Math.round(avg(rows.filter(r => r.n > 12 && r.n <= 24))),
+      round14: Math.round(avg(rows.filter(r => r.n > 156))),
+    };
+  });
+  chk('(control) last season\'s archive matches every pick to a player',
+    curve.matched === curve.of, `${curve.matched} of ${curve.of}`);
+  chk('a draft slot really is worth something: an early pick out-returns a late one',
+    curve.round1 > curve.round14 * 1.5,
+    `round one ${curve.round1}, round two ${curve.round2}, last round ${curve.round14}`);
+
   const virgin = await page.evaluate(() => {
     state = buildDemoState(); state.phase = 'season';
     for (let i = 0; i < GAMEWEEKS.length; i++) GAMEWEEKS[i].finished = false;
     state.matchStats = {};
     dataView.tab = 'managers'; state.view = 'data'; render();
-    return [...document.querySelectorAll('.card')]
-      .map(c => c.textContent).join(' ');
+    return [...document.querySelectorAll('.card')].map(c => c.textContent).join(' ');
   });
   chk('with nothing settled it declines to judge rather than crashing',
     /No round has settled yet/.test(virgin));
 
-  // the phone check needs a card with tables ON it — the virgin state above
-  // renders the "nothing settled" line and nothing else, so rebuild a season
   const wide = await page.evaluate(() => {
     state = buildDemoState(); state.phase = 'season';
     myId = whoami = state.managers[0].id;

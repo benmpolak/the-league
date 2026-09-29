@@ -11723,6 +11723,10 @@ function bindData() {
   });
   const totw = $('#totwGw');
   if (totw) totw.onchange = () => { dataView.totwGw = +totw.value; render(); };
+  // Marc, 29 Sept 2026: whole season, or only what he can still do anything about
+  document.querySelectorAll('[data-perfview]').forEach(b => b.onclick = () => {
+    perfView = b.dataset.perfview; render();
+  });
   document.querySelectorAll('[data-predgw]').forEach(el => el.onclick = e => {
     e.preventDefault();
     dataView.predGw = +el.dataset.predgw;
@@ -13543,202 +13547,159 @@ function formStandings(n) {
   return { rows, counted: idxs.length, overallPos };
 }
 /* ----- managerial performance -----
-   Marc, 29 Sept 2026: "a manager performance ranking... based on three
-   factors. All weighted 33.3% each. I want each persons performance to be
-   normalized to a total of 100 possible points based on those three things,
-   not weighted by the ranking, weighted by the actual score on that element
-   relative to the best and worst on that topic. The three things are. 1 - 14
-   man draft team score. 2. Bench wastage (only when a player on the bench
-   scores more than a starting player). 3. Trading."
+   Marc, 29 Sept 2026, after two earlier scales that were both wrong:
 
-   The "not by the ranking" part is the whole design and worth spelling out:
-   twelve managers ranked 1..12 would hand out the same spread of marks whether
-   the field was strung out or packed into three points of each other. So each
-   element is scaled between the best and worst ACTUAL figures in the league —
-   the leader gets 33.3, the bottom gets 0, and everybody else sits where their
-   number really sits. A league that is nearly level on an element therefore
-   crowds together on it, which is the honest picture.
+     "i still think it isnt right... i dont think toby should get 33.3 for the
+     draft because we dont really know how good his draft was, we just know it
+     was better than everyone elses... should it just be on raw points earned
+     meaning that even the 3 way split could change over time"
 
-   Bench wastage is the one that runs backwards: it is a cost, so LOW is good
-   and the scale is inverted. seasonBenchWaste is already exactly Marc's
-   definition — the best legal XI he could have fielded, less what he did
-   field, which is only ever positive when somebody on the bench outscored a
-   starter.
+   He had the diagnosis exactly. Bench wastage worked because NOUGHT MEANS
+   SOMETHING: not "best of twelve" but nothing actually thrown away, measured
+   against a real floor. Business quietly had the same property and I had been
+   treating it as though it did not — a net of nought means your dealing gained
+   and lost nothing, which is an absolute statement. Draft was the only one with
+   no anchor at all, so its top mark only ever said "better than the other
+   eleven", which is not the same as good.
 
-   Each element is read off the card that already owns it (draftBoard,
-   seasonBenchWaste, tradeTally) rather than recomputed, so this page cannot
-   quietly disagree with the Draft Console or the Trade Record. */
-const PERF_WEIGHT = 100 / 3;
+   Draft can have a floor too, and the archive proves it. Every slot in a snake
+   draft has a market value: last season's picks returned an average of 113 in
+   the first round, 84 in the second, 46 in the last. Add up what a manager's
+   own fourteen slots were worth and you have what his draft SHOULD have
+   returned. Beat it and you found value; miss it and you did not. Nought means
+   you did exactly what the board said.
+
+   And the baselines come out level — last season every manager's fourteen slots
+   were worth between 1001 and 1024 — which is the snake doing its job. So this
+   handicaps nobody. It only converts "he came first" into "he got 190 points
+   more than his picks were worth".
+
+   Once all three have a true nought they are all in the same unit, so there is
+   nothing left to weight: add them up and the answer is in points. The split
+   moves with the season on its own, which is what Marc asked for — whichever
+   element is actually swinging more points matters more, and the card prints
+   the share each one currently accounts for so the drift is visible rather
+   than assumed.
+
+   The two earlier attempts are worth remembering so nobody repeats them. First
+   the scale ran between the best and worst figures in the league, which pinned
+   the bottom man to nought and the top man to the full weight however little
+   separated them. Then it ran a third past the field at each end, which fixed
+   the pinning but still measured everybody against each other. Both were
+   relative dressed as absolute. */
 const PERF_ELEMENTS = [
-  { key: 'draft', label: 'Draft', hi: true,
-    title: 'What this manager\'s fourteen drafted men have scored',
-    blurb: 'Every man he took in the draft, and what they have scored since &mdash; whether he still holds them or not. Straight off the Draft Console\'s By Team tab.' },
-  { key: 'bench', label: 'Bench wastage', hi: false,
-    title: 'Points lost to leaving a better man on the bench. Lower is better, so the scale runs backwards.',
-    blurb: 'The best legal eleven he could have fielded each week, less the eleven he did. It only moves when somebody on the bench outscored a starter, so it is selection and nothing else. Lower is better.' },
-  /* Marc, 29 Sept 2026: "by trades i mean trades, waiver and trough picks" —
-     so this is ALL completed business, not the trade-only reading the Trade
-     Record opens on. Its "All moves" toggle shows the same numbers. */
-  { key: 'trade', label: 'Business', hi: true,
+  { key: 'draft', label: 'Draft', hi: true, raw: 'Beat',
+    title: 'Points his fourteen have scored above or below what his draft slots were worth',
+    blurb: 'Every pick in the league is worth something by where it fell &mdash; an early pick returns more than a late one. Add up what this manager\'s own fourteen slots were worth and compare it with what his men actually scored. Positive means he found value the board had not priced; nought means he did exactly what his picks were worth.' },
+  { key: 'bench', label: 'Bench', hi: true, raw: 'Wasted',
+    title: 'Points lost by leaving a better man on the bench. Always nought or worse.',
+    blurb: 'The best legal eleven he could have fielded each week, less the eleven he did. It only moves when somebody on the bench outscored a starter, so it is selection and nothing else. Nought is a perfect season of picking.' },
+  { key: 'trade', label: 'Business', hi: true, raw: 'Net',
     title: 'Net points won across all his completed business: trades, waiver claims and Trough signings alike',
-    blurb: 'Net across every completed move &mdash; trades, waiver claims and Trough signings &mdash; exactly as the Trade Record scores them under All moves: points in less points shipped, counted only for the weeks he held the man. A manager who has done no business and one who has done plenty and come out level are the same number here, which is the point: nought is nought however you arrive at it.' },
+    blurb: 'Net across every completed move &mdash; trades, waiver claims and Trough signings &mdash; exactly as the Trade Record scores them under All moves. A manager who has done no business and one who has done plenty and come out level are the same number here, which is right: nought is nought however you arrive at it.' },
 ];
-/* ----- what "best" and "worst" are actually worth -----
-   Marc, 29 Sept 2026: "i think you need to rebalance the scoring because the 0s
-   and the 33.3s are carrying too much weighting. Can you estimate what a
-   realistic minimum and maximum is for each one and then rescore everyone."
-
-   He is right, and it is the flip side of the thing he asked for first. Scaling
-   between the best and worst figures IN THE LEAGUE means the bottom man scores
-   nought and the top man scores the lot however little separates them: three
-   points between first and last still produces a 33.3-point swing. The spread
-   was honest within an element and a fiction between them.
-
-   So each element is now scored against a band of what is ACHIEVABLE rather
-   than what happened to occur, and two of the three bands are exact:
-
-   - Draft: every manager's fourteen are a subset of the men actually taken, so
-     the best draft available was the fourteen highest scorers in that pool and
-     the worst was the fourteen lowest. Nobody can fall outside it, and it moves
-     every round with the pool itself.
-
-   - Bench: nought is a perfect season of selection. The other end is the worst
-     legal eleven he could have named each week, which is the most he could
-     possibly have thrown away with the squad he had.
-
-   - Business is the estimate, because there is no ceiling on a trade. The band
-     is three average squad players' worth of output either way: turning that
-     much over a season's dealing is about as well or badly as it realistically
-     goes. A manager beyond it is clamped rather than allowed past the weight.
-
-   Two consequences worth being straight about: nobody scores 0 or 33.3 on an
-   element any more unless they really are at an achievable limit, and totals
-   will bunch in the middle — which is the accurate picture of twelve managers
-   who are mostly quite similar. */
-/* Measured off 2025/26's archived draft: the twelve 14-man hauls ran from 79.5%
-   to 119% of the league mean over a full season. Rounded to a clean ±20%. The
-   working is in perfBounds; re-derive it with a season of real picks rather
-   than adjusting it by feel. */
-const PERF_DRAFT_BAND = [0.80, 1.20];
-const PERF_PAD = 0.35;             // how far past the field the scale runs
-const PERF_BUSINESS_PLAYERS = 3;   // average squad men's worth of output, either way
-/* The first attempt at this used the ACHIEVABLE limits — the best and worst
-   fourteen the draft pool allowed, the worst legal eleven a squad could have
-   named. They are exact and they were useless: the draft band came out 188 to
-   578 while the twelve managers occupied 316 to 400, so everybody compressed
-   into a fifth of the scale, every total landed between 50 and 59, and the
-   table stopped telling anybody apart. Measured: the spread of totals fell from
-   27.7 to 8.7.
-
-   The bands below are the realistic ones instead — a third of the field's own
-   range past each end. Nobody is marked as having achieved nothing for coming
-   twelfth and nobody is marked perfect for leading, which was Marc's
-   complaint, but the gaps between managers survive intact because the scale
-   still moves with the real numbers. The worst man scores about a fifth of the
-   weight, the best about four fifths.
-
-   Bench is held at nought at the good end whatever the field does: a perfect
-   season of selection is a real thing and it is worth full marks, not four
-   fifths of them. Business is anchored on nought for the same reason — the
-   midpoint of that element is doing nothing, not the league's average. */
-function perfBounds(raw) {
-  const out = {};
-  const pad = (vals, { floor = null, anchor = null } = {}) => {
-    const lo = Math.min(...vals), hi = Math.max(...vals);
-    const range = hi - lo;
-    if (!range) return { lo, hi, flat: true };
-    let a = lo - range * PERF_PAD, b = hi + range * PERF_PAD;
-    if (floor != null) a = Math.max(floor, a);
-    if (anchor != null) { a = Math.min(a, anchor); b = Math.max(b, anchor); }
-    return { lo: Math.round(a), hi: Math.round(b), flat: false };
-  };
-  const pool = toArr(state.draft?.picks)
-    .map(pk => PLAYER_BY_ID[pk.playerId]).filter(Boolean)
-    .map(p => playerPoints(p.id).pts).sort((a, b) => b - a);
-
-  /* The draft band comes off LAST SEASON, which is the only full season of
-     real evidence this league has (Marc, 29 Sept 2026: "Could you use last
-     years data to help, certainly on the draft score perhaps?").
-
-     All 168 of 2025/26's picks are in the archive with a full season of stats
-     behind them, so the fourteen men each manager took can be scored in this
-     league's own currency. They came out between 806 and 1206 on a league mean
-     of 1014 — the best draft 19% above the average, the worst 20% below.
-
-     So the band is the CURRENT league average times those same margins. Using
-     the ratio rather than last season's absolute totals is what makes it scale:
-     it is right in September with five rounds played and right in May, and it
-     reflects how far a real draft in this league actually strays from the
-     middle rather than a figure anybody guessed. */
-  const draftVals = raw.map(r => r.draft);
-  const draftMean = draftVals.reduce((a, b) => a + b, 0) / (draftVals.length || 1);
-  if (!draftMean) {
-    out.draft = { lo: 0, hi: 0, flat: true };
-  } else {
-    out.draft = { lo: Math.round(draftMean * PERF_DRAFT_BAND[0]),
-      hi: Math.round(draftMean * PERF_DRAFT_BAND[1]), flat: false };
+/* What each slot in the draft was worth, read off this season's own board.
+   Smoothed over the picks either side, because one pick is a single player
+   having a season and the curve is what a slot is worth in general. */
+const PERF_SLOT_WINDOW = 12;
+function draftSlotValues() {
+  const picks = toArr(state.draft?.picks)
+    .map(pk => ({ n: pk.n, mid: pk.managerId, p: PLAYER_BY_ID[pk.playerId] }))
+    .filter(x => x.p && Number.isFinite(x.n));
+  if (!picks.length) return null;
+  const pts = new Map(picks.map(x => [x.n, playerPoints(x.p.id).pts]));
+  const ns = [...pts.keys()].sort((a, b) => a - b);
+  const worth = new Map();
+  for (const n of ns) {
+    let t = 0, c = 0;
+    for (const m of ns) if (Math.abs(m - n) <= PERF_SLOT_WINDOW) { t += pts.get(m); c++; }
+    worth.set(n, c ? t / c : 0);
   }
-  out.draft.why = `last season's drafts landed between ${Math.round(PERF_DRAFT_BAND[0] * 100)}% and ${Math.round(PERF_DRAFT_BAND[1] * 100)}% of the league average, so this season's band is the same either side of ${Math.round(draftMean)}`;
-
-  // wastage: nought is perfect and stays worth full marks
-  const bench = pad(raw.map(r => r.bench), { floor: 0, anchor: 0 });
-  bench.lo = 0;
-  out.bench = bench;
-  out.bench.why = `nought is a perfect season of selection; the far end is a third past the worst in the league`;
-
-  // business: anchored on nought, because the middle of this element is doing
-  // nothing rather than doing what everybody else did
-  const mid = pool.length ? pool[Math.floor(pool.length / 2)] : 0;
-  const soft = Math.max(1, Math.round(mid * PERF_BUSINESS_PLAYERS));
-  const t = pad(raw.map(r => r.trade), { anchor: 0 });
-  out.trade = { lo: Math.max(t.lo, -soft), hi: Math.min(t.hi, soft), flat: t.flat };
-  out.trade.why = `nought is the middle &mdash; a third past the best and worst dealing in the league, capped at ${PERF_BUSINESS_PLAYERS} average players' worth either way`;
-  return out;
+  const byMid = new Map();
+  for (const x of picks) {
+    const r = byMid.get(x.mid) || { got: 0, worth: 0, picks: 0 };
+    r.got += pts.get(x.n); r.worth += worth.get(x.n); r.picks++;
+    byMid.set(x.mid, r);
+  }
+  return byMid;
 }
-function managerPerformance() {
-  const board = draftBoard();
+/* Two readings of the same three numbers (Marc, 29 Sept 2026: "Id also like
+   to see somewhere managerial performance since the draft being just bench
+   wastage and business and ignore the draft. Given that the draft was a one
+   off event you cant really do anything about it now").
+
+   He is right that they answer different questions. The whole-season total says
+   how well a manager has done; SINCE THE DRAFT says how well he is doing — the
+   draft is a night in August that cannot be replayed, and a good one will
+   flatter a lazy autumn for the rest of the year. Dropping it leaves only the
+   two things he can still act on this week.
+
+   Same numbers either way. All that changes is which ones are added up, which
+   is the dividend of putting them all in points: a view is a subset, not a
+   different formula. */
+const PERF_VIEWS = {
+  all: { label: 'Whole season', keys: ['draft', 'bench', 'trade'],
+    blurb: 'Everything a manager has done, the draft included.' },
+  since: { label: 'Since the draft', keys: ['bench', 'trade'],
+    blurb: 'The draft dropped: it was one night in August and nobody can replay it. What is left is the two things still in his hands &mdash; who he picks each week, and what he does in the market.' },
+};
+let perfView = 'all';
+function managerPerformance(view = perfView) {
+  const keys = (PERF_VIEWS[view] || PERF_VIEWS.all).keys;
+  const els = PERF_ELEMENTS.filter(el => keys.includes(el.key));
+  const slots = draftSlotValues();
   const trades = tradeTally('all');   // trades, waivers and the Trough alike
-  const raw = state.managers.map(m => ({
-    m,
-    draft: board ? (board.find(r => r.m.id === m.id)?.pts ?? 0) : 0,
-    bench: seasonBenchWaste(m.id),
-    trade: trades[m.id]?.net ?? 0,
-    trades: trades[m.id]?.n ?? 0,
-  }));
+  const raw = state.managers.map(m => {
+    const s = slots?.get(m.id);
+    return {
+      m,
+      // every element in POINTS, every one with nought meaning something
+      draft: s ? Math.round(s.got - s.worth) : 0,
+      bench: -seasonBenchWaste(m.id),
+      trade: trades[m.id]?.net ?? 0,
+      // the workings, for the tables underneath
+      got: s ? Math.round(s.got) : 0,
+      worth: s ? Math.round(s.worth) : 0,
+      wasted: seasonBenchWaste(m.id),
+      trades: trades[m.id]?.n ?? 0,
+    };
+  });
   if (!raw.length) return null;
-  const scales = perfBounds(raw);
-  for (const r of raw) {
-    r.score = {};
-    for (const el of PERF_ELEMENTS) {
-      const { lo, hi, flat } = scales[el.key];
-      // good-high runs lo->hi, good-low (bench wastage) runs hi->lo
-      const frac = flat ? 1 : (el.hi ? (r[el.key] - lo) / (hi - lo) : (hi - r[el.key]) / (hi - lo));
-      // the estimated band can be overshot; the mark cannot
-      r.score[el.key] = Math.max(0, Math.min(1, frac)) * PERF_WEIGHT;
-    }
-    r.total = PERF_ELEMENTS.reduce((t, el) => t + r.score[el.key], 0);
-  }
+  for (const r of raw) r.total = els.reduce((t, el) => t + r[el.key], 0);
   raw.sort((a, b) => b.total - a.total || a.m.id - b.m.id);
-  // competition ranking on the total, and a rank per element for the tables below
   let place = 0, seen = 0, last = null;
   for (const r of raw) {
     seen++;
-    if (last === null || Math.abs(r.total - last) > 1e-9) { place = seen; last = r.total; }
+    if (last === null || r.total !== last) { place = seen; last = r.total; }
     r.rank = place;
   }
-  const ranks = {};
-  for (const el of PERF_ELEMENTS) {
-    const order = [...raw].sort((a, b) => el.hi ? b[el.key] - a[el.key] : a[el.key] - b[el.key]);
+  /* The weighting, as it currently stands. Nothing sets it — it is however far
+     each element happens to spread the league today, and it will move all
+     season (Marc, 29 Sept 2026: "just keep updating the weighting over the
+     season as it becomes more/less important"). */
+  const spread = {};
+  let sum = 0;
+  for (const el of els) {
+    const vals = raw.map(r => r[el.key]);
+    spread[el.key] = Math.max(...vals) - Math.min(...vals);
+    sum += spread[el.key];
+  }
+  raw.spread = spread;
+  raw.share = Object.fromEntries(els.map(el =>
+    [el.key, sum ? (spread[el.key] / sum) * 100 : 100 / els.length]));
+  raw.els = els;
+  raw.view = view;
+  raw.ranks = Object.fromEntries(els.map(el => {
+    const order = [...raw].sort((a, b) => b[el.key] - a[el.key]);
+    const map = new Map();
     let p = 0, s = 0, l = null;
-    ranks[el.key] = new Map();
     for (const r of order) {
       s++;
       if (l === null || r[el.key] !== l) { p = s; l = r[el.key]; }
-      ranks[el.key].set(r.m.id, p);
+      map.set(r.m.id, p);
     }
-  }
-  raw.scales = scales;
-  raw.ranks = ranks;
+    return [el.key, map];
+  }));
   return raw;
 }
 function managerPerformanceCard() {
@@ -13748,47 +13709,49 @@ function managerPerformanceCard() {
     return `<div class="card toplist"><h2>Managerial Performance</h2>
       <p class="muted" style="font-size:12.5px">No round has settled yet. There is nothing to judge anybody on, which has not stopped the Committee before but will today.</p></div>`;
   }
-  const n = v => Math.round(v * 10) / 10;
-  const flat = PERF_ELEMENTS.filter(el => perf.scales[el.key].flat);
-  const bar = r => `<span class="perf-bar" style="display:inline-flex;height:6px;width:64px;border-radius:3px;overflow:hidden;vertical-align:middle;background:var(--line)">
-    ${PERF_ELEMENTS.map((el, i) => `<span style="width:${(r.score[el.key] / 100) * 100}%;background:${['#2dd4a7', '#8b97b3', '#e0b055'][i]}" title="${esc(el.label)} ${n(r.score[el.key])}"></span>`).join('')}</span>`;
-  const head = `<h2>Managerial Performance <span class="muted" style="font-weight:400;font-size:12px">out of 100</span></h2>`;
+  const sign = v => `${v > 0 ? '+' : ''}${v}`;
+  const cell = v => `<span class="deliver ${v > 0 ? 'up' : v < 0 ? 'down' : 'level'}">${sign(v)}</span>`;
+  const pc = v => Math.round(v);
+  const view = PERF_VIEWS[perf.view] || PERF_VIEWS.all;
+  const els = perf.els;
+  const tabs = `<div class="pool-controls" style="margin:0 0 10px">${Object.entries(PERF_VIEWS)
+    .map(([k, v]) => `<button class="btn small ${perf.view === k ? '' : 'ghost'}" data-perfview="${k}">${esc(v.label)}</button>`).join('')}</div>`;
+  const head = `<h2>Managerial Performance <span class="muted" style="font-weight:400;font-size:12px">points against par</span></h2>${tabs}`;
   const table = `<div style="overflow-x:auto"><table class="pool-table">
-      <thead><tr><th class="num">#</th><th>Team</th><th></th>
-        ${PERF_ELEMENTS.map(el => `<th class="num" title="${esc(el.title)} &mdash; scaled to ${n(PERF_WEIGHT)}">${esc(el.label)}</th>`).join('')}
+      <thead><tr><th class="num">#</th><th>Team</th>
+        ${els.map(el => `<th class="num" title="${esc(el.title)}">${esc(el.label)}</th>`).join('')}
         <th class="num act">Total</th></tr></thead>
       <tbody>${perf.map(r => `<tr>
         <td class="num muted">${r.rank}</td>
         <td style="white-space:nowrap">${kitSvg(r.m.id)} <b>${esc(r.m.team || r.m.name)}</b> <span class="muted" style="font-size:11px">${esc(r.m.name)}</span></td>
-        <td>${bar(r)}</td>
-        ${PERF_ELEMENTS.map(el => `<td class="num muted">${n(r.score[el.key])}</td>`).join('')}
-        <td class="num gold act"><b>${n(r.total)}</b></td>
+        ${els.map(el => `<td class="num">${cell(r[el.key])}</td>`).join('')}
+        <td class="num gold act"><b>${sign(r.total)}</b></td>
       </tr>`).join('')}</tbody>
     </table></div>`;
-  // the three elements, raw and ranked, beneath the headline
-  const detail = PERF_ELEMENTS.map(el => {
-    const sc = perf.scales[el.key];
-    const order = [...perf].sort((a, b) => el.hi ? b[el.key] - a[el.key] : a[el.key] - b[el.key]);
-    return `<p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">${esc(el.label)} &middot; worth ${n(PERF_WEIGHT)} of the 100</p>
-      <p class="muted" style="font-size:11px;margin:0 0 6px">${el.blurb} ${sc.flat
-        ? '<b>Nothing separates anybody on this yet, so everybody takes full marks for it.</b>'
-        : `Scored between ${sc.lo} and ${sc.hi} &mdash; ${esc(sc.why)}${el.hi ? '' : ', and low is the good end'}.`}</p>
+  const detail = els.map(el => {
+    const order = [...perf].sort((a, b) => b[el.key] - a[el.key]);
+    const extra = el.key === 'draft'
+      ? '<th class="num" title="What his fourteen actually scored">Got</th><th class="num" title="What his fourteen draft slots were worth">Slots</th>'
+      : el.key === 'trade' ? '<th class="num" title="Completed moves judged">Moves</th>' : '';
+    return `<p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">${esc(el.label)} &middot; ${pc(perf.share[el.key])}% of the spread right now</p>
+      <p class="muted" style="font-size:11px;margin:0 0 6px">${el.blurb}</p>
       <div style="overflow-x:auto"><table class="pool-table">
-        <thead><tr><th class="num">#</th><th>Team</th><th class="num">${el.key === 'trade' ? 'Net' : 'Raw'}</th>${el.key === 'trade' ? '<th class="num" title="Completed moves judged — trades, waiver claims and Trough signings">Moves</th>' : ''}<th class="num act">Score</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Team</th>${extra}<th class="num act">${esc(el.raw)}</th></tr></thead>
         <tbody>${order.map(r => `<tr>
           <td class="num muted">${perf.ranks[el.key].get(r.m.id)}</td>
           <td style="white-space:nowrap">${esc(r.m.team || r.m.name)}</td>
-          <td class="num"><b>${el.key === 'trade' && r[el.key] > 0 ? '+' : ''}${r[el.key]}</b></td>
+          ${el.key === 'draft' ? `<td class="num muted">${r.got}</td><td class="num muted">${r.worth}</td>` : ''}
           ${el.key === 'trade' ? `<td class="num muted">${r.trades}</td>` : ''}
-          <td class="num act">${n(r.score[el.key])}</td>
+          <td class="num act">${el.key === 'bench' ? `&minus;${r.wasted}` : cell(r[el.key])}</td>
         </tr>`).join('')}</tbody>
       </table></div>`;
   }).join('');
+  const shares = els.map(el => `${esc(el.label.toLowerCase())} ${pc(perf.share[el.key])}%`).join(', ');
   return `<div class="card toplist">${head}
-    <p class="muted" style="font-size:11.5px;margin:0 0 12px">Three things, ${n(PERF_WEIGHT)} points each: what his draft has scored, what he has thrown away on the bench, and what his business has won &mdash; trades, waiver claims and Trough signings all counted. Each is scored against what was ACHIEVABLE on it rather than against whoever happened to come last &mdash; the best and worst draft the pool allowed, the most a squad could have left on the bench, and a realistic band either side of nought for dealing. So a league that is nearly level on something crowds together on it, and nobody is handed nought merely for finishing twelfth. As at GW${GAMEWEEKS[settled[settled.length - 1]].n}.</p>
+    <p class="muted" style="font-size:11.5px;margin:0 0 12px">Points a manager has added or lost by his own decisions, and nothing else &mdash; each one measured from a nought that means something, and simply added, because they are all in the same unit. There is no weighting to argue about: whichever is swinging the most points at the time counts for the most. ${view.blurb} Nought is par: ${perf.view === 'since' ? 'never left a better man on the bench, came out level on your dealing' : 'drafted exactly to the value of your slots, never left a better man on the bench, came out level on your dealing'}. Nobody plays a season at par &mdash; the bench alone sees to that &mdash; so most of these are negative and the comparison is with each other. As at GW${GAMEWEEKS[settled[settled.length - 1]].n}.</p>
     ${table}
-    ${flat.length ? `<p class="muted" style="font-size:10.5px;margin-top:8px">${flat.map(el => esc(el.label)).join(' and ')} ${flat.length === 1 ? 'separates' : 'separate'} nobody yet, so everybody has full marks there and the total flatters the lot of you.</p>` : ''}
-    <p class="muted" style="font-size:10.5px;margin-top:8px">Every figure below is the one the page that owns it already prints &mdash; the Draft Console for the draft, the Trade Record for trading &mdash; so nothing here is a second opinion.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:8px">As it stands the spread is ${shares} &mdash; that is not a setting, it is how far each one is currently separating the league, and it will move all season.</p>
+    <p class="muted" style="font-size:10.5px;margin-top:4px">Every figure is the one the page that owns it already prints &mdash; the Draft Console for what the fourteen scored, the Trade Record for business &mdash; so nothing here is a second opinion.</p>
     ${detail}
   </div>`;
 }
