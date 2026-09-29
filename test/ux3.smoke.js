@@ -691,25 +691,27 @@ const SEED_SEASON = `(() => {
 
   /* G18 — 320px search palette */
   const g320 = await newPage(dCtx, baseUrl + '?demo', { width: 320, height: 650 });
-  // the 320px rules arrive with viewport emulation, and a slow runner can
-  // answer getComputedStyle before they have applied (CI, 29 Aug: 36px home
-  // button — so the block WAS in force — yet its text read visible). Wait for
-  // the layout to settle rather than trusting the first paint.
   await g320.waitForFunction(() => {
     const t = document.querySelector('#homeBtn .sync-txt');
     return t && getComputedStyle(t).display === 'none';
-  }, { timeout: 5000 }).catch(() => {});
+  }, { timeout: 5000 });
   const g18 = await g320.evaluate(async () => {
-    const home = document.getElementById('homeBtn');
-    const homeRect = home.getBoundingClientRect();
+    const originalHome = document.getElementById('homeBtn');
     document.getElementById('gSearchBtn').click();
     const ov = document.getElementById('searchOverlay');
     const q = ov.querySelector('#gsq');
     q.value = 'a'; q.dispatchEvent(new Event('input'));
+    // Ben, 29 Sept: CI held the old button across this wait. A live-header
+    // refresh detaches it, so computed display becomes '' instead of 'none'.
+    // Force that refresh and measure the current DOM after the async gap.
+    renderSyncArea();
     await new Promise(r => setTimeout(r, 100));
+    const home = document.getElementById('homeBtn');
+    const homeRect = home.getBoundingClientRect();
     return {
       open: !!ov, rows: ov.querySelectorAll('.gs-row').length,
       scrollW: document.documentElement.scrollWidth,
+      headerReplaced: !originalHome.isConnected && home.isConnected && home !== originalHome,
       home: {
         w: homeRect.width, h: homeRect.height,
         label: home.getAttribute('aria-label'),
@@ -718,7 +720,7 @@ const SEED_SEASON = `(() => {
     };
   });
   chk('G1b/G18: 320px header is compact; search fits and Home remains accessible',
-    g18.open && g18.rows > 0 && g18.scrollW <= 320
+    g18.headerReplaced && g18.open && g18.rows > 0 && g18.scrollW <= 320
       && g18.home.w >= 36 && g18.home.h >= 36
       && g18.home.label === 'Dashboard' && !g18.home.textVisible,
     JSON.stringify(g18));
