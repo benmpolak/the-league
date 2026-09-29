@@ -49,15 +49,35 @@ jobs:
           else
             node scripts/backfill_predictions.js
           fi
+      # A boolean workflow_dispatch input arrives as a real boolean from the
+      # Actions tab and as the STRING "false" over the API, so accept both.
+      # Getting this wrong would run the backfill and silently not commit it.
       - name: Commit the ledger
-        if: ${{ inputs.dry == false }}
+        if: ${{ inputs.dry == false || inputs.dry == 'false' }}
         run: |
           git config user.name 'fpl-bot'
           git config user.email 'actions@github.com'
           git add data/predictions.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'predictions: freeze the rounds that were never captured'
-            git push
-          else
+          if git diff --cached --quiet; then
             echo 'nothing to freeze — every settled round was already in the ledger'
+            exit 0
           fi
+          git commit -m 'predictions: freeze the rounds that were never captured'
+          # The FPL refresh commits every five minutes, so by the time this is
+          # ready to push main has usually moved. Rebase and retry rather than
+          # failing and leaving the ledger written on the runner and thrown
+          # away — the whole job would have to be run again by hand.
+          for i in 1 2 3 4 5; do
+            if git push; then
+              echo "pushed on attempt $i"
+              exit 0
+            fi
+            echo "push $i failed — main moved, rebasing onto it"
+            git pull --rebase origin main || exit 1
+            sleep $((i * 5))
+          done
+          echo 'could not push after five attempts'
+          exit 1
+      - name: Say what the ledger now holds
+        if: ${{ always() }}
+        run: node -e "const r=require('./data/predictions.json').rounds||{};console.log('rounds in the ledger:',Object.keys(r).sort((a,b)=>a-b).join(', ')||'none');for(const [k,v] of Object.entries(r))console.log('  GW'+k, v.games.length+' ties', v.rebuilt?'(rebuilt afterwards)':'(caught at the deadline)');"
