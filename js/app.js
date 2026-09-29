@@ -13682,7 +13682,15 @@ let perfView = 'all';
 function managerPerformance(view = perfView) {
   const keys = (PERF_VIEWS[view] || PERF_VIEWS.all).keys;
   const els = PERF_ELEMENTS.filter(el => keys.includes(el.key));
-  const slots = draftSlotValues();
+  // Bench waste counts only rounds that have gone final, and business is only
+  // judged once a window has closed — so the draft has to be read the same way.
+  // Left live, Saturday's points landed in the draft column while the other two
+  // were still on last week, and the card's own "as at GW n" line was a lie.
+  // (Marc, 29 Sept 2026: "yes, you should make that fix about the draft and the
+  // settled round".) Wound back to the round after the last settled one, so
+  // everything up to and including it is banked and nothing in play is.
+  const done = finishedGwIdxs();
+  const slots = withAsOf(done.length ? done[done.length - 1] + 1 : 0, draftSlotValues);
   const trades = tradeTally('all');   // trades, waivers and the Trough alike
   const raw = state.managers.map(m => {
     const s = slots?.get(m.id);

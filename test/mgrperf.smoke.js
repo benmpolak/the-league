@@ -142,6 +142,42 @@ const chk = (name, ok, detail = '') => {
          last season's archive further down this file. */
     })();
 
+    /* ----- all three elements read the same clock -----
+       Marc, 29 Sept 2026: "yes, you should make that fix about the draft and
+       the settled round". Bench waste counts only rounds gone final and
+       business waits for a window to close, so a live Saturday used to land in
+       the draft column alone — inflating it against the other two while the
+       card's own "as at GW n" line said otherwise. ----- */
+    (() => {
+      const done = finishedGwIdxs();
+      const idx = done[done.length - 1] + 1;
+      const before = managerPerformance();
+      const keep = state.matchStats, keptTo = GAMEWEEKS[idx].to, keptFin = GAMEWEEKS[idx].finished;
+      // a round genuinely in play: stats on the board, whistle not yet gone.
+      // gwIsOver() is date-led, so the clock has to be moved too — marking
+      // finished=false on a round whose date has passed leaves it final.
+      GAMEWEEKS[idx].finished = false;
+      GAMEWEEKS[idx].to = new Date(Date.now() + 864e5 * 30).toISOString();
+      const victim = toArr(state.draft.picks).find(x => PLAYER_BY_ID[x.playerId]);
+      state.matchStats = JSON.parse(JSON.stringify(state.matchStats));
+      state.matchStats['gw' + GAMEWEEKS[idx].n] = { gw: idx, label: GAMEWEEKS[idx].label,
+        final: false, playerStats: { [victim.playerId]: { min: 90, st: 1, g: 40, a: 40, cs: 1 } } };
+      t('(setup) that round reads as live, not final', gwStatus(idx) === 'live', gwStatus(idx));
+      const after = managerPerformance();
+      const now = mid => after.find(r => r.m.id === mid);
+      const was = mid => before.find(r => r.m.id === mid);
+      t('a round still in play does not count towards the draft',
+        now(victim.managerId).got === was(victim.managerId).got,
+        `scored ${was(victim.managerId).got} then ${now(victim.managerId).got}`);
+      t('and it does not move the bar his slots are held to either',
+        now(victim.managerId).worth === was(victim.managerId).worth);
+      // (control) unwound, the helper DOES see those points — so this is live
+      t('(control) the same points are visible when nothing is wound back',
+        draftSlotValues().get(victim.managerId).got > was(victim.managerId).got);
+      GAMEWEEKS[idx].to = keptTo; GAMEWEEKS[idx].finished = keptFin;
+      state.matchStats = keep;
+    })();
+
     /* ----- nought means something on all three ----- */
     (() => {
       t('bench is a cost, so it is never positive', perf.every(r => r.bench <= 0));
