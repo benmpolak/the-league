@@ -302,8 +302,16 @@ const chk = (name, ok, detail = '') => {
         [...tables[0].querySelectorAll('tbody tr')].every((tr, i) =>
           parseInt(tr.cells[tr.cells.length - 1].textContent.replace('+', ''), 10) === perf[i].total));
       const txt = card.textContent.replace(/\s+/g, ' ');
-      t('the card says nought is par, not the bottom of the league',
-        /Nought is par/.test(txt) && /most of these are negative/.test(txt));
+      /* Marc, 29 Sept 2026: "i feel like this part of the inherent benefit of
+         going 1st". Measured: round one supplies 42% of everything gained
+         across all 168 picks, so the field sitting a few points above the
+         draft nought is the signal, not a miscalibration to fudge out. The
+         card has to say which way each nought points rather than call them
+         both par. */
+      t('the card says what nought means, and that the draft one is a floor rather than a par',
+        /Nought means/.test(txt) && /floor on the draft rather than a par/.test(txt));
+      t('and it says where that headroom comes from rather than leaving it a mystery',
+        /first round is where nearly all of that is won/.test(txt));
       t('it explains there is no weighting to argue about',
         /here is no weighting to argue about/.test(txt));   // capitalised mid-rewrite
       t('and it prints the shares as they currently stand',
