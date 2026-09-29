@@ -11675,6 +11675,9 @@ const DATA_TABS = [
   ['players', 'Players'],
   ['fixtures', 'Fixtures'],
   ['league', 'League'],
+  // Marc, 29 Sept 2026: "The tab can just be a separate tab in the data room,
+  // not part of the league tab" — it is about the managers, not the standings
+  ['managers', 'Managers'],
   ['prediction', 'Predictions'],
   ['trough', 'The Trough'],
   ['records', 'Records'],
@@ -11687,6 +11690,8 @@ function viewData() {
   const groups = {
     players: () => [playerExplorerCard(), compareCard(), treatmentRoomCard()],
     fixtures: () => [fixtureMatrixCard()],
+    // the managers themselves, scored on the three things they control
+    managers: () => [managerPerformanceCard()],
     // the Committee marking its own homework (Marc, 15 Sept 2026)
     prediction: () => [predictionCard()],
     // every score the league has recorded, and what they imply
@@ -13508,6 +13513,152 @@ function formStandings(n) {
   rows.sort((a, b) => b.win - a.win || b.overall - a.overall || constitution[a.id] - constitution[b.id]);
   return { rows, counted: idxs.length, overallPos };
 }
+/* ----- managerial performance -----
+   Marc, 29 Sept 2026: "a manager performance ranking... based on three
+   factors. All weighted 33.3% each. I want each persons performance to be
+   normalized to a total of 100 possible points based on those three things,
+   not weighted by the ranking, weighted by the actual score on that element
+   relative to the best and worst on that topic. The three things are. 1 - 14
+   man draft team score. 2. Bench wastage (only when a player on the bench
+   scores more than a starting player). 3. Trading."
+
+   The "not by the ranking" part is the whole design and worth spelling out:
+   twelve managers ranked 1..12 would hand out the same spread of marks whether
+   the field was strung out or packed into three points of each other. So each
+   element is scaled between the best and worst ACTUAL figures in the league —
+   the leader gets 33.3, the bottom gets 0, and everybody else sits where their
+   number really sits. A league that is nearly level on an element therefore
+   crowds together on it, which is the honest picture.
+
+   Bench wastage is the one that runs backwards: it is a cost, so LOW is good
+   and the scale is inverted. seasonBenchWaste is already exactly Marc's
+   definition — the best legal XI he could have fielded, less what he did
+   field, which is only ever positive when somebody on the bench outscored a
+   starter.
+
+   Each element is read off the card that already owns it (draftBoard,
+   seasonBenchWaste, tradeTally) rather than recomputed, so this page cannot
+   quietly disagree with the Draft Console or the Trade Record. */
+const PERF_WEIGHT = 100 / 3;
+const PERF_ELEMENTS = [
+  { key: 'draft', label: 'Draft', hi: true,
+    title: 'What this manager\'s fourteen drafted men have scored',
+    blurb: 'Every man he took in the draft, and what they have scored since &mdash; whether he still holds them or not. Straight off the Draft Console\'s By Team tab.' },
+  { key: 'bench', label: 'Bench wastage', hi: false,
+    title: 'Points lost to leaving a better man on the bench. Lower is better, so the scale runs backwards.',
+    blurb: 'The best legal eleven he could have fielded each week, less the eleven he did. It only moves when somebody on the bench outscored a starter, so it is selection and nothing else. Lower is better.' },
+  /* Marc, 29 Sept 2026: "by trades i mean trades, waiver and trough picks" —
+     so this is ALL completed business, not the trade-only reading the Trade
+     Record opens on. Its "All moves" toggle shows the same numbers. */
+  { key: 'trade', label: 'Business', hi: true,
+    title: 'Net points won across all his completed business: trades, waiver claims and Trough signings alike',
+    blurb: 'Net across every completed move &mdash; trades, waiver claims and Trough signings &mdash; exactly as the Trade Record scores them under All moves: points in less points shipped, counted only for the weeks he held the man. A manager who has done no business and one who has done plenty and come out level are the same number here, which is the point: nought is nought however you arrive at it.' },
+];
+function managerPerformance() {
+  const board = draftBoard();
+  const trades = tradeTally('all');   // trades, waivers and the Trough alike
+  const raw = state.managers.map(m => ({
+    m,
+    draft: board ? (board.find(r => r.m.id === m.id)?.pts ?? 0) : 0,
+    bench: seasonBenchWaste(m.id),
+    trade: trades[m.id]?.net ?? 0,
+    trades: trades[m.id]?.n ?? 0,
+  }));
+  if (!raw.length) return null;
+  const scales = {};
+  for (const el of PERF_ELEMENTS) {
+    const vals = raw.map(r => r[el.key]);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    /* No spread means the element separates nobody. Scaling would divide by
+       zero, and picking a winner out of a dead heat would be an invention — so
+       everybody takes full marks on it and the card says the element is not
+       yet telling anybody apart. */
+    scales[el.key] = { lo, hi, flat: hi === lo };
+  }
+  for (const r of raw) {
+    r.score = {};
+    for (const el of PERF_ELEMENTS) {
+      const { lo, hi, flat } = scales[el.key];
+      // good-high runs lo->hi, good-low (bench wastage) runs hi->lo
+      const frac = flat ? 1 : (el.hi ? (r[el.key] - lo) / (hi - lo) : (hi - r[el.key]) / (hi - lo));
+      r.score[el.key] = frac * PERF_WEIGHT;
+    }
+    r.total = PERF_ELEMENTS.reduce((t, el) => t + r.score[el.key], 0);
+  }
+  raw.sort((a, b) => b.total - a.total || a.m.id - b.m.id);
+  // competition ranking on the total, and a rank per element for the tables below
+  let place = 0, seen = 0, last = null;
+  for (const r of raw) {
+    seen++;
+    if (last === null || Math.abs(r.total - last) > 1e-9) { place = seen; last = r.total; }
+    r.rank = place;
+  }
+  const ranks = {};
+  for (const el of PERF_ELEMENTS) {
+    const order = [...raw].sort((a, b) => el.hi ? b[el.key] - a[el.key] : a[el.key] - b[el.key]);
+    let p = 0, s = 0, l = null;
+    ranks[el.key] = new Map();
+    for (const r of order) {
+      s++;
+      if (l === null || r[el.key] !== l) { p = s; l = r[el.key]; }
+      ranks[el.key].set(r.m.id, p);
+    }
+  }
+  raw.scales = scales;
+  raw.ranks = ranks;
+  return raw;
+}
+function managerPerformanceCard() {
+  const perf = managerPerformance();
+  const settled = finishedGwIdxs();
+  if (!perf || !settled.length) {
+    return `<div class="card toplist"><h2>Managerial Performance</h2>
+      <p class="muted" style="font-size:12.5px">No round has settled yet. There is nothing to judge anybody on, which has not stopped the Committee before but will today.</p></div>`;
+  }
+  const n = v => Math.round(v * 10) / 10;
+  const flat = PERF_ELEMENTS.filter(el => perf.scales[el.key].flat);
+  const bar = r => `<span class="perf-bar" style="display:inline-flex;height:6px;width:64px;border-radius:3px;overflow:hidden;vertical-align:middle;background:var(--line)">
+    ${PERF_ELEMENTS.map((el, i) => `<span style="width:${(r.score[el.key] / 100) * 100}%;background:${['#2dd4a7', '#8b97b3', '#e0b055'][i]}" title="${esc(el.label)} ${n(r.score[el.key])}"></span>`).join('')}</span>`;
+  const head = `<h2>Managerial Performance <span class="muted" style="font-weight:400;font-size:12px">out of 100</span></h2>`;
+  const table = `<div style="overflow-x:auto"><table class="pool-table">
+      <thead><tr><th class="num">#</th><th>Team</th><th></th>
+        ${PERF_ELEMENTS.map(el => `<th class="num" title="${esc(el.title)} &mdash; scaled to ${n(PERF_WEIGHT)}">${esc(el.label)}</th>`).join('')}
+        <th class="num act">Total</th></tr></thead>
+      <tbody>${perf.map(r => `<tr>
+        <td class="num muted">${r.rank}</td>
+        <td style="white-space:nowrap">${kitSvg(r.m.id)} <b>${esc(r.m.team || r.m.name)}</b> <span class="muted" style="font-size:11px">${esc(r.m.name)}</span></td>
+        <td>${bar(r)}</td>
+        ${PERF_ELEMENTS.map(el => `<td class="num muted">${n(r.score[el.key])}</td>`).join('')}
+        <td class="num gold act"><b>${n(r.total)}</b></td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  // the three elements, raw and ranked, beneath the headline
+  const detail = PERF_ELEMENTS.map(el => {
+    const sc = perf.scales[el.key];
+    const order = [...perf].sort((a, b) => el.hi ? b[el.key] - a[el.key] : a[el.key] - b[el.key]);
+    return `<p class="muted" style="font-size:11px;margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">${esc(el.label)} &middot; worth ${n(PERF_WEIGHT)} of the 100</p>
+      <p class="muted" style="font-size:11px;margin:0 0 6px">${el.blurb} ${sc.flat
+        ? '<b>Nothing separates anybody on this yet, so everybody takes full marks for it.</b>'
+        : `Best ${sc.hi}, worst ${sc.lo}${el.hi ? '' : ' (and low is the good end)'}.`}</p>
+      <div style="overflow-x:auto"><table class="pool-table">
+        <thead><tr><th class="num">#</th><th>Team</th><th class="num">${el.key === 'trade' ? 'Net' : 'Raw'}</th>${el.key === 'trade' ? '<th class="num" title="Completed moves judged — trades, waiver claims and Trough signings">Moves</th>' : ''}<th class="num act">Score</th></tr></thead>
+        <tbody>${order.map(r => `<tr>
+          <td class="num muted">${perf.ranks[el.key].get(r.m.id)}</td>
+          <td style="white-space:nowrap">${esc(r.m.team || r.m.name)}</td>
+          <td class="num"><b>${el.key === 'trade' && r[el.key] > 0 ? '+' : ''}${r[el.key]}</b></td>
+          ${el.key === 'trade' ? `<td class="num muted">${r.trades}</td>` : ''}
+          <td class="num act">${n(r.score[el.key])}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  }).join('');
+  return `<div class="card toplist">${head}
+    <p class="muted" style="font-size:11.5px;margin:0 0 12px">Three things, ${n(PERF_WEIGHT)} points each: what his draft has scored, what he has thrown away on the bench, and what his business has won &mdash; trades, waiver claims and Trough signings all counted. Each is scaled between the best and worst figures in the league rather than by finishing order &mdash; so a league that is nearly level on something crowds together on it, and only a real gap opens a real gap. As at GW${GAMEWEEKS[settled[settled.length - 1]].n}.</p>
+    ${table}
+    ${flat.length ? `<p class="muted" style="font-size:10.5px;margin-top:8px">${flat.map(el => esc(el.label)).join(' and ')} ${flat.length === 1 ? 'separates' : 'separate'} nobody yet, so everybody has full marks there and the total flatters the lot of you.</p>` : ''}
+    <p class="muted" style="font-size:10.5px;margin-top:8px">Every figure below is the one the page that owns it already prints &mdash; the Draft Console for the draft, the Trade Record for trading &mdash; so nothing here is a second opinion.</p>
+    ${detail}
+  </div>`;
+}
 function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
@@ -14028,11 +14179,14 @@ function seasonSquadCard() {
    Scored on the 6-gameweek window where it has closed, the 3 where it hasn't,
    and each row says which — so nobody can argue the horizon was cherry-picked. */
 let tradeView = { scope: 'trades' }; // 'trades' | 'all'
-function tradeRecordCard() {
+/* The trade record's tally, lifted out of the card so the Managerial
+   Performance table can score the same number the card prints rather than a
+   second reading of it (Marc, 29 Sept 2026). `scope` is 'trades' or 'all'. */
+function tradeTally(scope = 'trades') {
   const rows = Object.fromEntries(state.managers.map(m => [m.id, { id: m.id, n: 0, net: 0, best: null, worst: null, h3: 0 }]));
   const seen = new Set();
   state.transfers.forEach((t, i) => {
-    if (tradeView.scope === 'trades' && !t.trade) return;
+    if (scope === 'trades' && !t.trade) return;
     // a 2-for-2 trade is several rows in state.transfers; judge the batch once
     const key = t.trade ? `${t.managerId}:${t.trade}` : `solo:${i}`;
     if (seen.has(key)) return;
@@ -14048,6 +14202,10 @@ function tradeRecordCard() {
     if (!r.best || wf.diff > r.best.diff) r.best = { diff: wf.diff, label };
     if (!r.worst || wf.diff < r.worst.diff) r.worst = { diff: wf.diff, label };
   });
+  return rows;
+}
+function tradeRecordCard() {
+  const rows = tradeTally(tradeView.scope);
   const list = Object.values(rows).filter(r => r.n).sort((a, b) => b.net - a.net || b.n - a.n);
   const toggle = `<div class="pool-controls" style="margin:0 0 10px">
       <button class="btn small ${tradeView.scope === 'trades' ? '' : 'ghost'}" data-traderec="trades">Trades only</button>
