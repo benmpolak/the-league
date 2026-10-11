@@ -7073,17 +7073,99 @@ function projPts(p, n) {
   }
   return games * playerXp(p);
 }
+/* ----- a window over the rounds already played -----
+   Marc, 10 Oct 2026: "Fumdamentally i want to see if a players high xg is in
+   one game or many, is recent, or was ages ago."
+
+   Every number on the scouting desk was a season-to-date total, so a player
+   with 4.42 xG looked the same whether he got it in one afternoon or spread it
+   over five. This narrows the whole desk to a stretch of rounds instead.
+
+   Set like withAsOf rather than threaded through every call site, because
+   metricsFor() is reached from a dozen places and none of them care.
+
+   null means the whole season, and the whole season deliberately keeps the old
+   code path untouched: the feed's own season figures, unchanged. Only a real
+   window recomputes from the per-round rows, so nothing moves by default. */
+let statWindow = null;                 // null | { n } | { from, to } in GW NUMBERS
+function withStatWindow(w, fn) {
+  const prev = statWindow;
+  statWindow = w;
+  try { return fn(); } finally { statWindow = prev; }
+}
+// rounds with stats on the board, oldest first. The round in play counts: this
+// is the scouting desk, where what happened on Saturday is the point.
+function playedGwIdxs() {
+  const out = [];
+  for (let i = 0; i < REGULAR_GWS; i++) {
+    const st = gwStatus(i);
+    if (st === 'final' || st === 'live') out.push(i);
+  }
+  return out;
+}
+function windowGwIdxs(w = statWindow) {
+  const played = playedGwIdxs();
+  if (!w) return played;
+  if (w.n) return played.slice(-w.n);
+  const from = w.from ?? -Infinity, to = w.to ?? Infinity;
+  return played.filter(i => GAMEWEEKS[i].n >= from && GAMEWEEKS[i].n <= to);
+}
+function windowLabel(w = statWindow) {
+  if (!w) return 'All';
+  const idxs = windowGwIdxs(w);
+  if (!idxs.length) return 'no rounds';
+  const a = GAMEWEEKS[idxs[0]].n, b = GAMEWEEKS[idxs[idxs.length - 1]].n;
+  if (w.n) return `Last ${idxs.length}`;
+  return a === b ? `GW${a}` : `GW${a}–${b}`;
+}
+/* The same metrics as the season view, summed over the window's rounds.
+   The xG family is read off the round's own row, which is what the per-gameweek
+   backfill was for — before it there was nothing here to sum. */
+function windowMetrics(p, idxs) {
+  const agg = { pts: 0, apps: 0, min: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0, xgc: 0 };
+  const perGw = [];
+  for (const i of idxs) {
+    const s = gwEvent(i)?.playerStats?.[p.id];
+    if (!s) { perGw.push(0); continue; }
+    const pts = statPoints(p, s);
+    agg.pts += pts;
+    if (s.min || s.st || s.sub) agg.apps++;
+    agg.min += s.min || 0; agg.g += s.g || 0; agg.a += s.a || 0; agg.cs += s.cs || 0;
+    agg.xg += s.xg || 0; agg.xa += s.xa || 0; agg.xgc += s.xgc || 0;
+    perGw.push(pts);
+  }
+  const per90 = v => (agg.min > 0 ? v / agg.min * 90 : 0);
+  const round2 = v => Math.round(v * 100) / 100;
+  return {
+    ...agg,
+    xg: round2(agg.xg), xa: round2(agg.xa), xgc: round2(agg.xgc),
+    xgi: round2(agg.xg + agg.xa),
+    ppg: agg.apps ? agg.pts / agg.apps : 0,
+    // per 90 is recomputed from the window rather than taken off the feed,
+    // which only ever knows the whole season
+    xg90: per90(agg.xg), xa90: per90(agg.xa),
+    xgi90: per90(agg.xg + agg.xa), xgc90: per90(agg.xgc),
+    f5: perGw.length ? perGw.reduce((t, v) => t + v, 0) / perGw.length : 0,
+    // the GW column still means the round being played, window or no window
+    gw: gwPlayerPoints(p.id, currentGwIndex()),
+    price: p.price,
+  };
+}
 function metricsFor(p) {
   const live = seasonHasStats();
   // the gameweek is part of the key because minGw/minPrev are ABOUT a round:
   // when the calendar rolls and no new stat has landed yet, the stat count is
   // unchanged and a cache without it would keep serving last round's minutes
   // under this round's heading
-  const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0) + ':gw' + currentGwIndex();
+  const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0) + ':gw' + currentGwIndex()
+    // ...and the window, or every surface would serve whichever one drew first
+    + ':w' + (statWindow ? (statWindow.n ? 'n' + statWindow.n : `${statWindow.from}-${statWindow.to}`) : 'all');
   if (_metricsKey !== key) { _metricsCache = new Map(); _metricsKey = key; }
   let m = _metricsCache.get(p.id);
   if (m) return m;
-  if (live) {
+  if (live && statWindow) {
+    m = windowMetrics(p, windowGwIdxs());
+  } else if (live) {
     const { pts, agg } = playerPoints(p.id);
     const evs = Object.values(state.matchStats).filter(ev => ev.playerStats).sort((a, b) => a.gw - b.gw);
     let min = 0;
@@ -7110,17 +7192,21 @@ function metricsFor(p) {
   // figures, refreshed with the feed — so it is identical in both branches
   // above (Marc, 10 Aug). After the July wipe these read 0 until the new
   // season produces some, which is honest rather than borrowed from last year.
-  m.xg = p.xg || 0; m.xa = p.xa || 0; m.xgc = p.xgc || 0;
-  // xGI belongs to that family and now follows the same rule. It used to be
-  // set per-branch, and the archive branch took LAST season's — so a row read
-  // xG 0.64, xA 0.08, xGI 14.7: three columns, two seasons (Marc, 24 Aug 2026)
-  m.xgi = m.xg + m.xa;
+  // A window has already worked them out from the rounds it covers, and must
+  // not have the season total written back over the top.
+  if (!(live && statWindow)) {
+    m.xg = p.xg || 0; m.xa = p.xa || 0; m.xgc = p.xgc || 0;
+    // xGI belongs to that family and now follows the same rule. It used to be
+    // set per-branch, and the archive branch took LAST season's — so a row read
+    // xG 0.64, xA 0.08, xGI 14.7: three columns, two seasons (Marc, 24 Aug 2026)
+    m.xgi = m.xg + m.xa;
+    m.xg90 = p.xg90 || 0; m.xa90 = p.xa90 || 0; m.xgi90 = p.xgi90 || 0; m.xgc90 = p.xgc90 || 0;
+  }
   // ...and last season's alongside it, as its own column rather than the same
   // one quietly changing meaning. Marc, 24 Aug 2026: "it needs both for now and
   // eventually we remove last seasons numbers". The archive holds a combined
   // xGI only — there is no separate xG or xA to pair with it.
   m.xgiLs = lastSeasonOf(p)?.xgi || 0;
-  m.xg90 = p.xg90 || 0; m.xa90 = p.xa90 || 0; m.xgi90 = p.xgi90 || 0; m.xgc90 = p.xgc90 || 0;
   _metricsCache.set(p.id, m);
   return m;
 }
@@ -7366,6 +7452,61 @@ function ownerFilterHtml(sel, current) {
   </select>`;
 }
 const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
+/* ----- the window strip -----
+   One control, two surfaces: the Trough and the Data Room explorer both run
+   their stats through metricsFor(), so both narrow the same way.
+
+   Marc, 10 Oct 2026, on why: "i want to see if a players high xg is in one
+   game or many, is recent, or was ages ago." The buttons answer the first two
+   and the pair of selects answers the third.
+
+   Kept per surface, like every other filter here — the Trough is where you are
+   mid-transaction and the Data Room is where you research, and a window set in
+   one has no business moving the other. */
+const WINDOW_STEPS = [1, 3, 5];
+function statWindowHtml(cur) {
+  const played = playedGwIdxs();
+  if (played.length < 2) return '';          // nothing to narrow yet
+  const ns = played.map(i => GAMEWEEKS[i].n);
+  const on = (test) => cur && cur.n === test;
+  const ranged = !!(cur && !cur.n);
+  const opt = (sel, v) => `<option value="${v}" ${sel === v ? 'selected' : ''}>GW${v}</option>`;
+  return `<div class="pool-controls" data-statwin style="margin:0 0 10px">
+    <span class="muted" style="font-size:11.5px">Stats over</span>
+    <button class="btn small ${cur ? 'ghost' : ''}" data-win="all" title="Every round played so far">All</button>
+    ${WINDOW_STEPS.filter(n => n < played.length).map(n =>
+      `<button class="btn small ${on(n) ? '' : 'ghost'}" data-win="${n}" title="The last ${n} round${n === 1 ? '' : 's'} only">Last ${n}</button>`).join('')}
+    <span class="muted" style="font-size:11.5px">or</span>
+    <select data-winfrom aria-label="Window from gameweek">${ns.map(v => opt(ranged ? cur.from : ns[0], v)).join('')}</select>
+    <span class="muted" style="font-size:11.5px">to</span>
+    <select data-winto aria-label="Window to gameweek">${ns.map(v => opt(ranged ? cur.to : ns[ns.length - 1], v)).join('')}</select>
+    ${cur ? `<span class="muted" style="font-size:11.5px">&mdash; showing ${esc(windowLabel(cur))}, not the season</span>` : ''}
+  </div>`;
+}
+/* One binder for both surfaces. `get`/`set` hand it whichever view state owns
+   the window, so nothing here needs to know which page it is on. */
+function bindStatWindow(root, get, set, redraw) {
+  const bar = root.querySelector('[data-statwin]');
+  if (!bar) return;
+  bar.querySelectorAll('[data-win]').forEach(b => {
+    b.onclick = () => {
+      const v = b.getAttribute('data-win');
+      set(v === 'all' ? null : { n: +v });
+      redraw();
+    };
+  });
+  const from = bar.querySelector('[data-winfrom]'), to = bar.querySelector('[data-winto]');
+  const pick = () => {
+    let a = +from.value, b = +to.value;
+    if (a > b) [a, b] = [b, a];          // picked backwards: read it the way round it makes sense
+    const played = playedGwIdxs().map(i => GAMEWEEKS[i].n);
+    // the whole run of rounds is not a window, it is the season — say so
+    set(a === played[0] && b === played[played.length - 1] ? null : { from: a, to: b });
+    redraw();
+  };
+  if (from) from.onchange = pick;
+  if (to) to.onchange = pick;
+}
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
 function cleanScoutView(v) {
   if (!v || typeof v !== 'object') return null;
@@ -7596,7 +7737,12 @@ function bindCompareBody(redraw, root = document) {
     redraw();
   });
 }
+// The window has to cover the SORT as well as the cells — sorting on xG while
+// the column shows a window would order the table by numbers nobody can see.
 function poolTable() {
+  return withStatWindow(poolFilter.win || null, poolTableBody);
+}
+function poolTableBody() {
   // on the scouting floor (setup phase) there is no board yet: nobody is
   // taken, nobody is on the clock, and the Draft button stays away
   const live = state.phase === 'draft';
@@ -7625,6 +7771,7 @@ function poolTable() {
   const showStar = canQueue || netOn();
   return `
   <div class="pool-wrap">
+  ${statWindowHtml(poolFilter.win || null)}
   ${scoutViewHtml('draft')}
   <div style="overflow-x:auto">
   <table class="pool-table draft-pool${live ? ' is-live' : ''}">
@@ -8001,6 +8148,8 @@ function bindPoolTable() {
     autoFilter = { ...autoFilter, pos: [], club: '' }; render();
   });
   document.querySelectorAll('[data-sort]').forEach(th => th.onclick = () => { poolFilter.sort = th.dataset.sort; refreshPool(); });
+  bindStatWindow(document, () => poolFilter.win,
+    w => { poolFilter = { ...poolFilter, win: w, limit: 60 }; }, refreshPool);
   bindColToggle(refreshPool);
   bindColOrder(refreshPool);
   bindQueueDnD();
@@ -9592,6 +9741,10 @@ function bindTransfers() {
     });
     search.oninput = renderTrResults;
     function renderTrResults() {
+      // the window covers the sort as well as the cells (see poolTable)
+      return withStatWindow(transfersView.win || null, renderTrResultsBody);
+    }
+    function renderTrResultsBody() {
       const q = normName(search.value || '');
       // ownership through the LANDING gameweek's lens — mid-mock, a player
       // traded for next week is already 'owned by' his new club (Toby's
@@ -9671,7 +9824,7 @@ function bindTransfers() {
         }).join('')}</tbody>
       </table></div>
       ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more</button> <button class="btn ghost small" id="trAll">Show all ${total}</button></div>` : ''}`;
-      results.innerHTML = hint + scoutViewHtml('transfers') + `
+      results.innerHTML = hint + scoutViewHtml('transfers') + statWindowHtml(transfersView.win || null) + `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
         <button class="btn small ${trPosOn().length ? 'ghost' : ''}" data-trpos="" title="Show every position">All</button>
         ${['GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${trPosOn().includes(pp) ? '' : 'ghost'}" data-trpos="${pp}" aria-pressed="${trPosOn().includes(pp)}" title="${trPosOn().includes(pp) ? `Stop showing ${pp}` : `Also show ${pp}`}">${pp}</button>`).join('')}
@@ -9696,6 +9849,8 @@ function bindTransfers() {
           : '<span class="muted">The Trough is empty. Somehow.</span>');
       const clubSel = results.querySelector('#trClub');
       if (clubSel) clubSel.onchange = () => { transfersView.club = clubSel.value; transfersView.limit = 20; renderTrResults(); };
+      bindStatWindow(results, () => transfersView.win,
+        w => { transfersView.win = w; transfersView.limit = 20; }, renderTrResults);
       results.querySelectorAll('[data-trpos]').forEach(b => b.onclick = () => {
         const pp = b.dataset.trpos, on = trPosOn();
         transfersView.pos = pp ? (on.includes(pp) ? on.filter(x => x !== pp) : [...on, pp]) : [];
@@ -14098,6 +14253,9 @@ function compareCard() {
   </div>`;
 }
 function playerExplorerCard() {
+  return withStatWindow(dataView.win || null, playerExplorerBody);
+}
+function playerExplorerBody() {
   const live = seasonHasStats();
   const cols = STAT_COLS(live);
   const ownedBy = {};
@@ -14142,6 +14300,7 @@ function playerExplorerCard() {
         ${MIN_MINUTES_STEPS.map(n => `<option value="${n}" ${dataView.minMin === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
       </select>
     </div>
+    ${statWindowHtml(dataView.win || null)}
     ${(() => {
       const sel = compareIds();
       const n = sel.length;
@@ -14198,6 +14357,8 @@ function bindExplorer() {
   pick('dxScope', 'scope'); pick('dxPos', 'pos'); pick('dxClub', 'club');
   const mm = document.getElementById('dxMin');
   if (mm) mm.onchange = e => { dataView = { ...dataView, minMin: +e.target.value, limit: 40 }; redraw(false); };
+  bindStatWindow(document, () => dataView.win,
+    w => { dataView = { ...dataView, win: w, limit: 40 }; }, () => redraw(false));
   const dxo = $('#dxOwner');
   if (dxo) dxo.onchange = e => { dataView = { ...dataView, owner: e.target.value === '' ? null : +e.target.value, limit: 40 }; redraw(false); };
   // comparison: tick two, then Compare. A third tick replaces the older pick
