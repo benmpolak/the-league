@@ -409,7 +409,9 @@ async function harvest() {
   if (ONLY.length) return eps.filter(e => ONLY.includes(e.id));
   const dated = eps.filter(e => e.stale);
   if (dated.length) console.log(`dated, not rendered: ${dated.map(e => `${e.id} (${e.stale})`).join(', ')}`);
-  return eps.filter(e => !e.stale);
+  const fresh = eps.filter(e => !e.stale);
+  fresh.dated = dated.length;
+  return fresh;
 }
 
 /* ---------- the manifest ----------
@@ -696,6 +698,12 @@ async function doRender(eps) {
   if (AUDITION) return doAudition();
   if (SCAN) { writeManifest(scanManifest()); return; }
   const eps = await harvest();
+  // From a round's kick-off until it settles every episode is dated, so an
+  // empty queue is the ordinary mid-gameweek state, not a fault. Treating it
+  // as one failed the scheduled run, and emailed Ben, every match weekend
+  // (GW5 18-22 Sep, GW6 10-11 Oct). A queue with nothing in it at all, dated
+  // or not, still fails: that is a harvest that found no episodes.
+  if (!eps.length && eps.dated) { console.log('nothing due — every episode is dated until this round settles'); return; }
   if (!eps.length) { console.error('nothing to work on — check --only against Podcast.published()'); process.exit(1); }
   if (PARTS) return doParts(eps);
   await doRender(eps);
