@@ -1,6 +1,8 @@
 // Does the control actually narrow what the page shows?
 const puppeteer = require('puppeteer-core');
-const BASE = process.env.TEST_BASE_URL || 'http://127.0.0.1:8749';
+// CI serves the site on 8125 (test.yml), like every other smoke. Defaulting to
+// the 8749 side port refused the connection there and held every deploy, 11 Oct.
+const BASE = process.env.TEST_BASE_URL || 'http://localhost:8125';
 
 (async () => {
   const browser = await puppeteer.launch({
