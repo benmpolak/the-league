@@ -48,6 +48,12 @@ you can act as any manager including the Chairman.
 - **Tests before every push.** `npm run check && npm run test:offline` —
   your AI does this automatically; if it reports failures, don't push.
   One idea per commit, plain-English commit messages.
+- New browser tests default to port 8125, because that is where GitHub serves
+  the site when it runs them; 8749 is only for working locally. A test that
+  defaults to 8749 passes on your machine, fails on GitHub, and a failing test
+  holds every deploy until it is fixed (11 Oct 2026: the live site sat on that
+  morning's 10:00 data for two hours on a match day). Copy the top of an
+  existing smoke: `process.env.TEST_BASE_URL || 'http://localhost:8125'`.
 - The rules PDF is canon. Squad limits, playoff format, scoring — not up for
   reinterpretation in code. Take format arguments to the group chat, where
   they will be minuted and ignored.

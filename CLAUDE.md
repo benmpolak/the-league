@@ -66,6 +66,7 @@ python3 -m http.server 8749   # from repo root; it's a static site
 - `npm run test:offline` — node, no browser (includes sim.test.js full-season sim)
 - `npm run test:browser` — puppeteer smokes (demo-night.smoke.js pins QF handicaps [40,22,11,0] — full Points gap)
 - `npm run test:emu` — Firebase emulator rules/functions tests
+- New browser smokes default to `http://localhost:8125`, the port CI serves on. 8749 is your local server only; reach it with `TEST_BASE_URL`. A smoke that defaults to 8749 passes locally, fails in CI, and the release gate then refuses every deploy (11 Oct 2026, two hours of frozen data on a match day)
 
 ## League glossary (the code speaks this language)
 
