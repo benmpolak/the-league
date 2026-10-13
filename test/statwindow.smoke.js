@@ -171,6 +171,58 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:8125';
   t('choosing Form watch puts the surface on the last five rounds',
     preset.ok && preset.win === '{"n":5}', `${preset.win}, sorted by ${preset.sort}`);
 
+  // ---- the minutes floor has to measure the window, not the season ----
+  const floor = await page.evaluate(() => {
+    const steps = w => minMinutesSteps(w).join(',');
+    // a man with minutes this season but none in the round just gone
+    const idxs = playedGwIdxs();
+    const last = idxs[idxs.length - 1];
+    const dropped = PLAYERS.map(x => PLAYER_BY_ID[x.id]).filter(Boolean).find(p =>
+      (p.mp || 0) >= 180 && !(gwEvent(last)?.playerStats?.[p.id]?.min));
+    const inWindow = dropped ? withStatWindow({ n: 1 }, () => metricsFor(dropped).min) : null;
+    return {
+      caps: [windowMinutesCap(null), windowMinutesCap({ n: 1 }), windowMinutesCap({ n: 3 })],
+      stepsAll: steps(null), steps1: steps({ n: 1 }), steps3: steps({ n: 3 }),
+      droppedName: dropped && dropped.full, droppedSeason: dropped && dropped.mp, inWindow,
+    };
+  });
+  t('the floor knows how many minutes a window can hold',
+    floor.caps[1] === 90 && floor.caps[2] === 270 && floor.caps[0] > floor.caps[2],
+    floor.caps.join(' / '));
+  t('and only offers steps that window can reach',
+    floor.steps1 === '0,90' && floor.steps3 === '0,90,270'
+      && floor.stepsAll.split(',').length > 3,
+    `all ${floor.stepsAll} | last1 ${floor.steps1} | last3 ${floor.steps3}`);
+
+  // the trap: a 900+ floor chosen on the season view, then window to one round
+  const stale = await page.evaluate(() => {
+    dataView = { ...dataView, tab: 'players', minMin: 900, win: null, q: '', owner: null, scope: 'all', pos: '', club: '' };
+    state.view = 'data'; render();
+    const season = document.querySelectorAll('.card table.pool-table tbody tr').length;
+    dataView = { ...dataView, win: { n: 1 } }; render();
+    return { season, windowed: document.querySelectorAll('.card table.pool-table tbody tr').length };
+  });
+  t('a 900+ floor left over from the season view does not empty a one-round table',
+    stale.windowed > 0, `season ${stale.season} rows, last-1 ${stale.windowed} rows`);
+  t('(and the man who played none of that round is screened out by it)',
+    floor.inWindow === 0 || floor.droppedName == null,
+    floor.droppedName ? `${floor.droppedName}: ${floor.droppedSeason} season, ${floor.inWindow} in the window` : 'nobody fits the shape');
+
+  // ---- the player card tells the round-by-round story, xG included ----
+  const card = await page.evaluate(() => {
+    const idxs = playedGwIdxs();
+    const scorer = PLAYERS.map(x => PLAYER_BY_ID[x.id]).filter(Boolean)
+      .find(p => idxs.some(i => (gwEvent(i)?.playerStats?.[p.id]?.xg || 0) > 0));
+    if (!scorer) return { none: true };
+    showPlayerCard(scorer.id);
+    const txt = document.querySelector('#pcardOverlay')?.textContent || '';
+    document.querySelector('#pcardOverlay')?.remove();
+    return { name: scorer.full, hasXg: /xG \d+\.\d\d/.test(txt), rounds: (txt.match(/GW\d+/g) || []).length };
+  });
+  t('the player card breaks xG down round by round',
+    card.none || (card.hasXg && card.rounds > 1),
+    card.none ? 'no player with per-round xG' : `${card.name}: ${card.rounds} rounds, xG shown ${card.hasXg}`);
+
   t('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 
   console.log(log.join('\n'));

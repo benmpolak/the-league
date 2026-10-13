@@ -7459,6 +7459,11 @@ function ownerFilterHtml(sel, current) {
   </select>`;
 }
 const MIN_MINUTES_STEPS = [0, 90, 270, 450, 900];
+// The most minutes a window can hold: ninety a round, and the season is every
+// round there is. Caps the floor and decides which steps are worth offering —
+// a 450+ option inside a three-round window is a button that empties the table.
+const windowMinutesCap = w => 90 * (w ? windowGwIdxs(w).length : REGULAR_GWS);
+const minMinutesSteps = w => MIN_MINUTES_STEPS.filter(n => !n || n <= windowMinutesCap(w));
 /* ----- the window strip -----
    One control, two surfaces: the Trough and the Data Room explorer both run
    their stats through metricsFor(), so both narrow the same way.
@@ -14296,10 +14301,24 @@ function playerExplorerBody() {
     : [...PLAYERS];
   if (dataView.pos) pool = pool.filter(p => p.pos === dataView.pos);
   if (dataView.club) pool = pool.filter(p => p.team === dataView.club);
-  // filter on p.mp — FPL's own minutes — because that is the denominator the
-  // per-90 figures are divided by. Using our match-stat minutes would gate the
+  // The floor has to measure the same minutes the table is showing.
+  //
+  // With no window that is p.mp — FPL's own figure, and the denominator its
+  // per-90 columns are divided by; using our match-stat minutes would gate the
   // rates on a different number entirely and hide everyone early season.
-  if (dataView.minMin) pool = pool.filter(p => (p.mp || 0) >= dataView.minMin);
+  //
+  // Inside a window the per-90s are worked out from the window's own minutes,
+  // so the floor follows them there or it is screening on a season nobody is
+  // looking at (Marc, 13 Oct 2026: "can you not do the same with the minutes
+  // played filters"). The floor is also capped at what the window can hold —
+  // 900+ left over from the season view would otherwise empty a one-round
+  // table completely.
+  if (dataView.minMin) {
+    const floor = Math.min(dataView.minMin, windowMinutesCap(dataView.win || null));
+    pool = dataView.win
+      ? pool.filter(p => metricsFor(p).min >= floor)
+      : pool.filter(p => (p.mp || 0) >= floor);
+  }
   if (q) pool = pool.filter(p => normName(p.name).includes(q) || normName(p.team).includes(q) || normName(p.club).includes(q));
   pool.sort(dataView.sort === 'owner'
     ? (a, b) => String(teamName(ownedBy[a.id]) || '~').localeCompare(String(teamName(ownedBy[b.id]) || '~')) || rating(b) - rating(a)
@@ -14322,8 +14341,8 @@ function playerExplorerBody() {
         ${['GK', 'DF', 'MF', 'FW'].map(p => `<option ${dataView.pos === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
       <select id="dxClub" aria-label="Club"><option value="">All clubs</option>
         ${clubs.map(c => `<option value="${esc(c)}" ${dataView.club === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
-      <select id="dxMin" aria-label="Minimum minutes played" title="Per-90 columns are meaningless on a small sample — set a floor before trusting them">
-        ${MIN_MINUTES_STEPS.map(n => `<option value="${n}" ${dataView.minMin === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
+      <select id="dxMin" aria-label="Minimum minutes played" title="Per-90 columns are meaningless on a small sample — set a floor before trusting them. Inside a window the floor counts that window's minutes, not the season's">
+        ${minMinutesSteps(dataView.win || null).map(n => `<option value="${n}" ${Math.min(dataView.minMin, windowMinutesCap(dataView.win || null)) === n ? 'selected' : ''}>${n ? `${n}+ mins (${Math.round(n / 90)} match${n / 90 === 1 ? '' : 'es'})` : 'Any minutes'}</option>`).join('')}
       </select>
     </div>
     ${statWindowHtml(dataView.win || null)}
@@ -15291,6 +15310,12 @@ function showPlayerCard(pid) {
     if (s.yc) bits.push('\ud83d\udfe8');
     if (s.rc) bits.push('\ud83d\udfe5');
     if (s.og) bits.push('OG');
+    // xG and xA for the round, now that they are kept per round rather than as
+    // one season figure (Marc, 10 Oct 2026: "i want to see if a players high xg
+    // is in one game or many"). This card already told the round-by-round story
+    // for goals and minutes; the expected numbers were the part it could not.
+    if (s.xg) bits.push(`<span class="muted">xG ${(+s.xg).toFixed(2)}</span>`);
+    if (s.xa) bits.push(`<span class="muted">xA ${(+s.xa).toFixed(2)}</span>`);
     gwRows.push(`<div class="score-row"><span>GW${GAMEWEEKS[i].n} <span class="muted" style="font-size:11px">${s.min || 0}&prime; ${bits.join(' ')}</span></span><b class="${gwPlayerPoints(pid, i) > 0 ? 'gold' : 'muted'}">${gwPlayerPoints(pid, i)}</b></div>`);
   }
   const ov = document.createElement('div');
