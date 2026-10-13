@@ -3777,14 +3777,16 @@ function contributedPoints(mid, pid) {
 function playerPoints(pid) {
   const p = PLAYER_BY_ID[pid];
   let pts = 0;
-  const agg = { app: 0, g: 0, a: 0, cs: 0, sv: 0, ps: 0, pm: 0, yc: 0, rc: 0, og: 0 };
+  const agg = { app: 0, g: 0, a: 0, cs: 0, gc: 0, sv: 0, ps: 0, pm: 0, yc: 0, rc: 0, og: 0 };
   for (const ev of Object.values(state.matchStats)) {
     if (asOfHides(ev.gw)) continue; // wound back to a deadline: not banked yet
     const s = ev.playerStats?.[pid];
     if (!s) continue;
     pts += statPoints(p, s); // points computed per-gameweek, so the floors stay honest
     if (s.min || s.st || s.sub) agg.app++;
-    for (const k of ['g', 'a', 'cs', 'sv', 'ps', 'pm', 'yc', 'rc', 'og']) agg[k] += (s[k] || 0);
+    // gc joined the list when the scouting desk grew a Goals Conceded column
+    // (Marc, 13 Oct 2026) — it was always in the feed, just never totted up
+    for (const k of ['g', 'a', 'cs', 'gc', 'sv', 'ps', 'pm', 'yc', 'rc', 'og']) agg[k] += (s[k] || 0);
   }
   const lines = [];
   const say = (n, label) => { if (n) lines.push(`${label} ${n}`); };
@@ -7095,9 +7097,14 @@ function withStatWindow(w, fn) {
 }
 // rounds with stats on the board, oldest first. The round in play counts: this
 // is the scouting desk, where what happened on Saturday is the point.
+// Never a round AHEAD of the clock, though — the Simulation Chamber and the
+// mock both write stats into rounds that have not come round yet, and without
+// this "Last 1" quietly reads next week (caught by the calendar-roll check in
+// gwminutes.smoke.js, inherited from the columns this replaced).
 function playedGwIdxs() {
   const out = [];
-  for (let i = 0; i < REGULAR_GWS; i++) {
+  const now = currentGwIndex();
+  for (let i = 0; i < REGULAR_GWS && i <= now; i++) {
     const st = gwStatus(i);
     if (st === 'final' || st === 'live') out.push(i);
   }
@@ -7122,7 +7129,7 @@ function windowLabel(w = statWindow) {
    The xG family is read off the round's own row, which is what the per-gameweek
    backfill was for — before it there was nothing here to sum. */
 function windowMetrics(p, idxs) {
-  const agg = { pts: 0, apps: 0, min: 0, g: 0, a: 0, cs: 0, xg: 0, xa: 0, xgc: 0 };
+  const agg = { pts: 0, apps: 0, min: 0, g: 0, a: 0, cs: 0, gc: 0, sv: 0, yc: 0, rc: 0, xg: 0, xa: 0, xgc: 0 };
   const perGw = [];
   for (const i of idxs) {
     const s = gwEvent(i)?.playerStats?.[p.id];
@@ -7131,6 +7138,7 @@ function windowMetrics(p, idxs) {
     agg.pts += pts;
     if (s.min || s.st || s.sub) agg.apps++;
     agg.min += s.min || 0; agg.g += s.g || 0; agg.a += s.a || 0; agg.cs += s.cs || 0;
+    agg.gc += s.gc || 0; agg.sv += s.sv || 0; agg.yc += s.yc || 0; agg.rc += s.rc || 0;
     agg.xg += s.xg || 0; agg.xa += s.xa || 0; agg.xgc += s.xgc || 0;
     perGw.push(pts);
   }
@@ -7145,7 +7153,6 @@ function windowMetrics(p, idxs) {
     // which only ever knows the whole season
     xg90: per90(agg.xg), xa90: per90(agg.xa),
     xgi90: per90(agg.xg + agg.xa), xgc90: per90(agg.xgc),
-    f5: perGw.length ? perGw.reduce((t, v) => t + v, 0) / perGw.length : 0,
     // the GW column still means the round being played, window or no window
     gw: gwPlayerPoints(p.id, currentGwIndex()),
     price: p.price,
@@ -7153,10 +7160,10 @@ function windowMetrics(p, idxs) {
 }
 function metricsFor(p) {
   const live = seasonHasStats();
-  // the gameweek is part of the key because minGw/minPrev are ABOUT a round:
-  // when the calendar rolls and no new stat has landed yet, the stat count is
-  // unchanged and a cache without it would keep serving last round's minutes
-  // under this round's heading
+  // the gameweek is part of the key because GW is ABOUT a round, and because
+  // a window of "the last three" means different rounds once the calendar
+  // rolls: the stat count alone is unchanged at that moment, and a cache
+  // without it would keep serving the old round's numbers
   const key = (live ? 'live:' + Object.values(state.matchStats).reduce((t, ev) => t + Object.keys(ev.playerStats || {}).length, 0) : 'pre') + ':fx' + (state.fixtures?.length || 0) + ':gw' + currentGwIndex()
     // ...and the window, or every surface would serve whichever one drew first
     + ':w' + (statWindow ? (statWindow.n ? 'n' + statWindow.n : `${statWindow.from}-${statWindow.to}`) : 'all');
@@ -7170,23 +7177,19 @@ function metricsFor(p) {
     const evs = Object.values(state.matchStats).filter(ev => ev.playerStats).sort((a, b) => a.gw - b.gw);
     let min = 0;
     for (const ev of evs) min += ev.playerStats[p.id]?.min || 0;
-    const last5 = evs.slice(-5);
-    const f5 = last5.length ? last5.reduce((t, ev) => t + (ev.playerStats[p.id] ? statPoints(p, ev.playerStats[p.id]) : 0), 0) / last5.length : 0;
-    m = { pts, apps: agg.app, min, f5, gw: gwPlayerPoints(p.id, currentGwIndex()), g: agg.g, a: agg.a, cs: agg.cs, ppg: agg.app ? pts / agg.app : 0, price: p.price };
+    m = { pts, apps: agg.app, min, gw: gwPlayerPoints(p.id, currentGwIndex()), g: agg.g, a: agg.a, cs: agg.cs, gc: agg.gc, sv: agg.sv, yc: agg.yc, rc: agg.rc, ppg: agg.app ? pts / agg.app : 0, price: p.price };
   } else {
     // pre-season: FPL's own aggregates until the July wipe, the archive after
+    // (the archive keeps no cards, saves or goals conceded, so those read 0 —
+    // honest, rather than borrowed from a column that does not exist)
     const ls = FPL_WIPED ? lastSeasonOf(p) : null;
+    const none = { gc: 0, sv: 0, yc: 0, rc: 0 };
     m = ls
-      ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, f5: 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ppg: ls.ppg || 0, price: p.price }
+      ? { pts: ls.pts, apps: Math.round((ls.mp || 0) / 90), min: ls.mp || 0, gw: 0, g: ls.g || 0, a: ls.a || 0, cs: ls.cs || 0, ...none, ppg: ls.ppg || 0, price: p.price }
       // Keep Pts as the official FPL total. Rate is the separate League/FPL
       // blend; using Rate here made the two columns identical (Ben, 5 Aug).
-      : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, f5: 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ppg: p.ppg || 0, price: p.price };
+      : { pts: p.pts || 0, apps: Math.round((p.mp || 0) / 90), min: p.mp || 0, gw: 0, g: p.g || 0, a: p.a || 0, cs: p.cs || 0, ...none, ppg: p.ppg || 0, price: p.price };
   }
-  // the two single-round minute counts sit outside the live/pre-season split
-  // for the same reason the xG family does: they come off the round's own
-  // stats, and read 0 before a round has any — which is honest
-  m.minGw = gwMinutes(p.id, currentGwIndex());
-  m.minPrev = gwMinutes(p.id, currentGwIndex() - 1);
   m.xp1 = projPts(p, 1); m.xp3 = projPts(p, 3); m.xp6 = projPts(p, 6);
   // the xG family comes straight off the player record — FPL's season-to-date
   // figures, refreshed with the feed — so it is identical in both branches
@@ -7238,26 +7241,28 @@ function nextFxHtml(team, gwN = null) {
   const opp = t.endsWith('(H)') || t.endsWith('(A)') ? Object.keys(TEAM_BY_NAME).find(n => TEAM_BY_NAME[n].short === t.slice(0, -4).trim()) : null;
   return opp ? `<span class="${fdrCls(opp)}">${t}</span>` : t;
 }
-// "MP GW3" where a real round exists; before GW1 there is no round to name, so
-// the column says what it is instead of inventing a number
-const gwColHead = (i, fallback) =>
-  i >= 0 && i < GAMEWEEKS.length ? `MP GW${GAMEWEEKS[i].n}` : `MP ${fallback}`;
 // the full column menu, Draft Fantasy style; users pick their own set (kept per device)
 const ALL_STAT_COLS = live => [
   { k: 'vs', h: 'Vs', t: 'Next fixture (H/A) — coloured by how scary they are', v: (m, p) => nextFxHtml(p.team), cls: ' muted', sortable: false },
   // FPL price column RETIRED (Lee read '£m' as transfer fees — there is no
   // money in this league; do not resurrect)
   { k: 'apps', h: live ? 'Apps' : '90s', t: live ? 'Appearances' : 'Minutes ÷ 90, last season', v: m => m.apps },
-  // The three minute counts stand together, season first then the two rounds
-  // in the order they were played (Marc, 31 Aug 2026: "order all three next to
-  // each other"). Headers name the actual gameweek, the way the xGI column
-  // names its season, so nobody has to remember which round is which.
-  { k: 'min', h: 'MP', t: 'Total minutes played this season', v: m => m.min },
-  { k: 'minPrev', h: gwColHead(currentGwIndex() - 1, 'prev'), t: 'Minutes played in the previous gameweek', v: m => m.minPrev },
-  { k: 'minGw', h: gwColHead(currentGwIndex(), 'now'), t: 'Minutes played in the current gameweek', v: m => m.minGw },
+  // There used to be three minute counts here — the season, the round just
+  // gone and the one before it (Marc, 31 Aug 2026: "order all three next to
+  // each other"). The window does both of the single-round ones better, and
+  // for every other column too, so one is enough now (Marc, 13 Oct 2026).
+  { k: 'min', h: 'MP', t: 'Minutes played over the window shown', v: m => m.min },
   { k: 'g', h: 'G', t: 'Goals', v: m => m.g },
   { k: 'a', h: 'A', t: 'Assists', v: m => m.a },
   { k: 'cs', h: 'CS', t: 'Clean sheets', v: m => m.cs },
+  /* Four that were in the feed all along and never had a column, because a
+     season total of them says very little: "fourteen saves" or "two yellows"
+     is noise until you can ask WHEN. The window made them worth showing
+     (Marc, 13 Oct 2026). */
+  { k: 'gc', h: 'GC', t: 'Goals conceded while on the pitch', v: m => m.gc ?? 0, cls: ' muted' },
+  { k: 'sv', h: 'Sv', t: 'Saves — goalkeepers only', v: m => m.sv ?? 0, cls: ' muted' },
+  { k: 'yc', h: 'Y', t: 'Yellow cards — a suspension watch, once you can see which rounds they came in', v: m => m.yc ?? 0, cls: ' muted' },
+  { k: 'rc', h: 'R', t: 'Red cards', v: m => m.rc ?? 0, cls: ' muted' },
   { k: 'xg', h: 'xG', t: 'Expected goals', v: m => m.xg.toFixed(2), cls: ' muted' },
   { k: 'xa', h: 'xA', t: 'Expected assists', v: m => m.xa.toFixed(2), cls: ' muted' },
   // two places, like the xG and xA it is the sum of. At one place Bobby Thomas
@@ -7271,7 +7276,6 @@ const ALL_STAT_COLS = live => [
   { k: 'xa90', h: 'xA90', t: 'Expected assists per 90 minutes', v: m => m.xa90.toFixed(2), cls: ' muted' },
   { k: 'xgi90', h: 'xGI90', t: 'Expected goals + assists per 90 minutes', v: m => m.xgi90.toFixed(2), cls: ' muted' },
   { k: 'xgc90', h: 'xGC90', t: 'Expected goals conceded per 90 minutes — lower is better', v: m => m.xgc90.toFixed(2), cls: ' muted' },
-  { k: 'f5', h: 'F5', t: 'Form — average points over the last five gameweeks (league scoring)', v: m => m.f5.toFixed(1) },
   { k: 'xp1', h: 'P1', t: 'Projected points — next gameweek (per-game expectation × scheduled fixtures)', v: m => m.xp1.toFixed(1), cls: ' muted' },
   { k: 'xp3', h: 'P3', t: 'Projected points — next three gameweeks (blanks and doubles counted)', v: m => m.xp3.toFixed(1), cls: ' muted' },
   { k: 'xp6', h: 'P6', t: 'Projected points — next six gameweeks (blanks and doubles counted)', v: m => m.xp6.toFixed(1), cls: ' muted' },
@@ -7283,7 +7287,7 @@ const ALL_STAT_COLS = live => [
   { k: 'rate', h: 'Rate', t: 'The board’s rating — 75% last-season production rescored under THE LEAGUE’s rules, 25% current FPL valuation; valuation carries more when the sample is thin', v: (m, p) => Math.round(rating(p)) },
 ];
 const DEFAULT_COL_KEYS = live => live
-  ? ['vs', 'f5', 'ppg', 'pts', 'rate']
+  ? ['vs', 'ppg', 'pts', 'rate']
   : ['vs', 'ppg', 'pts', 'rate'];
 // phones default to the decision numbers — tap any player for the full
 // story, or add columns back from Scouting tools. Vs joined rate the night
@@ -7314,7 +7318,7 @@ const STAT_COLS = live => {
    one line, the third alone under the first. A family is drawn as one block
    across the full width instead, and cannot be split by however many columns
    the grid happens to have at that screen width. */
-const COL_FAMILIES = [['min', 'minPrev', 'minGw']];
+const COL_FAMILIES = [['yc', 'rc']];
 function colOptionsHtml(live) {
   const vis = visibleColKeys(live);
   const one = c => `<label class="scout-col-option"><input type="checkbox" data-coltoggle="${c.k}" ${vis.includes(c.k) ? 'checked' : ''}> <b>${c.h}</b> <span class="muted">${esc(c.t)}</span></label>`;
@@ -7418,11 +7422,14 @@ const metricSort = s => (a, b) => s === 'name' ? a.name.localeCompare(b.name)
    shared league state, so twelve managers can tinker without touching one
    another's board (or creating another server schema to babysit). */
 const SCOUT_PRESETS = [
-  { id: 'form', name: 'Form watch', cols: ['vs', 'f5', 'gw', 'ppg', 'pts'], sort: 'f5' },
+  // Form watch used to be a column that quietly averaged the last five rounds.
+  // It is the window doing that now, so the preset sets one instead of asking
+  // for a column that no longer exists (Marc, 13 Oct 2026).
+  { id: 'form', name: 'Form watch', cols: ['vs', 'gw', 'ppg', 'pts'], sort: 'pts', win: { n: 5 } },
   { id: 'reliable', name: 'Reliable starters', cols: ['vs', 'apps', 'min', 'ppg', 'pts'], sort: 'apps' },
   { id: 'output', name: 'Goals & assists', cols: ['vs', 'apps', 'g', 'a', 'xgi', 'xgiLs', 'ppg', 'pts'], sort: 'pts' },
 ];
-const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'minPrev', 'minGw', 'g', 'a', 'cs', 'xg', 'xa', 'xgi', 'xgiLs', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'f5', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
+const SCOUT_SORTS = new Set(['name', 'apps', 'min', 'g', 'a', 'cs', 'gc', 'sv', 'yc', 'rc', 'xg', 'xa', 'xgi', 'xgiLs', 'xgc', 'xg90', 'xa90', 'xgi90', 'xgc90', 'xp1', 'xp3', 'xp6', 'gw', 'ppg', 'pts', 'rate']);
 const SCOUT_POS = new Set(['', 'GK', 'DF', 'MF', 'FW']);
 let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the Data Room's own filter state (Marc, 9 Aug: the Data Room is where you go
@@ -7508,6 +7515,19 @@ function bindStatWindow(root, get, set, redraw) {
   if (to) to.onchange = pick;
 }
 const scoutViewsKey = () => `${LS_NS}-scout-views-${whoami && whoami !== -1 ? whoami : 'guest'}`;
+/* A window off a saved view or a preset is just stored JSON until it is
+   checked: anything that is not a sane "last n" or a gameweek pair reads as
+   the whole season, which is the harmless answer. */
+function cleanStatWindow(w) {
+  if (!w || typeof w !== 'object') return null;
+  const int = v => (Number.isFinite(+v) ? Math.round(+v) : null);
+  const n = int(w.n);
+  if (n != null) return n > 0 && n <= REGULAR_GWS ? { n } : null;
+  const from = int(w.from), to = int(w.to);
+  if (from == null || to == null) return null;
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  return lo >= 1 && hi <= REGULAR_GWS ? { from: lo, to: hi } : null;
+}
 function cleanScoutView(v) {
   if (!v || typeof v !== 'object') return null;
   const name = String(v.name || '').trim().replace(/\s+/g, ' ').slice(0, 28);
@@ -7528,7 +7548,10 @@ function cleanScoutView(v) {
   // minutes floor for the Data Room explorer; 0 on the surfaces that have none
   const mm = +v.minMin;
   const minMin = Number.isFinite(mm) && mm > 0 ? Math.min(Math.round(mm), 3420) : 0;
-  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope, minMin };
+  // a view can carry the window it was saved under, now that the window is
+  // what Form watch and its like actually are (Marc, 13 Oct 2026)
+  const win = cleanStatWindow(v.win);
+  return { id: String(v.id || `${Date.now()}-${Math.random()}`).slice(0, 80), name, cols, sort, pos, team, scope, minMin, win };
 }
 function scoutViews() {
   try {
@@ -7572,6 +7595,9 @@ function scoutSnapshot(surface) {
     team: surface === 'draft' ? src.team : src.club,
     scope: surface === 'draft' ? 'free' : src.scope,
     minMin: src.minMin || 0,
+    // save the window with the view: "my Friday shortlist, last three rounds"
+    // is one thought, not two things to set up again each time
+    win: src.win || null,
   });
 }
 function applyScoutView(v, surface) {
@@ -7584,11 +7610,11 @@ function applyScoutView(v, surface) {
   // rather than silently picking one of the saved positions
   const posOne = clean.pos.length === 1 ? clean.pos[0] : '';
   if (surface === 'draft') {
-    poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, limit: 60 };
+    poolFilter = { ...poolFilter, team: clean.team, pos: clean.pos, sort: clean.sort, win: clean.win, limit: 60 };
   } else if (surface === 'data') {
-    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, limit: 40 };
+    dataView = { ...dataView, club: clean.team, pos: posOne, scope: clean.scope === 'avail' ? 'free' : clean.scope, sort: clean.sort, minMin: clean.minMin, win: clean.win, limit: 40 };
   } else {
-    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, limit: 20 };
+    transfersView = { ...transfersView, club: clean.team, pos: clean.pos, scope: clean.scope, sort: clean.sort, win: clean.win, limit: 20 };
   }
   return true;
 }

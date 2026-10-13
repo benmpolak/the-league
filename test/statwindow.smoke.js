@@ -121,6 +121,56 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:8125';
     t('the two surfaces keep separate windows', dr === 'null', `data room still ${dr}`);
   }
 
+  // ---- what the window unlocked, and what it replaced ----
+  const cols = await page.evaluate(() => {
+    const live = seasonHasStats();
+    const keys = ALL_STAT_COLS(live).map(c => c.k);
+    // a keeper, for the counting stats that only mean something in a window
+    const gk = PLAYERS.map(x => PLAYER_BY_ID[x.id]).filter(x => x && x.pos === 'GK')
+      .sort((a, b) => (metricsFor(b).sv || 0) - (metricsFor(a).sv || 0))[0];
+    const season = withStatWindow(null, () => ({ ...metricsFor(gk) }));
+    const idxs = playedGwIdxs();
+    const summed = ['sv', 'gc', 'yc', 'rc'].map(k => [k, idxs.reduce((t, i) =>
+      t + withStatWindow({ from: GAMEWEEKS[i].n, to: GAMEWEEKS[i].n }, () => metricsFor(gk)[k] || 0), 0)]);
+    const form = SCOUT_PRESETS.find(v => v.id === 'form');
+    return {
+      keys,
+      gkName: gk.full,
+      season: Object.fromEntries(['sv', 'gc', 'yc', 'rc'].map(k => [k, season[k]])),
+      summed: Object.fromEntries(summed),
+      form,
+      formWin: JSON.stringify(cleanStatWindow(form && form.win)),
+      junkWindows: [cleanStatWindow({ n: -1 }), cleanStatWindow({ n: 999 }),
+        cleanStatWindow({ from: 'x', to: 2 }), cleanStatWindow(null)].map(v => JSON.stringify(v)),
+      backwards: JSON.stringify(cleanStatWindow({ from: 5, to: 2 })),
+    };
+  });
+
+  t('saves, goals conceded and cards now have columns',
+    ['sv', 'gc', 'yc', 'rc'].every(k => cols.keys.includes(k)), cols.keys.join(','));
+  t('and each one sums round by round to its season total',
+    ['sv', 'gc', 'yc', 'rc'].every(k => cols.summed[k] === cols.season[k]),
+    `${cols.gkName}: ` + ['sv', 'gc', 'yc', 'rc'].map(k => `${k} ${cols.summed[k]}/${cols.season[k]}`).join(' '));
+  t('F5 is gone — it was the window averaging five rounds', !cols.keys.includes('f5'));
+  t('and so are the two single-round minute counts',
+    !cols.keys.includes('minGw') && !cols.keys.includes('minPrev'));
+  t('Form watch survives, as a window rather than a column',
+    !!cols.form && cols.formWin === '{"n":5}' && !cols.form.cols.includes('f5'),
+    cols.form ? `cols ${cols.form.cols.join('/')} sort ${cols.form.sort} win ${cols.formWin}` : 'missing');
+  t('a nonsense window saved in a view reads as the whole season',
+    cols.junkWindows.every(v => v === 'null'), cols.junkWindows.join(' '));
+  t('a backwards range is read the way round it makes sense',
+    cols.backwards === '{"from":2,"to":5}', cols.backwards);
+
+  // picking Form watch really does set the window on the surface
+  const preset = await page.evaluate(() => {
+    state.view = 'data'; dataView = { ...dataView, win: null, tab: 'players' }; render();
+    const ok = applyScoutView(SCOUT_PRESETS.find(v => v.id === 'form'), 'data');
+    return { ok, win: JSON.stringify(dataView.win), sort: dataView.sort };
+  });
+  t('choosing Form watch puts the surface on the last five rounds',
+    preset.ok && preset.win === '{"n":5}', `${preset.win}, sorted by ${preset.sort}`);
+
   t('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 
   console.log(log.join('\n'));

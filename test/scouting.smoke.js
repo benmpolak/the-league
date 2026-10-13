@@ -64,14 +64,20 @@ const chk = (name, ok, detail = '') => {
       hadForm,
       sort: poolFilter.sort,
       cols: visibleColKeys(seasonHasStats()),
-      formSorted: heads.includes('F5 ▾'),
+      // Form watch used to be an F5 column with the sort arrow on it. It is a
+      // five-round window now, so what proves it did something is the window
+      // it set and the Pts column carrying the arrow (Marc, 13 Oct 2026).
+      win: JSON.stringify(poolFilter.win),
+      ptsSorted: heads.includes('Pts ▾'),
+      noF5: !heads.some(h => h.startsWith('F5')),
       selected: document.querySelector('[data-scout-view]').value,
       outputGone: !heads.some(h => h === 'G' || h === 'A' || h === 'xGI'),
     };
   });
   chk('SC2: Form watch is a real preset, not a decorative option',
-    preset.hadForm && preset.sort === 'f5' && preset.formSorted && preset.selected === 'preset:form'
-      && JSON.stringify(preset.cols) === JSON.stringify(['vs', 'f5', 'gw', 'ppg', 'pts'])
+    preset.hadForm && preset.sort === 'pts' && preset.ptsSorted && preset.noF5
+      && preset.win === '{"n":5}' && preset.selected === 'preset:form'
+      && JSON.stringify(preset.cols) === JSON.stringify(['vs', 'gw', 'ppg', 'pts'])
       && preset.outputGone,
     JSON.stringify(preset));
 

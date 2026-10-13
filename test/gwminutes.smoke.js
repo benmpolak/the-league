@@ -1,13 +1,17 @@
-/* Minutes for one gameweek, alongside the season total.
+/* Minutes for one round, when the season total flatters.
  *
  * Marc, 31 Aug 2026: "can we add minutes in previous gameweek and minutes in
- * current gameweek as a filter in scouting tools. can you also rename minutes
- * to total minutes and then order all three next to each other."
+ * current gameweek as a filter in scouting tools."
  *
- * The point of the pair is the man a season total flatters: 900 minutes in the
- * bank and nought last week is a player who has lost his place, and the season
- * column alone will never tell you. So the case that matters here is the one
- * where the three columns DISAGREE about the same man.
+ * The point was never the columns. It was the man a season total flatters:
+ * 900 minutes in the bank and nought last week is a player who has lost his
+ * place, and the season column alone will never tell you.
+ *
+ * Those two columns are gone (Marc, 13 Oct 2026 — the window does the same job
+ * for every column, not just minutes). The QUESTION is not gone, so this still
+ * asks it, through the window instead. Including the trap that caught the
+ * columns: "last one round" means a DIFFERENT round once the calendar rolls,
+ * with no new stats landing to tell the cache anything has changed.
  */
 'use strict';
 const puppeteer = require('puppeteer-core');
@@ -36,7 +40,7 @@ const chk = (name, ok, detail = '') => {
     state = buildDemoState(); state.phase = 'season';
     whoami = state.managers[0].id;
 
-    // the demo fabricates GW1; put the clock in GW2 so there IS a previous one
+    // the demo fabricates GW1; put the clock in GW2 so there IS a round behind
     demoGwOverride = 1;
     const cur = currentGwIndex();
     const prev = cur - 1;
@@ -46,130 +50,83 @@ const chk = (name, ok, detail = '') => {
     // one who has just won it. Written straight into the two rounds' stats.
     const [reg, dropped, risen] = PLAYERS.slice(0, 3);
     const ev = i => (state.matchStats[`gw${GAMEWEEKS[i].n}`] =
-      state.matchStats[`gw${GAMEWEEKS[i].n}`] || { gw: GAMEWEEKS[i].n, playerStats: {} });
+      state.matchStats[`gw${GAMEWEEKS[i].n}`] || { gw: i, playerStats: {} });
     const put = (i, p, min) => { ev(i).playerStats[p.id] = { min, st: min >= 60 ? 1 : 0, sub: 0, g: 0, a: 0, cs: 0, gc: 0, og: 0, ps: 0, pm: 0, yc: 0, rc: 0, sv: 0 }; };
     put(prev, reg, 90);     put(cur, reg, 90);
     put(prev, dropped, 90); put(cur, dropped, 0);
     put(prev, risen, 0);    put(cur, risen, 78);
     _metricsCache = new Map(); _metricsKey = null;   // the feed just moved
 
-    const m = p => metricsFor(p);
-    ok('the regular reads 90 and 90', m(reg).minPrev === 90 && m(reg).minGw === 90,
-      `${m(reg).minPrev}/${m(reg).minGw}`);
-    ok('the man who lost his place reads 90 then 0 — the whole point of the pair',
-      m(dropped).minPrev === 90 && m(dropped).minGw === 0, `${m(dropped).minPrev}/${m(dropped).minGw}`);
+    const nPrev = GAMEWEEKS[prev].n, nCur = GAMEWEEKS[cur].n;
+    const minOf = (p, w) => withStatWindow(w, () => metricsFor(p).min);
+    const lastRound = { from: nCur, to: nCur };
+    const roundBefore = { from: nPrev, to: nPrev };
+
+    ok('narrowed to the round just gone, the regular still reads 90',
+      minOf(reg, lastRound) === 90, String(minOf(reg, lastRound)));
+    ok('the man who lost his place reads 90 then 0 — the whole point of asking',
+      minOf(dropped, roundBefore) === 90 && minOf(dropped, lastRound) === 0,
+      `${minOf(dropped, roundBefore)}/${minOf(dropped, lastRound)}`);
     ok('the man who won it reads 0 then 78',
-      m(risen).minPrev === 0 && m(risen).minGw === 78, `${m(risen).minPrev}/${m(risen).minGw}`);
-    // these three have stats in NO other round, so the season column must be
+      minOf(risen, roundBefore) === 0 && minOf(risen, lastRound) === 78,
+      `${minOf(risen, roundBefore)}/${minOf(risen, lastRound)}`);
+    // these three have stats in NO other round, so the season figure must be
     // exactly the two added up — and must not be quietly reading one of them
-    ok('the season total is the two rounds added up, not a copy of either',
-      m(reg).min === 180 && m(dropped).min === 90 && m(risen).min === 78,
-      `${m(reg).min}/${m(dropped).min}/${m(risen).min}`);
-    ok('(so the three columns genuinely disagree about the same man)',
-      m(dropped).min !== m(dropped).minGw && m(risen).min !== m(risen).minPrev);
-    // PLAYERS[400] used to be a safe blank; the demo's GW1 carries real stats
-    // now, so find a man with genuinely no line in either round
+    ok('with no window the season total is the two rounds added up',
+      minOf(reg, null) === 180 && minOf(dropped, null) === 90 && minOf(risen, null) === 78,
+      `${minOf(reg, null)}/${minOf(dropped, null)}/${minOf(risen, null)}`);
+    ok('(so the season and the window genuinely disagree about the same man)',
+      minOf(dropped, null) !== minOf(dropped, lastRound)
+      && minOf(risen, null) !== minOf(risen, roundBefore));
     const blank = PLAYERS.find(p => ![reg, dropped, risen].includes(p) && ![prev, cur].some(i => state.matchStats[`gw${GAMEWEEKS[i].n}`]?.playerStats?.[p.id]));
     ok('a man with no line in either round reads 0, not blank',
-      !!blank && m(blank).minPrev === 0 && m(blank).minGw === 0, blank ? `${blank.name} ${m(blank).minPrev}/${m(blank).minGw}` : 'no blank man');
+      !!blank && minOf(blank, lastRound) === 0 && minOf(blank, roundBefore) === 0,
+      blank ? `${blank.name}` : 'no blank man');
 
-    // ---- the three columns, together and correctly labelled ----
-    const cols = ALL_STAT_COLS(seasonHasStats());
-    const keys = cols.map(c => c.k);
-    const i0 = keys.indexOf('min'), i1 = keys.indexOf('minPrev'), i2 = keys.indexOf('minGw');
-    ok('all three minute columns exist', i0 >= 0 && i1 >= 0 && i2 >= 0, `${i0},${i1},${i2}`);
-    ok('and they sit next to each other, in that order', i1 === i0 + 1 && i2 === i1 + 1, `${i0},${i1},${i2}`);
-    ok('the season one is called TOTAL minutes now', /total minutes/i.test(cols[i0].t), cols[i0].t);
-    ok('the headings name the actual gameweeks, so you need not remember which is which',
-      cols[i1].h === `MP GW${GAMEWEEKS[prev].n}` && cols[i2].h === `MP GW${GAMEWEEKS[cur].n}`,
-      `${cols[i1].h} | ${cols[i2].h}`);
-    ok('each column reads its own number off the metrics',
-      cols[i0].v(m(dropped)) === m(dropped).min && cols[i1].v(m(dropped)) === 90 && cols[i2].v(m(dropped)) === 0);
+    // ---- "Last 1" must mean the round just gone, whichever that is ----
+    ok('Last 1 and naming the round outright agree',
+      minOf(dropped, { n: 1 }) === minOf(dropped, lastRound)
+      && minOf(risen, { n: 1 }) === minOf(risen, lastRound),
+      `${minOf(dropped, { n: 1 })}/${minOf(risen, { n: 1 })}`);
 
-    // ---- sortable, and saveable in a view ----
-    const byPrev = [reg, dropped, risen].slice().sort(metricSort('minPrev')).map(p => p.id);
-    const byGw = [reg, dropped, risen].slice().sort(metricSort('minGw')).map(p => p.id);
-    ok('sorting by last week puts the dropped man above the one who has just come in',
-      byPrev.indexOf(dropped.id) < byPrev.indexOf(risen.id), JSON.stringify(byPrev));
-    ok('sorting by this week turns that round the other way',
-      byGw.indexOf(risen.id) < byGw.indexOf(dropped.id), JSON.stringify(byGw));
-    ok('a saved view may sort on either of them',
-      cleanScoutView({ name: 'v', sort: 'minPrev' }).sort === 'minPrev' &&
-      cleanScoutView({ name: 'v', sort: 'minGw' }).sort === 'minGw');
-    ok('and a saved view may carry them as columns',
-      cleanScoutView({ name: 'v', cols: ['min', 'minPrev', 'minGw'] }).cols.join(',') === 'min,minPrev,minGw');
+    // ---- sorting, which is what you actually do with it ----
+    const by = w => withStatWindow(w, () => [reg, dropped, risen].slice().sort(metricSort('min')).map(p => p.id));
+    const byLast = by(lastRound), byBefore = by(roundBefore);
+    ok('sorted on the round just gone, the man who has come in is above the dropped one',
+      byLast.indexOf(risen.id) < byLast.indexOf(dropped.id), JSON.stringify(byLast));
+    ok('sorted on the round before, that turns round the other way',
+      byBefore.indexOf(dropped.id) < byBefore.indexOf(risen.id), JSON.stringify(byBefore));
 
-    // ---- before a ball is kicked there is no round to name ----
-    demoGwOverride = 0;
-    const pre = ALL_STAT_COLS(seasonHasStats());
-    const ph = pre[pre.findIndex(c => c.k === 'minPrev')].h;
-    ok('with no previous round the heading says so rather than inventing GW0',
-      !/GW0|GW-1|undefined|NaN/.test(ph), ph);
+    // ---- a view can keep the window, so the question is one tap next time ----
+    ok('a saved view may carry a last-n window',
+      JSON.stringify(cleanScoutView({ name: 'v', win: { n: 1 } }).win) === '{"n":1}');
+    ok('and a named range',
+      JSON.stringify(cleanScoutView({ name: 'v', win: { from: nPrev, to: nCur } }).win)
+        === JSON.stringify({ from: nPrev, to: nCur }));
+    ok('a view saved with no window is simply the season',
+      cleanScoutView({ name: 'v' }).win === null);
 
-    /* ---- the headings must FOLLOW the calendar ----
-       Marc, 31 Aug 2026: "will the name of the filter change as the weeks
-       progress... the way you have done it is better if it will update to
-       gameweek 3, 4, 5 at the right time but you need to make sure that
-       works." So walk the season and check every round, not a sample. */
-    const wrong = [];
-    for (let i = 1; i < GAMEWEEKS.length; i++) {
-      demoGwOverride = i;
-      const cs = ALL_STAT_COLS(seasonHasStats());
-      const hPrev = cs[cs.findIndex(c => c.k === 'minPrev')].h;
-      const hNow = cs[cs.findIndex(c => c.k === 'minGw')].h;
-      if (hPrev !== `MP GW${GAMEWEEKS[i - 1].n}` || hNow !== `MP GW${GAMEWEEKS[i].n}`) {
-        wrong.push(`i=${i}: ${hPrev} / ${hNow}`);
-      }
-    }
-    ok(`every one of the ${GAMEWEEKS.length - 1} rounds names itself and the one before it`,
-      wrong.length === 0, wrong.slice(0, 3).join(' | '));
-    // and specifically the rounds Marc named
-    demoGwOverride = 2;
-    const c3 = ALL_STAT_COLS(seasonHasStats());
-    ok('at GW3 the headings read GW2 and GW3',
-      c3[c3.findIndex(c => c.k === 'minPrev')].h === 'MP GW2' &&
-      c3[c3.findIndex(c => c.k === 'minGw')].h === 'MP GW3',
-      `${c3[c3.findIndex(c => c.k === 'minPrev')].h} / ${c3[c3.findIndex(c => c.k === 'minGw')].h}`);
-    demoGwOverride = 4;
-    const c5 = ALL_STAT_COLS(seasonHasStats());
-    ok('at GW5 they read GW4 and GW5',
-      c5[c5.findIndex(c => c.k === 'minPrev')].h === 'MP GW4' &&
-      c5[c5.findIndex(c => c.k === 'minGw')].h === 'MP GW5');
-
-    /* ---- and the NUMBERS must move with them, with no new stats landing ----
-       This is the trap: the metrics cache used to key on how many player stats
-       exist, which does not change at the moment the calendar rolls. Write GW3
-       once, then roll the clock and read again WITHOUT touching the stats. */
+    /* ---- THE TRAP, inherited from the columns this replaced ----
+       The metrics cache used to key on how many player stats exist, which does
+       not change at the moment the calendar rolls. "Last 1" is the round that
+       moves: write GW3 once, roll the clock, and read again WITHOUT touching
+       the stats. If the cache is keyed wrongly it serves GW2's number under
+       GW3's window and nobody notices for a week. */
     demoGwOverride = 1;
     put(2, dropped, 55);                    // a GW3 line, written while it is still GW2
     _metricsCache = new Map(); _metricsKey = null;
-    const atGw2 = { now: metricsFor(dropped).minGw, prev: metricsFor(dropped).minPrev };
+    const atGw2 = minOf(dropped, { n: 1 });
     demoGwOverride = 2;                      // the calendar rolls. Nothing else changes.
-    const atGw3 = { now: metricsFor(dropped).minGw, prev: metricsFor(dropped).minPrev };
-    ok('rolling the calendar moves the numbers along, with no new stats landing',
-      atGw2.now === 0 && atGw2.prev === 90 && atGw3.now === 55 && atGw3.prev === 0,
-      `GW2 read ${atGw2.prev}/${atGw2.now}, GW3 read ${atGw3.prev}/${atGw3.now}`);
+    const atGw3 = minOf(dropped, { n: 1 });
+    ok('rolling the calendar moves Last 1 along, with no new stats landing',
+      atGw2 === 0 && atGw3 === 55, `was ${atGw2}, now ${atGw3}`);
 
-    /* ---- the three sit together in the menu, whatever the grid does ---- */
-    demoGwOverride = 1;
-    state.view = 'data'; render();
-    const tools = document.querySelector('.scout-tools');
-    if (tools) tools.open = true;
-    const fam = document.querySelector('.scout-col-family');
-    const inFam = fam ? [...fam.querySelectorAll('[data-coltoggle]')].map(i => i.dataset.coltoggle) : [];
-    ok('the three are drawn as one block, so the grid cannot split them',
-      inFam.join(',') === 'min,minPrev,minGw', inFam.join(',') || 'no family block found');
-    const allBoxes = [...document.querySelectorAll('.scout-column-grid [data-coltoggle]')].map(i => i.dataset.coltoggle);
-    const at = allBoxes.indexOf('min');
-    ok('and nothing is drawn between them',
-      allBoxes.slice(at, at + 3).join(',') === 'min,minPrev,minGw', allBoxes.slice(at, at + 3).join(','));
-    ok('(the menu still lists every other column too)',
-      allBoxes.length === ALL_STAT_COLS(seasonHasStats()).length, String(allBoxes.length));
-
-    return out.join('\n');
+    demoGwOverride = null;
+    return out;
   });
-  for (const line of report.split('\n')) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));
-  chk('no page errors', pageErrors.length === 0, pageErrors.join(' | '));
+
+  for (const line of report) chk(line.replace(/^(PASS|FAIL)\s+/, ''), line.startsWith('PASS'));
+  chk('no page errors', pageErrors.length === 0, pageErrors.slice(0, 2).join(' | '));
 
   console.log(`\n[gw-minutes] ${pass} passed, ${fail} failed`);
   await browser.close();
