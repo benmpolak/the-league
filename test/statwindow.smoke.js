@@ -223,6 +223,50 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:8125';
     card.none || (card.hasXg && card.rounds > 1),
     card.none ? 'no player with per-round xG' : `${card.name}: ${card.rounds} rounds, xG shown ${card.hasXg}`);
 
+  // ---- the compare tool follows the table, rather than keeping its own window ----
+  const cmp = await page.evaluate(() => {
+    const two = PLAYERS.map(x => PLAYER_BY_ID[x.id]).filter(Boolean)
+      .filter(x => playedGwIdxs().some(i => (gwEvent(i)?.playerStats?.[x.id]?.xg || 0) > 0)).slice(0, 2);
+    if (two.length < 2) return { none: true };
+    const read = w => compareWindowStats(two[0].id, w);
+    const all = read(null), l1 = read({ n: 1 }), l3 = read({ n: 3 });
+    state.view = 'data'; dataView = { ...dataView, win: { n: 3 } };
+    const fromData = JSON.stringify(activeStatWindow());
+    state.view = 'transfers'; transfersView = { ...transfersView, win: { n: 1 } };
+    const fromTrough = JSON.stringify(activeStatWindow());
+    state.view = 'draft'; poolFilter = { ...poolFilter, win: null };
+    const fromDraft = JSON.stringify(activeStatWindow());
+    state.view = 'data';
+    const body = compareBody(two.map(x => x.id));
+    return {
+      names: two.map(x => x.name).join(' v '),
+      gws: [all.gws, l3.gws, l1.gws],
+      mins: [all.min, l3.min, l1.min],
+      xgs: [all.xg, l3.xg, l1.xg],
+      fromData, fromTrough, fromDraft,
+      saysWindow: /Looking back over/.test(body) && /Last 3/.test(body),
+      oldPickerGone: !/cmpBack/.test(body),
+      forwardKept: /cmpFwd/.test(body),
+    };
+  });
+  t('the comparison covers the window\'s rounds, not a count of its own',
+    cmp.none || (cmp.gws[0] > cmp.gws[1] && cmp.gws[1] === 3 && cmp.gws[2] === 1),
+    cmp.none ? 'need two players with xG' : `all ${cmp.gws[0]}, last3 ${cmp.gws[1]}, last1 ${cmp.gws[2]}`);
+  t('and its numbers narrow with it',
+    cmp.none || (cmp.mins[0] > cmp.mins[1] && cmp.mins[1] > cmp.mins[2]),
+    cmp.none ? '' : `mins ${cmp.mins.join(' / ')}`);
+  t('xG in the comparison is the window\'s, no longer the season off the record',
+    cmp.none || (cmp.xgs[0] >= cmp.xgs[1] && cmp.xgs[1] >= cmp.xgs[2]),
+    cmp.none ? '' : `xG ${cmp.xgs.join(' / ')}`);
+  t('it takes the window from whichever table you ticked the players on',
+    cmp.none || (cmp.fromData === '{"n":3}' && cmp.fromTrough === '{"n":1}' && cmp.fromDraft === 'null'),
+    cmp.none ? '' : `data ${cmp.fromData}, trough ${cmp.fromTrough}, draft ${cmp.fromDraft}`);
+  t('the overlay names the window instead of offering a second one',
+    cmp.none || (cmp.saysWindow && cmp.oldPickerGone),
+    cmp.none ? '' : `says it ${cmp.saysWindow}, old picker gone ${cmp.oldPickerGone}`);
+  t('(the forward fixture runway stays — a different question entirely)',
+    cmp.none || cmp.forwardKept);
+
   t('no page errors', errs.length === 0, errs.slice(0, 2).join(' | '));
 
   console.log(log.join('\n'));

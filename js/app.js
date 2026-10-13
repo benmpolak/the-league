@@ -7117,8 +7117,18 @@ function windowGwIdxs(w = statWindow) {
   const from = w.from ?? -Infinity, to = w.to ?? Infinity;
   return played.filter(i => GAMEWEEKS[i].n >= from && GAMEWEEKS[i].n <= to);
 }
-function windowLabel(w = statWindow) {
-  if (!w) return 'All';
+/* Which window is in force right now.
+   withStatWindow only holds for the length of a render, and the compare
+   overlay opens long after that — on a click — so it cannot read statWindow.
+   It asks the surface instead: whichever table you were looking at when you
+   ticked the two players. */
+function activeStatWindow() {
+  const v = state.view === 'data' ? dataView
+    : state.view === 'transfers' ? transfersView
+    : poolFilter;
+  return (v && v.win) || null;
+}
+function windowLabel(w = statWindow) {  if (!w) return 'All';
   const idxs = windowGwIdxs(w);
   if (!idxs.length) return 'no rounds';
   const a = GAMEWEEKS[idxs[0]].n, b = GAMEWEEKS[idxs[idxs.length - 1]].n;
@@ -7441,7 +7451,7 @@ let scoutActiveView = { draft: '', transfers: '', data: '' };
 // the picked players live in scoutCompare now — shared with the draft pool,
 // the Trough and the search palette; what stays here is how to SHOW them
 let dataView = { q: '', pos: '', club: '', scope: 'all', owner: null, sort: 'pts', limit: 40, minMin: 0,
-  comparing: false, backWeeks: 6, fwdWeeks: 6, compareCols: null,
+  comparing: false, fwdWeeks: 6, compareCols: null,
   tab: 'players', totwGw: null, predGw: null };  // Data Room section, and the Team of the Week / prediction rounds
 /* The squad filter, shared by the Trough and the Data Room so the two read the
    same (Marc, 3 Sept 2026). Your own club sits at the top under "Mine" — the
@@ -7757,8 +7767,6 @@ function bindCompareBody(redraw, root = document) {
   // root matters: the overlay builds its DOM detached, so document-wide
   // getElementById found nothing (or worse, the Data Room's inline copy) —
   // the overlay's window pickers and metric ticks were dead on arrival
-  const back = root.querySelector('#cmpBack');
-  if (back) back.onchange = e => { dataView = { ...dataView, backWeeks: +e.target.value }; redraw(); };
   const fwd = root.querySelector('#cmpFwd');
   if (fwd) fwd.onchange = e => { dataView = { ...dataView, fwdWeeks: +e.target.value }; redraw(); };
   root.querySelectorAll('[data-cmpcol]').forEach(box => box.onchange = () => {
@@ -14173,8 +14181,10 @@ function fixtureMatrixCard() {
    prints a dash and sits out of the verdict, instead of a fabricated nil-nil. */
 const COMPARE_METRICS = [
   { k: 'min', name: 'Minutes played', win: 'back', get: w => w.min },
-  { k: 'xg', name: 'xG', win: 'season', get: (w, p) => (w.archive ? null : p.xg || 0), dp: 2 },
-  { k: 'xa', name: 'xA', win: 'season', get: (w, p) => (w.archive ? null : p.xa || 0), dp: 2 },
+  // these two read the season off the player record until the feed started
+  // keeping them per round; they follow the window now like everything else
+  { k: 'xg', name: 'xG', win: 'back', get: w => w.xg, dp: 2 },
+  { k: 'xa', name: 'xA', win: 'back', get: w => w.xa, dp: 2 },
   { k: 'form', name: 'Form (pts per GW)', win: 'back', get: w => w.form, dp: 1 },
   { k: 'g', name: 'Goals', win: 'back', get: w => w.g },
   { k: 'a', name: 'Assists', win: 'back', get: w => w.a },
@@ -14188,27 +14198,33 @@ const COMPARE_METRICS = [
    with last season's real numbers (Marc, 13 Aug). The window falls back the
    same way metricsFor does, and says so in the label rather than passing an
    archive off as current form. */
-function compareWindowStats(pid, back) {
+function compareWindowStats(pid, w) {
   const p = PLAYER_BY_ID[pid];
-  const finals = [];
-  for (let i = 0; i < REGULAR_GWS; i++) if (gwStatus(i) === 'final') finals.push(i);
-  const w = finals.slice(-back);
-  if (!w.length) {
+  // the same rounds as the table this overlay was opened from — it used to
+  // keep its own "last N GWs" picker, which meant you could browse over three
+  // rounds, tick two men, and be shown six (Marc, 13 Oct 2026: "unify")
+  const idxs = windowGwIdxs(w);
+  if (!idxs.length) {
     // pre-season: FPL's own aggregates until the July wipe, the archive after
     const ls = FPL_WIPED ? lastSeasonOf(p) : null;
     const src = ls || (p.mp ? { mp: p.mp, g: p.g, a: p.a, cs: p.cs, pts: p.pts, ppg: p.ppg } : null);
-    if (!src) return { gws: 0, archive: false, min: null, g: null, a: null, cs: null, pts: null, form: null };
+    if (!src) return { gws: 0, archive: false, min: null, g: null, a: null, cs: null, pts: null, form: null, xg: null, xa: null };
+    // the archive keeps a combined xGI only, so there is no honest xG or xA to
+    // show for it — null prints a dash rather than a nought that means nothing
     return { gws: 0, archive: true, min: src.mp || 0, g: src.g || 0, a: src.a || 0,
-      cs: src.cs || 0, pts: src.pts || 0, form: src.ppg || 0 };
+      cs: src.cs || 0, pts: src.pts || 0, form: src.ppg || 0, xg: null, xa: null };
   }
-  let min = 0, g = 0, a = 0, cs = 0, pts = 0;
-  for (const i of w) {
+  let min = 0, g = 0, a = 0, cs = 0, pts = 0, xg = 0, xa = 0;
+  for (const i of idxs) {
     const s = gwEvent(i)?.playerStats?.[pid];
     if (!s) continue;
     min += s.min || 0; g += s.g || 0; a += s.a || 0; cs += s.cs || 0;
+    xg += s.xg || 0; xa += s.xa || 0;
     pts += statPoints(p, s);
   }
-  return { gws: w.length, archive: false, min, g, a, cs, pts, form: w.length ? pts / w.length : 0 };
+  const r2 = v => Math.round(v * 100) / 100;
+  return { gws: idxs.length, archive: false, min, g, a, cs, pts,
+    xg: r2(xg), xa: r2(xa), form: idxs.length ? pts / idxs.length : 0 };
 }
 /* ONE comparison, two front doors. The Data Room grew a tick-box head-to-head
    while the Draft Console, the Trough and the search palette kept a separate
@@ -14217,9 +14233,9 @@ function compareWindowStats(pid, back) {
    both now render: same metrics, same windows, same verdict, inline in the
    explorer and inside the overlay everywhere else. */
 function compareBody(ids, fwdRunway = true) {
-  const back = dataView.backWeeks || 6, fwd = dataView.fwdWeeks || 6;
+  const win = activeStatWindow(), fwd = dataView.fwdWeeks || 6;
   const ps = ids.map(id => PLAYER_BY_ID[id]);
-  const ws = ids.map(id => compareWindowStats(id, back));
+  const ws = ids.map(id => compareWindowStats(id, win));
   const on = new Set(dataView.compareCols || COMPARE_METRICS.map(m => m.k));
   const shown = COMPARE_METRICS.filter(m => on.has(m.k));
   const archive = ws.some(w => w.archive);
@@ -14258,8 +14274,7 @@ function compareBody(ids, fwdRunway = true) {
     : leaders > 1 ? `Nothing to choose between them on ${judged} metric${judged === 1 ? '' : 's'}.`
     : `<b>${esc(ps[tally.indexOf(best)].name)}</b> leads on ${best} of ${judged} metric${judged === 1 ? '' : 's'}.`;
   return `<div class="pool-controls">
-      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">last
-        <select id="cmpBack" aria-label="Backward window">${[1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => `<option value="${n}" ${back === n ? 'selected' : ''}>${n}</option>`).join('')}</select> GWs</label>
+      <span style="font-size:12px;color:var(--muted)">Looking back over <b>${esc(windowLabel(win)).toLowerCase() === 'all' ? 'the whole season' : esc(windowLabel(win))}</b> &mdash; set by the table behind this</span>
       <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px">next
         <select id="cmpFwd" aria-label="Forward window">${[1, 2, 3, 4, 5, 6, 8, 10].map(n => `<option value="${n}" ${fwd === n ? 'selected' : ''}>${n}</option>`).join('')}</select> GWs</label>
     </div>
