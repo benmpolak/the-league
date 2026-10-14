@@ -15325,13 +15325,20 @@ function showPlayerCard(pid) {
     if (s.yc) bits.push('\ud83d\udfe8');
     if (s.rc) bits.push('\ud83d\udfe5');
     if (s.og) bits.push('OG');
-    // xG and xA for the round, now that they are kept per round rather than as
-    // one season figure (Marc, 10 Oct 2026: "i want to see if a players high xg
-    // is in one game or many"). This card already told the round-by-round story
-    // for goals and minutes; the expected numbers were the part it could not.
-    if (s.xg) bits.push(`<span class="muted">xG ${(+s.xg).toFixed(2)}</span>`);
-    if (s.xa) bits.push(`<span class="muted">xA ${(+s.xa).toFixed(2)}</span>`);
-    gwRows.push(`<div class="score-row"><span>GW${GAMEWEEKS[i].n} <span class="muted" style="font-size:11px">${s.min || 0}&prime; ${bits.join(' ')}</span></span><b class="${gwPlayerPoints(pid, i) > 0 ? 'gold' : 'muted'}">${gwPlayerPoints(pid, i)}</b></div>`);
+    /* xG and xA for the round, now that they are kept per round rather than as
+       one season figure (Marc, 10 Oct 2026: "i want to see if a players high xg
+       is in one game or many").
+
+       They sit on their own line under what actually happened. Run on from it
+       and the row reads as one unbroken string — "80' CS xG 0.15 xA 0.01" —
+       with nothing to tell you where the facts stop and the expectation starts
+       (Marc, 14 Oct 2026: "its sort just one long line of text"). Underneath,
+       they also line up down the card, so the eye can run the xG column. */
+    const xbits = [];
+    if (s.xg) xbits.push(`xG ${(+s.xg).toFixed(2)}`);
+    if (s.xa) xbits.push(`xA ${(+s.xa).toFixed(2)}`);
+    const pts = gwPlayerPoints(pid, i);
+    gwRows.push(`<div class="score-row"><span>GW${GAMEWEEKS[i].n} <span class="muted" style="font-size:11px">${s.min || 0}&prime;${bits.length ? ` ${bits.join(' ')}` : ''}</span>${xbits.length ? `<span class="gw-xg">${xbits.join(' &middot; ')}</span>` : ''}</span><b class="${pts > 0 ? 'gold' : 'muted'}">${pts}</b></div>`);
   }
   const ov = document.createElement('div');
   ov.id = 'pcardOverlay';

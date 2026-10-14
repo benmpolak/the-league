@@ -215,13 +215,26 @@ const BASE = process.env.TEST_BASE_URL || 'http://localhost:8125';
       .find(p => idxs.some(i => (gwEvent(i)?.playerStats?.[p.id]?.xg || 0) > 0));
     if (!scorer) return { none: true };
     showPlayerCard(scorer.id);
-    const txt = document.querySelector('#pcardOverlay')?.textContent || '';
-    document.querySelector('#pcardOverlay')?.remove();
-    return { name: scorer.full, hasXg: /xG \d+\.\d\d/.test(txt), rounds: (txt.match(/GW\d+/g) || []).length };
+    const overlay = document.querySelector('#pcardOverlay');
+    const txt = overlay?.textContent || '';
+    // the expected numbers must be on their own line, not run on from the
+    // minutes and goals (Marc, 14 Oct 2026: "its sort just one long line")
+    const xgEls = [...(overlay?.querySelectorAll('.score-row .gw-xg') || [])];
+    const eventLines = [...(overlay?.querySelectorAll('.score-row > span > .muted') || [])]
+      .map(e => e.textContent);
+    const r = { name: scorer.full, hasXg: /xG \d+\.\d\d/.test(txt), rounds: (txt.match(/GW\d+/g) || []).length,
+      xgOwnLine: xgEls.length > 0, xgBlock: xgEls[0] ? getComputedStyle(xgEls[0]).display : '',
+      eventsClean: eventLines.every(l => !/xG|xA/.test(l)),
+      sample: xgEls[0]?.textContent || '' };
+    overlay?.remove();
+    return r;
   });
   t('the player card breaks xG down round by round',
     card.none || (card.hasXg && card.rounds > 1),
     card.none ? 'no player with per-round xG' : `${card.name}: ${card.rounds} rounds, xG shown ${card.hasXg}`);
+  t('and the expected numbers sit on their own line, not run on from the goals',
+    card.none || (card.xgOwnLine && card.xgBlock === 'block' && card.eventsClean),
+    card.none ? '' : `"${card.sample}" (display ${card.xgBlock}, events line clean ${card.eventsClean})`);
 
   // ---- the compare tool follows the table, rather than keeping its own window ----
   const cmp = await page.evaluate(() => {
