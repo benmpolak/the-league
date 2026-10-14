@@ -214,12 +214,27 @@ const chk = (name, ok, detail = '') => {
       const was = draftBoard().find(r => r.m.id === mid);
       t('(control) with nobody traded, the squad IS the draft',
         was.squad === was.pts, `squad ${was.squad} vs draft ${was.pts}`);
-      const give = was.picks.find(x => x.pts > 0);
-      const get = draftBoard().find(r => r.m.id === other).picks.slice(-1)[0];
+      /* Choose the pair by what they score AFTER the trade, not by season
+         total. On 14 Oct a data refresh reshuffled the demo draft until the
+         two men picked by total (two keepers) scored exactly the same from
+         GW3 on, the trade moved nothing, and this failing held every deploy.
+         Best scorer from the trade on goes out, worst comes in, and the setup
+         line below says so out loud if they ever tie again. */
+      const TRADE_GW = 2;
+      const after = id => { let s = 0;
+        for (let i = TRADE_GW; i < GAMEWEEKS.length; i++) if (gwUnderway(i)) s += gwPlayerPoints(id, i);
+        return s; };
+      const heldThen = (m, x) => squadAt(m, TRADE_GW).some(p => p.id === x.p.id);
+      const give = was.picks.filter(x => heldThen(mid, x))
+        .reduce((a, x) => after(x.p.id) > after(a.p.id) ? x : a);
+      const get = draftBoard().find(r => r.m.id === other).picks.filter(x => heldThen(other, x))
+        .reduce((a, x) => after(x.p.id) < after(a.p.id) ? x : a);
+      t('(setup) the man going out outscores the man coming in, from the trade on',
+        after(give.p.id) > after(get.p.id), `${after(give.p.id)} vs ${after(get.p.id)}`);
       const keep = state.transfers;
       state.transfers = [...keep,
-        { managerId: mid, inId: get.p.id, outId: give.p.id, gw: 2, t: 9000, trade: 'T9' },
-        { managerId: other, inId: give.p.id, outId: get.p.id, gw: 2, t: 9000, trade: 'T9' }];
+        { managerId: mid, inId: get.p.id, outId: give.p.id, gw: TRADE_GW, t: 9000, trade: 'T9' },
+        { managerId: other, inId: give.p.id, outId: get.p.id, gw: TRADE_GW, t: 9000, trade: 'T9' }];
       const now = draftBoard().find(r => r.m.id === mid);
       t('trading a scorer away leaves the DRAFT total alone',
         now.pts === was.pts, `${was.pts} -> ${now.pts}`);
