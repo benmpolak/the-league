@@ -5286,9 +5286,10 @@ function confirmSheet({ title, body = '', yes = 'Confirm', note = '' }) {
    tapping Sign/Claim with nobody marked out opens this — pick the man who
    makes way and the deal carries straight on into the usual confirm. The
    old order (out first, then Sign) still works exactly as before. */
-function chooseOutSheet(mid, inP, waiv) {
+function chooseOutSheet(mid, inP, waiv, squadNow = null) {
   const tgw = transferGw();
-  const squad = squadAt(mid, tgw);
+  // the basket asks against the squad its earlier lines leave behind
+  const squad = squadNow || squadAt(mid, tgw);
   const claimed = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
   const legalFor = p => squadShapeOk([...squad.filter(x => x.id !== p.id), inP]);
   if (window.__autoConfirm) { const f = squad.find(p => legalFor(p) && !(waiv && claimed.has(`${inP.id}:${p.id}`))); return Promise.resolve(f ? f.id : null); }
@@ -5320,6 +5321,81 @@ function chooseOutSheet(mid, inP, waiv) {
     ov.querySelector('#opCancel').onclick = () => closeOv(ov);
     ov.onclick = e => { if (e.target === ov) closeOv(ov); };
   });
+}
+/* The basket (Marc, 13 Oct 2026: "you should be able to do multiple trough
+   picks at the same time"). Several Trough signings lined up and confirmed
+   once, then sent to the desk one after another, top first — the same
+   troughSign the single Sign uses, so the league checks every line exactly
+   as it always has. Each line is judged against the squad the lines above it
+   leave behind, so the order you build is an order that can land. */
+function basketCheck(mid) {
+  const tgw = transferGw();
+  const owned = ownedIdsAt(tgw);
+  let squad = squadAt(mid, tgw);
+  return toArr(transfersView.basket).map(l => {
+    const inP = PLAYER_BY_ID[l.in], outP = PLAYER_BY_ID[l.out];
+    const why = !inP || !outP ? 'a player the feed no longer knows'
+      : squad.some(p => p.id === inP.id) ? `${inP.name} is already yours`
+      : owned.has(inP.id) ? `${inP.name} has been signed by somebody else`
+      : arrivalLocked(inP) ? `${inP.name} is in the holding pen`
+      : onWaivers(inP) ? `${inP.name} is on waivers now — lodge a claim instead`
+      : !squad.some(p => p.id === outP.id) ? `${outP.name} is no longer yours to drop`
+      : !squadShapeOk([...squad.filter(p => p.id !== outP.id), inP]) ? `${inP.name} for ${outP.name} breaks the squad position limits at that point in the list`
+      : '';
+    if (!why) squad = [...squad.filter(p => p.id !== outP.id), inP];
+    return { ...l, inP, outP, why };
+  });
+}
+// the squad once every live line above has gone through
+function basketSquad(mid) {
+  let squad = squadAt(mid, transferGw());
+  for (const l of basketCheck(mid)) if (!l.why) squad = [...squad.filter(p => p.id !== l.out), l.inP];
+  return squad;
+}
+// one line of the basket: the single Sign's own desk, one call each
+async function troughSignStep(mid, inId, outId) {
+  if (netOn()) {
+    try {
+      await serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) });
+      return { ok: true };
+    } catch (e) { return { ok: false, why: e?.message || 'the league did not take it' }; }
+  }
+  const tgw = transferGw();
+  const ok = await txnArray('transfers', arr => {
+    if (ownedIdsGiven(arr, tgw).has(inId) || !squadIdsGiven(mid, arr, tgw).has(outId)) return null; // beaten to him
+    return [...arr, { managerId: mid, outId, inId, gw: tgw, n: arr.length + 1, t: Date.now() }];
+  });
+  if (!ok) return { ok: false, why: `${PLAYER_BY_ID[inId]?.name || 'he'} was signed seconds before you got there` };
+  const lu = state.lineups[mid]?.[tgw];
+  if (lu) {
+    state.lineups[mid][tgw] = lu.filter(id => id !== outId);
+    pushShared(`lineups/${mid}/${tgw}`, state.lineups[mid][tgw]);
+  }
+  return { ok: true };
+}
+// what went through, and where it stopped if it did
+function basketReceiptSheet({ done, stop, untried, gw, mid, starters }) {
+  const total = done.length + (stop ? 1 : 0) + untried;
+  const inXi = done.filter(l => starters.includes(l.out)).map(l => l.outP.name);
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card" style="max-width:420px;width:94%;max-height:85vh;overflow-y:auto" role="dialog" aria-label="Basket receipt">
+    <h2>${!stop ? `All ${done.length} signed` : done.length ? `${done.length} of ${total} signed` : 'Nothing signed'}</h2>
+    ${done.map(l => dealRows([l.outP], [l.inP])).join('')}
+    ${stop ? `<p class="warn" style="font-size:12.5px;margin-top:8px">Stopped at ${esc(stop.inP?.name || 'the next line')}: ${esc(stop.why)}.${untried ? ` The ${untried} after him ${untried === 1 ? 'was' : 'were'} not tried.` : ''} What did not go through is still in your basket.</p>` : ''}
+    ${done.length ? `<p style="font-size:12.5px;margin-top:8px">Counts from <b>GW${GAMEWEEKS[gw].n}</b>. ${inXi.length
+      ? `${esc(inXi.join(', '))} ${inXi.length === 1 ? 'was' : 'were'} in your GW${GAMEWEEKS[gw].n} XI — pick ${inXi.length === 1 ? 'his replacement' : 'their replacements'} on My Team.`
+      : 'Your XI is untouched — everyone who left was on the bench.'} Everyone going out goes to waivers.</p>` : ''}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn ghost small" id="bkSquad" style="flex:1">View squad</button>
+      <button class="btn small" id="bkDone" style="flex:1">Done</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  pushOvState();
+  const close = () => closeOv(ov);
+  ov.onclick = e => { if (e.target === ov) close(); };
+  ov.querySelector('#bkDone').onclick = close;
+  ov.querySelector('#bkSquad').onclick = () => { close(); state.view = 'team'; if (mid) teamView.mid = mid; save(); render(); };
 }
 const dealLine = p => p ? `<b>${esc(p.name)}</b> <span class="muted">${esc(p.club)} ${p.pos}</span>` : '<b>?</b>';
 const dealRows = (outs, ins) => `<div class="deal">${
@@ -8982,7 +9058,7 @@ function bindTeam() {
 // team including your own"). null = don't care; it wins over scope, because
 // "show me Toby's squad" and "show me free agents" are the same question asked
 // two ways and answering both at once gives an empty table.
-let transfersView = { tab: 'trough', out: null, q: '', pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, q: '', basket: [], basketMid: null, pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // position filter is a SET like the draft pool's (Ben, 25 Aug: "midfield and
 // forward... at the same time") — empty means All. Tolerates the old string.
 const trPosOn = () => Array.isArray(transfersView.pos) ? transfersView.pos : (transfersView.pos ? [transfersView.pos] : []);
@@ -9004,6 +9080,9 @@ function viewTransfers() {
   // outlive his place in the squad (a claim lands, a trade, another phone).
   // Unmark him then, or Sign blames the position limits for a man who's gone.
   if (transfersView.out && !squadAt(mid, transferGw()).some(p => p.id === transfersView.out)) transfersView.out = null;
+  // a basket belongs to the chair that filled it
+  if (transfersView.basketMid !== mid) { transfersView.basket = []; transfersView.basketMid = mid; }
+  const basketOuts = new Set(toArr(transfersView.basket).map(l => l.out));
   // the waiver list gets Ian's green box (25 Aug: his list was 30 deep and
   // shopping meant scrolling past it both ways) — own tab, canon name
   // The Window Waiver gets its own tab rather than sitting under the Trough
@@ -9072,7 +9151,7 @@ function viewTransfers() {
     const xi = new Set(lineupFor(mid, tgw));
     const starters = sq.filter(p => xi.has(p.id));
     const chip = p => `
-          <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+          <div class="pitch-chip ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''} ${basketOuts.has(p.id) ? 'in-basket' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
             <span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
@@ -9082,7 +9161,7 @@ function viewTransfers() {
     // a bit of optimizing") — compact rows, same taps, half the height
     if (matchMedia('(max-width: 700px)').matches) {
       const row = (p, tag = '') => `
-        <div class="srow trout-row ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+        <div class="srow trout-row ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''} ${basketOuts.has(p.id) ? 'in-basket' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
           ${tag}<span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}<span>${esc(p.name)}</span>
           <span class="muted" style="margin-left:auto;font-size:11px">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
         </div>`;
@@ -9107,7 +9186,7 @@ function viewTransfers() {
       <div class="bench-strip">
         <span class="muted" style="font-size:11px;font-weight:700;align-self:center">BENCH</span>
         ${benchFor(mid, tgw).map((p, bi) => `
-          <div class="pitch-chip benched ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
+          <div class="pitch-chip benched ${statusClass(p)} ${transfersView.out === p.id ? 'sel' : ''} ${basketOuts.has(p.id) ? 'in-basket' : ''}" data-trout="${p.id}" title="${esc(p.name)} — ${transfersView.out === p.id ? 'tap to keep him' : 'tap to put him up'}">
             <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
@@ -9225,9 +9304,31 @@ function viewTransfers() {
         <span>&#128274; <b>${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''}</b> locked in the holding pen — settled by the Window Waiver, ${esc(windowWaiverWhen())}. Separate list, separate run; nothing to do with the weekly one.</span>
         <button class="btn small" data-trtab="window" style="margin-left:auto">${nWindow ? `Your window list (${nWindow})` : 'Lodge a window list'}</button>
       </p></div>` : '';
+    const basketCard = (() => {
+      const lines = basketCheck(mid);
+      if (!lines.length) return '';
+      // mid-run the league's echo redraws the page after every signing, and
+      // a line that has just landed would read as "already yours"
+      if (transfersView.basketBusy) return `<div class="card basket-card" id="trBasket" style="margin-bottom:10px"><p style="font-size:12.5px;margin:0">Signing your basket, one at a time&hellip;</p></div>`;
+      const dead = lines.find(l => l.why);
+      return `<div class="card basket-card" id="trBasket" style="margin-bottom:10px">
+        <h3 style="margin:0 0 6px">Your basket <span class="tag">${lines.length}</span> <span class="muted" style="font-weight:400;font-size:12px">signed one after another, top first</span></h3>
+        ${lines.map((l, k) => `<div class="lrow claim-row${l.why ? ' claim-dead' : ''}" style="font-size:12.5px;display:flex;align-items:center;gap:6px;padding:3px 0">
+          <span class="muted">#${k + 1}</span> <b>${pname(l.inP)}</b> <span class="muted">in, ${esc(l.outP?.name || '?')} out</span>
+          ${l.why ? `<span class="tag claim-dead-tag" title="${esc(l.why)}">will not land</span>` : ''}
+          <button class="btn ghost small icon-btn" data-bkdel="${k}" style="margin-left:auto" title="Take this line out of the basket" aria-label="Take ${esc(l.inP?.name || 'this line')} out of the basket">&#10005;</button>
+        </div>`).join('')}
+        ${dead ? `<p class="warn" style="font-size:12px;margin-top:6px">${esc(dead.why)}. Take that line out to carry on.</p>` : ''}
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <button class="btn small" id="bkGo" ${dead ? 'disabled' : ''}>Sign all ${lines.length}</button>
+          <button class="btn ghost small" id="bkClear">Empty the basket</button>
+        </div>
+      </div>`;
+    })();
     return `${head}${myPitchCard}${wdSign}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers. Signing several? Tap <b>+</b> on each and sign them in one go.</p>
+      ${basketCard}
       ${(() => {
         // the waiver list lives on its own tab now (Ian, 25 Aug: 30 requests
         // made this page a scroll marathon). Marc wanted it visible at the
@@ -9534,6 +9635,7 @@ function bindTransfers() {
     const v = +aas.value;
     transfersView.as = v === whoami ? null : v;
     transfersView.out = null; // a drop selected from the last chair makes no sense in this one
+    transfersView.basket = []; // nor does his basket
     render();
     if (transfersView.as != null) toast(`You now hold ${managerName(v)}'s pen. Switch back to yourself when the business is done.`);
   };
@@ -9756,6 +9858,41 @@ function bindTransfers() {
       setClaims(mid, arr);
     };
   });
+  document.querySelectorAll('[data-bkdel]').forEach(b => b.onclick = () => {
+    transfersView.basket.splice(+b.dataset.bkdel, 1); render();
+  });
+  const bkClear = $('#bkClear');
+  if (bkClear) bkClear.onclick = () => { transfersView.basket = []; render(); };
+  const bkGo = $('#bkGo');
+  if (bkGo) bkGo.onclick = async () => {
+    if (!actGuard(mid, 'squad')) return;
+    const lines = basketCheck(mid);
+    if (!lines.length || lines.some(l => l.why)) { render(); return; }
+    const tgw = transferGw();
+    const starters = lineupFor(mid, tgw);
+    if (!await confirmSheet({
+      title: `Sign all ${lines.length}?`,
+      body: lines.map(l => dealRows([l.outP], [l.inP])).join(''),
+      yes: `Sign ${lines.length}`,
+      note: `One after another, top first — each is done the moment it lands${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. If somebody beats you to a man, the ones above him stand and the rest wait in the basket. Everyone going out goes to waivers.`,
+    })) return;
+    bkGo.disabled = true;
+    transfersView.basketBusy = true;
+    render();
+    const done = [];
+    let stop = null;
+    try {
+      for (const l of lines) {
+        const r = await troughSignStep(mid, l.in, l.out);
+        if (!r.ok) { stop = { ...l, why: r.why }; break; }
+        done.push(l);
+      }
+    } finally { transfersView.basketBusy = false; }
+    transfersView.basket = toArr(transfersView.basket).filter(b => !done.some(d => d.in === b.in && d.out === b.out));
+    transfersView.out = null;
+    save(); render();
+    basketReceiptSheet({ done, stop, untried: lines.length - done.length - (stop ? 1 : 0), gw: tgw, mid, starters });
+  };
   const msq = $('#trMySquad');
   if (msq) msq.ontoggle = () => { window._trSquadOpen = msq.open; };
   // Chairman's office
@@ -9808,6 +9945,7 @@ function bindTransfers() {
       // else Dorgu for Okafor" is a legitimate fallback ladder (Marc, UAT
       // night); the run voids whatever's already settled
       const claimPairs = new Set(myClaims(mid).map(c => `${c.in}:${c.out}`));
+      const basketIns = new Set(toArr(transfersView.basket).map(l => l.in));
       const ownedBy = {};
       for (const mm of state.managers) for (const sp of squadAt(mm.id, transferGw())) ownedBy[sp.id] = mm.id;
       // Free agents means SIGNABLE RIGHT NOW. It used to mean merely unowned,
@@ -9865,7 +10003,9 @@ function bindTransfers() {
           const m = metricsFor(p);
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
-            : `<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+            : `${!waiv && !locked ? (basketIns.has(p.id)
+                ? `<button class="btn small" data-trbasket="${p.id}" title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003;</button>`
+                : `<button class="btn ghost small" data-trbasket="${p.id}" title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers${clearsTxt ? ` · ${esc(clearsTxt)}` : ''}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
@@ -9944,6 +10084,27 @@ function bindTransfers() {
       if (more) more.onclick = () => { transfersView.limit += 50; renderTrResults(); };
       const showAll = results.querySelector('#trAll');
       if (showAll) showAll.onclick = () => { transfersView.limit = 9999; renderTrResults(); };
+      results.querySelectorAll('[data-trbasket]').forEach(b => b.onclick = async () => {
+        if (!actGuard(mid, 'squad')) return;
+        const inP = PLAYER_BY_ID[+b.dataset.trbasket];
+        if (!inP) return;
+        const basket = transfersView.basket;
+        const at = basket.findIndex(l => l.in === inP.id);
+        if (at >= 0) { basket.splice(at, 1); render(); toast(`${inP.name} is out of your basket`); return; }
+        // who makes way: the man marked on the pitch, if the basket has not
+        // already sent him out — otherwise ask, from the squad the basket leaves
+        const after = basketSquad(mid);
+        let outId = transfersView.out && after.some(p => p.id === transfersView.out) ? transfersView.out : null;
+        if (!outId) { outId = await chooseOutSheet(mid, inP, false, after); if (outId == null) return; }
+        if (!squadShapeOk([...after.filter(p => p.id !== outId), inP])) {
+          toast(`${inP.name} for ${PLAYER_BY_ID[outId]?.name || 'him'} breaks the squad position limits — put the other half of the swap in first`);
+          return;
+        }
+        basket.push({ in: inP.id, out: outId });
+        transfersView.out = null; // he's spoken for
+        render();
+        toast(`${inP.name} in, ${PLAYER_BY_ID[outId]?.name || '?'} out — ${basket.length} in your basket`);
+      });
       results.querySelectorAll('[data-trin]').forEach(b => b.onclick = async () => {
         if (b.dataset.why) { toast(b.dataset.why); return; } // tap-to-explain (sol #4)
         if (!actGuard(mid, 'squad')) return;
