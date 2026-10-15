@@ -20,10 +20,19 @@ const chk = (name, ok, detail = '') => {
 // (Marc, 9 Aug: three red builds in an evening, none of them a real fault).
 // Re-query inside the page instead, the way the #clubCancel step already does.
 const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(sel, el => el.click()); };
+// The sync.js block below only holds while requests reach puppeteer. Once
+// the first page has registered sw.js, the service worker controls every
+// later page in this browser and fetches sync.js itself, out of sight of
+// request interception: the real sync.js then loaded, read the live league,
+// and its season snapshot overwrote the stubbed setup one about 400ms in.
+// That was the "waiting room renders without a forced overlay" flake (Ben,
+// 15 Oct 2026: 7 runs in 10 failed). Every page bypasses the worker.
+const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('resource').some(e => /gstatic\.com\/firebasejs/.test(e.name)));
 
 (async () => {
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
   const p = await browser.newPage();
+  await p.setBypassServiceWorker(true);
   p.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
 
   // Exact field repro: an installed app carries an old local identity, while
@@ -124,6 +133,7 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
      button must summon the overlay (render used to return before
      renderIdentity on the setup branch, leaving the button dead) */
   const p2 = await browser.newPage();
+  await p2.setBypassServiceWorker(true);
   p2.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
   await p2.setRequestInterception(true);
   p2.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
@@ -188,6 +198,8 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
   await new Promise(r => setTimeout(r, 250));
   chk('successful save closes the office and marks founded', await p2.evaluate(() =>
     !document.querySelector('.club-office') && localStorage.getItem('tl2627-founded-2') === '1'));
+
+  chk('no page loaded the live Firebase SDK', await noLiveFirebase(p) && await noLiveFirebase(p2));
 
   await browser.close();
   console.log(`\n${pass} passed, ${fail} failed`);

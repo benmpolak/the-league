@@ -297,6 +297,10 @@ const chk = (name, ok, detail = '') => {
   chk('pre-seeded demo Ham entries heal the demo window open', hamDemo.entries > 0 && hamDemo.open, JSON.stringify(hamDemo));
 
   const netPage = await browser.newPage();
+  // by now sw.js controls this origin and would fetch sync.js itself, past
+  // the block below, and connect to the live league (Ben, 15 Oct 2026: the
+  // same hole made authui.smoke.js flaky). Bypass it so the block holds.
+  await netPage.setBypassServiceWorker(true);
   await netPage.setRequestInterception(true);
   netPage.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
   await netPage.goto(baseUrl + '/index.html?online-ham-probe', { waitUntil: 'domcontentloaded' });
