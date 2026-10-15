@@ -9334,13 +9334,29 @@ function viewTransfers() {
         <span>&#128274; <b>${arrivals.length} new arrival${arrivals.length > 1 ? 's' : ''}</b> locked in the holding pen — settled by the Window Waiver, ${esc(windowWaiverWhen())}. Separate list, separate run; nothing to do with the weekly one.</span>
         <button class="btn small" data-trtab="window" style="margin-left:auto">${nWindow ? `Your window list (${nWindow})` : 'Lodge a window list'}</button>
       </p></div>` : '';
+    // Ben, 15 Oct 2026, after Marc's first go: "the basket feature needs to
+    // be a little more obvious". A labelled button, an explainer while the
+    // basket is empty, and a bar pinned to the foot of the screen once it is
+    // not, so the way to sign them never scrolls out of sight.
+    const bLines = basketCheck(mid);
+    const bDead = bLines.find(l => l.why);
+    const signableNow = PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length;
+    const basketHint = BASKET_ON && !bLines.length && signableNow && ctl !== 'closed'
+      ? `<div class="basket-hint">&#129530; <span><b>Signing more than one?</b> Tap <b>+ Basket</b> on each man you want, then sign the lot in one go.</span></div>` : '';
+    const basketBar = !bLines.length ? ''
+      : transfersView.basketBusy ? `<div class="basket-bar" role="status"><span>&#129530; Signing your basket&hellip;</span></div>`
+      : `<div class="basket-bar" role="region" aria-label="Your basket">
+          <span>&#129530; <b>${bLines.length}</b> in your basket${bDead ? ' <span class="tag claim-dead-tag">1 will not land</span>' : ''}</span>
+          <button class="btn ghost small" id="bkShow">Show</button>
+          <button class="btn small" id="bkGoBar" ${bDead ? 'disabled' : ''}>Sign all ${bLines.length}</button>
+        </div>`;
     const basketCard = (() => {
-      const lines = basketCheck(mid);
+      const lines = bLines;
       if (!lines.length) return '';
       // mid-run the league's echo redraws the page after every signing, and
       // a line that has just landed would read as "already yours"
       if (transfersView.basketBusy) return `<div class="card basket-card" id="trBasket" style="margin-bottom:10px"><p style="font-size:12.5px;margin:0">Signing your basket, one at a time&hellip;</p></div>`;
-      const dead = lines.find(l => l.why);
+      const dead = bDead;
       return `<div class="card basket-card" id="trBasket" style="margin-bottom:10px">
         <h3 style="margin:0 0 6px">Your basket <span class="tag">${lines.length}</span> <span class="muted" style="font-weight:400;font-size:12px">signed one after another, top first</span></h3>
         ${lines.map((l, k) => `<div class="lrow claim-row${l.why ? ' claim-dead' : ''}" style="font-size:12.5px;display:flex;align-items:center;gap:6px;padding:3px 0">
@@ -9357,8 +9373,8 @@ function viewTransfers() {
     })();
     return `${head}${myPitchCard}${wdSign}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.${BASKET_ON ? ' Signing several? Tap <b>+</b> on each and sign them in one go.' : ''}</p>
-      ${basketCard}
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.</p>
+      ${basketHint}${basketCard}
       ${(() => {
         // the waiver list lives on its own tab now (Ian, 25 Aug: 30 requests
         // made this page a scroll marathon). Marc wanted it visible at the
@@ -9376,7 +9392,7 @@ function viewTransfers() {
         <option value="">Player out — pick here or tap him on the pitch…</option>
         ${squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
-      <input type="text" id="trSearch" value="${esc(transfersView.q || '')}" placeholder="Search the Trough — ${PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
+      <input type="text" id="trSearch" value="${esc(transfersView.q || '')}" placeholder="Search the Trough — ${signableNow} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Process waivers now</button>
@@ -9391,7 +9407,7 @@ function viewTransfers() {
         <button class="btn small" id="runWaivers">&#9889; Process waivers now (demo)</button>
         <p class="muted" style="font-size:10.5px;margin-top:4px">In the real league waivers run at 10am every Tuesday and Friday. In the demo you ARE the Chairman: put in a waiver request on anyone marked "waivers", then process the round and watch it resolve.</p>
       </div>` : ''}
-    </div>`;
+    </div>${basketBar}`;
   }
   if (tab === 'claims') {
     // Ian's green box (25 Aug): the waiver list on its own tab — full desk,
@@ -9893,8 +9909,9 @@ function bindTransfers() {
   });
   const bkClear = $('#bkClear');
   if (bkClear) bkClear.onclick = () => { transfersView.basket = []; render(); };
-  const bkGo = $('#bkGo');
-  if (bkGo) bkGo.onclick = async () => {
+  const bkShow = $('#bkShow');
+  if (bkShow) bkShow.onclick = () => $('#trBasket')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const signBasket = async btn => {
     if (!actGuard(mid, 'squad')) return;
     const lines = basketCheck(mid);
     if (!lines.length || lines.some(l => l.why)) { render(); return; }
@@ -9906,7 +9923,7 @@ function bindTransfers() {
       yes: `Sign ${lines.length}`,
       note: `One after another, top first — each is done the moment it lands${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. If somebody beats you to a man, the ones above him stand and the rest wait in the basket. Everyone going out goes to waivers.`,
     })) return;
-    bkGo.disabled = true;
+    btn.disabled = true;
     transfersView.basketBusy = true;
     render();
     const done = [];
@@ -9923,6 +9940,7 @@ function bindTransfers() {
     save(); render();
     basketReceiptSheet({ done, stop, untried: lines.length - done.length - (stop ? 1 : 0), gw: tgw, mid, starters });
   };
+  ['#bkGo', '#bkGoBar'].forEach(sel => { const b = $(sel); if (b) b.onclick = () => signBasket(b); });
   const msq = $('#trMySquad');
   if (msq) msq.ontoggle = () => { window._trSquadOpen = msq.open; };
   // Chairman's office
@@ -10034,8 +10052,8 @@ function bindTransfers() {
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `${BASKET_ON && !waiv && !locked ? (basketIns.has(p.id)
-                ? `<button class="btn small" data-trbasket="${p.id}" title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003;</button>`
-                : `<button class="btn ghost small" data-trbasket="${p.id}" title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+                ? `<button class="btn small bk-btn" data-trbasket="${p.id}" title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003; In basket</button>`
+                : `<button class="btn ghost small bk-btn" data-trbasket="${p.id}" title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+ Basket</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers${clearsTxt ? ` · ${esc(clearsTxt)}` : ''}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>

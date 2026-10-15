@@ -72,9 +72,18 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
     return 'ok';
   }, id);
 
+  /* 0 — it says what it is (Ben, 15 Oct 2026: "needs to be a little more obvious") */
+  const empty = await p.evaluate(id => {
+    state.view = 'transfers'; transfersView.tab = 'trough'; transfersView.q = PLAYER_BY_ID[id].name; render();
+    return { hint: document.querySelector('.basket-hint')?.textContent || '', label: document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim(), bar: !!document.querySelector('.basket-bar') };
+  }, ids.mf[0]);
+  chk('an empty basket explains itself above the search', /Signing more than one\?/.test(empty.hint) && /\+ Basket/.test(empty.hint), empty.hint);
+  chk('the button says + Basket, not a bare +', empty.label === '+ Basket', empty.label);
+  chk('and no bar while the basket is empty', empty.bar === false);
+
   /* 1 — the marked man goes into the line, and is unmarked */
   await p.evaluate(out => { transfersView.out = out; }, ids.myMf[0]);
-  chk('a free man has a + beside Sign', await plus(ids.mf[0]) === 'ok');
+  chk('a free man has a + Basket beside Sign', await plus(ids.mf[0]) === 'ok');
   const one = await p.evaluate(out => ({
     basket: transfersView.basket.map(l => [l.in, l.out]), out: transfersView.out,
     chip: document.querySelector(`[data-trout="${out}"]`)?.classList.contains('in-basket'),
@@ -85,7 +94,10 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   chk('his chip shows he is going out in the basket', one.chip === true);
   chk('the basket card appears with a Sign all button', /Your basket/.test(one.card) && /Sign all 1/.test(one.card), one.card);
   await p.evaluate(id => { transfersView.q = PLAYER_BY_ID[id].name; render(); }, ids.mf[0]);
-  chk('his row now carries the tick, not the +', await p.evaluate(id => document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim() === '✓', ids.mf[0]));
+  chk('his row now reads In basket, not + Basket', await p.evaluate(id => document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim() === '✓ In basket', ids.mf[0]));
+  const bar1 = await p.evaluate(() => ({ text: document.querySelector('.basket-bar')?.textContent.replace(/\s+/g, ' ').trim() || '', pos: document.querySelector('.basket-bar') && getComputedStyle(document.querySelector('.basket-bar')).position, hint: !!document.querySelector('.basket-hint') }));
+  chk('a bar pinned to the foot of the screen counts the basket and offers Sign all', bar1.pos === 'fixed' && /1 in your basket/.test(bar1.text) && /Sign all 1/.test(bar1.text), JSON.stringify(bar1));
+  chk('and the explainer steps aside', bar1.hint === false);
 
   /* 2 — nobody marked: ask, but never offer a man already going out */
   await plus(ids.mf[1]);
@@ -103,11 +115,11 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   await p.evaluate(() => { transfersView.out = null; });
 
   /* 4 — Sign all: one troughSign per line, top first, one at a time */
-  await p.evaluate(() => { window._calls = []; window._hold = true; document.querySelector('#bkGo').click(); });
+  await p.evaluate(() => { window._calls = []; window._hold = true; document.querySelector('#bkGoBar').click(); });
   await sleep(150);
   const firstOnly = await p.evaluate(() => window._calls.filter(c => c.action === 'troughSign').map(c => [c.data.inId, c.data.outId]));
   chk('Sign all sends the first line and waits for the league', firstOnly.length === 1 && firstOnly[0][0] === ids.mf[0] && firstOnly[0][1] === ids.myMf[0], JSON.stringify(firstOnly));
-  chk('meanwhile the card says it is working, with no buttons to press twice', await p.evaluate(() => /Signing your basket/.test(document.querySelector('#trBasket')?.textContent || '') && !document.querySelector('#bkGo')));
+  chk('meanwhile the card says it is working, with no buttons to press twice', await p.evaluate(() => /Signing your basket/.test(document.querySelector('#trBasket')?.textContent || '') && !document.querySelector('#bkGo') && !document.querySelector('#bkGoBar') && /Signing your basket/.test(document.querySelector('.basket-bar')?.textContent || '')));
   await p.evaluate(() => { window._hold = false; window._held.shift()({ ok: true }); });
   await sleep(250);
   const all = await p.evaluate(() => ({
@@ -147,7 +159,7 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   }, ids);
   const dead = await p.evaluate(() => ({
     tag: !!document.querySelector('#trBasket .claim-dead-tag'),
-    go: document.querySelector('#bkGo')?.disabled,
+    go: document.querySelector('#bkGo')?.disabled && document.querySelector('#bkGoBar')?.disabled,
     text: document.querySelector('#trBasket')?.textContent.replace(/\s+/g, ' ') || '',
   }));
   chk('a line beaten to the punch says it will not land', dead.tag && /signed by somebody else/.test(dead.text), dead.text);
