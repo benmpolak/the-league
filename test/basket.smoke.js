@@ -16,9 +16,16 @@ const baseUrl = process.env.TEST_BASE_URL || 'http://localhost:8125';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let fail = 0, n = 0;
 const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'FAIL'} ${name}${cond || !extra ? '' : ' — ' + extra}`); if (!cond) fail++; };
+// The sync.js block only holds while requests reach puppeteer. Once the first
+// page has registered sw.js, the service worker controls every later page in
+// this browser and fetches sync.js itself: the second page below, which loads
+// the real league, then connected to it read-only (Ben, 15 Oct 2026, the same
+// hole that made authui.smoke.js flaky). Every page bypasses the worker.
+const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('resource').some(e => /gstatic\.com\/firebasejs/.test(e.name)));
 (async () => {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: 'new' });
   const p = await browser.newPage();
+  await p.setBypassServiceWorker(true);
   p.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
   await p.setViewport({ width: 1100, height: 900 });
   await p.setRequestInterception(true);
@@ -169,6 +176,7 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
 
   /* 7 — the real league does not see it yet */
   const live = await browser.newPage();
+  await live.setBypassServiceWorker(true);
   await live.setRequestInterception(true);
   live.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
   await live.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
@@ -180,6 +188,7 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
     return { on: BASKET_ON, sign: document.querySelectorAll('#trResults [data-trin]').length, plus: document.querySelectorAll('#trResults [data-trbasket]').length };
   });
   chk('without ?sandbox there is no + — Sign alone, as before', gated.on === false && gated.sign > 0 && gated.plus === 0, JSON.stringify(gated));
+  chk('no page loaded the live Firebase SDK', await noLiveFirebase(p) && await noLiveFirebase(live));
 
   await browser.close();
   console.log(`\n[basket] ${n - fail} passed, ${fail} failed`);
