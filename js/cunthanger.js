@@ -360,6 +360,11 @@ window.Cunthanger = (() => {
   /* ---------- the timeline ----------
      events: [{ type, key, at, live, sortKick, ... }] built by app.js from
      public state. Returns posts newest-story-first, identical everywhere. */
+  // How often Crafty, Unrudd, Wanton, Lieu, Jordon and Piers follow a story
+  // up with feelings of their own: one time in two of what they used to.
+  // Ben, 13 Oct 2026: "Cunthanger media is a bit overwhelming". Raise it to
+  // thin them further, set it to 1 to bring them all back.
+  const COLOUR_ONE_IN = 2;
   function compose(events, ctx = {}) {
     const teamName = ctx.teamName || (mid => `Club ${mid}`);
     const managerName = ctx.managerName || (mid => `Manager ${mid}`);
@@ -369,6 +374,8 @@ window.Cunthanger = (() => {
       if (!tpl) return;
       out.push({ key, who: acct, text: fill(tpl, vars), at: meta.at || '', live: !!meta.live, w: meta.w || 0, sortKick: meta.sortKick || 0 });
     };
+    // a colour writer's follow-up only gets filed one time in COLOUR_ONE_IN
+    const addColour = (acct, key, tpl, vars, meta) => { if (hash(key + ':cw') % COLOUR_ONE_IN === 0) add(acct, key, tpl, vars, meta); };
     const vars = (e, extra = {}) => {
       const mid = e.mid;
       const t = mid != null ? teamName(mid) : '';
@@ -399,30 +406,30 @@ window.Cunthanger = (() => {
           if (e.role === 'bench') {
             add(who, k, pick(voice === 'sage' ? B.goal_bench_sage : B.goal_bench_melt, k), vars(e), { ...meta, w: 7 });
             const r = hash(k + ':colour') % 3;
-            if (r === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
-            else if (r === 1) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            if (r === 0) addColour(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            else if (r === 1) addColour(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.bench, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
             break;
           }
           const multi = (e.n || 1) > 1 && voice === 'melt';
           add(who, k, pick(multi ? B.goal_xi_multi_melt : voice === 'sage' ? B.goal_xi_sage : B.goal_xi_melt, k), vars(e), { ...meta, w: 8 });
           // Piers on an Arsenal goal, one time in two, whether or not asked
-          if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.goal, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+          if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) addColour(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.goal, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
           break;
         }
         case 'haul': {
           add(who, k, pick(voice === 'sage' ? B.haul_sage : B.haul_melt, k), vars(e), { ...meta, w: 9 });
           { const r = hash(k + ':colour') % 4;
-            if (r === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
-            else if (r === 1) add(colour('HenryWanton'), k + ':colour', pick(WANTON.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
-            if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 }); }
+            if (r === 0) addColour(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            else if (r === 1) addColour(colour('HenryWanton'), k + ':colour', pick(WANTON.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+            if (e.club === 'ARS' && hash(k + ':piers') % 2 === 0) addColour(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.haul, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 }); }
           break;
         }
         case 'assist': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.assist_sage : B.assist_melt, k), vars(e), { ...meta, w: 5 }); break;
         case 'red': {
           if (e.role === 'trough') break;
           add(who, k, pick(voice === 'sage' ? B.red_sage : B.red_melt, k), vars(e), { ...meta, w: 7 });
-          if (hash(k + ':crafty') % 2 === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
-          if (e.club === 'ARS') add(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 });
+          if (hash(k + ':crafty') % 2 === 0) addColour(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 1 });
+          if (e.club === 'ARS') addColour(colour('PiersMoregone'), k + ':piers', pick(MOREGONE.red, k), vars(e), { ...meta, w: 4, sortKick: (meta.sortKick || 0) + 2 });
           break;
         }
         case 'penmiss': if (e.role !== 'trough') add(who, k, pick(voice === 'sage' ? B.penmiss_sage : B.penmiss_melt, k), vars(e), { ...meta, w: 6 }); break;
@@ -433,7 +440,7 @@ window.Cunthanger = (() => {
           const diag = pick(DX(), k + ':dx'), ret = pick(RET(), k + ':ret');
           const news = String(e.news || 'unavailable').replace(/\.\s*$/, '');
           { const who2 = press('injury', k); add(who2, k, pick(who2.h === 'RobDawdle' ? DAWDLE.injury : B.injury_press, k), vars(e, { news, diag, ret }), { ...meta, w: 4 }); }
-          if (hash(k + ':unrudd') % 4 === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.injury, k), vars(e, { news }), { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+          if (hash(k + ':unrudd') % 4 === 0) addColour(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.injury, k), vars(e, { news }), { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
           if (e.mid != null && hash(k + ':fan') % 2 === 0) add(who, k + ':fan', pick(voice === 'sage' ? B.injury_sage : B.injury_melt, k), vars(e), { ...meta, w: 3 });
           break;
         }
@@ -446,7 +453,7 @@ window.Cunthanger = (() => {
           const v = vars(e);
           if (e.state === 'pre') {
             add(who, k, pick(voice === 'sage' ? B.pre_sage : B.pre_melt, k), v, { ...meta, w: 2 });
-            if (hash(k + ':unrudd') % 4 === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.pre, k), v, { ...meta, w: 2, sortKick: (meta.sortKick || 0) + 1 });
+            if (hash(k + ':unrudd') % 4 === 0) addColour(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.pre, k), v, { ...meta, w: 2, sortKick: (meta.sortKick || 0) + 1 });
           }
           else if (e.state === 'live') {
             const my = +e.my || 0, th = +e.their || 0;
@@ -457,11 +464,11 @@ window.Cunthanger = (() => {
             const res = my > th ? 'won' : my < th ? 'lost' : 'drew';
             add(who, k, pick(B[`${res}_${voice}`], k), v, { ...meta, w: 5 });
             const r = hash(k + ':colour') % 4;
-            if (res === 'drew' && r === 0) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
-            else if (res === 'drew' && r === 1) add(colour('JonathanLieu'), k + ':colour', pick(LIEU.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
-            else if (res === 'lost' && r === 0) add(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
-            else if (res === 'lost' && r === 1) add(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
-            else if (res === 'lost' && r === 2) add(colour('SimonJordon'), k + ':colour', pick(JORDON.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            if (res === 'drew' && r === 0) addColour(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'drew' && r === 1) addColour(colour('JonathanLieu'), k + ':colour', pick(LIEU.drew, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 0) addColour(colour('AdamCrafty'), k + ':colour', pick(CRAFTY.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 1) addColour(colour('AlysonUnrudd'), k + ':colour', pick(UNRUDD.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
+            else if (res === 'lost' && r === 2) addColour(colour('SimonJordon'), k + ':colour', pick(JORDON.lost, k), v, { ...meta, w: 3, sortKick: (meta.sortKick || 0) + 1 });
           }
           break;
         }

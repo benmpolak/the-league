@@ -1682,11 +1682,21 @@ details[open] > .n6-summary::after { content: ' ▴'; }
 .ch-txt { font-size: 13.5px; line-height: 1.4; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ch-acts { display: flex; gap: 18px; color: var(--muted); font-size: 11px; margin-top: 5px; }
 .ch-nudge .ch-tag { background: var(--text); color: var(--bg); }
+/* the one media line (Ben, 13 Oct 2026): the paper leads, the rest rides underneath */
+.media-nudge-also { display: block; margin-top: 3px; color: var(--muted); font-size: 11.5px; }
 .ch-room { position: relative; max-width: 600px; width: 94%; max-height: 90vh; overflow-y: auto; padding: 18px 20px 22px; }
 .ch-mast { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 2px solid var(--line); font-size: 16px; }
 .ch-timeline { margin-top: 2px; }
 .ch-who-list { margin-top: 14px; }
 .ch-who-list summary { cursor: pointer; font-size: 12.5px; color: var(--muted); }
+/* every press conference, folded away until asked for (Ben, 13 Oct 2026) */
+.ch-pc-history { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.ch-pc-history > summary { cursor: pointer; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; padding: 4px 0; }
+.ch-pc-history[open] > summary { margin-bottom: 6px; }
+/* Settings: the Quiet media switch, per device (Ben, 13 Oct 2026) */
+.quiet-media-opt { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; cursor: pointer; font-size: 13.5px; line-height: 1.35; }
+.quiet-media-opt input { margin-top: 2px; }
+.quiet-media-opt .muted { display: block; font-size: 12px; margin-top: 3px; }
 .ch-acct { padding: 7px 0; }
 
 /* the Cunthanger Alert System — deliberately not in the app's palette. It

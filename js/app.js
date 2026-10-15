@@ -4432,12 +4432,15 @@ function cunthangerEvents() {
     const pts = statPoints(p, s);
     const base = { player: p.name, club: p.club, mid, oppMid: mid != null ? oppOf[mid] ?? null : null, role, pts, at, live, sortKick, gwN };
     const push = (type, n) => ev.push({ ...base, type, n, key: `${gwN}:${p.id}:${type}` });
-    if (s.g) push('goal', s.g);
-    if (s.a) push('assist', s.a);
+    // Ben, 13 Oct 2026: "Cunthanger media is a bit overwhelming". A weekend
+    // ran to 100-250 posts, so the low-value ones go: assists, yellow cards
+    // and goals by men nobody owns. Goals, hauls, reds and the penalty and
+    // own-goal drama for the twelve squads still post.
+    if (s.g && role !== 'trough') push('goal', s.g);
     if (s.ps) push('pensave', s.ps);
     if (s.pm) push('penmiss', s.pm);
     if (s.og) push('owngoal', s.og);
-    if (s.rc) push('red', s.rc); else if (s.yc) push('yellow', s.yc);
+    if (s.rc) push('red', s.rc);
     if (pts >= 10 && role !== 'trough') push('haul', 1);
   }
   // the fantasy ties: one supporter per pairing speaks (24 a round is a
@@ -4463,7 +4466,8 @@ function cunthangerEvents() {
     if (seenP.has(p.id) || !(p.status === 'd' || p.status === 'i') || !p.news) continue;
     if (/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news)) continue;
     const t = p.newsAdded ? Date.parse(p.newsAdded) : NaN;
-    if (!(t > now - 10 * 864e5)) continue;
+    // fresh news only: three days, not ten (Ben, 13 Oct 2026, same note)
+    if (!(t > now - 3 * 864e5)) continue;
     seenP.add(p.id);
     ev.push({ type: 'injury', key: `news:${p.id}:${p.newsAdded}`, player: p.name, club: p.club, mid: m.id, news: p.news, gwN, at: 'Team news', live: false, sortKick: t });
   }
@@ -4846,7 +4850,7 @@ function cunthangerBlock() {
     <button class="btn ghost small" data-chopen style="width:100%;margin-top:6px">Open Cunthanger ${posts.length > 4 ? `(${posts.length - 4} more)` : ''}</button>
   </div>`;
 }
-function cunthangerFeedHtml(limit = 80) {
+function cunthangerFeedHtml(limit = 80, more = false) {
   const posts = cunthangerPosts();
   const live = posts.some(p => p.live);
   const who = Cunthanger.accounts(state.managers, teamName, managerName, handleOf);
@@ -4877,6 +4881,7 @@ function cunthangerFeedHtml(limit = 80) {
       </div>`;
     })()}
     <div class="ch-timeline">${posts.length ? posts.slice(0, limit).map(chPostHtml).join('') : '<p class="muted" style="font-size:12.5px;padding:10px 0">Quiet. Suspiciously quiet. Kick-off will fix that.</p>'}</div>
+    ${more && posts.length > limit ? `<button class="btn ghost small" id="chMore" style="width:100%;margin-top:8px">Show ${Math.min(MEDIA_FEED_STEP, posts.length - limit)} more. If you must.</button>` : ''}
     <details class="ch-who-list"><summary>Who’s on here <span class="tag">${who.length}</span></summary>
       ${who.map(a => `<div class="ch-acct">${chAvatar(a)}<div class="ch-main"><b>${esc(a.n)}</b> <span class="ch-h">@${esc(a.h)}</span><div class="muted" style="font-size:11.5px">${esc(a.bio || (a.mood === 'melt' ? `${a.short} supporter. Views my own, and loudly.` : `${a.short} supporter. Context, nuance, receipts.`))}</div></div></div>`).join('')}
     </details>`;
@@ -4962,10 +4967,16 @@ function clubInboxItem(mid = meId(), gw = currentGwIndex()) {
   if (typeof ClubMedia === 'undefined' || mid == null || mid === -1) return null;
   return state.mediaCases?.[mid]?.[gw] || ClubMedia.incident(state, mid, gw, clubMediaApi());
 }
-function clubInboxNudge() {
-  const item = clubInboxItem();
-  if (!item || item.choice) return '';
-  return `<button type="button" class="gz-nudge" data-goto="media"><span class="gz-nudge-tag ch-tag">CLUB INBOX</span><span class="gz-nudge-copy"><b>${esc(item.title)}</b> &mdash; optional correspondence. The press will manage without you.</span><span class="gz-nudge-go" aria-hidden="true">&rarr;</span></button>`;
+// Quiet media, one device at a time (Ben, 13 Oct 2026: "Cunthanger media is
+// a bit overwhelming"). Others enjoy the press, so it is a switch, not a
+// removal: on, the dashboard loses its media line and feed and the takeover
+// alert never fires. The Media tab carries on regardless.
+const quietMediaKey = () => `${LS_NS}-quiet-media`;
+function quietMedia() {
+  try { return localStorage.getItem(quietMediaKey()) === '1'; } catch { return false; }
+}
+function setQuietMedia(on) {
+  try { if (on) localStorage.setItem(quietMediaKey(), '1'); else localStorage.removeItem(quietMediaKey()); } catch {}
 }
 let mediaDraft = null, mediaSending = false;
 function clubInboxCard() {
@@ -5046,22 +5057,36 @@ function clubMediaPaper(gw) {
   return `<div class="prog-sec">The Correspondence Desk</div>${cases.map(({ mid, r }) => `<p><b>${esc(teamName(mid))}</b>: &ldquo;${esc(r.line)}&rdquo; ${esc(r.report)}</p>`).join('')}
     ${echoes.map(r => `<p>${esc(r.text)}</p>`).join('')}`;
 }
+// Ben, 13 Oct 2026: "Cunthanger media is a bit overwhelming". Your own press
+// room and the Club Inbox stay on top; everyone else's press conferences
+// fold away until asked for; the feed comes forty posts at a time, not 120.
+// Both survive a render (a snapshot from another phone, say).
+const MEDIA_FEED_STEP = 40;
+let mediaFeedShown = MEDIA_FEED_STEP, mediaPcOpen = false;
 function viewMedia() {
   if (state.phase !== 'season') return `<div class="card"><h2>Cunthanger Media</h2><p class="muted">The presses roll when the season does.</p></div>`;
   return `<div class="card ch-card">
     <div class="ch-card-mast"><span class="ch-logo ch-logo-lg">c</span><div class="ch-card-word"><div class="ch-wordmark">CUNTHANGER MEDIA</div><div class="ch-card-sub">The League’s media engine.</div></div></div>
     <div class="ch-grid">${pressRoomTile()}</div>
-    <h3 style="margin-top:14px">Every press conference</h3>
-    <p class="muted" style="font-size:12.5px;margin-bottom:6px">Every manager, every round, on the record. Yours opens first.</p>
-    ${pressConferencesRoom()}
+    <details class="ch-pc-history" id="chPcHistory"${mediaPcOpen ? ' open' : ''}>
+      <summary>Every press conference</summary>
+      <p class="muted" style="font-size:12.5px;margin-bottom:6px">Every manager, every round, on the record. Yours opens first.</p>
+      ${pressConferencesRoom()}
+    </details>
   </div>
   ${clubInboxCard()}
   <div class="card ch-room-inline" style="margin-top:14px">
-    ${typeof Cunthanger !== 'undefined' ? cunthangerFeedHtml(120) : ''}
+    ${typeof Cunthanger !== 'undefined' ? cunthangerFeedHtml(mediaFeedShown, true) : ''}
   </div>
   ${programmeCard()}`;
 }
-function bindMedia() { bindCunthangerCard(); }
+function bindMedia() {
+  bindCunthangerCard();
+  const more = $('#chMore');
+  if (more) more.onclick = () => { mediaFeedShown += MEDIA_FEED_STEP; render(); };
+  const pc = $('#chPcHistory');
+  if (pc) pc.ontoggle = () => { mediaPcOpen = pc.open; };
+}
 /* The takeover. Ben, 3 Sep: "be great if I could get that to flash up on
    everyone's phones when they next open the app — like that stupid test thing
    the govt did." Once per device, in season, never on top of another sheet
@@ -5071,6 +5096,8 @@ function cunthangerTakeover() {
   // a live league only: the ?nosync rehearsal modes and the test harnesses
   // (which set __autoConfirm) must never find a government alert over the pitch
   if (!syncOn() || window.__autoConfirm) return;
+  // a manager who asked for quiet media gets no government alert either
+  if (quietMedia()) return;
   const KEY = `${LS_NS}-ch-takeover`;
   try { if (localStorage.getItem(KEY)) return; } catch { return; }
   if (document.querySelector('.overlay')) return; // it will try again next render
@@ -10415,7 +10442,6 @@ function viewDash() {
     <div class="dash-side-stack">
     <div class="card dash-attention">
       <h2>Needs your attention</h2>
-      ${clubInboxNudge()}
       ${offersIn.length ? `<button type="button" class="gz-nudge offer-nudge" id="offerNudge">
         <span class="gz-nudge-tag">OFFER IN</span>
         <span class="gz-nudge-copy">${offersIn.length === 1
@@ -10423,40 +10449,7 @@ function viewDash() {
           : `<b>${offersIn.length} offers</b> on your desk &mdash; your players are wanted men`}</span>
         <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
       </button>` : ''}
-      <div id="gazetteNudgeSlot" aria-live="polite">${gazetteNudge()}</div>
-      ${(() => {
-        // the press are waiting (Ben, 4 Sep: "it should flash up before game
-        // week and after game week to do the pressers, not obligatory")
-        if (typeof Cunthanger === 'undefined') return '';
-        const waiting = pressersOpen(meId()).filter(o => !o.done);
-        return waiting.map(o => `<button type="button" class="gz-nudge ch-nudge" data-presser="${o.gw}:${o.phase}">
-          <span class="gz-nudge-tag ch-tag">PRESS ROOM</span>
-          <span class="gz-nudge-copy"><b>${o.phase === 'post' ? 'Post-match' : 'Pre-match'} press conference</b>, GW${GAMEWEEKS[o.gw].n}. ${o.phase === 'post' ? 'Two' : 'Three'} questions. Or storm out.</span>
-          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
-        </button>`).join('');
-      })()}
-      ${(() => {
-        // somebody said something about you, in public (Ben, 3 Sep: "that's the fun")
-        if (typeof Cunthanger === 'undefined') return '';
-        const me = meId();
-        const aimed = (state.posts || []).filter(p => p && p.text && p.to === me && p.mid !== me && (+p.t || 0) > Date.now() - 7 * 864e5);
-        const last = aimed[aimed.length - 1];
-        return last ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
-          <span class="gz-nudge-tag ch-tag">SAID ABOUT YOU</span>
-          <span class="gz-nudge-copy"><b>${esc(managerName(last.mid))}</b>: ${esc(last.text)}</span>
-          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
-        </button>` : '';
-      })()}
-      ${(() => {
-        // Cunthanger on a matchday: the latest melt, one tap from the feed
-        if (!anyMatchLive() || typeof Cunthanger === 'undefined') return '';
-        const top = cunthangerPosts().find(p => p.live) || cunthangerPosts()[0];
-        return top ? `<button type="button" class="gz-nudge ch-nudge" data-chopen>
-          <span class="gz-nudge-tag ch-tag">CUNTHANGER</span>
-          <span class="gz-nudge-copy"><b>@${esc(top.who.h)}</b> ${esc(top.text)}</span>
-          <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
-        </button>` : '';
-      })()}
+      <div id="gazetteNudgeSlot" aria-live="polite">${mediaNudge()}</div>
       ${flags.length ? `<h3>Squad flags</h3>${flags.map(p => `<div class="lrow" style="font-size:12.5px">${statusChip(p)} ${pname(p)} <span class="muted" style="font-size:11px">${esc(p.news || 'unavailable')}</span></div>`).join('')}` : '<p class="muted" style="font-size:12.5px">Squad fully fit. Enjoy it while it lasts.</p>'}
       <h3 style="margin-top:12px">Waivers</h3>
       <p class="muted" style="font-size:12.5px">${myCl.length ? `${myCl.length} claim${myCl.length > 1 ? 's' : ''} lodged.` : 'No claims lodged.'} <span id="wvClock">${waiverClockLine()}</span></p>
@@ -10963,20 +10956,50 @@ const gazetteUnread = () => { const id = gazetteEditionId(); return !!id && loca
 const markGazetteRead = () => { const id = gazetteEditionId(); if (id) localStorage.setItem(GZ_SEEN_KEY, id); };
 // Ben, 23 Sept: release notification uses the existing in-app notice, even
 // on an already-open page. Update only notice DOM: no lost typing or overlays.
-function gazetteNudge() {
-  if (!gazetteUnread()) return '';
-  const today = progTodays();
-  const scratch = document.createElement('div'); scratch.innerHTML = today?.article || '';
-  const headline = scratch.querySelector('.prog-head')?.textContent || '';
-  return `<button type="button" class="gz-nudge" id="gzNudge">
-    <span class="gz-nudge-tag">NEW</span>
-    <span class="gz-nudge-copy"><b>${esc(String(today?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${headline ? ` &mdash; ${esc(headline)}` : ''}</span>
+/* One media line, not five. Ben, 13 Oct 2026: "Cunthanger media is a bit
+   overwhelming". The Club Inbox, the paper, each press conference, whatever
+   was said about you and the live feed used to stack up as separate nudges
+   in Needs your attention. Now they share one line. A new Gazette leads and
+   opens the paper, as its own nudge always did; otherwise the line goes to
+   the Media tab. Quiet media (Settings, this device) drops it altogether. */
+function mediaNudge() {
+  if (quietMedia()) return '';
+  const me = meId(), ch = typeof Cunthanger !== 'undefined';
+  const waiting = [];
+  const pressers = ch ? pressersOpen(me).filter(o => !o.done) : [];
+  if (pressers.length === 1) waiting.push(`a ${pressers[0].phase === 'post' ? 'post-match' : 'pre-match'} press conference`);
+  else if (pressers.length > 1) waiting.push(`${pressers.length === 2 ? 'two' : pressers.length} press conferences`);
+  const inbox = clubInboxItem();
+  if (inbox && !inbox.choice) waiting.push('the Club Inbox');
+  if (ch) {
+    const aimed = (state.posts || []).filter(p => p && p.text && p.to === me && p.mid !== me && (+p.t || 0) > Date.now() - 7 * 864e5);
+    const last = aimed[aimed.length - 1];
+    if (last) waiting.push(`a remark from ${managerName(last.mid).split(' ')[0]}`);
+    if (anyMatchLive() && cunthangerPosts().length) waiting.push('the live feed');
+  }
+  const list = waiting.length > 1 ? `${waiting.slice(0, -1).join(', ')} and ${waiting[waiting.length - 1]}` : waiting[0] || '';
+  if (gazetteUnread()) {
+    const today = progTodays();
+    const scratch = document.createElement('div'); scratch.innerHTML = today?.article || '';
+    const headline = scratch.querySelector('.prog-head')?.textContent || '';
+    return `<button type="button" class="gz-nudge ch-nudge" id="gzNudge">
+      <span class="gz-nudge-tag ch-tag">MEDIA</span>
+      <span class="gz-nudge-copy"><b>${esc(String(today?.edition || 'A new edition').replace(/^./, c => c.toUpperCase()))}</b> is out${headline ? ` &mdash; ${esc(headline)}` : ''}${list ? `<span class="media-nudge-also">Also in Media: ${esc(list)}.</span>` : ''}</span>
+      <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
+    </button>`;
+  }
+  if (!list) return '';
+  return `<button type="button" class="gz-nudge ch-nudge" id="mediaNudge">
+    <span class="gz-nudge-tag ch-tag">MEDIA</span>
+    <span class="gz-nudge-copy"><b>Waiting in Media:</b> ${esc(list)}. None of it compulsory.</span>
     <span class="gz-nudge-go" aria-hidden="true">&rarr;</span>
   </button>`;
 }
 function bindGazetteNudge() {
   const notice = $('#gzNudge');
   if (notice) notice.onclick = () => { markGazetteRead(); gazetteSheet(); render(); };
+  const media = $('#mediaNudge');
+  if (media) media.onclick = () => { state.view = 'media'; save(); render(); };
 }
 let gazetteNoticeEdition = '';
 let gazetteReleaseTimer = null;
@@ -10987,7 +11010,7 @@ function refreshGazetteReleaseNotice() {
   gazetteNoticeEdition = id;
   if (state.phase !== 'season') return;
   const slot = $('#gazetteNudgeSlot');
-  if (slot) { slot.innerHTML = gazetteNudge(); bindGazetteNudge(); }
+  if (slot) { slot.innerHTML = mediaNudge(); bindGazetteNudge(); }
   const home = document.querySelector('#nav [data-view="dash"]');
   if (!home) return;
   const dot = home.querySelector('.nav-dot');
@@ -11096,7 +11119,7 @@ function programmeCard() {
         ${paper}
       </div>
       ${state.view === 'media' ? '' : pressRoomTile()}
-      ${state.view === 'media' ? '' : feed}
+      ${state.view === 'media' || quietMedia() ? '' : feed}
       ${wireless}
     </div>
   </div>`;
@@ -15217,6 +15240,10 @@ function viewSettings() {
       <p class="muted" style="margin-top:10px;font-size:12px">Only your starting XI scores each gameweek. ${admin ? 'Changes apply instantly to all past and future matches.' : `Only the Chairman can change scoring.`}</p>
     </div>
     ${installCard(true)}
+    <div class="card" id="quietMediaCard">
+      <h2>Cunthanger Media <span class="tag">this device</span></h2>
+      <label class="quiet-media-opt"><input type="checkbox" id="quietMediaToggle" ${quietMedia() ? 'checked' : ''}><span><b>Quiet media</b><span class="muted">No media line or feed on your dashboard, and no emergency alert. The Media tab carries on regardless, as the press always do.</span></span></label>
+    </div>
     ${admin ? `
     <div class="card">
       <h2>League admin</h2>
@@ -15323,6 +15350,11 @@ function viewSettings() {
 }
 function bindSettings() {
   bindInstall();
+  const qm = $('#quietMediaToggle');
+  if (qm) qm.onchange = () => {
+    setQuietMedia(qm.checked);
+    toast(qm.checked ? 'Quiet media on. The press have been asked to wait in the car park.' : 'Quiet media off. The press are back in the building.');
+  };
   // Test Night runbook (sandbox-only, Chairman's solo test loop)
   const tgt = $('#trGoTransfers');
   if (tgt) tgt.onclick = () => { state.view = 'transfers'; transfersView.tab = 'trough'; save(); render(); };
