@@ -10137,8 +10137,9 @@ function bindTransfers() {
           // 2026 — a ladder with the same player out meant re-marking him)
           const saved = await setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           if (!saved.ok) { claimFailedSheet(inP, outP, saved.why); return; }
-          receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
-            note: `Saved with the league. Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
+          // a line, not a sheet (Ben, 15 Oct 2026): a ladder of claims was a
+          // sheet to dismiss per line. Still only once the league has it.
+          toast(`Saved with the league: ${inP.name} for ${outP.name}, #${myClaims(mid).length} on your list. Runs ${fmtWhen(nextLiveWaiverRun())}.`);
           return;
         }
         const tgw = transferGw();

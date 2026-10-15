@@ -102,8 +102,10 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   /* 5 — the claim flow itself waits for the league before any receipt */
   const src = fs.readFileSync(require('path').join(__dirname, '..', 'js', 'app.js'), 'utf8');
   const flow = src.slice(src.indexOf("title: 'Lodge this claim?'"), src.indexOf("title: 'Lodge this claim?'") + 900);
-  chk('the Claim button awaits setClaims and shows the red sheet on failure before any receipt',
-    /const saved = await setClaims\(/.test(flow) && /if \(!saved\.ok\) \{ claimFailedSheet\(inP, outP, saved\.why\)/.test(flow) && flow.indexOf('claimFailedSheet(') < flow.indexOf('receiptSheet('));
+  // since 15 Oct 2026 the success is a toast, not a receipt sheet — the
+  // order that matters is unchanged: league first, then any word of success
+  chk('the Claim button awaits setClaims and shows the red sheet on failure before any success message',
+    /const saved = await setClaims\(/.test(flow) && /if \(!saved\.ok\) \{ claimFailedSheet\(inP, outP, saved\.why\)/.test(flow) && flow.indexOf('claimFailedSheet(') > -1 && flow.indexOf('claimFailedSheet(') < flow.indexOf('Saved with the league'));
   chk('the red sheet exists and says NOT lodged', /function claimFailedSheet/.test(src) && /Claim NOT lodged/.test(src));
 
   await browser.close();
