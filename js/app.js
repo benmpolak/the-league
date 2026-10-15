@@ -8982,7 +8982,7 @@ function bindTeam() {
 // team including your own"). null = don't care; it wins over scope, because
 // "show me Toby's squad" and "show me free agents" are the same question asked
 // two ways and answering both at once gives an empty table.
-let transfersView = { tab: 'trough', out: null, pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, q: '', pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // position filter is a SET like the draft pool's (Ben, 25 Aug: "midfield and
 // forward... at the same time") — empty means All. Tolerates the old string.
 const trPosOn = () => Array.isArray(transfersView.pos) ? transfersView.pos : (transfersView.pos ? [transfersView.pos] : []);
@@ -9060,7 +9060,9 @@ function viewTransfers() {
     if (!sq.length) return '';
     // a proper lineup page (Ben, UAT night): the selected XI in its real
     // formation, the subs on a numbered bench strip below — same shape as My
-    // Team. Every chip is still a tap-to-put-him-up target.
+    // Team. Every chip is still a tap-to-put-him-up target. The bench carries
+    // its fixtures as well (Ben and Ian, 13 Oct 2026: "you cant see the
+    // fixtures for your subs") — phones already had them, desktop did not.
     const xi = new Set(lineupFor(mid, tgw));
     const starters = sq.filter(p => xi.has(p.id));
     const chip = p => `
@@ -9103,6 +9105,7 @@ function viewTransfers() {
             <span class="tag" style="font-size:9px;padding:1px 5px">${bi + 1}</span>
             ${kitImg(p.team, p.pos === 'GK')}
             <span class="pitch-name">${esc(p.name)}</span>
+            <span class="pitch-vs">${nextOppHtml(p.team, GAMEWEEKS[tgw].n)}</span>
           </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
       </div>
     </div>`;
@@ -9236,7 +9239,7 @@ function viewTransfers() {
         <option value="">Player out — pick here or tap him on the pitch…</option>
         ${squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
-      <input type="text" id="trSearch" placeholder="Search the Trough — ${PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
+      <input type="text" id="trSearch" value="${esc(transfersView.q || '')}" placeholder="Search the Trough — ${PLAYERS.filter(p => !ownedNow.has(p.id) && !arrivalLocked(p) && !onWaivers(p)).length} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
       <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Process waivers now</button>
@@ -9778,7 +9781,11 @@ function bindTransfers() {
       }
       renderTrResults();
     });
-    search.oninput = renderTrResults;
+    // the search survives a redraw (Ian, 13 Oct 2026: search a man, lodge
+    // the claim, "it then resets to main list"). Every save — and every other
+    // manager's move landing over the wire — redraws the page, and the box
+    // came back empty each time.
+    search.oninput = () => { transfersView.q = search.value; renderTrResults(); };
     function renderTrResults() {
       // the window covers the sort as well as the cells (see poolTable)
       return withStatWindow(transfersView.win || null, renderTrResultsBody);
@@ -9956,8 +9963,13 @@ function bindTransfers() {
             yes: 'Lodge claim',
             note: 'Resolves when waivers are processed. You can withdraw or reorder it from the Waiver list tab until then.',
           })) return;
+          // the man going out stays marked after a claim (Marc, 13 Oct 2026:
+          // a list of claims "with the same player out" meant clicking
+          // somewhere else to reset it). Clearing him here, after setClaims
+          // had already redrawn, left his chip lit while the next Claim had
+          // nobody to drop. A claim moves nobody, so there is nothing to clear:
+          // tap him again to unmark, or tap someone else for a different line.
           const saved = await setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
-          transfersView.out = null;
           if (!saved.ok) { claimFailedSheet(inP, outP, saved.why); return; }
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
             note: `Saved with the league. Waiver request #${myClaims(mid).length} on your list — processed ${esc(fmtWhen(nextLiveWaiverRun()))}. Reorder or withdraw it on the Waiver list tab until then.` });
@@ -9976,6 +9988,7 @@ function bindTransfers() {
           serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) })
             .then(r => {
               transfersView.out = null;
+              render(); // his chip must not stay lit for the next signing
               receiptSheet({ title: 'Signed from the Trough', inP, outP, gw: r.tgw, mid, wasStarting: startingByGw[r.tgw], note: `${esc(outP?.name || 'Your man')} goes to waivers. First come, first served — this one is done.` });
             }).catch(() => {});
           return;
@@ -10001,7 +10014,7 @@ function bindTransfers() {
       });
     }
     if (window._troughFocus) {
-      search.value = window._troughFocus;
+      search.value = transfersView.q = window._troughFocus;
       window._troughFocus = null;
       renderTrResults();
     } else renderTrResults();
