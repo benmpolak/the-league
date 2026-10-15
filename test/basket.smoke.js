@@ -174,6 +174,15 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   await p.evaluate(() => document.querySelector('[data-bkdel="0"]').click());
   chk('taking it out empties the basket and the card goes', await p.evaluate(() => !document.querySelector('#trBasket') && transfersView.basket.length === 0));
 
+  /* 6b — a man dropped further up the basket is not "signed by somebody else" */
+  const reSign = await p.evaluate(ids => {
+    // line 1 drops one of his midfielders; line 2 tries to sign that same man back
+    transfersView.basket = [{ in: ids.mf[1], out: ids.myMf[0] }, { in: ids.myMf[0], out: ids.myMf[1] }]; // mf[0] went to manager 2 in step 6
+    return basketCheck(1).map(l => l.why);
+  }, ids);
+  chk('signing back a man the basket drops further up says so', reSign[0] === '' && /goes out further up this basket/.test(reSign[1]), JSON.stringify(reSign));
+  await p.evaluate(() => { transfersView.basket = []; render(); });
+
   /* 7 — the real league does not see it yet */
   const live = await browser.newPage();
   await live.setBypassServiceWorker(true);
