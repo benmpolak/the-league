@@ -9000,6 +9000,10 @@ function viewTransfers() {
   const mid = hubActor();
   const cur = currentGwIndex();
   const ownedNow = ownedIdsAt(cur);
+  // the man marked to go out now stays marked between claims, so he can
+  // outlive his place in the squad (a claim lands, a trade, another phone).
+  // Unmark him then, or Sign blames the position limits for a man who's gone.
+  if (transfersView.out && !squadAt(mid, transferGw()).some(p => p.id === transfersView.out)) transfersView.out = null;
   // the waiver list gets Ian's green box (25 Aug: his list was 30 deep and
   // shopping meant scrolling past it both ways) — own tab, canon name
   // The Window Waiver gets its own tab rather than sitting under the Trough
@@ -9040,8 +9044,10 @@ function viewTransfers() {
     // just say the fixture there on the transfer screen") — you deal on who
     // they play next, and pre-GW1 the pts read as this season's
     const tgwN = GAMEWEEKS[transferGw()].n;
-    return `<details class="card" style="margin-bottom:14px" ${window._trSquadOpen ? 'open' : ''} id="trMySquad">
-      <summary style="cursor:pointer;font-weight:800">&#128101; ${esc(teamName(mid))} — my squad <span class="tag">${sq.length}</span> <span class="muted" style="font-weight:400;font-size:11.5px">tap to ${window._trSquadOpen ? 'hide' : 'view'}</span></summary>
+    // globalThis, not window: `window` in here is the transfer window's info,
+    // so the card snapped shut on every redraw however you had left it
+    return `<details class="card" style="margin-bottom:14px" ${globalThis._trSquadOpen ? 'open' : ''} id="trMySquad">
+      <summary style="cursor:pointer;font-weight:800">&#128101; ${esc(teamName(mid))} — my squad <span class="tag">${sq.length}</span> <span class="muted" style="font-weight:400;font-size:11.5px">tap to ${globalThis._trSquadOpen ? 'hide' : 'view'}</span></summary>
       <div class="quota-bar" style="margin:8px 0 4px">${quotaPills(mid)}</div>
       <div class="side-squad">${sq.map(p => `
         <div class="srow"><span class="pos-badge pos-${p.pos}">${p.pos}</span>${kitImg(p.team, p.pos === 'GK', p)}${pname(p)}<span class="muted" style="margin-left:auto;font-size:11px">${nextOppHtml(p.team, tgwN)}</span></div>`).join('')}
@@ -9963,12 +9969,8 @@ function bindTransfers() {
             yes: 'Lodge claim',
             note: 'Resolves when waivers are processed. You can withdraw or reorder it from the Waiver list tab until then.',
           })) return;
-          // the man going out stays marked after a claim (Marc, 13 Oct 2026:
-          // a list of claims "with the same player out" meant clicking
-          // somewhere else to reset it). Clearing him here, after setClaims
-          // had already redrawn, left his chip lit while the next Claim had
-          // nobody to drop. A claim moves nobody, so there is nothing to clear:
-          // tap him again to unmark, or tap someone else for a different line.
+          // the man going out stays marked: a claim moves nobody (Marc, 13 Oct
+          // 2026 — a ladder with the same player out meant re-marking him)
           const saved = await setClaims(mid, [...myClaims(mid), { in: inId, out: outId }]);
           if (!saved.ok) { claimFailedSheet(inP, outP, saved.why); return; }
           receiptSheet({ title: 'Claim lodged', inP, outP, gw: transferGw(), mid, pending: true,
