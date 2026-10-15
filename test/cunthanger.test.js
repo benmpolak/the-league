@@ -60,6 +60,57 @@ chk('questions are deterministic', JSON.stringify(pre) === JSON.stringify(pre2))
 chk('every option resolves', pre.every(q => q.options.length === 4 && q.options.every(o => o.text && !/\{\w+\}/.test(o.text))));
 const post = C.questions({ ...pctx, result: { my: 20, th: 46 }, best: { name: 'Palmer', pts: 12 }, worst: { name: 'Meslier', pts: 0 }, benchBurn: { name: 'Mateta', pts: 9 } }, 'post');
 chk('post-match asks about the result, then the bench burn', post.length === 3 && post[0].id === 'result' && post.some(q => q.id === 'bench'));
+// the six new question types (Ian, 13 Oct 2026; Ben, 15 Oct: Football Manager style)
+const NEW = ['gap', 'trade', 'trough', 'injury', 'cup', 'playoff'];
+const allSpecs = [...C.PRESSER.pre, ...C.PRESSER.post];
+chk('every press question id passes the server filter (lowercase letters, 20 or fewer)', allSpecs.every(sp => /^[a-z]{1,20}$/.test(sp.id)) && new Set(allSpecs.map(sp => sp.id)).size === allSpecs.length);
+chk('the six new types are in the bank, opponent and result still lead', NEW.every(id => allSpecs.some(sp => sp.id === id)) && C.PRESSER.pre[0].id === 'opp' && C.PRESSER.post[0].id === 'result');
+chk('every new answer bank has two lines per tone per side', allSpecs.filter(sp => NEW.includes(sp.id)).every(sp => C.TONES.every(([t]) => {
+  const a = sp.a[t]; return Array.isArray(a) ? a.length === 2 : Object.entries(a).every(([side, l]) => l.length === (side === 'level' ? 1 : 2));
+})));
+chk('no new question or answer runs past the server limits (240 and 280)', allSpecs.filter(sp => NEW.includes(sp.id)).every(sp => sp.q.every(q => q.length <= 200) && C.TONES.every(([t]) => [].concat(...Object.values(Array.isArray(sp.a[t]) ? { x: sp.a[t] } : sp.a[t])).every(a => a.length <= 220))));
+// find the round in which a given question comes up for this context
+const askFor = (c, phase, id) => { for (let gw = 0; gw < 400; gw++) { const qs = C.questions({ ...c, gw }, phase); const q = qs.find(x => x.id === id); if (q) return { q, qs }; } return null; };
+const plain = { ...pctx, signed: null, dropped: null, benched: null, axed: null, recalled: null };
+chk('without their facts, the new types are never asked', Array.from({ length: 60 }, (_, gw) => [...C.questions({ ...plain, gw }, 'pre'), ...C.questions({ ...plain, gw, result: { my: 50, th: 40 }, best: { name: 'Palmer', pts: 12 } }, 'post')]).flat().every(q => !NEW.includes(q.id)));
+const clean = r => r && r.qs.length === 3 && r.qs.every(q => !/\{\w+\}/.test(q.q) && q.options.length === 4 && q.options.every(o => o.text && !/\{\w+\}/.test(o.text)));
+const sideOf = (r, id, side) => C.TONES.every(([t]) => C.PRESSER.pre.concat(C.PRESSER.post).find(sp => sp.id === id).a[t][side].some(l => r.q.options.find(o => o.tone === t).text === l.replace(/\{opp\}/g, 'Mighty 🦆').replace(/\{oppMgr\}/g, 'Alex')));
+const behind = askFor({ ...plain, gap: { my: 7, th: 12 } }, 'pre', 'gap');
+chk('chasing the opponent: the gap in Points, answers from the chasing bank', clean(behind) && /5 Points/.test(behind.q.q) && sideOf(behind, 'gap', 'behind'), behind && behind.q.q);
+const ahead = askFor({ ...plain, gap: { my: 13, th: 12 } }, 'pre', 'gap');
+chk('ahead by one: singular Point, answers from the leading bank', clean(ahead) && /1 Point\b/.test(ahead.q.q) && sideOf(ahead, 'gap', 'ahead'), ahead && ahead.q.q);
+const level = askFor({ ...plain, gap: { my: 9, th: 9 } }, 'pre', 'gap');
+chk('level on Points gets the level question', clean(level) && /level on 9 Points/.test(level.q.q) && sideOf(level, 'gap', 'level'), level && level.q.q);
+const trade = askFor({ ...plain, trade: { inName: 'Wissa', outName: 'Rice', withTeam: '101011101 *' } }, 'pre', 'trade');
+chk('a trade gets asked about, by name', clean(trade) && /Wissa|Rice/.test(trade.q.q), trade && trade.q.q);
+const tradeNoPartner = askFor({ ...plain, trade: { inName: 'Wissa', outName: 'Rice', withTeam: null } }, 'pre', 'trade');
+chk('a trade with no partner on record still reads', clean(tradeNoPartner) && !/101011101/.test(tradeNoPartner.q.q));
+const trough = askFor({ ...plain, trough: { name: 'Mateta', pts: 11 } }, 'pre', 'trough');
+chk('the Trough scorer nobody signed gets asked about', clean(trough) && /Mateta/.test(trough.q.q) && /11/.test(trough.q.q), trough && trough.q.q);
+const injury = askFor({ ...plain, injured: { n: 3, names: ['Saka', 'Isak', 'Caicedo'] } }, 'pre', 'injury');
+chk('an injury crisis gets asked about', clean(injury) && /3|Saka, Isak and Caicedo/.test(injury.q.q), injury && injury.q.q);
+const postBase = { ...plain, result: { my: 50, th: 40 }, best: { name: 'Palmer', pts: 12 }, worst: { name: 'Meslier', pts: 0 } };
+const through = askFor({ ...postBase, cup: { out: false, score: 50, margin: 3, left: 10, outTeam: 'WA Wanderers', tied: false } }, 'post', 'cup');
+chk('through in the Monzo Cup: the margin or the field, answers from the still-in bank', clean(through) && /3 points|10 left/.test(through.q.q) && sideOf(through, 'cup', 'alive'), through && through.q.q);
+const tied = askFor({ ...postBase, cup: { out: false, score: 28, margin: 0, left: 11, outTeam: null, tied: true } }, 'post', 'cup');
+chk('joint bottom, nobody goes: that is the question, never a margin or a loser', clean(tied) && /^Joint bottom of the Monzo Cup on 28 points/.test(tied.q.q), tied && tied.q.q);
+const cupOut = askFor({ ...postBase, cup: { out: true, score: 24 } }, 'post', 'cup');
+chk('out of the Monzo Cup: the score, answers from the out bank', clean(cupOut) && /24 points/.test(cupOut.q.q) && sideOf(cupOut, 'cup', 'out'), cupOut && cupOut.q.q);
+const inside = askFor({ ...postBase, playoff: { pos: 5, left: 25, cushion: 4, gap: null } }, 'post', 'playoff');
+chk('inside the top eight: the cushion, answers from the inside bank', clean(inside) && /4 Points/.test(inside.q.q) && sideOf(inside, 'playoff', 'in'), inside && inside.q.q);
+const outside = askFor({ ...postBase, playoff: { pos: 11, left: 1, cushion: null, gap: 3 } }, 'post', 'playoff');
+chk('outside the top eight: the gap, ordinals and one round', clean(outside) && /3 Points/.test(outside.q.q) && !/1 rounds/.test(outside.q.q) && sideOf(outside, 'playoff', 'out'), outside && outside.q.q);
+const edge = askFor({ ...postBase, playoff: { pos: 8, left: 20, cushion: 0, gap: null } }, 'post', 'playoff');
+chk('eighth on the tiebreak gets the tiebreak question, not "0 Points clear"', clean(edge) && /^8th, and only overall points/.test(edge.q.q), edge && edge.q.q);
+const tieOut = askFor({ ...postBase, playoff: { pos: 9, left: 20, cushion: null, gap: 0 } }, 'post', 'playoff');
+chk('ninth on the tiebreak gets the tiebreak question, not "0 Points off"', clean(tieOut) && /^9th, level on Points with eighth/.test(tieOut.q.q), tieOut && tieOut.q.q);
+// variety: one news question, then one from everything else (Ben, 15 Oct)
+const busy = { ...pctx, gap: { my: 7, th: 12 }, trough: { name: 'Mateta', pts: 11 } };
+const papers = Array.from({ length: 30 }, (_, gw) => C.questions({ ...busy, gw }, 'pre'));
+chk('every paper still has three questions, opponent first, and some news', papers.every(p => p.length === 3 && p[0].id === 'opp' && p.some(q => ['transfer', 'selection'].includes(q.id))));
+chk('with a transfer and a team change on, the other questions still get a look in', new Set(papers.flatMap(p => p.map(q => q.id)).filter(id => !['opp', 'transfer', 'selection'].includes(id))).size >= 3);
+const postPapers = Array.from({ length: 30 }, (_, gw) => C.questions({ ...postBase, gw, cup: { out: false, score: 50, margin: 3, left: 10, outTeam: 'WA Wanderers', tied: false }, playoff: { pos: 5, left: 25, cushion: 4, gap: null } }, 'post'));
+chk('post-match: three questions, result first, the Cup and the playoffs both come up', postPapers.every(p => p.length === 3 && p[0].id === 'result') && postPapers.some(p => p.some(q => q.id === 'cup')) && postPapers.some(p => p.some(q => q.id === 'playoff')));
 const mp = C.compose([{ type: 'manager', key: 'm1', mid: 3, oppMid: 8, aimed: true, mgrName: 'Ben Levy', text: 'Marc is a charity.', tone: 'unhinged', gwN: 3, at: 'GW3', sortKick: 5 }], opts);
 chk('a post shows who it is aimed at, and the wire picks it up', mp.some(p => p.who.kind === 'manager' && /→ 101011101/.test(p.at)) && mp.some(p => p.who.kind === 'press' && /Marc is a charity/.test(p.text) && /101011101/.test(p.text)));
 chk('the opponent’s supporter bites', mp.some(p => p.key === 'm1:reply' && p.who.mid === 8));

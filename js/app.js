@@ -4613,6 +4613,49 @@ function presserCtx(mid, gwIdx, phase) {
     }
     ctx.benchBurn = burn && burn.pts >= 6 ? burn : null;
   }
+  // Ian, 13 Oct 2026: "some new questions for pressers". The facts behind
+  // six new types; Cunthanger only asks the ones that are real this week.
+  const rowOf = (tbl, id) => tbl.find(r => r.id === id);
+  if (opp != null && table.some(r => r.p > 0)) ctx.gap = { my: rowOf(table, mid)?.pts || 0, th: rowOf(table, opp)?.pts || 0 };
+  // a trade this round: the partner's record is the one sending our new man
+  const trades = (state.transfers || []).filter(r => r.managerId === mid && r.trade && (r.gw === gwIdx || r.gw === gwN));
+  const tr = trades[trades.length - 1];
+  if (tr && PLAYER_BY_ID[tr.inId] && PLAYER_BY_ID[tr.outId]) {
+    const partner = (state.transfers || []).find(u => u.trade && u.managerId !== mid && u.outId === tr.inId && (u.gw === tr.gw));
+    ctx.trade = { inName: PLAYER_BY_ID[tr.inId].name, outName: PLAYER_BY_ID[tr.outId].name, withTeam: partner ? teamName(partner.managerId) : null };
+  }
+  if (phase === 'pre') {
+    // last week's best Trough scorer, still unsigned, 8 or more
+    if (gwIdx > 0 && gwStatus(gwIdx - 1) === 'final') {
+      const owned = ownedIdsAt(gwIdx);
+      let top = null;
+      for (const pid of Object.keys(gwEvent(gwIdx - 1)?.playerStats || {})) {
+        const p = PLAYER_BY_ID[pid]; if (!p || owned.has(p.id)) continue;
+        const pts = gwPlayerPoints(p.id, gwIdx - 1);
+        if (!top || pts > top.pts) top = { name: p.name, pts };
+      }
+      if (top && top.pts >= 8) ctx.trough = top;
+    }
+    // an injury crisis: three or more flagged, not counting men who have left
+    const flagged = squad.filter(p => p && ['i', 's', 'd'].includes(p.status) && !/\b(joined|loan|transferred|left|permanently)\b/i.test(p.news || '')).sort(byPts);
+    if (flagged.length >= 3) ctx.injured = { n: flagged.length, names: flagged.slice(0, 3).map(p => p.name) };
+  }
+  if (phase === 'post' && gwStatus(gwIdx) === 'final') {
+    // the Monzo Cup round just settled, for a manager who was in it. The
+    // winner's week is left alone; that deserves more than a presser.
+    const cr = monzoCupRounds(gwIdx).rounds.find(r => r.i === gwIdx);
+    const me = cr?.scores.find(s => s.id === mid);
+    if (me) {
+      const low = cr.scores[cr.scores.length - 1].pts, left = cr.scores.length - (cr.out != null ? 1 : 0);
+      if (cr.out === mid) ctx.cup = { out: true, score: me.pts };
+      else if (left > 1) ctx.cup = { out: false, score: me.pts, margin: me.pts - low, left, outTeam: cr.out != null ? teamName(cr.out) : null, tied: cr.tie && me.pts === low };
+    }
+    // the playoff line after this round: top eight go through
+    const after = h2hStandings(false, gwIdx + 1), roundsLeft = REGULAR_GWS - 1 - gwIdx, k = after.findIndex(r => r.id === mid);
+    if (k >= 0 && after.length > 8 && roundsLeft > 0 && after[k].p >= 4) {
+      ctx.playoff = { pos: k + 1, left: roundsLeft, cushion: k < 8 ? after[k].pts - after[8].pts : null, gap: k >= 8 ? after[7].pts - after[k].pts : null };
+    }
+  }
   return ctx;
 }
 // which press conferences are open for a manager right now
@@ -13698,18 +13741,24 @@ function viewH2H() {
 }
 
 /* ----- the Monzo Cup (last man standing, from GW8) ----- */
-function viewCup() {
+// round by round, settled rounds only, up to and including uptoGw. Shared
+// with the post-match press conference (Ian, 13 Oct 2026: new questions)
+function monzoCupRounds(uptoGw = REGULAR_GWS - 1) {
   let alive = state.managers.map(m => m.id);
   const rounds = [];
-  for (let i = CUP_START; i < REGULAR_GWS && alive.length > 1; i++) {
+  for (let i = CUP_START; i < REGULAR_GWS && i <= uptoGw && alive.length > 1; i++) {
     if (gwStatus(i) !== 'final') break;
     const scores = alive.map(id => ({ id, pts: gwManagerPoints(id, i) })).sort((x, y) => y.pts - x.pts);
     const min = scores[scores.length - 1].pts;
     const lowest = scores.filter(s => s.pts === min);
     const out = lowest.length === 1 ? lowest[0].id : null;
     rounds.push({ i, scores, out, tie: lowest.length > 1 });
-    if (out) alive = alive.filter(id => id !== out);
+    if (out != null) alive = alive.filter(id => id !== out);
   }
+  return { rounds, alive };
+}
+function viewCup() {
+  const { rounds, alive } = monzoCupRounds();
   const winner = alive.length === 1 ? alive[0] : null;
   return `
   <div class="card" style="margin-bottom:18px">

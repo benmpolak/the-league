@@ -271,7 +271,9 @@ window.Cunthanger = (() => {
      manager per round, so the paper can quote the question back. */
   const TONES = [['humble', 'Humble'], ['confident', 'Confident'], ['dismissive', 'Dismissive'], ['unhinged', 'Unhinged']];
   const Q = {
-    // ctx: mgr, team, short, opp, oppMgr, oppShort, pos, oppPos, last {r, my, th, opp}, doubt {name, news}, star {name, pts}, result {my, th}, worst {name, pts}, best {name, pts}, gw
+    // ctx: mgr, team, short, opp, oppMgr, oppShort, pos, oppPos, last {r, my, th, opp}, doubt {name, news}, star {name, pts}, result {my, th}, worst {name, pts}, best {name, pts}, gw,
+    //   gap {my, th}, trade {inName, outName, withTeam}, trough {name, pts}, injured {n, names},
+    //   cup {out, score, margin, left, outTeam, tied}, playoff {pos, cushion, gap, left}
     pre: [
       { id: 'opp', q: [
           '{opp} this week. {oppMgr} has already been talking. What do you make of them?',
@@ -323,6 +325,60 @@ window.Cunthanger = (() => {
           dismissive: ['Team news is on Saturday. You’ll find out with everyone else.', 'I don’t discuss individuals. Or teams. Or news.'],
           unhinged: ['He plays if I have to carry him onto the pitch myself. I have carried men before.', 'He’s not a doubt. The doubt is you, and your paper, and the vidiprinter.'],
         } },
+      // Ian, group chat 13 Oct 2026: "some new questions for pressers". Ben,
+      // 15 Oct: Football Manager style, with humour in too. Six new types,
+      // each asked only when its fact is real that week. `on` names the fact
+      // the answers are keyed by, as post-match answers are keyed by result.
+      { id: 'gap', on: 'gapSide', q: [
+          '{opp} sit {gapBehind} above you going into this one. How important is it to close that gap?',
+          'There are {gapBehind} between you and {opp}. Do you see this as a must-win?',
+          'You go into this one {gapAhead} clear of {opp}. Is this a chance to put some distance between you?',
+          '{opp} believe they can catch you. You’re {gapAhead} ahead. How do you see it?',
+          'You and {opp} are level on {levelPts}. How big a game is this?',
+        ], a: {
+          humble: { behind: ['They’ve earned their place above us. Our job is to close the gap, and this is a good chance to start.', 'It’s a big game, but they all are. We prepare properly and see where we are on Monday.'],
+            ahead: ['We’re not getting carried away. {opp} are a good side and a gap can close very quickly.', 'We respect them. Points on the board mean nothing if you stop adding to them.'],
+            level: ['It’s tight, and that’s fair on what both sides have done. This one decides who’s better.'] },
+          confident: { behind: ['We’ll be above them by Monday. I’ve told the players and now I’m telling you.', 'The table doesn’t lie, but it does lag. We’re better than where we are.'],
+            ahead: ['We’re above them because we’re better than them. We intend to prove it again.', 'Distance is the plan. Plenty of it.'],
+            level: ['Level for now. Not by Monday.'] },
+          dismissive: { behind: ['I don’t look up the table. Or down it.', 'Must-win? It’s a football match. Next question.'],
+            ahead: ['I hadn’t noticed {opp} were behind us. That’s how far behind they are.', 'They can believe what they like. They’re behind us while they believe it.'],
+            level: ['Level. Fine. Next question.'] },
+          unhinged: { behind: ['{opp} are above us because of a clerical error that I have now reported to the Committee three times.', 'I have printed the table and circled {opp} in red. It is on the fridge. It is staying on the fridge.'],
+            ahead: ['I want {oppMgr} lying awake at night measuring the gap.', 'Every Point between us is a Point I took personally from {oppMgr}. I keep them in a jar.'],
+            level: ['Level is an insult. One of us has to go, and I have already packed {oppMgr}’s bags.'] },
+        } },
+      { id: 'trade', q: [
+          'You’ve done a deal with {tradeWithTeam} that sends {tradeOut} the other way and brings in {tradeIn}. Who’s come out of it better?',
+          'Can you tell us what {tradeIn} brings to the side that {tradeOut} didn’t?',
+          'Was it a difficult decision to let {tradeOut} go to a rival?',
+        ], a: {
+          humble: ['It’s a deal that works for both clubs. {tradeOut} gave us everything and we wish him well.', '{tradeIn} gives us something different. It was a straightforward negotiation, and I’m grateful for that.'],
+          confident: ['We’ve done very good business. Ask the other lot in a month whether they agree.', 'I’d won the deal before the other side had finished reading the offer.'],
+          dismissive: ['Two clubs swapped some footballers. Hold the front page.', 'I don’t discuss business. Especially good business.'],
+          unhinged: ['They accepted in four minutes. Nobody accepts in four minutes unless they’re being robbed, and I robbed them.', 'I’ve had {tradeIn} on a list since August. The list is laminated. The list comes on holiday.'],
+        } },
+      { id: 'trough', q: [
+          '{troughName} picked up {troughPts} points last week and he’s still in the Trough. Is he a player you’d consider?',
+          'There’s talk you’ve been watching {troughName} since his {troughPts} points last week. Can you confirm your interest?',
+          'Eleven other managers have walked past {troughName} and his {troughPts} points. So have you. Why?',
+        ], a: {
+          humble: ['He’s a good player and he’s had a good week. We’re always looking.', 'One week doesn’t make a player. Two might. We’ll keep an eye on him.'],
+          confident: ['I’ve got players who do that every week. They’re called my players.', 'If he was good enough for us, he’d be ours.'],
+          dismissive: ['I don’t comment on players at other clubs. Or in the Trough. Especially in the Trough.', 'I don’t do hindsight. Next question.'],
+          unhinged: ['He’s in the Trough because I cursed him in August and the curse has a delay on it.', 'I’m going in tonight. Torch, wellies, a net. Nobody follow me.'],
+        } },
+      { id: 'injury', q: [
+          'You’ve got {injuryCount} players flagged going into this one. Do you have the depth to cope?',
+          '{injuryNames} are all struggling. How big a blow is that?',
+          'The injury list at {short} runs to {injuryCount}. Is something wrong at the training ground?',
+        ], a: {
+          humble: ['It’s frustrating, but that’s why you have a squad. Others will get their chance.', 'You can’t control injuries. You can control how you respond to them.'],
+          confident: ['We’ve got the depth. I could field half of them in slings and we’d still win.', 'Injuries are an excuse, and we don’t make excuses. We make a new eleven.'],
+          dismissive: ['I’m not a doctor. Ask a doctor.', 'They’ll be back when they’re back.'],
+          unhinged: ['Somebody is doing this to us. I have a list of suspects and every name on it is in this league.', 'I will play in goal myself if I have to. I have the gloves. I have always had the gloves.'],
+        } },
     ],
     post: [
       { id: 'result', q: [
@@ -352,10 +408,45 @@ window.Cunthanger = (() => {
           dismissive: ['I don’t single out players. Even good ones. Even bad ones.', 'Next question.'],
           unhinged: ['He is my son. Not legally. Not yet.', 'He is going in the Trough tonight and I will be waiting at the gates to make sure he goes in.'],
         } },
+      { id: 'cup', on: 'cupFate', q: [
+          'You’re through in the Monzo Cup by {cupMargin}, and {cupOut} are out. How pleased are you?',
+          '{cupLeft} left in the Monzo Cup and {short} are still among them. How far can you go?',
+          'Joint bottom of the Monzo Cup on {cupTied}, and nobody goes. Did you get lucky?',
+          '{cupScore} was the lowest in the Monzo Cup this week, and that’s you out. How disappointed are you?',
+          '{short} go out of the Monzo Cup on {cupScore}. Where did it go wrong?',
+        ], a: {
+          humble: { alive: ['We’re still in it, and in this competition that’s all you can ask.', 'Some weeks you just need to not be the worst. We weren’t.'],
+            out: ['Disappointing. In this competition one bad week is all it takes.', 'Good luck to whoever wins it. We’ll focus on the league.'] },
+          confident: { alive: ['Was there ever any doubt? There was not.', 'I don’t look at the bottom of the Cup. I’ve never needed to.'],
+            out: ['We were knocked out by maths, not by football.', 'Cups are a distraction. We’ve been freed up for the league.'] },
+          dismissive: { alive: ['Still in. Good. Next.', 'I didn’t know we were in a cup.'],
+            out: ['What cup.', 'Didn’t want it. Don’t even bank with them.'] },
+          unhinged: { alive: ['Last man standing. That will be me. I will be standing when the rest of you are dust.', 'I could smell the elimination this week. It wasn’t ours. It was close enough to touch.'],
+            out: ['That cup has been rigged since GW8, and I said so at the time to anyone on the Committee who would listen, which was nobody.', 'I’ll be there at the end. Not to watch. To stand at the back and stare.'] },
+        } },
+      { id: 'playoff', on: 'playSide', q: [
+          'That result leaves you {playPos}, {playCushion} clear of ninth. Are you thinking about the playoffs yet?',
+          'Top eight, {playCushion} clear, {roundsLeft} to go. How important is it to build a cushion for the quarter-final?',
+          '{playEdgePos}, and only overall points keep you above ninth. Nervous?',
+          'That leaves you {playPos}, {playGap} off the top eight. Is the season slipping away?',
+          '{playGap} to make up on eighth with {roundsLeft} to go. Do you still believe?',
+          '{playTiePos}, level on Points with eighth and out on the tiebreak. How does that feel?',
+        ], a: {
+          humble: { in: ['There’s a long way to go. We keep our heads down and keep picking up Points.', 'Eighth is the line, not the target. We’ll see where we are at the end.'],
+            out: ['We’re not where we want to be. There’s time, and we have to use it.', 'That’s on us. Win games and the table looks after itself.'] },
+          confident: { in: ['The top eight was never the question. The question is how big a head start we take into the quarter-final.', 'I’m already planning for the three-legged final. I’ve got the legs.'],
+            out: ['Eighth is a matter of time. Possibly a lot of time, but time.', 'Leave the gap with me. I like a chase.'] },
+          dismissive: { in: ['I don’t look at the line. The line looks at me.', 'Ask me after GW33.'],
+            out: ['I don’t look at the table until it matters, and it doesn’t matter yet.', 'Gap? What gap.'] },
+          unhinged: { in: ['I measure the gap to ninth every night. With a ruler. On the screen.', 'If anyone in ninth is reading this: no.'],
+            out: ['I will get into the top eight if I have to drag eighth place out of it with my own hands.', 'The top eight is a closed shop and I am going to kick the door in. Write that down. Write down the door.'] },
+        } },
     ],
   };
   const firstName = (s) => String(s || '').trim().split(/\s+/)[0] || 'the gaffer';
   const fill = (tpl, v) => tpl.replace(/\{(\w+)\}/g, (m, k) => (v[k] != null ? String(v[k]) : m));
+  const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10 < 4 ? n % 10 : 0]);
+  const andList = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || '');
 
   /* ---------- the timeline ----------
      events: [{ type, key, at, live, sortKick, ... }] built by app.js from
@@ -559,6 +650,27 @@ window.Cunthanger = (() => {
       benchedName: ctx.benched?.name, axedName: ctx.axed?.name, recalledName: ctx.recalled?.name,
       benchBurnName: ctx.benchBurn?.name, benchBurnPts: ctx.benchBurn?.pts,
     };
+    // the six new types (Ian, 13 Oct). A fact that does not apply stays
+    // undefined, so the wordings that need it are never asked.
+    const Pts = n => `${n} Point${n === 1 ? '' : 's'}`, pts = n => `${n} point${n === 1 ? '' : 's'}`;
+    const g = ctx.gap;
+    if (g) Object.assign(v, { gapSide: g.my < g.th ? 'behind' : g.my > g.th ? 'ahead' : 'level',
+      gapBehind: g.my < g.th ? Pts(g.th - g.my) : undefined, gapAhead: g.my > g.th ? Pts(g.my - g.th) : undefined, levelPts: g.my === g.th ? Pts(g.my) : undefined });
+    if (ctx.trade) Object.assign(v, { tradeIn: ctx.trade.inName, tradeOut: ctx.trade.outName, tradeWithTeam: ctx.trade.withTeam ? cleanTeam(ctx.trade.withTeam) : undefined });
+    if (ctx.trough) Object.assign(v, { troughName: ctx.trough.name, troughPts: ctx.trough.pts });
+    if (ctx.injured) Object.assign(v, { injuryCount: ctx.injured.n, injuryNames: andList(ctx.injured.names) });
+    const c = ctx.cup;
+    if (c) Object.assign(v, c.out ? { cupFate: 'out', cupScore: pts(c.score) }
+      : { cupFate: 'alive', cupLeft: c.tied ? undefined : c.left, cupMargin: c.tied ? undefined : pts(c.margin), cupOut: c.outTeam ? cleanTeam(c.outTeam) : undefined, cupTied: c.tied ? pts(c.score) : undefined });
+    const po = ctx.playoff;
+    if (po) {
+      const inside = po.pos <= 8, left = `${po.left} round${po.left === 1 ? '' : 's'}`;
+      // a cushion or gap of nothing means the tiebreak is all that separates
+      // eighth from ninth, which gets its own wording
+      Object.assign(v, { playSide: inside ? 'in' : 'out', playPos: ordinal(po.pos), roundsLeft: left,
+        playCushion: inside && po.cushion > 0 ? Pts(po.cushion) : undefined, playEdgePos: inside && !po.cushion ? ordinal(po.pos) : undefined,
+        playGap: !inside && po.gap > 0 ? Pts(po.gap) : undefined, playTiePos: !inside && !po.gap ? ordinal(po.pos) : undefined });
+    }
     const res = ctx.result ? (ctx.result.my > ctx.result.th ? 'won' : ctx.result.my < ctx.result.th ? 'lost' : 'drew') : 'won';
     const out = [];
     const resolves = t => [...t.matchAll(/\{(\w+)\}/g)].every(m => v[m[1]] != null && v[m[1]] !== '');
@@ -567,20 +679,24 @@ window.Cunthanger = (() => {
     // fact-backed = at least one wording whose facts exist; the last wording of
     // 'form', 'squad' and 'player' is generic, so those are always askable
     const backed = specs.slice(1).filter(sp => sp.q.some(resolves));
-    const want = phase === 'post' ? 2 : 2;
-    // the specific stuff first (transfer, selection), then the rest, in a
-    // per-round order so two managers do not get the same paper
-    const specific = backed.filter(sp => ['transfer', 'selection', 'bench'].includes(sp.id));
-    const generic = backed.filter(sp => !specific.includes(sp));
-    const rot = a => a.length ? a.slice(hash(key + ':rot') % a.length).concat(a.slice(0, hash(key + ':rot') % a.length)) : a;
-    const chosen = [lead, ...rot(specific).concat(rot(generic)).slice(0, want)];
+    const want = 2;
+    // one news question (a transfer, a trade, the team sheet, injuries, the
+    // bench, the Cup), then one from everything else that applies, each in a
+    // per-round order so two managers do not get the same paper. Taking all
+    // the news first meant opponent, transfer, selection nearly every week
+    // (Ben, 15 Oct 2026).
+    const NEWS = ['transfer', 'selection', 'trade', 'injury', 'bench', 'cup'];
+    const rot = (a, salt) => { const k = a.length ? hash(key + salt) % a.length : 0; return a.slice(k).concat(a.slice(0, k)); };
+    const news = rot(backed.filter(sp => NEWS.includes(sp.id)), ':rot').slice(0, 1);
+    const chosen = [lead, ...news, ...rot(backed.filter(sp => !news.includes(sp)), ':rot2')].slice(0, 1 + want);
     chosen.forEach((spec, i) => {
       // pick a wording whose facts exist; fall back down the list
       let qs = spec.q.filter(resolves);
       if (!qs.length) qs = [spec.q[spec.q.length - 1]];
       const q = fill(pick(qs, key + ':q' + i), v);
       const options = TONES.map(([tone, label]) => {
-        const bank = Array.isArray(spec.a[tone]) ? spec.a[tone] : (spec.a[tone][res] || spec.a[tone].won);
+        const keyed = spec.a[tone];
+        const bank = Array.isArray(keyed) ? keyed : (keyed[spec.on ? v[spec.on] : res] || Object.values(keyed)[0]);
         return { tone, label, text: fill(pick(bank, key + ':a' + i + tone), v) };
       });
       out.push({ id: spec.id, by: by(i), q, options });
@@ -786,5 +902,5 @@ window.Cunthanger = (() => {
     return rows;
   }
 
-  return { compose, accounts, fan, press, manager, questions, shortName, TAKEOVER, BANKS: B, TONES, hash };
+  return { compose, accounts, fan, press, manager, questions, shortName, TAKEOVER, BANKS: B, TONES, hash, PRESSER: Q };
 })();
