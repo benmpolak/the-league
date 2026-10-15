@@ -5328,6 +5328,9 @@ function chooseOutSheet(mid, inP, waiv, squadNow = null) {
    troughSign the single Sign uses, so the league checks every line exactly
    as it always has. Each line is judged against the squad the lines above it
    leave behind, so the order you build is an order that can land. */
+// sandbox only until Marc has had a go on the test league (Ben, 15 Oct
+// 2026). true opens it to everyone.
+const BASKET_ON = SANDBOX;
 function basketCheck(mid) {
   const tgw = transferGw();
   const owned = ownedIdsAt(tgw);
@@ -9327,7 +9330,7 @@ function viewTransfers() {
     })();
     return `${head}${myPitchCard}${wdSign}<div class="card">
       <h2>Waivers &amp; The Trough ${status}</h2>
-      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers. Signing several? Tap <b>+</b> on each and sign them in one go.</p>
+      <p class="muted" style="font-size:12px;margin-bottom:10px">Tap your <b>player out</b> on the pitch above then <b>Sign</b> — or just tap <b>Sign</b> on the man you want and pick who makes way. Instant if free, a waiver request if he&rsquo;s on waivers.${BASKET_ON ? ' Signing several? Tap <b>+</b> on each and sign them in one go.' : ''}</p>
       ${basketCard}
       ${(() => {
         // the waiver list lives on its own tab now (Ian, 25 Aug: 30 requests
@@ -10003,7 +10006,7 @@ function bindTransfers() {
           const m = metricsFor(p);
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
-            : `${!waiv && !locked ? (basketIns.has(p.id)
+            : `${BASKET_ON && !waiv && !locked ? (basketIns.has(p.id)
                 ? `<button class="btn small" data-trbasket="${p.id}" title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003;</button>`
                 : `<button class="btn ghost small" data-trbasket="${p.id}" title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">

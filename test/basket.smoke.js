@@ -23,7 +23,8 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   await p.setViewport({ width: 1100, height: 900 });
   await p.setRequestInterception(true);
   p.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
-  await p.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
+  // the basket is sandbox-only until Marc has tried it (Ben, 15 Oct 2026)
+  await p.goto(baseUrl + '/index.html?sandbox', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof state !== 'undefined');
   await p.evaluate(() => {
     // troughSign answers at once, unless told to hold or to refuse one call
@@ -153,6 +154,20 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   chk('and Sign all waits until it is taken out', dead.go === true);
   await p.evaluate(() => document.querySelector('[data-bkdel="0"]').click());
   chk('taking it out empties the basket and the card goes', await p.evaluate(() => !document.querySelector('#trBasket') && transfersView.basket.length === 0));
+
+  /* 7 — the real league does not see it yet */
+  const live = await browser.newPage();
+  await live.setRequestInterception(true);
+  live.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
+  await live.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
+  await live.waitForFunction(() => typeof state !== 'undefined');
+  const gated = await live.evaluate(() => {
+    state = buildDemoState(); state.phase = 'season'; whoami = state.managers[0].id;
+    troughWindow = () => ({ open: true });
+    state.view = 'transfers'; transfersView.tab = 'trough'; render();
+    return { on: BASKET_ON, sign: document.querySelectorAll('#trResults [data-trin]').length, plus: document.querySelectorAll('#trResults [data-trbasket]').length };
+  });
+  chk('without ?sandbox there is no + — Sign alone, as before', gated.on === false && gated.sign > 0 && gated.plus === 0, JSON.stringify(gated));
 
   await browser.close();
   console.log(`\n[basket] ${n - fail} passed, ${fail} failed`);
