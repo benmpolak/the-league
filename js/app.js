@@ -1600,14 +1600,14 @@ const titleish = str => String(str || '').split(/(\s+)/).map((w, i) => {
   if (i > 0 && TITLE_SMALL.has(w.toLowerCase())) return w;
   return w.charAt(0).toUpperCase() + w.slice(1);
 }).join('');
-function toast(msg) {
+function toast(msg, ms = 2600) {
   const el = $('#toast') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'toast' }));
   el.setAttribute('role', 'status');
   el.setAttribute('aria-live', 'polite');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove('show'), 2600);
+  toast._t = setTimeout(() => el.classList.remove('show'), ms);
 }
 function normName(s) {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -2935,11 +2935,12 @@ function setClaims(mid, arr) {
      the list — and SAY SO, by name and by reason. Quietly editing a man's
      ladder would be the worse fault of the two. */
   const dead = arr.map(c => ({ c, why: deadClaim(c, mid) })).filter(x => x.why);
+  const dropped = !dead.length ? ''
+    : dead.length === 1 ? `Dropped a request that can no longer land — ${dead[0].why}.`
+    : `Dropped ${dead.length} requests that can no longer land — ${dead[0].why}, and ${dead.length - 1} more.`;
   if (dead.length) {
     arr = arr.filter(c => !dead.some(d => d.c === c));
-    toast(dead.length === 1
-      ? `Dropped a request that can no longer land — ${dead[0].why}.`
-      : `Dropped ${dead.length} requests that can no longer land — ${dead[0].why}, and ${dead.length - 1} more.`);
+    toast(dropped, 6000);
   }
   const before = JSON.parse(JSON.stringify(state.claims || {}));
   // { ok, why }: a bare false could not carry the desk's reason, so the red
@@ -2963,7 +2964,10 @@ function setClaims(mid, arr) {
   for (const g of stale) if (state.claims[g]) delete state.claims[g][mid];
   (state.claims[cur] = state.claims[cur] || {})[mid] = netOn() ? arr.map(c => ({ ...c, pending: true })) : arr;
   save(); render();
-  return confirmed;
+  // the warning rides back with the answer: the Claim button's "Saved" line
+  // lands a moment later on the same toast and used to wipe it (Fable's
+  // review, 15 Oct 2026 — the very thing Toby and Tom were promised)
+  return confirmed.then(r => ({ ...r, dropped }));
 }
 // the claim did not reach the league — say so, in red, instead of a receipt
 /* `why` is the league's own words when it gave any. It used to be dropped on
@@ -4697,7 +4701,22 @@ function sendPost(text, to) {
 }
 // the words are what the manager saw (sol P2-4): each answer carries its
 // question, so readback and the paper never pair an old answer with a new question
-const answerQ = (an, qs, i) => (an && an.q) || qs[i]?.q || 'The press asked.';
+/* An answer stored before the question rode with it has only its spec id.
+   Pair it by that id, never by position: the mix that picks the three
+   questions changed on 15 Oct 2026, so position i is now often a different
+   question (Fable's review). Same spec this round, else that spec's plain
+   wording if it needs no facts, else nothing pretending to be the question. */
+function answerQ(an, qs, i) {
+  if (an && an.q) return an.q;
+  const id = an?.id;
+  if (!id) return qs[i]?.q || 'The press asked.';
+  const same = qs.find(q => q.id === id);
+  if (same) return same.q;
+  const bank = typeof Cunthanger !== 'undefined' ? Cunthanger.PRESSER || {} : {};
+  const spec = [...(bank.pre || []), ...(bank.post || [])].find(sp => sp.id === id);
+  const plain = spec ? [...spec.q].reverse().find(w => !/\{\w+\}/.test(w)) : null;
+  return plain || 'The press asked.';
+}
 function pressRoomSheet(spec) {
   if (typeof Cunthanger === 'undefined') return;
   const mid = meId();
@@ -5398,6 +5417,14 @@ function chooseOutSheet(mid, inP, waiv, squadNow = null) {
    troughSign the single Sign uses, so the league checks every line exactly
    as it always has. Each line is judged against the squad the lines above it
    leave behind, so the order you build is an order that can land. */
+/* Since the man going out stays marked between claims (Marc, 13 Oct 2026), a
+   Sign straight after a ladder of claims drops the very man the ladder was
+   built on, and every one of those requests dies with him. The confirm says
+   so before it happens (Fable's review, 15 Oct 2026). */
+function claimsNaming(mid, outIds) {
+  const n = myClaims(mid).filter(c => outIds.includes(c.out)).length;
+  return n ? ` ${n === 1 ? 'One of your waiver requests names' : `${n} of your waiver requests name`} ${outIds.length === 1 ? 'him' : 'a man going out'} as the drop and will not land.` : '';
+}
 // sandbox only until Marc has had a go on the test league (Ben, 15 Oct
 // 2026). true opens it to everyone.
 const BASKET_ON = SANDBOX;
@@ -5405,17 +5432,21 @@ function basketCheck(mid) {
   const tgw = transferGw();
   const owned = ownedIdsAt(tgw);
   let squad = squadAt(mid, tgw);
+  const goingOut = new Set();
   return toArr(transfersView.basket).map(l => {
     const inP = PLAYER_BY_ID[l.in], outP = PLAYER_BY_ID[l.out];
     const why = !inP || !outP ? 'a player the feed no longer knows'
       : squad.some(p => p.id === inP.id) ? `${inP.name} is already yours`
+      // dropped further up this same basket: he goes to waivers, so the desk
+      // would refuse him (Fable's review, 15 Oct 2026)
+      : goingOut.has(inP.id) ? `${inP.name} goes out further up this basket, straight onto waivers`
       : owned.has(inP.id) ? `${inP.name} has been signed by somebody else`
       : arrivalLocked(inP) ? `${inP.name} is in the holding pen`
       : onWaivers(inP) ? `${inP.name} is on waivers now — lodge a claim instead`
       : !squad.some(p => p.id === outP.id) ? `${outP.name} is no longer yours to drop`
       : !squadShapeOk([...squad.filter(p => p.id !== outP.id), inP]) ? `${inP.name} for ${outP.name} breaks the squad position limits at that point in the list`
       : '';
-    if (!why) squad = [...squad.filter(p => p.id !== outP.id), inP];
+    if (!why) { squad = [...squad.filter(p => p.id !== outP.id), inP]; goingOut.add(outP.id); }
     return { ...l, inP, outP, why };
   });
 }
@@ -9964,7 +9995,7 @@ function bindTransfers() {
       title: `Sign all ${lines.length}?`,
       body: lines.map(l => dealRows([l.outP], [l.inP])).join(''),
       yes: `Sign ${lines.length}`,
-      note: `One after another, top first — each is done the moment it lands${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. If somebody beats you to a man, the ones above him stand and the rest wait in the basket. Everyone going out goes to waivers.`,
+      note: `One after another, top first — each is done the moment it lands${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. If somebody beats you to a man, the ones above him stand and the rest wait in the basket. Everyone going out goes to waivers.${claimsNaming(mid, lines.map(l => l.out))}`,
     })) return;
     btn.disabled = true;
     transfersView.basketBusy = true;
@@ -10227,7 +10258,7 @@ function bindTransfers() {
           if (!saved.ok) { claimFailedSheet(inP, outP, saved.why); return; }
           // a line, not a sheet (Ben, 15 Oct 2026): a ladder of claims was a
           // sheet to dismiss per line. Still only once the league has it.
-          toast(`Saved with the league: ${inP.name} for ${outP.name}, #${myClaims(mid).length} on your list. Runs ${fmtWhen(nextLiveWaiverRun())}.`);
+          toast(`Saved with the league: ${inP.name} for ${outP.name}, #${myClaims(mid).length} on your list. Runs ${fmtWhen(nextLiveWaiverRun())}.${saved.dropped ? ` ${saved.dropped}` : ''}`, saved.dropped ? 7000 : 2600);
           return;
         }
         const tgw = transferGw();
@@ -10236,7 +10267,7 @@ function bindTransfers() {
           title: 'Do the deal?',
           body: dealRows([outP], [inP]),
           yes: `Sign ${esc(inP.name)}`,
-          note: `First come, first served — the deal is done the moment you confirm${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. ${esc(outP?.name || 'Your man')} goes to waivers.`,
+          note: `First come, first served — the deal is done the moment you confirm${tgw !== cur ? `, in for GW${GAMEWEEKS[tgw].n}` : ''}. ${esc(outP?.name || 'Your man')} goes to waivers.${claimsNaming(mid, [outId])}`,
         })) return;
         if (netOn()) {
           // first come, first served — settled by a server transaction
