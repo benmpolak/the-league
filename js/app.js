@@ -3153,14 +3153,18 @@ const tradeNames = ids => ids.map(id => PLAYER_BY_ID[id]?.name || '?').join(' + 
 function proposeTrade(from, to, give, get, terms = '') {
   give = toArr(give); get = toArr(get);
   if (!give.length || give.length !== get.length) { toast('Trades swap the same number of players each way'); return; }
+  // a trade sends men out just as a Sign does, and kills any waiver request
+  // naming one of them as its drop (Fable's review, 15 Oct 2026)
+  const dying = myClaims(from).filter(c => give.map(Number).includes(c.out)).length;
+  const warn = dying ? ` If it goes through, ${dying === 1 ? 'one of your waiver requests names' : `${dying} of your waiver requests name`} a man you are sending as its drop and will not land.` : '';
   if (netOn()) {
     serverAct('tradePropose', { to, give, get, terms: terms.slice(0, 200), ...(from !== whoami && { asManager: from }) })
-      .then(() => toast(`Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.`)).catch(() => {});
+      .then(() => toast(`Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.${warn}`, warn ? 7000 : 2600)).catch(() => {});
     return;
   }
   const offer = { id: Date.now() + '-' + from, from, to, give, get, terms: terms.slice(0, 200), status: 'pending', t: Date.now() };
   txnArray('trades', arr => [...arr, offer])
-    .then(ok => toast(ok ? `Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.` : 'Proposal didn’t send — check connection and try again'));
+    .then(ok => toast(ok ? `Offer sent — awaiting ${managerName(to)}. Nothing more for you to do; it lands or voids on their say.${warn}` : 'Proposal didn’t send — check connection and try again', ok && warn ? 7000 : 2600));
 }
 // flip one trade's status, transaction-safe, only if it's still pending
 const setTradeStatus = (id, status) =>
@@ -4736,7 +4740,7 @@ function pressRoomSheet(spec) {
     <h2 style="margin:4px 0 2px">${esc(teamName(mid))}</h2>
     <p class="muted" style="font-size:12px;margin-bottom:12px">${ctx.opp ? `${phase === 'post' ? 'After' : 'Before'} ${esc(cleanTeamName(ctx.opp))}. ` : ''}Pick an answer or say it in your own words. Everything you say is on the record, on the feed, and in Friday’s paper.</p>
     ${clubPressMemory(mid, gwIdx)}
-    ${qs.map((q, i) => `<div class="ch-q">
+    ${(done ? toArr(done.answers).map((an, i) => qs[i] || { ...qs[qs.length - 1], q: '' }) : qs).map((q, i) => `<div class="ch-q">
       <div class="ch-q-by">${esc(q.by)}, The League Gazette</div>
       <div class="ch-q-text">${esc(done ? answerQ(done.answers?.[i], qs, i) : q.q)}</div>
       ${done ? `<p class="ch-q-done">${done.answers?.[i]?.storm ? '<i>— left the room —</i>' : `&ldquo;${esc(done.answers?.[i]?.text || '—')}&rdquo;`}</p>` : `<div class="ch-q-opts">
@@ -10321,7 +10325,7 @@ function bindTransfers() {
       // executes now, the players swap in from the first unstarted GW. Say so.
       note: (() => {
         const tgw = transferGw(), cur2 = currentGwIndex();
-        return `Executes instantly — both squads swap on confirm${tgw !== cur2 ? `. This gameweek has kicked off, so the incoming players are in from GW${GAMEWEEKS[tgw].n} — locked XIs don't change` : ''}. No takebacks.`;
+        return `Executes instantly — both squads swap on confirm${tgw !== cur2 ? `. This gameweek has kicked off, so the incoming players are in from GW${GAMEWEEKS[tgw].n} — locked XIs don't change` : ''}. No takebacks.${claimsNaming(tr.to, tGet(tr).map(Number))}`;
       })(),
     })) return;
     respondTrade(tr.id, true);

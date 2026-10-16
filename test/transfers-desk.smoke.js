@@ -146,6 +146,38 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   chk('and otherwise takes that spec\'s plain wording, never the question at its old position', pq.otherSpec !== 'Q-TRANSFER' && pq.otherSpec !== 'The press asked.' && !/\{/.test(pq.otherSpec), JSON.stringify(pq));
   chk('with no id at all it falls back by position as before', pq.noId === 'Q-TRANSFER', JSON.stringify(pq));
 
+  /* 9 — a trade warns about the claims it kills, as Sign does (16 Oct 2026) */
+  const tr = await p.evaluate(async ids => {
+    const theirs = squadAt(2, transferGw())[0]?.id ?? PLAYERS.find(x => !ownedIdsAt(transferGw()).has(x.id) && x.pos === 'MF').id;
+    window.onPrivateSnapshot({ claims: { [currentGwIndex()]: [{ in: ids.mf[0], out: ids.myMf[0], t: 1 }] } });
+    // accepting: manager 2 offers for one of ours that a claim names as its drop
+    state.trades = [{ id: 'tr-warn', from: 2, to: 1, give: [theirs], get: [ids.myMf[0]], status: 'pending', t: Date.now() }];
+    window._lastConfirm = null;
+    confirmSheet = o => { window._lastConfirm = o; return Promise.resolve(false); };
+    transfersView.tab = 'trades'; render();
+    document.querySelector('[data-tracc="tr-warn"]')?.click();
+    await new Promise(r => setTimeout(r, 150));
+    const accept = window._lastConfirm?.note || '';
+    // proposing: the same man offered the other way
+    proposeTrade(1, 2, [ids.myMf[0]], [theirs], '');
+    await new Promise(r => setTimeout(r, 200));
+    return { accept, propose: document.querySelector('#toast')?.textContent || '' };
+  }, ids);
+  chk('accepting a trade warns that a waiver request names the man going as its drop', /One of your waiver requests names him as the drop and will not land/.test(tr.accept), tr.accept);
+  chk('proposing one warns too, conditional on the other side', /If it goes through, one of your waiver requests names a man you are sending/.test(tr.propose), tr.propose);
+
+  /* 10 — the press room shows the answers given, not an empty row per question */
+  const rows = await p.evaluate(() => {
+    const gw = currentGwIndex();
+    state.pressers = { ...(state.pressers || {}), 1: { [`${gw}:pre`]: { t: Date.now(), answers: [{ id: 'opp', tone: 'humble', text: 'One.' }, { id: 'form', tone: 'humble', text: 'Two.' }] } } };
+    pressRoomSheet(`${gw}:pre`);
+    const sheet = document.querySelector('.ch-presser');
+    const out = { rows: sheet ? sheet.querySelectorAll('.ch-q').length : -1, dash: sheet ? /“—”/.test(sheet.textContent) : null };
+    document.querySelectorAll('.overlay').forEach(o => o.remove());
+    return out;
+  });
+  chk('a two-answer record shows two rows and no empty third', rows.rows === 2 && rows.dash === false, JSON.stringify(rows));
+
   chk('no page loaded the live Firebase SDK', await noLiveFirebase(p));
   await browser.close();
   console.log(`\n[transfers-desk] ${n - fail} passed, ${fail} failed`);
