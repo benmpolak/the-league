@@ -183,7 +183,7 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   chk('signing back a man the basket drops further up says so', reSign[0] === '' && /goes out further up this basket/.test(reSign[1]), JSON.stringify(reSign));
   await p.evaluate(() => { transfersView.basket = []; render(); });
 
-  /* 7 — the real league does not see it yet */
+  /* 7 — the real league sees it too */
   const live = await browser.newPage();
   await live.setBypassServiceWorker(true);
   await live.setRequestInterception(true);
@@ -196,7 +196,8 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
     state.view = 'transfers'; transfersView.tab = 'trough'; render();
     return { on: BASKET_ON, sign: document.querySelectorAll('#trResults [data-trin]').length, plus: document.querySelectorAll('#trResults [data-trbasket]').length };
   });
-  chk('without ?sandbox there is no + — Sign alone, as before', gated.on === false && gated.sign > 0 && gated.plus === 0, JSON.stringify(gated));
+  // open to everyone since Ben, 16 Oct 2026
+  chk('the real league (no ?sandbox) has the basket too', gated.on === true && gated.sign > 0 && gated.plus > 0, JSON.stringify(gated));
   chk('no page loaded the live Firebase SDK', await noLiveFirebase(p) && await noLiveFirebase(live));
 
   await browser.close();

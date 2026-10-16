@@ -5425,9 +5425,11 @@ function claimsNaming(mid, outIds) {
   const n = myClaims(mid).filter(c => outIds.includes(c.out)).length;
   return n ? ` ${n === 1 ? 'One of your waiver requests names' : `${n} of your waiver requests name`} ${outIds.length === 1 ? 'him' : 'a man going out'} as the drop and will not land.` : '';
 }
-// sandbox only until Marc has had a go on the test league (Ben, 15 Oct
-// 2026). true opens it to everyone.
-const BASKET_ON = SANDBOX;
+// sandbox only until Marc had had a go on the test league (Ben, 15 Oct
+// 2026); open to everyone since Ben, 16 Oct 2026: "push it live". It signs
+// only men who are free right now, through the same troughSign desk as the
+// single Sign, so the waiver queue, claims and the run are untouched.
+const BASKET_ON = true;
 function basketCheck(mid) {
   const tgw = transferGw();
   const owned = ownedIdsAt(tgw);
