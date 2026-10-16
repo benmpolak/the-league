@@ -178,6 +178,45 @@ const chk = (name, cond, extra = '') => { n++; console.log(`${cond ? 'PASS' : 'F
   });
   chk('a two-answer record shows two rows and no empty third', rows.rows === 2 && rows.dash === false, JSON.stringify(rows));
 
+  /* 11 — onWaivers, now cached per redraw, says exactly what it always said
+     (Fable's review, 16 Oct 2026: it was re-walking fixtures and ledger for
+     every player on every redraw) */
+  const same = await p.evaluate(ids => {
+    // the rule as it stood before the cache, verbatim
+    const uncached = pl => {
+      const tw = troughWindow();
+      if (tw.mock) return true;
+      const ctl = waiverControl();
+      if (ctl === 'closed') return true;
+      for (const t of state.transfers) if (t.outId === pl.id && (t.t || 0) > lastWaiverRun()) return true;
+      if (ctl === 'open') return false;
+      if (!tw.open) return true;
+      return false;
+    };
+    const diff = label => {
+      const bad = PLAYERS.filter(pl => onWaivers(pl) !== uncached(pl));
+      return bad.length ? `${label}: ${bad.length} differ (${bad.slice(0, 3).map(x => x.name).join(', ')})` : null;
+    };
+    const out = [];
+    const meta = state.waiverMeta = state.waiverMeta || {};
+    const realTw = troughWindow;
+    // a fresh drop: one out since the last run, seen straight away (no 1s lag)
+    state.transfers = [...toArr(state.transfers), { managerId: 1, outId: ids.myMf[2], inId: ids.mf[2], gw: transferGw(), n: 99, t: Date.now() + 5 }];
+    out.push(onWaivers(PLAYER_BY_ID[ids.myMf[2]]) === true ? null : 'a fresh drop was not on waivers at once');
+    for (const [label, setup] of [
+      ['trough open', () => { troughWindow = () => ({ open: true }); meta.control = 'auto'; }],
+      ['trough shut', () => { troughWindow = () => ({ open: false, why: 'test' }); }],
+      ['Chairman open', () => { troughWindow = () => ({ open: false, why: 'test' }); meta.control = 'open'; }],
+      ['Chairman closed', () => { troughWindow = () => ({ open: true }); meta.control = 'closed'; }],
+      ['chamber clock', () => { troughWindow = () => ({ open: false, mock: true, why: 'sim' }); meta.control = 'open'; }],
+      ['a run since', () => { troughWindow = () => ({ open: true }); meta.control = 'auto'; meta.lastRun = new Date(Date.now() + 60000).toISOString(); }],
+      ['the real clock', () => { troughWindow = realTw; delete meta.lastRun; }],
+    ]) { setup(); out.push(diff(label)); }
+    troughWindow = () => ({ open: true }); meta.control = 'auto';
+    return out.filter(Boolean);
+  }, ids);
+  chk('cached onWaivers gives the same answer as before for every player, in every state', same.length === 0, same.join(' | '));
+
   chk('no page loaded the live Firebase SDK', await noLiveFirebase(p));
   await browser.close();
   console.log(`\n[transfers-desk] ${n - fail} passed, ${fail} failed`);

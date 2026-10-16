@@ -2627,18 +2627,37 @@ function liveDataAgeMs() {
 const fmtLiveAge = ms => ms < 100e3 ? `${Math.max(0, Math.round(ms / 1000))}s`
   : ms < 3600e3 ? `${Math.round(ms / 60000)}m` : `${Math.round(ms / 3600e3)}h`;
 // is this player currently stuck on waivers (claim-only), or free to sign now?
+/* onWaivers is asked about every player on every Transfers redraw, and each
+   ask re-walked the fixture list (troughWindow) and the whole ledger: about
+   80ms a redraw on a laptop with the live league, several times that on a
+   phone, on every echo from any manager (Fable's review, 16 Oct 2026). The
+   answer depends only on the Trough window, the Chairman's control, the last
+   run and who has been dropped since it, so work those out once and reuse
+   them while none of them can have moved: same state, same ledger, same
+   meta, same troughWindow, and never for more than a second, so a window
+   that shuts on the clock is seen within one. The answers are unchanged. */
+let _waiverFacts = null;
+function waiverFacts() {
+  const now = Date.now(), tx = toArr(state.transfers), last = tx[tx.length - 1];
+  const key = [tx.length, last?.t, last?.outId, state.waiverMeta?.lastRun, state.waiverMeta?.control,
+    state.mock?.gw, state.mock?.phase, state.mock?.t].join('|');
+  const c = _waiverFacts;
+  if (c && c.key === key && c.state === state && c.fixtures === state.fixtures && c.tw === troughWindow && Math.abs(now - c.at) < 1000) return c; // abs: a phone's clock can step back
+  const lr = lastWaiverRun();
+  const fresh = new Set();
+  for (const t of tx) if (t && (t.t || 0) > lr) fresh.add(t.outId);
+  _waiverFacts = { key, state, fixtures: state.fixtures, tw: troughWindow, at: now, win: troughWindow(), ctl: waiverControl(), fresh };
+  return _waiverFacts;
+}
 function onWaivers(p) {
-  const tw = troughWindow();
-  if (tw.mock) return true; // the chamber's clock beats every manual control
-  const ctl = waiverControl();
+  const { win, ctl, fresh } = waiverFacts();
+  if (win.mock) return true; // the chamber's clock beats every manual control
   if (ctl === 'closed') return true;
   // a fresh drop waits for the next run EVEN under a Chairman's manual open —
   // "thrown open" frees the pool, never the waiver rule (Toby, 9 Aug; DF canon)
-  for (const t of state.transfers) {
-    if (t.outId === p.id && (t.t || 0) > lastWaiverRun()) return true;
-  }
+  if (fresh.has(p.id)) return true;
   if (ctl === 'open') return false;
-  if (!tw.open) return true;
+  if (!win.open) return true;
   return false;
 }
 
