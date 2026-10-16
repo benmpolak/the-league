@@ -156,8 +156,12 @@ const chk = (name, ok, detail = '') => {
       const before = draftDelivery();
       const beforePts = Object.fromEntries(before.map(r => [r.p.id, r.pts]));
       const beforeRank = Object.fromEntries(before.map(r => [r.p.id, r.rank]));
-      // settle another round: give the man drafted LAST a huge score
-      const last = before.reduce((a, b) => (b.pk.n > a.pk.n ? b : a), before[0]);
+      // settle another round: give the man drafted LAST a huge score — the
+      // last one with a place to rise to. The 16 Oct 2026 feed made the demo
+      // draft's very last pick the top scorer already, so "lifts his place"
+      // could not happen and the check blocked every deploy.
+      const byLate = [...before].sort((a, b) => b.pk.n - a.pk.n);
+      const last = byLate.find(r => r.rank > 1) || byLate[0];
       const gwN = GAMEWEEKS[1].n;
       state.matchStats['gw' + gwN] = { gw: 1, label: GAMEWEEKS[1].label, final: true,
         playerStats: { [last.p.id]: { min: 90, st: 1, g: 5, a: 5, cs: 1 } } };
