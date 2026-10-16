@@ -8,6 +8,63 @@ Raised from Toby's sandbox testing session, 12 Aug 2026. Branch:
 
 ---
 
+## 11. THE BASKET BUTTON IS WHAT PUSHES THE TROUGH OFF A PHONE (16 Oct)
+
+Your call, because you built the basket and the alternative changes how a
+single Sign behaves.
+
+Marc, on the group, 16 Oct: *"Im not into the basket. Takes up too much room.
+Surely there is a way you can just press sign on multiple players and select
+multiple of your own players without an extra button crowding the screen."*
+
+He is right, and it is measurable rather than a matter of taste. Rendered at
+390px, the width of a phone, with the demo squad and the default columns:
+
+| | table width | on a 390px screen |
+|---|---|---|
+| as it ships | **469px** | scrolls sideways |
+| with `+ Basket` removed | **382px** | fits |
+
+The action cell is 158px of the 390 available: 82px of `+ Basket` and 55px of
+`Sign`. So that one button is the difference between the Trough fitting and
+having to scroll sideways to reach the button you actually came for. The exact
+numbers will move with a different column set; the 82px will not.
+
+### The proposal: drop `+ Basket`, make `Sign` do the job
+
+- **One button a row.** Tap `Sign`, it flips to `✓ In basket`, tap again to
+  take him out. Exactly the toggle `+ Basket` has now, on the button that is
+  already there.
+- **The foot bar is the only thing that signs.** It exists already; it stops
+  being a shortcut and becomes the commit.
+- **It replaces `confirmSheet`, rather than adding a step.** A single Sign
+  today is tap → sheet → confirm. It would be tap → bar → Sign: the same two
+  taps, and the bar shows the actual list of what is about to happen instead
+  of a modal asking you to take it on trust. With one line it can read
+  "Sign Haaland" rather than "Sign all 1".
+- **Several going out**: tap your own men in the order you want them used and
+  each Sign takes the next unmatched one. The basket card already prints every
+  pairing — "Haaland in, Simms out", with an ✕ — so nothing is implicit and any
+  line can be fixed before it is sent.
+
+### What it costs, honestly
+
+A single signing finishes at the foot of the screen instead of in a sheet in
+the middle of it. That is a real change to a flow nobody complained about.
+
+If you would rather not touch single signing, the other option is to leave
+`Sign` firing immediately and hang multi-select off the row tick that is
+already there for Compare. That keeps today's single flow intact but gives an
+existing control a second meaning, which seems the worse trade.
+
+### Who does it
+
+Marc's AI, not you — it is all client-side and it goes behind `BASKET_ON` so
+both can be looked at side by side before anything is settled. What is wanted
+from you is the decision, not the work. Say which of the two, or neither.
+
+---
+
 ## 10. A COVENANT'S GAMEWEEK MEANS TWO DIFFERENT THINGS (12 Sept)
 
 The app is correct as of `20663aa9` — it normalises on read. **The stored data
