@@ -9426,7 +9426,7 @@ function viewTransfers() {
     const basketBar = !bLines.length ? ''
       : transfersView.basketBusy ? `<div class="basket-bar" role="status"><span>&#129530; Signing your basket&hellip;</span></div>`
       : `<div class="basket-bar" role="region" aria-label="Your basket">
-          <span>&#129530; <b>${bLines.length}</b> in your basket${bDead ? ' <span class="tag claim-dead-tag">1 will not land</span>' : ''}</span>
+          <span>&#129530; <b>${bLines.length}</b> in your basket${bDead ? ` <span class="tag claim-dead-tag">${bLines.filter(l => l.why).length} will not land</span>` : ''}</span>
           <button class="btn ghost small" id="bkShow">Show</button>
           <button class="btn small" id="bkGoBar" ${bDead ? 'disabled' : ''}>Sign all ${bLines.length}</button>
         </div>`;
