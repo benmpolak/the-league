@@ -9,6 +9,8 @@
  *   5. a refusal stops the run: what landed stands, the rest stays in the
  *      basket, the receipt says where it stopped
  *   6. a line that can no longer land blocks Sign all until it is taken out
+ *   7. active lines cannot be removed while the queue is still signing them
+ *   8. receipts use the server gameweek and its XI, even across a deadline
  * Same stubbed-sync harness as claimsave.smoke.js. */
 const puppeteer = require('puppeteer-core');
 const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -35,14 +37,15 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   await p.waitForFunction(() => typeof state !== 'undefined');
   await p.evaluate(() => {
     // troughSign answers at once, unless told to hold or to refuse one call
-    window._calls = []; window._hold = false; window._held = []; window._refuseCall = 0;
+    window._calls = []; window._hold = false; window._held = []; window._refuseCall = 0; window._serverGws = [];
     window.WCSync = {
       league: 'the-league-2627',
       call: (action, data) => new Promise((resolve, reject) => {
         window._calls.push({ action, data });
         const k = window._calls.filter(c => c.action === 'troughSign').length;
         if (action === 'troughSign' && k === window._refuseCall) { reject(new Error('Toby got there first')); return; }
-        if (window._hold) window._held.push(resolve); else resolve({ ok: true, tgw: transferGw() });
+        const answer = { ok: true, tgw: window._serverGws.length ? window._serverGws.shift() : transferGw() };
+        if (window._hold) window._held.push(() => resolve(answer)); else resolve(answer);
       }),
       auth: { user: () => ({ uid: 'u-test', email: 'ben@example.com' }), sendLink: () => Promise.resolve(), completeLink: () => Promise.resolve(false), signOut: () => Promise.resolve() },
     };
@@ -127,7 +130,16 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   const firstOnly = await p.evaluate(() => window._calls.filter(c => c.action === 'troughSign').map(c => [c.data.inId, c.data.outId]));
   chk('Sign all sends the first line and waits for the league', firstOnly.length === 1 && firstOnly[0][0] === ids.mf[0] && firstOnly[0][1] === ids.myMf[0], JSON.stringify(firstOnly));
   chk('meanwhile the card says it is working, with no buttons to press twice', await p.evaluate(() => /Signing your basket/.test(document.querySelector('#trBasket')?.textContent || '') && !document.querySelector('#bkGo') && !document.querySelector('#bkGoBar') && /Signing your basket/.test(document.querySelector('.basket-bar')?.textContent || '')));
-  await p.evaluate(() => { window._hold = false; window._held.shift()({ ok: true }); });
+  // The row remains on screen during the run. It must not offer to remove a
+  // line that the already-confirmed queue will still submit (Ben, 19 Oct).
+  await plus(ids.mf[1]);
+  const during = await p.evaluate(id => ({
+    disabled: document.querySelector(`#trResults [data-trbasket="${id}"]`)?.disabled,
+    basket: transfersView.basket.length,
+    calls: window._calls.filter(c => c.action === 'troughSign').length,
+  }), ids.mf[1]);
+  chk('the active basket locks row edits until its confirmed signings finish', during.disabled === true && during.basket === 2 && during.calls === 1, JSON.stringify(during));
+  await p.evaluate(() => { window._hold = false; window._held.shift()(); });
   await sleep(250);
   const all = await p.evaluate(() => ({
     calls: window._calls.filter(c => c.action === 'troughSign').map(c => [c.data.inId, c.data.outId]),
@@ -138,6 +150,33 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   chk('a clean run empties the basket', all.basket === 0, JSON.stringify(all));
   chk('and the receipt says all were signed', /All 2 signed/.test(all.receipt), all.receipt);
   await p.evaluate(() => document.querySelectorAll('.overlay').forEach(o => o.remove()));
+
+  /* 4b — server receipts win over the old client clock, one line at a time */
+  await p.evaluate(ids => {
+    window._basketNow = Date.now;
+    window._basketLineupFor = lineupFor;
+    const receiptClock = new Date(gwFrom(1)).getTime() + 1000;
+    Date.now = () => receiptClock;
+    // Distinct starters pin the impact to the actual round, not whichever
+    // gameweek was on the client when the manager pressed Sign all.
+    lineupFor = (mid, g) => g === 2 ? [ids.myMf[0]] : g === 3 ? [ids.myMf[1]] : [];
+    transfersView.basket = [{ in: ids.mf[0], out: ids.myMf[0] }, { in: ids.mf[1], out: ids.myMf[1] }];
+    window._calls = []; window._serverGws = [2, 3]; render();
+    document.querySelector('#bkGo').click();
+  }, ids);
+  await sleep(250);
+  const rounds = await p.evaluate(ids => ({
+    paragraphs: [...document.querySelectorAll('[aria-label="Basket receipt"] p')].map(x => x.textContent.replace(/\s+/g, ' ')),
+    names: ids.myMf.slice(0, 2).map(id => PLAYER_BY_ID[id].name),
+    weeks: [GAMEWEEKS[2].n, GAMEWEEKS[3].n],
+    remaining: transfersView.basket.length,
+  }), ids);
+  chk('a basket crossing a deadline reports each actual server gameweek', rounds.weeks.every(g => rounds.paragraphs.some(x => x.includes(`Counts from GW${g}.`))) && rounds.remaining === 0, JSON.stringify(rounds));
+  chk('each receipt names the starters from its actual gameweek', rounds.weeks.every((g, i) => rounds.paragraphs.some(x => x.includes(`Counts from GW${g}.`) && x.includes(rounds.names[i]) && x.includes(`in your GW${g} XI`))), JSON.stringify(rounds));
+  await p.evaluate(() => {
+    Date.now = window._basketNow; lineupFor = window._basketLineupFor;
+    document.querySelectorAll('.overlay').forEach(o => o.remove()); render();
+  });
 
   /* 5 — a refusal stops the run where it happens */
   await p.evaluate(ids => {

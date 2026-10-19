@@ -3365,6 +3365,13 @@ function setAutolist(mid, arr) {
    watchlist is only a lens on the Trough. Watching somebody must never sign,
    claim or draft him, so nothing outside the Trough filter reads this. */
 const watchIds = mid => toArr(state.watchlists?.[mid]);
+// Lee, 19 Oct 2026: the scouting list is full of men he cannot get. Read it
+// through the Trough's landing-gameweek ownership, so a pickup disappears as
+// soon as its snapshot arrives. Ben wants an Owned/Unowned toggle, not a
+// deleted preference: the Owned view keeps him, and a released man
+// returns, and rendering never writes a stale list over another device's edit.
+const availableWatchIds = (mid, owned = ownedIdsAt(transferGw())) =>
+  watchIds(mid).filter(pid => PLAYER_BY_ID[pid] && !owned.has(pid));
 const watchBtnHtml = (mid, pid) => {
   const on = isWatched(mid, pid);
   return `<button class="btn ghost small icon-btn watch-btn${on ? ' watch-on' : ''}" data-watch="${pid}" aria-pressed="${on}" aria-label="${on ? 'Stop watching' : 'Watch'} ${esc(PLAYER_BY_ID[pid]?.name || 'this player')}" title="${on ? 'On your watchlist — tap to drop him' : 'Watch him: he joins your private Trough watchlist'}">&#128065;</button>`;
@@ -4834,6 +4841,7 @@ function pressRoomTile() {
   </div>`;
 }
 // the paper: the pre-game edition prints the press conferences
+// Ben, 19 Oct 2026: let the quotes carry the tone, without “visibly” on every outburst.
 function pressConferenceSection(gwIdx) {
   try { return pressConferenceSectionInner(gwIdx); } catch (e) { return ''; }
 }
@@ -4852,7 +4860,7 @@ function pressConferenceSectionInner(gwIdx) {
     if (!qa.length) continue;
     rows.push(`<div class="prog-presser">
       <div class="prog-presser-tie">${esc(cleanTeamName(teamName(a)))} v ${esc(cleanTeamName(teamName(b)))}</div>
-      ${qa.map(x => x.storm ? `<p class="prog-int-a">${esc(managerName(x.mid))} took his seat, heard the first question, and left. The Gazette’s reporter describes the door as “firm”.</p>` : x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'unhinged' ? ', visibly' : tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
+      ${qa.map(x => x.storm ? `<p class="prog-int-a">${esc(managerName(x.mid))} took his seat, heard the first question, and left. The Gazette’s reporter describes the door as “firm”.</p>` : x.best.slice(0, 2).map(({ q, a: ans, tone }) => `<div class="prog-int-q">${esc(q)}</div><p class="prog-int-a">${esc(managerName(x.mid))}${tone === 'dismissive' ? ', barely looking up' : ''}: &ldquo;${esc(ans)}&rdquo;</p>`).join('')).join('')}
     </div>`);
   }
   // and what was said outside the room: posts aimed at this week's opponent
@@ -5485,8 +5493,8 @@ function basketSquad(mid) {
 async function troughSignStep(mid, inId, outId) {
   if (netOn()) {
     try {
-      await serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) });
-      return { ok: true };
+      const r = await serverAct('troughSign', { inId, outId, ...(mid !== whoami && { asManager: mid }) });
+      return { ok: true, tgw: r.tgw };
     } catch (e) { return { ok: false, why: e?.message || 'the league did not take it' }; }
   }
   const tgw = transferGw();
@@ -5500,21 +5508,29 @@ async function troughSignStep(mid, inId, outId) {
     state.lineups[mid][tgw] = lu.filter(id => id !== outId);
     pushShared(`lineups/${mid}/${tgw}`, state.lineups[mid][tgw]);
   }
-  return { ok: true };
+  return { ok: true, tgw };
 }
 // what went through, and where it stopped if it did
-function basketReceiptSheet({ done, stop, untried, gw, mid, starters }) {
+function basketReceiptSheet({ done, stop, untried, mid }) {
   const total = done.length + (stop ? 1 : 0) + untried;
-  const inXi = done.filter(l => starters.includes(l.out)).map(l => l.outP.name);
+  // Ben, 19 Oct 2026, basket review: the server settles the gameweek for each
+  // signing. A deadline can pass between lines, so keep each receipt with its
+  // actual round and the XI it changed, just as the single Sign does.
+  const rounds = [...new Set(done.map(l => l.gw))].map(gw => {
+    const lines = done.filter(l => l.gw === gw);
+    const inXi = lines.filter(l => l.wasStarting).map(l => l.outP.name);
+    return `${lines.map(l => dealRows([l.outP], [l.inP])).join('')}
+      <p style="font-size:12.5px;margin-top:8px">Counts from <b>GW${GAMEWEEKS[gw].n}</b>. ${inXi.length
+        ? `${esc(inXi.join(', '))} ${inXi.length === 1 ? 'was' : 'were'} in your GW${GAMEWEEKS[gw].n} XI — pick ${inXi.length === 1 ? 'his replacement' : 'their replacements'} on My Team.`
+        : 'Your XI is untouched — everyone who left was on the bench.'}</p>`;
+  }).join('');
   const ov = document.createElement('div');
   ov.className = 'overlay';
   ov.innerHTML = `<div class="card" style="max-width:420px;width:94%;max-height:85vh;overflow-y:auto" role="dialog" aria-label="Basket receipt">
     <h2>${!stop ? `All ${done.length} signed` : done.length ? `${done.length} of ${total} signed` : 'Nothing signed'}</h2>
-    ${done.map(l => dealRows([l.outP], [l.inP])).join('')}
+    ${rounds}
     ${stop ? `<p class="warn" style="font-size:12.5px;margin-top:8px">Stopped at ${esc(stop.inP?.name || 'the next line')}: ${esc(stop.why)}.${untried ? ` The ${untried} after him ${untried === 1 ? 'was' : 'were'} not tried.` : ''} What did not go through is still in your basket.</p>` : ''}
-    ${done.length ? `<p style="font-size:12.5px;margin-top:8px">Counts from <b>GW${GAMEWEEKS[gw].n}</b>. ${inXi.length
-      ? `${esc(inXi.join(', '))} ${inXi.length === 1 ? 'was' : 'were'} in your GW${GAMEWEEKS[gw].n} XI — pick ${inXi.length === 1 ? 'his replacement' : 'their replacements'} on My Team.`
-      : 'Your XI is untouched — everyone who left was on the bench.'} Everyone going out goes to waivers.</p>` : ''}
+    ${done.length ? '<p style="font-size:12.5px;margin-top:8px">Everyone going out goes to waivers.</p>' : ''}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn ghost small" id="bkSquad" style="flex:1">View squad</button>
       <button class="btn small" id="bkDone" style="flex:1">Done</button>
@@ -9187,7 +9203,7 @@ function bindTeam() {
 // team including your own"). null = don't care; it wins over scope, because
 // "show me Toby's squad" and "show me free agents" are the same question asked
 // two ways and answering both at once gives an empty table.
-let transfersView = { tab: 'trough', out: null, q: '', basket: [], basketMid: null, pos: [], club: '', scope: 'avail', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
+let transfersView = { tab: 'trough', out: null, q: '', basket: [], basketMid: null, pos: [], club: '', scope: 'avail', watchScope: 'unowned', owner: null, sort: 'pts', limit: 20, blockPick: false, as: null, histKind: '', histPage: 0 };
 // position filter is a SET like the draft pool's (Ben, 25 Aug: "midfield and
 // forward... at the same time") — empty means All. Tolerates the old string.
 const trPosOn = () => Array.isArray(transfersView.pos) ? transfersView.pos : (transfersView.pos ? [transfersView.pos] : []);
@@ -10011,11 +10027,11 @@ function bindTransfers() {
   const bkShow = $('#bkShow');
   if (bkShow) bkShow.onclick = () => $('#trBasket')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const signBasket = async btn => {
-    if (!actGuard(mid, 'squad')) return;
+    if (transfersView.basketBusy || !actGuard(mid, 'squad')) return;
     const lines = basketCheck(mid);
     if (!lines.length || lines.some(l => l.why)) { render(); return; }
     const tgw = transferGw();
-    const starters = lineupFor(mid, tgw);
+    const startersByGw = GAMEWEEKS.map((_, g) => lineupFor(mid, g));
     if (!await confirmSheet({
       title: `Sign all ${lines.length}?`,
       body: lines.map(l => dealRows([l.outP], [l.inP])).join(''),
@@ -10031,13 +10047,13 @@ function bindTransfers() {
       for (const l of lines) {
         const r = await troughSignStep(mid, l.in, l.out);
         if (!r.ok) { stop = { ...l, why: r.why }; break; }
-        done.push(l);
+        done.push({ ...l, gw: r.tgw, wasStarting: startersByGw[r.tgw].includes(l.out) });
       }
     } finally { transfersView.basketBusy = false; }
     transfersView.basket = toArr(transfersView.basket).filter(b => !done.some(d => d.in === b.in && d.out === b.out));
     transfersView.out = null;
     save(); render();
-    basketReceiptSheet({ done, stop, untried: lines.length - done.length - (stop ? 1 : 0), gw: tgw, mid, starters });
+    basketReceiptSheet({ done, stop, untried: lines.length - done.length - (stop ? 1 : 0), mid });
   };
   ['#bkGo', '#bkGoBar'].forEach(sel => { const b = $(sel); if (b) b.onclick = () => signBasket(b); });
   const msq = $('#trMySquad');
@@ -10086,6 +10102,10 @@ function bindTransfers() {
       // traded for next week is already 'owned by' his new club (Toby's
       // Vicario read 'owned by Wilko' while sitting on Toby's bench)
       const owned = ownedIdsAt(transferGw());
+      const unownedWatch = availableWatchIds(mid, owned);
+      const ownedWatch = watchIds(mid).filter(pid => PLAYER_BY_ID[pid] && owned.has(pid));
+      const showOwnedWatch = transfersView.watchScope === 'owned';
+      const watched = showOwnedWatch ? ownedWatch : unownedWatch;
       const outP = transfersView.out ? PLAYER_BY_ID[transfersView.out] : null;
       const squadAfterOut = squadAt(mid, transferGw()).filter(p => !outP || p.id !== outP.id);
       // only an IDENTICAL {in, out} pair is a duplicate — "Jones for Okafor,
@@ -10100,8 +10120,8 @@ function bindTransfers() {
       // filter was a superset of the one beside it (Toby, sandbox 12 Aug:
       // "surely it should only be the everyone filter that has both"). Waivers
       // has its own chip; Everyone still shows the lot, owned included.
-      let pool = transfersView.owner != null ? PLAYERS.filter(p => ownedBy[p.id] === transfersView.owner)
-        : transfersView.scope === 'watch' ? watchIds(mid).map(id => PLAYER_BY_ID[id]).filter(Boolean)
+      let pool = transfersView.scope === 'watch' ? watched.map(id => PLAYER_BY_ID[id])
+        : transfersView.owner != null ? PLAYERS.filter(p => ownedBy[p.id] === transfersView.owner)
         : transfersView.scope === 'all' ? [...PLAYERS]
         : transfersView.scope === 'waivers' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && onWaivers(p) && !hasLeft(p))
         : transfersView.scope === 'free' ? PLAYERS.filter(p => !owned.has(p.id) && !arrivalLocked(p) && !onWaivers(p) && !hasLeft(p))
@@ -10151,8 +10171,8 @@ function bindTransfers() {
           const action = ownerMid
             ? (ownerMid === mid ? '<span class="muted" style="font-size:11px">yours</span>' : `<button class="btn ghost small" data-trtrade="${ownerMid}:${p.id}" title="Open the trade desk with ${esc(managerName(ownerMid))}">Trade</button>`)
             : `${BASKET_ON && !waiv && !locked ? (basketIns.has(p.id)
-                ? `<button class="btn small bk-btn" data-trbasket="${p.id}" title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003; In basket</button>`
-                : `<button class="btn ghost small bk-btn" data-trbasket="${p.id}" title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+ Basket</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
+                ? `<button class="btn small bk-btn" data-trbasket="${p.id}" ${transfersView.basketBusy ? 'disabled' : ''} title="In your basket — tap to take him out" aria-label="${esc(p.name)} is in your basket. Take him out.">&#10003; In basket</button>`
+                : `<button class="btn ghost small bk-btn" data-trbasket="${p.id}" ${transfersView.basketBusy ? 'disabled' : ''} title="Add to your basket — sign several at once" aria-label="Add ${esc(p.name)} to your basket">+ Basket</button>`) : ''}<button class="btn small ${waiv || locked ? 'ghost' : ''} ${ok || needOut ? '' : 'dim'}" data-trin="${p.id}" data-waiv="${waiv ? 1 : 0}" ${needOut ? 'data-needout="1"' : ''} ${ok || needOut ? '' : `data-why="${esc(why)}" title="${esc(why)}"`}>${locked ? '&#128274;' : waiv ? 'Claim' : 'Sign'}</button>`;
           return `<tr class="${statusClass(p)}">
             <td class="pcol"><div class="pcell">${photoImg(p)}<div><button type="button" class="pname plink player-name-btn" data-pcard="${p.id}" title="Open ${esc(playerDisplayName(p))}'s stats">${natFlag(p)} <span class="pn-txt">${esc(playerDisplayName(p))}</span></button>${provChip(p)}<div class="pclub">${flagImg(p.team)} ${esc(p.club)} · <span class="pos-badge pos-${p.pos}">${p.pos}</span> <span class="pfx">· ${nextFxHtml(p.team, landingGwN)}</span>${ownerMid ? ` · <b style="color:var(--text)">${esc(teamName(ownerMid))}</b>${onBlock(p.id) ? ' · <span style="color:var(--accent)">&#128276; transfer-listed</span>' : ''}` : locked ? ' · <span class="muted">&#128274; new arrival</span>' : waiv ? ` · <span style="color:var(--accent)">on waivers${clearsTxt ? ` · ${esc(clearsTxt)}` : ''}</span>` : ' · <span class="muted">free</span>'}</div></div></div></td>
             <td>${statusChip(p)}</td>
@@ -10173,13 +10193,17 @@ function bindTransfers() {
         </select>
         ${ownerFilterHtml('id="trOwner" style="padding:6px 8px;font-size:12px"', transfersView.owner)}
         <span style="width:8px"></span>
-        <button class="btn small ${transfersView.scope !== 'all' && transfersView.scope !== 'waivers' && transfersView.scope !== 'free' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
+        <button class="btn small ${transfersView.scope === 'avail' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
         <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
         <button class="btn small ${transfersView.scope === 'waivers' ? '' : 'ghost'}" data-trscope="waivers" title="Everyone currently claim-only, and when they clear">On waivers</button>
         <button class="btn small ${transfersView.scope === 'all' ? '' : 'ghost'}" data-trscope="all" title="Owned players too, and men who have left the league">Everyone</button>
-        <button class="btn small ${transfersView.scope === 'watch' ? '' : 'ghost'}" data-trscope="watch" title="Only the players you are watching — owned or free">&#128065; Watchlist${watchIds(mid).length ? ` (${watchIds(mid).length})` : ''}</button>
-      </div>` + (shown.length ? table
-        : transfersView.scope === 'watch' ? `<span class="muted">Nothing on your watchlist yet. Tap the ${'\u{1F441}'} beside anyone in the Trough — owned or free — and he turns up here. Only you can see it.</span>`
+        <button class="btn small ${transfersView.scope === 'watch' ? '' : 'ghost'}" data-trscope="watch" title="Your private targets, split into unowned and owned players">&#128065; Watchlist${watched.length ? ` (${watched.length})` : ''}</button>
+      </div>
+      ${transfersView.scope === 'watch' ? `<div role="group" aria-label="Watchlist ownership" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px">
+        <button class="btn small ${showOwnedWatch ? 'ghost' : ''}" data-watchscope="unowned" aria-pressed="${!showOwnedWatch}">Unowned (${unownedWatch.length})</button>
+        <button class="btn small ${showOwnedWatch ? '' : 'ghost'}" data-watchscope="owned" aria-pressed="${showOwnedWatch}">Owned (${ownedWatch.length})</button>
+      </div>` : ''}` + (shown.length ? table
+        : transfersView.scope === 'watch' ? `<span class="muted">${!watchIds(mid).length ? `Nothing on your watchlist yet. Tap the ${'\u{1F441}'} beside a target in the Trough. Only you can see it.` : !watched.length ? (showOwnedWatch ? 'None of your watched players are owned. Check Unowned for your targets.' : 'All your watched players have been picked up. Check Owned to see them; they return here if released.') : 'No watched targets match these filters.'}</span>`
         : transfersView.scope === 'waivers' ? '<span class="muted">Nobody is on waivers right now — everyone free is fair game in the Trough.</span>'
         // now that Free agents means signable, it empties honestly in the hours
         // after a gameweek, when everyone spare is still claim-only
@@ -10201,10 +10225,21 @@ function bindTransfers() {
         // they are the same question and answering both gives an empty table
         if (to) to.onchange = e => {
           transfersView.owner = e.target.value === '' ? null : +e.target.value;
+          if (transfersView.owner != null && transfersView.scope === 'watch') transfersView.scope = 'all';
           transfersView.limit = 20; renderTrResults();
         };
       }
-      results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => { transfersView.scope = b.dataset.trscope; transfersView.limit = 20; renderTrResults(); });
+      results.querySelectorAll('[data-trscope]').forEach(b => b.onclick = () => {
+        transfersView.scope = b.dataset.trscope;
+        // Watchlist is its own lens: a previously selected squad must not
+        // override it and put all the owned players straight back (Lee).
+        if (transfersView.scope === 'watch') transfersView.owner = null;
+        transfersView.limit = 20; renderTrResults();
+      });
+      results.querySelectorAll('[data-watchscope]').forEach(b => b.onclick = () => {
+        transfersView.watchScope = b.dataset.watchscope;
+        transfersView.owner = null; transfersView.limit = 20; renderTrResults();
+      });
       results.querySelectorAll('[data-watch]').forEach(b => b.onclick = () => {
         if (!canActFor(mid)) { toast('Sign in to keep a watchlist'); return; }
         const pid = +b.dataset.watch;
@@ -10217,7 +10252,10 @@ function bindTransfers() {
         // the tally on the scope chip is part of the same thought — leaving it
         // stale until the next full render reads as the tap not registering
         const chip = results.querySelector('[data-trscope="watch"]');
-        if (chip) chip.innerHTML = `&#128065; Watchlist${watchIds(mid).length ? ` (${watchIds(mid).length})` : ''}`;
+        if (chip) {
+          const count = watchIds(mid).filter(id => PLAYER_BY_ID[id] && owned.has(id) === showOwnedWatch).length;
+          chip.innerHTML = `&#128065; Watchlist${count ? ` (${count})` : ''}`;
+        }
       });
       results.querySelectorAll('[data-trtrade]').forEach(b => b.onclick = () => {
         const [other, get] = b.dataset.trtrade.split(':').map(Number);
@@ -10232,7 +10270,9 @@ function bindTransfers() {
       const showAll = results.querySelector('#trAll');
       if (showAll) showAll.onclick = () => { transfersView.limit = 9999; renderTrResults(); };
       results.querySelectorAll('[data-trbasket]').forEach(b => b.onclick = async () => {
-        if (!actGuard(mid, 'squad')) return;
+        // Ben, 19 Oct 2026, basket review: these lines are already confirmed.
+        // A row must not promise removal while the queued signing still runs.
+        if (transfersView.basketBusy || !actGuard(mid, 'squad')) return;
         const inP = PLAYER_BY_ID[+b.dataset.trbasket];
         if (!inP) return;
         const basket = transfersView.basket;

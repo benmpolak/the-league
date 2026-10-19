@@ -51,6 +51,12 @@ const J = x => JSON.stringify(x);
     window.onPrivateSnapshot({});
     window.__autoConfirm = true;
     await syncNow(false); // the snapshot carries no stats; the real season's land here
+    // Ben, 19 Oct 2026: a live GW7 made the settled-round precondition fail.
+    // Keep this synthetic fixture through the latest completed round, so the
+    // feed assertions exercise settled data even while today's games are live.
+    const settled = lastFinalGw();
+    for (let g = settled + 1; g < GAMEWEEKS.length; g++) delete state.matchStats[`gw${GAMEWEEKS[g].n}`];
+    state.liveStats = null;
     return { round: vidiRound(), status: vidiRound() != null ? gwStatus(vidiRound()) : null };
   });
   chk('a settled round with stats to post about', seeded.round != null && seeded.status === 'final', J(seeded));
