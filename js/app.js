@@ -5026,24 +5026,15 @@ function pressConferencesRoom() {
   if (state.phase !== 'season' || typeof Cunthanger === 'undefined') return '';
   const cur = currentGwIndex();
   const rounds = [];
-  for (let g = cur; g < Math.min(cur + 2, REGULAR_GWS); g++) if (!gwHasStarted(g)) { rounds.push({ gw: g, phase: 'pre', phaseNote: '', label: `Before Gameweek ${GAMEWEEKS[g].n}` }); break; }
+  for (let g = cur; g < Math.min(cur + 2, REGULAR_GWS); g++) if (!gwHasStarted(g)) { rounds.push({ gw: g, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[g].n}` }); break; }
   const last = lastFinalGw();
-  /* The round being PLAYED, which used to fall through the gap between the two
-     lists below (Marc, 23 Oct 2026: "why cant i see gw 8 news conferences").
-     Its pre-match pressers stopped showing the moment it kicked off, and its
-     post-match ones do not exist until it is over — eight days, in GW8's case,
-     with what you said about your own side nowhere on the page. Nothing was
-     lost: it was keyed under the round all along and simply never asked for. */
-  if (gwHasStarted(cur) && gwStatus(cur) !== 'final' && cur !== last) {
-    rounds.push({ gw: cur, phase: 'pre', phaseNote: ' — this round is being played', label: `Before Gameweek ${GAMEWEEKS[cur].n}` });
-  }
-  if (last >= 0 && last < REGULAR_GWS) rounds.push({ gw: last, phase: 'post', phaseNote: '', label: `After Gameweek ${GAMEWEEKS[last].n}` });
-  if (last >= 1) rounds.push({ gw: last, phase: 'pre', phaseNote: '', label: `Before Gameweek ${GAMEWEEKS[last].n}` });
+  if (last >= 0 && last < REGULAR_GWS) rounds.push({ gw: last, phase: 'post', label: `After Gameweek ${GAMEWEEKS[last].n}` });
+  if (last >= 1) rounds.push({ gw: last, phase: 'pre', label: `Before Gameweek ${GAMEWEEKS[last].n}` });
   const blocks = rounds.map(r => {
     const rows = state.managers.map(m => ({ m, rec: presserOf(m.id, r.gw, r.phase) })).filter(x => x.rec && Array.isArray(x.rec.answers) && x.rec.answers.length);
     const missing = state.managers.filter(m => !presserOf(m.id, r.gw, r.phase));
-    if (!rows.length) return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}${esc(r.phaseNote || '')}</div><p class="muted" style="font-size:12.5px">Nobody has faced the press for this round yet.</p></div>`;
-    return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}${esc(r.phaseNote || '')} <span class="tag">${rows.length} of ${state.managers.length}</span></div>
+    if (!rows.length) return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)}</div><p class="muted" style="font-size:12.5px">Nobody has faced the press for this round yet.</p></div>`;
+    return `<div class="ch-pc-round"><div class="ch-tile-label">${esc(r.label)} <span class="tag">${rows.length} of ${state.managers.length}</span></div>
       ${rows.map(({ m, rec }) => {
         const qs = Cunthanger.questions(presserCtx(m.id, r.gw, r.phase), r.phase);
         return `<details class="ch-pc"${m.id === meId() ? ' open' : ''}>
