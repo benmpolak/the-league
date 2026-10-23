@@ -27,12 +27,30 @@ const base = process.env.TEST_BASE_URL || 'http://localhost:8125';
     const scene = () => page.evaluate(() => {
       window._chDemoSeeded = true;
       demoGwOverride = 6; whoami = state.managers[0].id; state.view = 'dash';
+      /* Two press conferences open means one BEFORE a round and one AFTER the
+         last finished one — and whether a round has kicked off is read off the
+         real clock, not demoGwOverride. Pinned to the calendar, this passed
+         until GW8's deadline went by on 23 Oct 2026 and then failed for good:
+         both candidate rounds counted as started, so only the post-match one
+         was open. Hold the next round in the future and the scene means the
+         same thing whatever day it is run. */
+      const soon = new Date(Date.now() + 3 * 864e5).toISOString();
+      GAMEWEEKS[7].from = soon; GAMEWEEKS[7].deadline = soon;
+      GAMEWEEKS[7].to = new Date(Date.now() + 10 * 864e5).toISOString();
+      GAMEWEEKS[7].finished = false;
       const me = whoami;
       state.mediaCases = {};
       state.posts = [{ mid: state.managers[3].id, to: me, text: 'A charity with a kit deal.', t: Date.now() - 3600e3, gw: 6 }];
       state.pressers = { [me]: { '5:pre': { t: Date.now() - 4 * 864e5, answers: [{ tone: 'confident', text: 'We go again.' }] } } };
       localStorage.removeItem(GZ_SEEN_KEY);
       anyMatchLive = () => true;
+      /* The Chairman's own device runs a due waiver slot four seconds after
+         load (tryAutoWaivers), and in the demo a slot is always due. Making
+         him the viewer armed it: on a slow CI runner the run redrew the
+         dashboard mid-click, "Node is detached from document" at #gzNudge,
+         and the release gate froze deploys (23 Oct 2026). No waiver run
+         in this scene. */
+      tryAutoWaivers = () => {};
       render();
     });
     await page.evaluate(() => setQuietMedia(false));
