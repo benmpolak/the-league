@@ -220,9 +220,14 @@ const chk = (name, ok, detail = '') => {
     // now take that drop man off his squad, the way a waiver would
     // like for like here too: a waiver that lands a third keeper leaves the
     // squad illegal on its own, and every line after it fails on shape
-    const waiverIn = pen3.find(q => q.pos === goneMan.pos && q.id !== pen3[0].id && q.id !== pen3[1].id) || pen3[2];
+    // The small pen can contain no forwards as the feed changes. This is a
+    // synthetic weekly waiver, so take a genuine like-for-like free agent.
+    const waiverIn = spare.find(q => q.pos === goneMan.pos && q.id !== pen3[0].id && q.id !== pen3[1].id);
+    if (!waiverIn) throw new Error(`Window-lodge fixture needs an unowned ${goneMan.pos}`);
     state.transfers = [...toArr(state.transfers),
       { managerId: mid, inId: waiverIn.id, outId: goneMan.id, gw: transferGw(), waiver: true, t: Date.now() }];
+    ok('(setup) the synthetic waiver preserves a legal squad', squadShapeOk(squadAt(mid, transferGw())),
+      `${waiverIn.name} (${waiverIn.pos}) for ${goneMan.name} (${goneMan.pos})`);
     ok('(setup) the drop man on one line has left his squad',
       !squadAt(mid, transferGw()).some(x => x.id === goneMan.id), goneMan.name);
     ok('the stale line is now recognised as dead', !!deadWindowClaim(stale, mid), deadWindowClaim(stale, mid));

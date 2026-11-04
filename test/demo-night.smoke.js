@@ -289,6 +289,12 @@ const chk = (name, ok, detail = '') => {
   const demoPage = await browser.newPage();
   await demoPage.goto(baseUrl + '?demo', { waitUntil: 'networkidle2' });
   const hamDemo = await demoPage.evaluate(() => {
+    // This probe needs an upcoming tie. GW9's real feed is final from November;
+    // the separate demo page inherits neither the first page's clock nor its
+    // synthetic stats, so pin both inputs before testing entry-clock healing.
+    const g = GAMEWEEKS[state.hamCup.gw];
+    Date.now = () => Date.parse(g.from) - 3600000;
+    delete state.matchStats['gw' + g.n];
     state.view = 'cup'; render();
     const text = document.querySelector('#main').innerText;
     return { gw: state.hamCup?.gw, entries: Object.keys(state.hamCup?.entries || {}).length, open: /window is open and the Trough is frozen/.test(text) };
