@@ -28,6 +28,11 @@ const tap = async (pg, sel) => { await pg.waitForSelector(sel); await pg.$eval(s
 // That was the "waiting room renders without a forced overlay" flake (Ben,
 // 15 Oct 2026: 7 runs in 10 failed). Every page bypasses the worker.
 const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('resource').some(e => /gstatic\.com\/firebasejs/.test(e.name)));
+const localRequestOnly = req => {
+  const url = new URL(req.url());
+  if (url.origin !== new URL(baseUrl).origin || url.pathname === '/js/sync.js' || req.method() !== 'GET') return req.abort();
+  return req.continue();
+};
 
 (async () => {
   const browser = await puppeteer.launch({ executablePath: chromePath, headless: 'new' });
@@ -38,11 +43,25 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   // Exact field repro: an installed app carries an old local identity, while
   // the live manager array now begins with Toby because it is in draft order.
   // app.js renders synchronously; Firebase Auth + membership arrive later.
-  await p.evaluateOnNewDocument(() => localStorage.setItem('tl2627-whoami', '2'));
+  await p.evaluateOnNewDocument(() => {
+    localStorage.setItem('tl2627-whoami', '2');
+    localStorage.setItem('tl-last-email', 'remembered@example.com');
+    localStorage.setItem('tl-auth-email', 'completion-hint@example.com');
+    window.__persistRequests = 0;
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: {
+      persist: () => {
+        window.__persistRequests++;
+        return new Promise((resolve, reject) => {
+          window.__resolvePersist = resolve;
+          window.__rejectPersist = reject;
+        });
+      },
+    } });
+  });
 
   // block the real sync.js; we inject a stub after app.js boots
   await p.setRequestInterception(true);
-  p.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
+  p.on('request', localRequestOnly);
 
   await p.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => typeof state !== 'undefined');
@@ -88,9 +107,104 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   await new Promise(r => setTimeout(r, 100));
   chk('sign-in overlay shows the email form', await p.evaluate(() =>
     !!document.querySelector('#whoOverlay #whoEmail') && !document.querySelector('#whoOverlay [data-who="5"]')));
-
-  // send-link flow
+  chk('last successful address is editable prefill, not an authentication hint', await p.evaluate(() =>
+    document.querySelector('#whoEmail').value === 'remembered@example.com'
+    && localStorage.getItem('tl-auth-email') === 'completion-hint@example.com'
+    && whoami === null));
+  chk('opening sign-in does not ask for persistent storage', await p.evaluate(() => window.__persistRequests === 0));
+  await p.setViewport({ width: 390, height: 844 });
+  await p.evaluate(() => { document.querySelector('#whoKeepData').closest('details').open = true; });
+  chk('sign-in and storage help fit a phone screen', await p.evaluate(() => {
+    const box = document.querySelector('#whoOverlay .card').getBoundingClientRect();
+    return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight
+      && document.querySelector('#whoOverlay').scrollWidth <= innerWidth;
+  }));
+  if (process.env.AUTH_SCREENSHOT) await p.screenshot({ path: process.env.AUTH_SCREENSHOT });
+  await p.evaluate(() => { document.querySelector('#whoKeepData').closest('details').open = false; });
+  await p.setViewport({ width: 1280, height: 900 });
   await p.evaluate(() => {
+    document.querySelector('#whoEmail').value = '';
+    renderIdentity();
+  });
+  chk('deliberately cleared email stays empty through a redraw', await p.$eval('#whoEmail', el => el.value === ''));
+
+  // A storage answer must not replace either field while the user types.
+  await p.evaluate(() => {
+    document.querySelector('#whoEmail').value = 'draft@example.com';
+    document.querySelector('#whoPaste').value = 'https://example.com/synthetic-link';
+    window.__emailNode = document.querySelector('#whoEmail');
+    document.querySelector('#whoKeepData').click();
+    requestSignInStorage(); // duplicate click while awaiting the browser
+  });
+  chk('only an explicit request asks for storage and concurrent clicks are suppressed', await p.evaluate(() =>
+    window.__persistRequests === 1 && document.querySelector('#whoKeepData').disabled));
+  await p.evaluate(() => window.__resolvePersist(false));
+  await p.waitForFunction(() => !document.querySelector('#whoKeepData').disabled);
+  chk('storage refusal preserves typed email and rescue link without claiming a login fault', await p.evaluate(() =>
+    document.querySelector('#whoEmail') === window.__emailNode
+    && document.querySelector('#whoEmail').value === 'draft@example.com'
+    && document.querySelector('#whoPaste').value === 'https://example.com/synthetic-link'
+    && document.querySelector('#whoStorageStatus').textContent.includes('You can still sign in')));
+  await p.evaluate(() => document.querySelector('#whoKeepData').click());
+  await p.evaluate(() => window.__rejectPersist(new Error('storage unavailable')));
+  await p.waitForFunction(() => !document.querySelector('#whoKeepData').disabled);
+  chk('storage rejection leaves both sign-in forms usable', await p.evaluate(() =>
+    document.querySelector('#whoEmail') === window.__emailNode
+    && !document.querySelector('#whoEmailForm button').disabled
+    && !document.querySelector('#whoPasteForm button').disabled
+    && document.querySelector('#whoStorageStatus').textContent.includes('sign in normally')));
+  await p.evaluate(() => document.querySelector('#whoKeepData').click());
+  await p.evaluate(() => window.__resolvePersist(true));
+  await p.waitForFunction(() => document.querySelector('#whoKeepData').textContent === 'Site data protected');
+  chk('storage grant reports its limits and preserves the form', await p.evaluate(() =>
+    document.querySelector('#whoEmail') === window.__emailNode
+    && document.querySelector('#whoKeepData').disabled
+    && document.querySelector('#whoStorageStatus').textContent.includes('can still require another link')));
+  await p.evaluate(() => {
+    delete navigator.storage.persist;
+    renderIdentity();
+  });
+  chk('unsupported storage API does not block email sign-in', await p.evaluate(() =>
+    !document.querySelector('#whoKeepData') && !!document.querySelector('#whoEmailForm')
+    && document.querySelector('#whoEmail').value === 'draft@example.com'));
+
+  // Tom, 21 Oct: a callable failure used to surface only "internal". Keep
+  // the address, suppress duplicate submits even across redraws, and allow
+  // one deliberate retry without ever showing a failed request as sent.
+  await p.evaluate(() => {
+    window.__originalSendLink = window.WCSync.auth.sendLink;
+    window.__linkRequests = 0;
+    window.WCSync.auth.sendLink = () => {
+      window.__linkRequests++;
+      return new Promise((resolve, reject) => { window.__rejectLink = reject; });
+    };
+    document.querySelector('#whoEmail').value = 'tom@example.com';
+    document.querySelector('#whoEmailForm').dispatchEvent(new Event('submit'));
+    document.querySelector('#whoEmailForm').dispatchEvent(new Event('submit'));
+    renderIdentity(); // public snapshots redraw the overlay during the request
+    document.querySelector('#whoEmailForm').dispatchEvent(new Event('submit'));
+  });
+  chk('pending sign-in request keeps the email and blocks duplicate sends across redraws', await p.evaluate(() =>
+    window.__linkRequests === 1 && linkSentTo === null
+    && document.querySelector('#whoEmail')?.value === 'tom@example.com'
+    && document.querySelector('#whoEmail')?.disabled
+    && document.querySelector('#whoEmailForm button')?.disabled));
+  await p.evaluate(() => window.__rejectLink(Object.assign(new Error('internal'), { code: 'functions/internal' })));
+  await p.waitForFunction(() => !document.querySelector('#whoEmailForm button')?.disabled);
+  chk('failed request shows a useful service error instead of internal', await p.evaluate(() =>
+    document.querySelector('#toast')?.textContent === 'The sign-in service isn’t responding. Please try again shortly.'));
+  chk('failed request keeps the address, restores retry and never claims the link was sent', await p.evaluate(() =>
+    document.querySelector('#whoEmail')?.value === 'tom@example.com'
+    && !document.querySelector('#whoEmail')?.disabled
+    && !document.querySelector('#whoEmailForm button')?.disabled
+    && linkSentTo === null && !document.querySelector('#whoOverlay')?.textContent.includes('Link sent to')
+    && window.__linkRequests === 1));
+  chk('failed request does not replace the remembered address', await p.evaluate(() =>
+    localStorage.getItem('tl-last-email') === 'remembered@example.com'));
+
+  // a deliberate retry uses the existing successful send-link flow
+  await p.evaluate(() => {
+    window.WCSync.auth.sendLink = window.__originalSendLink;
     document.querySelector('#whoEmail').value = 'ben@example.com';
     document.querySelector('#whoEmailForm').dispatchEvent(new Event('submit'));
   });
@@ -99,6 +213,9 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
     window._calls.some(c => c.action === '_sendLink' && c.data.email === 'ben@example.com')));
   chk('link-sent state renders', await p.evaluate(() =>
     document.querySelector('#whoOverlay')?.textContent.includes('ben@example.com')));
+  chk('successful send remembers only the editable address', await p.evaluate(() =>
+    localStorage.getItem('tl-last-email') === 'ben@example.com'
+    && localStorage.getItem('tl-auth-email') === 'completion-hint@example.com'));
 
   // membership arrives → identity granted, overlay clears
   await p.evaluate(() => {
@@ -136,7 +253,7 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   await p2.setBypassServiceWorker(true);
   p2.on('pageerror', e => { fail++; console.log('PAGEERROR', e.message.split('\n')[0]); });
   await p2.setRequestInterception(true);
-  p2.on('request', req => req.url().endsWith('/js/sync.js') ? req.abort() : req.continue());
+  p2.on('request', localRequestOnly);
   await p2.goto(baseUrl + '/index.html', { waitUntil: 'domcontentloaded' });
   await p2.waitForFunction(() => typeof state !== 'undefined');
   await p2.evaluate(() => {
@@ -162,6 +279,24 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   await new Promise(r => setTimeout(r, 200));
   chk('setup: header Sign in summons the email overlay (sol P1.2)', await p2.evaluate(() =>
     !!document.querySelector('#whoOverlay #whoEmail')));
+  chk('a new page remembers the successful email without silently signing in', await p2.evaluate(() =>
+    document.querySelector('#whoEmail').value === 'ben@example.com' && whoami === null));
+
+  // Browser storage can be denied independently of the auth stub: the email
+  // request still succeeds, and unavailable convenience storage is harmless.
+  await p2.evaluate(() => {
+    const getItem = Storage.prototype.getItem, setItem = Storage.prototype.setItem;
+    Storage.prototype.getItem = function(k) { if (k === LAST_EMAIL_KEY) throw new Error('denied'); return getItem.call(this, k); };
+    Storage.prototype.setItem = function(k, v) { if (k === LAST_EMAIL_KEY) throw new Error('denied'); return setItem.call(this, k, v); };
+    window.__restoreStorage = () => { Storage.prototype.getItem = getItem; Storage.prototype.setItem = setItem; };
+    window.__blockedRead = lastSignInEmail();
+    document.querySelector('#whoEmail').value = 'storage-blocked@example.com';
+    document.querySelector('#whoEmailForm').dispatchEvent(new Event('submit'));
+  });
+  await p2.waitForFunction(() => linkSentTo === 'storage-blocked@example.com');
+  chk('unavailable email storage does not turn a successful request into failure', await p2.evaluate(() =>
+    window.__blockedRead === '' && document.querySelector('#whoOverlay').textContent.includes('Link sent to')));
+  await p2.evaluate(() => window.__restoreStorage());
 
   /* the club-office save contract (sol r2): a rejected save keeps the form,
      Cancel goes dead while a save is in flight, success closes + marks founded */

@@ -41,6 +41,22 @@ if (params.has('emu')) {
 const LEAGUE = params.has('sandbox') ? 'the-league-sandbox' : 'the-league-2627';
 const base = `v2/leagues/${LEAGUE}`;
 const EMAIL_KEY = 'tl-auth-email';
+// Ben, 4 Nov: this is only a completion hint. Blocked browser storage must
+// not report an already-sent email or completed sign-in as a failure. Keep
+// failed writes/deletions in memory so a stale saved address cannot win back.
+let emailHintFallback;
+const readEmailHint = () => {
+  if (emailHintFallback !== undefined) return emailHintFallback;
+  try { return localStorage.getItem(EMAIL_KEY); } catch { return null; }
+};
+const writeEmailHint = email => {
+  emailHintFallback = email;
+  try {
+    if (email === null) localStorage.removeItem(EMAIL_KEY);
+    else localStorage.setItem(EMAIL_KEY, email);
+    emailHintFallback = undefined;
+  } catch { /* the in-memory hint remains usable for this page */ }
+};
 
 const mutateFn = httpsCallable(functions, 'mutate');
 
@@ -81,7 +97,7 @@ window.WCSync = {
       // see EMAIL-FALLBACK-DESIGN.md). Same link format, same completion flow.
       const requestFn = httpsCallable(functions, 'requestSignInLink');
       await requestFn({ league: LEAGUE, email, idempotencyKey: crypto.randomUUID() });
-      localStorage.setItem(EMAIL_KEY, email);
+      writeEmailHint(email);
     },
     // completes a magic-link visit; returns true if this page load was one
     async completeLink(href = location.href) {
@@ -94,7 +110,7 @@ window.WCSync = {
       // a device that is already signed in needs nothing from this link —
       // scrub the leftover code (AJ's bookmarked link) and say nothing
       if (ownUrl && await firstAuth) { scrub(); return false; }
-      let email = localStorage.getItem(EMAIL_KEY);
+      let email = readEmailHint();
       const fromStore = !!email; // a stored email is a guess, not the user's word
       if (!email) email = prompt('Confirm your email to finish signing in:');
       if (!email) return false; // cancelled — leave the URL so a retry this session can work
@@ -118,12 +134,12 @@ window.WCSync = {
         // A network failure proves nothing about the key, so it is spared.
         const codeSpent = e?.code === 'auth/invalid-action-code' || e?.code === 'auth/expired-action-code';
         if (!fromStore || codeSpent || e?.code === 'auth/network-request-failed') throw e;
-        localStorage.removeItem(EMAIL_KEY);
+        writeEmailHint(null);
         const again = prompt('That saved email doesn’t match this link. Confirm the email the link was sent to:');
         if (!again) return false; // cancelled — URL stays for another go
         await attempt(again);
       }
-      localStorage.removeItem(EMAIL_KEY);
+      writeEmailHint(null);
       if (ownUrl) scrub(); // the one-time code has been spent
       return true;
     },

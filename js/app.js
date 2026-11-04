@@ -5721,8 +5721,56 @@ function claimIdentity(mid) {
 
 let forceIdentity = false; // set when an action needs a signed-in manager first
 let linkSentTo = null;     // email a sign-in link was just sent to
+// Lee, 18 Sept: remember the editable address, separately from sync.js's
+// temporary link-completion hint. This value never completes a sign-in.
+const LAST_EMAIL_KEY = 'tl-last-email';
+function lastSignInEmail() {
+  try { return localStorage.getItem(LAST_EMAIL_KEY) || ''; } catch { return ''; }
+}
+function rememberSignInEmail(email) {
+  try { localStorage.setItem(LAST_EMAIL_KEY, email); } catch { /* optional convenience */ }
+}
+// Tom, 21 Oct: a failed request must keep the address and offer a useful retry;
+// snapshots can redraw this overlay while the request is still in flight.
+let linkEmailDraft = lastSignInEmail();
+let linkRequestPending = false;
+let storageRequestPending = false;
+let storageRequestResult = null;
+function signInStorageStatus() {
+  if (storageRequestPending) return 'Waiting for this browser’s answer…';
+  if (storageRequestResult === true) return 'This browser has agreed to protect site data from automatic clearing. Signing out or clearing browser data can still require another link.';
+  if (storageRequestResult === false) return 'This browser hasn’t granted the request. You can still sign in; it may ask for another link later.';
+  if (storageRequestResult === 'error') return 'Couldn’t check this browser’s storage. You can still sign in normally.';
+  return '';
+}
+function updateSignInStorageControls() {
+  const button = $('#whoKeepData');
+  if (button) {
+    button.disabled = storageRequestPending || storageRequestResult === true;
+    button.textContent = storageRequestPending ? 'Asking…' : storageRequestResult === true ? 'Site data protected' : 'Ask this browser to keep site data';
+  }
+  const status = $('#whoStorageStatus');
+  if (status) status.textContent = signInStorageStatus();
+}
+async function requestSignInStorage() {
+  if (storageRequestPending || storageRequestResult === true) return;
+  storageRequestPending = true;
+  updateSignInStorageControls();
+  try {
+    // Only ask after this explicit click: some browsers show a permission
+    // prompt. Persistence protects storage from eviction, not auth expiry.
+    storageRequestResult = !!(await navigator.storage.persist());
+  } catch { storageRequestResult = 'error'; }
+  finally {
+    storageRequestPending = false;
+    // Do not redraw the form or disturb a half-typed email or rescue link.
+    updateSignInStorageControls();
+  }
+}
 function renderIdentity() {
   let ov = $('#whoOverlay');
+  const previousEmail = ov?.querySelector('#whoEmail');
+  if (previousEmail) linkEmailDraft = previousEmail.value;
   const needed = (netOn() && state.phase !== 'setup' && !whoami) || forceIdentity;
   if (!needed) { ov?.remove(); linkSentTo = null; return; }
   ov?.remove();
@@ -5771,8 +5819,8 @@ function renderIdentity() {
         ? `<p style="font-size:14px;margin-bottom:14px">&#9993; Link sent to <b>${esc(linkSentTo)}</b>. Open the email ON THIS DEVICE and tap it — that's the whole sign-in.</p>`
         : `<p class="muted" style="font-size:13px;margin-bottom:14px">No passwords, no PINs. Enter the email the Chairman registered for you and we'll send a sign-in link.</p>
            <form id="whoEmailForm" style="display:flex;gap:8px;margin-bottom:10px">
-             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" style="flex:1;min-width:0">
-             <button class="btn" type="submit">Send link</button>
+             <input type="email" id="whoEmail" required placeholder="you@example.com" autocomplete="email" value="${esc(linkEmailDraft)}" ${linkRequestPending ? 'disabled' : ''} style="flex:1;min-width:0">
+             <button class="btn" type="submit" ${linkRequestPending ? 'disabled' : ''}>${linkRequestPending ? 'Requesting…' : 'Send link'}</button>
            </form>`}
       ${/* The rescue used to appear only in the same sitting as the send. One
             reload and it vanished, so a link that opened in the wrong browser
@@ -5787,6 +5835,12 @@ function renderIdentity() {
         </form>
         ${linkSentTo ? '<button class="btn ghost small" id="whoResend">Different email</button>' : ''}
       </details>
+      ${typeof navigator.storage?.persist === 'function' ? `<details style="margin-bottom:10px">
+        <summary class="muted" style="font-size:12px;cursor:pointer">Keep being asked to sign in?</summary>
+        <p class="muted" style="font-size:12px;margin:6px 0">You can ask this browser to protect the site's saved data from automatic clearing. It may ask your permission. This does not guarantee that you will stay signed in.</p>
+        <button class="btn ghost small" type="button" id="whoKeepData">Ask this browser to keep site data</button>
+        <p class="muted" id="whoStorageStatus" role="status" style="font-size:12px;margin:6px 0"></p>
+      </details>` : ''}
       <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn ghost small" data-who="-1" style="flex:1;opacity:.75">&#128065; Just watching</button>
         <button class="btn ghost small" id="whoDemo" style="flex:1;opacity:.75">&#127918; Show me a demo season</button>
@@ -5811,6 +5865,9 @@ function renderIdentity() {
     </div>`;
   }
   document.body.appendChild(ov);
+  const keepData = ov.querySelector('#whoKeepData');
+  if (keepData) keepData.onclick = requestSignInStorage;
+  updateSignInStorageControls();
   const wd = ov.querySelector('#whoDemo');
   if (wd) wd.onclick = () => { forceIdentity = false; ov.remove(); enterDemo(); };
   const wc = ov.querySelector('#whoCancel');
@@ -5827,14 +5884,27 @@ function renderIdentity() {
   const rs = ov.querySelector('#whoResend');
   if (rs) rs.onclick = () => { linkSentTo = null; renderIdentity(); };
   const form = ov.querySelector('#whoEmailForm');
-  if (form) form.onsubmit = e => {
+  if (form) form.onsubmit = async e => {
     e.preventDefault();
+    if (linkRequestPending) return;
     const email = ov.querySelector('#whoEmail').value.trim();
     if (!email) return;
     if (!window.WCSync) { toast('Can’t reach the league right now — try a refresh'); return; }
-    window.WCSync.auth.sendLink(email)
-      .then(() => { linkSentTo = email; renderIdentity(); })
-      .catch(err => toast(err.message || 'Could not send the link — check the address.'));
+    linkEmailDraft = email;
+    linkRequestPending = true;
+    renderIdentity();
+    try {
+      await window.WCSync.auth.sendLink(email);
+      rememberSignInEmail(email);
+      linkSentTo = email;
+    } catch {
+      // Callable transport errors can be just "internal"; they say nothing
+      // about this address or membership, so do not blame either or claim sent.
+      toast('The sign-in service isn’t responding. Please try again shortly.', 6000);
+    } finally {
+      linkRequestPending = false;
+      renderIdentity();
+    }
   };
   // installed-app / wrong-browser rescue: the link itself, pasted by hand
   const pf = ov.querySelector('#whoPasteForm');
@@ -12316,6 +12386,9 @@ function bindAwardsBits() {
       () => toast('Minutes copied — paste straight into the chat'),
       () => { window.prompt('Copy the Minutes:', txt); });
   };
+  // Marc, 20 Sept 2026: the award needs to show why the Committee chose him.
+  const cw = $('#cotwWhy');
+  if (cw) cw.onclick = () => { const last = lastFinalGw(); if (last >= 0) showCotwSheet(last); };
   const tm = $('#trmMore');
   if (tm) tm.onclick = () => { trmShowAll = !trmShowAll; render(); };
   document.querySelectorAll('[data-trmpos]').forEach(b => b.onclick = () => { trmView.pos = b.dataset.trmpos; render(); });
@@ -12924,6 +12997,16 @@ function lastFinalGw() {
 // on all twelve phones. The stenographer declines to print the title in full.
 //
 // The draw survives only for weeks where nobody did anything chargeable.
+// These charges describe ongoing circumstances, so they can recur while
+// those circumstances remain unchanged (Marc, 20 Sept; reviewed 4 Nov 2026).
+const COTW_STANDING_FROM = 17;
+const COTW_STAGES = {
+  gravity: 'on the gravest charge of the week, with no tiebreak needed',
+  weight: 'on the severity of the charge, its rank being level',
+  rapCount: 'on the number of charges, the leading charge being level',
+  rapWeight: 'on the total weight of the charge sheet, every check above it being level',
+  managerId: 'by the Committee’s fixed manager order, after every other check tied',
+};
 const COTW_DRAWS = [
   'no reason was recorded',
   'the Committee declines to elaborate',
@@ -13117,7 +13200,7 @@ function cotwCharges(i) {
   }
   return out;
 }
-function cotwFor(i) {
+function cotwWorking(i) {
   if (!state.managers.length) return null;
   // no verdict on a round this device is only holding half of. Standing down
   // the minutes charges is not enough on its own — a stale phone would simply
@@ -13132,20 +13215,105 @@ function cotwFor(i) {
   if (sheet.length) {
     const rap = {};
     for (const c of sheet) {
-      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0 };
+      const r = rap[c.id] = rap[c.id] || { n: 0, w: 0, standing: 0 };
       r.n++; r.w += c.weight;
+      if (c.gravity >= COTW_STANDING_FROM) r.standing++;
     }
     sheet.sort((a, b) => a.gravity - b.gravity || b.weight - a.weight
       || rap[b.id].n - rap[a.id].n || rap[b.id].w - rap[a.id].w || a.id - b.id);
     const top = sheet[0];
-    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1 };
+    // Keep the existing verdict above; this only explains its decision chain.
+    // Retain rivals BEFORE the decisive filter, otherwise a tiebreak that
+    // worked would erase the very names the explanation is meant to show.
+    const ids = rows => [...new Set(rows.map(c => c.id))];
+    let pool = sheet.filter(c => c.gravity === top.gravity);
+    let stage = 'gravity', level = [];
+    if (ids(pool).length > 1) {
+      for (const [key, keep] of [
+        ['weight', c => c.weight === top.weight],
+        ['rapCount', c => rap[c.id].n === rap[top.id].n],
+        ['rapWeight', c => rap[c.id].w === rap[top.id].w],
+      ]) {
+        level = ids(pool);
+        stage = key;
+        pool = pool.filter(keep);
+        if (ids(pool).length === 1) break;
+      }
+      if (ids(pool).length > 1) { stage = 'managerId'; level = ids(pool); }
+    }
+    return { id: top.id, why: top.why, proven: true, also: rap[top.id].n - 1,
+      stage, sheet, rap, level, mine: sheet.filter(c => c.id === top.id) };
   }
   // a week in which the league behaved itself. The trophy still needs a home,
   // so the Committee draws lots — seeded off the gameweek the way chantFor is,
   // because Math.random() would name a different man on every phone
   const seed = (i * 2246822519 + 3266489917) >>> 0;
   const m = state.managers[seed % state.managers.length];
-  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false } : null;
+  return m ? { id: m.id, why: COTW_DRAWS[(seed >>> 8) % COTW_DRAWS.length], proven: false,
+    sheet: [], rap: {}, mine: [], level: [] } : null;
+}
+function cotwFor(i) {
+  const w = cotwWorking(i);
+  if (!w) return null;
+  // Keep the original verdict contract for all existing award consumers.
+  return { id: w.id, why: w.why, proven: w.proven, ...(w.proven ? { also: w.also } : {}) };
+}
+function showCotwSheet(i) {
+  const w = cotwWorking(i);
+  if (!w || $('#cotwOverlay')) return;
+  const opener = document.activeElement;
+  const nm = id => esc(teamName(id) || managerName(id));
+  const rivals = w.level.filter(id => id !== w.id);
+  const charge = c => `<tr>
+    <td class="num muted">${c.gravity}</td>
+    <td style="overflow-wrap:anywhere">${esc(c.why)}${c.gravity >= COTW_STANDING_FROM ? ' <span class="muted" style="font-size:10px">&middot; standing</span>' : ''}</td>
+    <td class="num muted">${c.weight}</td>
+  </tr>`;
+  const body = !w.proven
+    ? '<p class="muted">Nobody offended this week, so the Committee drew lots. There is no charge sheet.</p>'
+    : `<p style="font-size:13px;margin:0 0 10px">Decided ${COTW_STAGES[w.stage]}.</p>
+      ${rivals.length ? `<p class="muted" style="font-size:12px;margin:0 0 10px">Level before that decision: ${rivals.map(nm).join(', ')}.</p>` : ''}
+      <div role="region" aria-label="Full charge sheet" tabindex="0" style="overflow:auto;max-height:45vh">
+        <table class="pool-table" style="width:100%">
+          <caption style="text-align:left;font-size:12px;padding:8px 0">Every charge against him (${w.mine.length})</caption>
+          <thead><tr><th scope="col">Rank</th><th scope="col">Charge</th><th scope="col">Weight</th></tr></thead>
+          <tbody>${w.mine.map(charge).join('')}</tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:8px">Lower rank means a graver charge. At the same rank, greater weight wins. If that is level, the Committee counts all charges, then their total weight.</p>
+      <p class="muted" style="font-size:11px;margin-top:8px">${w.rap[w.id].standing} of these ${w.mine.length} are standing charges: ongoing circumstances that can recur while unchanged. They count in the tiebreaks too.</p>`;
+  const ov = document.createElement('div');
+  ov.id = 'cotwOverlay';
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-labelledby="cotwTitle" aria-describedby="cotwReason" style="max-width:520px;width:94%;max-height:90dvh;overflow:auto;overflow-wrap:anywhere">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <p class="venue-line" style="flex:1;margin:0">GW${GAMEWEEKS[i].n} &middot; the working</p>
+      <button class="btn ghost small" id="cotwClose" type="button" aria-label="Close award explanation">&#10005;</button>
+    </div>
+    <h2 id="cotwTitle" style="margin:0 0 4px">${nm(w.id)}</h2>
+    <p id="cotwReason" class="muted" style="font-size:12px;margin:0 0 12px">${esc(w.why)}</p>
+    ${body}
+  </div>`;
+  ov.onclick = e => { if (e.target === ov || e.target.closest('#cotwClose')) closeOv(ov); };
+  ov.onkeydown = e => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeOv(ov); }
+    if (e.key !== 'Tab') return;
+    const focusable = [...ov.querySelectorAll('button, [tabindex="0"]')];
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  // The shared Back-button handler removes overlays directly. Restore focus
+  // on that path as well as button, backdrop and Escape dismissal.
+  const removed = new MutationObserver(() => {
+    if (ov.isConnected) return;
+    removed.disconnect();
+    (opener?.isConnected ? opener : $('#cotwWhy'))?.focus();
+  });
+  document.body.appendChild(ov);
+  removed.observe(document.body, { childList: true });
+  pushOvState();
+  ov.querySelector('#cotwClose').focus();
 }
 function weeklyAwards(last) {
   const scores = state.managers.map(m => ({ id: m.id, s: gwManagerPoints(m.id, last), waste: benchWaste(m.id, last) }));
@@ -13259,7 +13427,7 @@ function awardsCard() {
       ${robbed ? row('&#128148;', 'Robbed', `<b>${esc(teamName(robbed.l))}</b> scored ${robbed.ls} and still lost`) : ''}
       ${hiding ? row('&#128296;', 'Biggest Hiding', `<b>${esc(teamName(hiding.w))}</b> ${hiding.ws}–${hiding.ls} <b>${esc(teamName(hiding.l))}</b>`) : ''}
       ${bench.waste > 0 ? row('&#129681;', 'Bench of the Week', `<b>${esc(teamName(bench.id))}</b> left ${bench.waste} point${bench.waste === 1 ? '' : 's'} rotting on the bench`) : ''}
-      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''}`) : ''}
+      ${cotw ? row('&#128683;', 'C*** of the Week', `<b>${esc(teamName(cotw.id))}</b> — ${esc(cotw.why)}${cotw.also > 0 ? ` <span class="muted">(and ${cotw.also} other matter${cotw.also === 1 ? '' : 's'} on the sheet)</span>` : ''} <button class="btn ghost small" id="cotwWhy" type="button" aria-haspopup="dialog" style="margin-left:4px;vertical-align:middle">See the working</button>`) : ''}
     </div>
     ${cotw ? `<p class="muted" style="font-size:10.5px;margin-top:6px"><b>C*** of the Week:</b> charged on the week's evidence — team sheets, the transfer log, the fixture list and the clock — and ranked by gravity, not by score. You cannot earn it by playing badly, only by being annoying about it, and you keep it for as long as you keep earning it.${cotw.proven ? '' : ' Nobody offended this week, so the Committee drew lots.'} No appeal.</p>` : ''}
     ${sa ? `${sect('Season so far')}
