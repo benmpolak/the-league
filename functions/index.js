@@ -274,6 +274,23 @@ const WAIVER_LEASE_MS = 3 * 60 * 1000;
    manager walks into is just a rule nobody agreed to. */
 const MAX_CLAIMS = 100;
 
+/* A stored plan is only good for the gameweek it was planned against (Fable
+   review, 6 Nov 2026). The tick retries a failed slot for 14 days; a run that
+   kept failing past the next deadline used to replay its plan with the old
+   tgw, landing transfers in the gameweek now being played, and squadAt then
+   rescored that round on post-waiver squads. Refuse the replay instead: mark
+   the run 'stale' (never 'done' — nothing was adjudicated), drop the plan so
+   its claims stay lodged, and throw so the tick logs it. The next attempt
+   plans afresh against the current clock. */
+async function refuseStalePlan(runRef, plan, eng, state) {
+  if (plan.tgw === eng.transferGw(state)) return;
+  const msg = `stale plan: GW${plan.tgw + 1} deadline passed, claims roll to the next run`;
+  await runRef.update({ status: 'stale', plan: null, staleTgw: plan.tgw ?? null, error: msg, finishedAt: Date.now() });
+  const e = new HttpsError('failed-precondition', msg);
+  e.stale = true; // the runner's catch must not overwrite 'stale' with 'failed'
+  throw e;
+}
+
 async function applyWaiverPlan(league, runId, plan, state, eng, ctx) {
   if (!plan.records || !plan.records.length) return { applied: 0, dropped: 0, landed: [] };
   const ref = db().ref(`${leagueBase(league)}/public/transfers`);
@@ -329,6 +346,7 @@ async function runWaivers(league, runId, trigger, failAt) {
     const eng = ctx.eng;
     const state = await loadState(league, ctx, { withPrivate: true });
     let plan = claim.snapshot.val()?.plan || null;
+    if (plan) await refuseStalePlan(runRef, plan, eng, state);
     if (!plan) {
       if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
       if (trigger === 'schedule' && eng.waiverControl(state) !== 'auto') { await runRef.update({ status: 'done', result: 'skipped: control!=auto', finishedAt: Date.now() }); return { skipped: 'control' }; }
@@ -439,7 +457,7 @@ async function runWaivers(league, runId, trigger, failAt) {
     return { executed };
   } catch (e) {
     // release the lease; the plan (if written) survives for an exact replay
-    await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});
+    if (!e.stale) await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});
     throw e;
   }
 }
@@ -1954,6 +1972,7 @@ async function runWindowWaiver(league, runId, trigger) {
     const eng = ctx.eng;
     const state = await loadState(league, ctx, { withPrivate: true });
     let plan = claim.snapshot.val()?.plan || null;
+    if (plan) await refuseStalePlan(runRef, plan, eng, state);
     if (!plan) {
       if (state.phase !== 'season') { await runRef.update({ status: 'done', result: 'skipped: not in season', finishedAt: Date.now() }); return { skipped: 'not in season' }; }
       const win = Engine.windowInfo(state);
@@ -1993,7 +2012,7 @@ async function runWindowWaiver(league, runId, trigger) {
     await db().ref().update(upd);
     return { executed };
   } catch (e) {
-    await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});
+    if (!e.stale) await runRef.update({ status: 'failed', error: String(e.message || e), finishedAt: Date.now() }).catch(() => {});
     throw e;
   }
 }
@@ -2833,6 +2852,9 @@ if (EMULATED || process.env.FIREBASE_DATABASE_EMULATOR_HOST) {
   // Exercise two already-validated requests with the same stale snapshot,
   // deterministically, through the real database transaction.
   exports._transferTest = { appendTransfers, stripLineup };
+  // the window runner by a fixed run id: the action picks its id from the
+  // calendar, which a suite run in any month cannot pin
+  exports._waiverTest = { runWindowWaiver };
   exports._liveTest = {
     reset() { _fxCache = null; },
     pushLiveOnce,

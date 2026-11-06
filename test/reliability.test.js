@@ -106,6 +106,53 @@ const Functions = require('../functions/index.js');
   chk('private plan still replays the winning transfer', !replay.error && replay.result?.executed?.some(e => e.in === pair.in));
   chk('next-week claim survives replay', !!(await db.ref(`${base}/private/${members[2].uid}/claims/2`).get()).val());
   chk('completed plan stays private too', forbidden(await T.rest('GET', `${base}/server/waiverRuns/${id}`)));
+
+  // Fable review, 6 Nov 2026: a run that crashes after planning and is still
+  // failing when the next deadline passes must not replay into the gameweek
+  // now being played (squadAt would rescore that round on post-waiver
+  // squads). Crash it for real in the emulator, then replay in-process on a
+  // clock moved 36h on: GW3's synthetic deadline (now + 1 day) has passed, so
+  // the planned tgw (index 2) is no longer where transfers land.
+  await reset();
+  await db.ref(`${base}/private/${members[2].uid}/claims`).set(null);
+  const relodged = await T.mutate(league, 'claimSet', { gwIndex: 1, claims: [pair] }, manager);
+  chk('manager lodges the claim the stale plan will hold', !relodged.error);
+  const staleId = 'manual-stale-plan';
+  const staleCrash = await T.mutate(league, 'waiverRunNow', { runId: 'stale-plan', __failpoint: 'waivers:afterPlan' }, chair);
+  const stalePlan = (await db.ref(`${base}/server/waiverRuns/${staleId}/plan`).get()).val();
+  chk('crash probe left a plan for the current transfer gameweek', !!staleCrash.error && stalePlan?.tgw === 2, JSON.stringify(stalePlan?.tgw));
+  const realNow = Date.now;
+  Date.now = () => realNow() + 36 * 3600e3;
+  try {
+    const runNow = runId => Functions.mutate.run({ auth: { uid: members[1].uid }, data: { league, action: 'waiverRunNow', data: { runId } } });
+    const refused = await runNow('stale-plan').then(() => null, e => e);
+    chk('replay past the deadline is refused', refused?.code === 'failed-precondition' && /stale plan/.test(refused.message), String(refused?.message));
+    const staleRun = (await db.ref(`${base}/server/waiverRuns/${staleId}`).get()).val();
+    chk('stale run is marked stale with its plan dropped', staleRun?.status === 'stale' && !staleRun.plan && staleRun.staleTgw === 2,
+      JSON.stringify(staleRun && { ...staleRun, plan: !!staleRun.plan }));
+    const afterRefusal = await stateNow();
+    chk('refused replay lands no transfer and stamps no run', afterRefusal.transfers.length === 0 && !afterRefusal.waiverMeta?.lastRun);
+    chk('refused replay leaves the claim lodged', !!(await db.ref(`${base}/private/${members[2].uid}/claims/1`).get()).val());
+    const rerun = await runNow('stale-plan');
+    const landed = (await stateNow()).transfers.filter(t => t.inId === pair.in);
+    chk('the claim rolls to the next real run, planned afresh', rerun?.executed?.some(e => e.in === pair.in) && landed.length === 1, JSON.stringify(rerun));
+    chk('it lands in the next gameweek, never the one being played', landed[0]?.gw === 3, JSON.stringify(landed));
+
+    // the Window Waiver replays the same way: a crashed run's plan for GW3,
+    // seeded in the ledger, must be refused rather than land in GW3 now
+    await reset();
+    const winIn = free('MF')[0].id, winOut = drop('MF');
+    await db.ref(`${base}/server/waiverRuns/window-stale`).set({
+      status: 'failed', attempt: 1, startedAt: realNow(), finishedAt: realNow(),
+      plan: { records: [{ managerId: 2, outId: winOut, inId: winIn, gw: 2, t: realNow(), windowDraft: true, runId: 'window-stale' }],
+        executed: [{ mid: 2, in: winIn, out: winOut }], tgw: 2 },
+    });
+    const winRefused = await Functions._waiverTest.runWindowWaiver(league, 'window-stale', 'manual:test').then(() => null, e => e);
+    const winRun = (await db.ref(`${base}/server/waiverRuns/window-stale`).get()).val();
+    chk('window waiver replay past the deadline is refused', winRefused?.code === 'failed-precondition' && winRun?.status === 'stale' && !winRun.plan,
+      JSON.stringify({ err: winRefused?.message, status: winRun?.status }));
+    chk('refused window replay lands nothing', (await stateNow()).transfers.length === 0);
+  } finally { Date.now = realNow; }
   server.close();
   run.done();
 })().catch(e => { console.error(e); process.exit(1); });
