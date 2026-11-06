@@ -355,7 +355,9 @@ async function runWaivers(league, runId, trigger, failAt) {
       // leave lastRun alone — the Trough stays shut until a REAL run clears it,
       // so nobody free-signs past the queue of rolled-over claims
       if (trigger === 'schedule' && state.waiverMeta?.skip && runId === `sched-${state.waiverMeta.skip}`) {
-        await db().ref(`${base}/public/waiverMeta`).set({ ...state.waiverMeta, skip: null });
+        // update, not set: a whole-node write from this snapshot could undo
+        // a control change made since it was read (Fable review, 6 Nov 2026)
+        await db().ref(`${base}/public/waiverMeta`).update({ skip: null });
         await runRef.update({ status: 'done', result: 'skipped: chairman', finishedAt: Date.now() });
         return { skipped: 'chairman' };
       }
@@ -445,7 +447,14 @@ async function runWaivers(league, runId, trigger, failAt) {
       }
     }
     const upd = {};
-    upd[`${base}/public/waiverMeta`] = plan.stampedMeta;
+    // field by field, not the whole node: stampedMeta is the PLAN-time copy,
+    // and a control or skip change made while a failed run waited to replay
+    // must survive the stamp. Only lastRun and a spent skip are the run's.
+    // Spent is judged on the CURRENT skip by resolveWaivers' rule (slot at or
+    // before this run) — a stored plan has lost stampedMeta's null.
+    upd[`${base}/public/waiverMeta/lastRun`] = plan.stampedMeta.lastRun;
+    const skipAt = eng.slotAtFromId(state.waiverMeta?.skip);
+    if (skipAt != null && skipAt <= Date.parse(plan.stampedMeta.lastRun)) upd[`${base}/public/waiverMeta/skip`] = null;
     // legacy plans (written before `consumed` existed) replay with the old wholesale clear
     if (plan.consumed === undefined) for (const uid of Object.keys(mem)) for (const g of (plan.buckets || [])) upd[`${base}/private/${uid}/claims/${g}`] = null;
     upd[`${base}/server/waiverRuns/${runId}/status`] = 'done';
@@ -1671,10 +1680,13 @@ ACTIONS.adjustmentSet = async ({ league, a, data, ctx }) => {
   return { ok: true };
 };
 
-ACTIONS.waiverControl = async ({ league, a, data, state }) => {
+ACTIONS.waiverControl = async ({ league, a, data }) => {
   if (!isCommish(a)) throw new HttpsError('permission-denied', 'Chairman only');
   if (!['auto', 'open', 'closed'].includes(data.mode)) throw new HttpsError('invalid-argument', 'auto, open or closed');
-  await db().ref(`${leagueBase(league)}/public/waiverMeta`).set({ ...state.waiverMeta, control: data.mode });
+  // update, not set: the request-time snapshot of waiverMeta could replace a
+  // lastRun a concurrent run just stamped, leaving the Trough shut until the
+  // next run (Fable review, 6 Nov 2026)
+  await db().ref(`${leagueBase(league)}/public/waiverMeta`).update({ control: data.mode });
   return { ok: true };
 };
 

@@ -107,6 +107,19 @@ const Functions = require('../functions/index.js');
   chk('next-week claim survives replay', !!(await db.ref(`${base}/private/${members[2].uid}/claims/2`).get()).val());
   chk('completed plan stays private too', forbidden(await T.rest('GET', `${base}/server/waiverRuns/${id}`)));
 
+  // a replay stamps lastRun field by field: shutting the Trough while a
+  // failed run waits must survive it (Fable review, 6 Nov 2026 — the stamp
+  // used to rewrite the whole node from the plan-time copy)
+  await reset();
+  await db.ref(`${base}/private/${members[2].uid}/claims`).set(null);
+  await T.mutate(league, 'claimSet', { gwIndex: 1, claims: [pair] }, manager);
+  await T.mutate(league, 'waiverRunNow', { runId: 'control-kept', __failpoint: 'waivers:afterPlan' }, chair);
+  const shut = await T.mutate(league, 'waiverControl', { mode: 'closed' }, chair);
+  const kept = await T.mutate(league, 'waiverRunNow', { runId: 'control-kept' }, chair);
+  const keptMeta = (await db.ref(`${base}/public/waiverMeta`).get()).val();
+  chk('replay stamps lastRun and keeps the control set while it waited',
+    !shut.error && !kept.error && keptMeta?.control === 'closed' && !!keptMeta?.lastRun, JSON.stringify({ keptMeta, err: kept.error }));
+
   // Fable review, 6 Nov 2026: a run that crashes after planning and is still
   // failing when the next deadline passes must not replay into the gameweek
   // now being played (squadAt would rescore that round on post-waiver
