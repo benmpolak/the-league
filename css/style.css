@@ -334,6 +334,10 @@ tr[data-drag], .qrow[draggable] { cursor: grab; }
 .pick-log { max-height: 300px; overflow-y: auto; font-size: 12.5px; }
 .pick-log .lrow { display: flex; gap: 8px; align-items: center; padding: 4px 0; color: var(--muted); }
 .pick-log .lrow b { color: var(--text); }
+/* the Trough's list: a 600px window on a laptop; on a phone the page itself
+   scrolls, not a box inside it (Fable UX review, 6 Nov 2026) */
+#trResults { max-height: 600px; }
+@media (max-width: 700px) { #trResults { max-height: none; overflow-y: visible; } }
 
 /* ---------- squads view ---------- */
 .squads-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
@@ -1440,6 +1444,12 @@ tr.st-red .pname { color: #ff9c9c; }
   box-shadow: 0 12px 28px rgba(0,0,0,.5);
 }
 .scout-title { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+/* the Trough's phone filters, folded in here (see scoutViewHtml) */
+.scout-filters { display: grid; gap: 8px; }
+.scout-filters .pool-controls { margin: 0 !important; gap: 6px; }
+.scout-filter-selects { display: flex; gap: 6px; flex-wrap: wrap; }
+.scout-filter-selects select { flex: 1; min-width: 0; }
+.scout-filters + .scout-desk { border-top: 1px solid var(--line); padding-top: 11px; }
 .scout-desk select { min-width: 150px; padding: 7px 9px; font-size: 12px; }
 .scout-columns { border-top: 1px solid var(--line); padding-top: 11px; }
 .scout-column-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 12px; margin-top: 8px; }

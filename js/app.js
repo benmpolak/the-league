@@ -7882,13 +7882,17 @@ function writeScoutViews(views) {
   try { localStorage.setItem(scoutViewsKey(), JSON.stringify(views.map(cleanScoutView).filter(Boolean).slice(0, 8))); }
   catch { toast('This device could not save that view'); }
 }
-function scoutViewHtml(surface) {
+// `filters` lets a surface park its secondary filters in here on a phone (the
+// Trough, Fable UX review 6 Nov 2026); `filtersOn` counts the ones in use so
+// a narrowed list never looks like an empty Trough with the lid shut
+function scoutViewHtml(surface, filters = '', filtersOn = 0) {
   const saved = scoutViews();
   const active = scoutActiveView[surface] || '';
   window._scoutToolsOpen = window._scoutToolsOpen || {};
   return `<details class="scout-tools" data-scout-tools="${surface}" ${window._scoutToolsOpen[surface] ? 'open' : ''}>
-    <summary class="btn ghost small">Scouting tools <span aria-hidden="true">&#9881;</span></summary>
+    <summary class="btn ghost small">Scouting tools${filtersOn ? ` <span class="tag" title="${filtersOn} filter${filtersOn === 1 ? '' : 's'} in use in here">${filtersOn} on</span>` : ''} <span aria-hidden="true">&#9881;</span></summary>
     <div class="scout-tools-panel">
+      ${filters ? `<div class="scout-filters"><span class="scout-title">Filters</span>${filters}</div>` : ''}
       <div class="scout-desk">
         <span class="scout-title">Saved views</span>
         <select data-scout-view aria-label="Open a scouting view">
@@ -9594,7 +9598,7 @@ function viewTransfers() {
         ${squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || rating(b) - rating(a)).map(pp => `<option value="${pp.id}" ${transfersView.out === pp.id ? 'selected' : ''}>${pp.pos} — ${esc(pp.name)} (${esc(pp.club)})</option>`).join('')}
       </select>
       <input type="text" id="trSearch" value="${esc(transfersView.q || '')}" placeholder="Search the Trough — ${signableNow} players sniffing about…" style="width:100%;max-width:420px;margin-bottom:8px;display:block">
-      <div id="trResults" class="pick-log" style="max-height:600px"></div>`}
+      <div id="trResults" class="pick-log"></div>`}
       ${netOn() && isCommissioner() ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
         <button class="btn small" id="runWaivers" ${state.mock?.phase === 'live' ? 'disabled title="A Chamber match is live — waivers wait for full time"' : ''}>Process waivers now</button>
         <button class="btn ghost small" id="ctlOpen" ${ctl === 'open' ? 'disabled' : ''}>Open Trough</button>
@@ -10274,15 +10278,26 @@ function bindTransfers() {
         }).join('')}</tbody>
       </table></div>
       ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more</button> <button class="btn ghost small" id="trAll">Show all ${total}</button></div>` : ''}`;
-      results.innerHTML = hint + scoutViewHtml('transfers') + statWindowHtml(transfersView.win || null) + `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
-        <button class="btn small ${trPosOn().length ? 'ghost' : ''}" data-trpos="" title="Show every position">All</button>
-        ${['GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${trPosOn().includes(pp) ? '' : 'ghost'}" data-trpos="${pp}" aria-pressed="${trPosOn().includes(pp)}" title="${trPosOn().includes(pp) ? `Stop showing ${pp}` : `Also show ${pp}`}">${pp}</button>`).join('')}
+      // phones: Stats over, the GW range, club and squad fold into Scouting
+      // tools, so the first player sits under the search box instead of
+      // ~400px of controls (Fable UX review, 6 Nov 2026). Position and scope
+      // stay out: they are the filters used every week.
+      const foldFilters = matchMedia('(max-width: 700px)').matches;
+      const winHtml = statWindowHtml(transfersView.win || null);
+      const clubOwnerHtml = `
         <select id="trClub" style="padding:6px 8px;font-size:12px">
           <option value="">All clubs</option>
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
-        ${ownerFilterHtml('id="trOwner" style="padding:6px 8px;font-size:12px"', transfersView.owner)}
+        ${ownerFilterHtml('id="trOwner" style="padding:6px 8px;font-size:12px"', transfersView.owner)}`;
+      const foldedOn = [winHtml && transfersView.win, transfersView.club, transfersView.owner != null].filter(Boolean).length;
+      results.innerHTML = hint + (foldFilters
+        ? scoutViewHtml('transfers', winHtml + `<div class="scout-filter-selects">${clubOwnerHtml}</div>`, foldedOn)
+        : scoutViewHtml('transfers') + winHtml) + `
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
+        <button class="btn small ${trPosOn().length ? 'ghost' : ''}" data-trpos="" title="Show every position">All</button>
+        ${['GK', 'DF', 'MF', 'FW'].map(pp => `<button class="btn small ${trPosOn().includes(pp) ? '' : 'ghost'}" data-trpos="${pp}" aria-pressed="${trPosOn().includes(pp)}" title="${trPosOn().includes(pp) ? `Stop showing ${pp}` : `Also show ${pp}`}">${pp}</button>`).join('')}
+        ${foldFilters ? '' : clubOwnerHtml}
         <span style="width:8px"></span>
         <button class="btn small ${transfersView.scope === 'avail' ? '' : 'ghost'}" data-trscope="avail" title="Everyone you could get: free to sign now, plus the waiver queue">Available</button>
         <button class="btn small ${transfersView.scope === 'free' ? '' : 'ghost'}" data-trscope="free">Free agents</button>
