@@ -42,7 +42,12 @@ jobs:
     # the legacy Pages build, so the copy must stand down there
     if: github.repository == 'benmpolak/the-league'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 6 Nov 2026: GitHub's Pages queue ran slow all afternoon (7-9 minutes a
+    # deploy) and the old 10-minute cap killed the 15:00 refresh mid-deploy.
+    # Each deploy attempt below now waits up to 15 minutes; three of them plus
+    # the two pauses is under 50, so the runner never pulls the plug on a
+    # deployment GitHub is still processing.
+    timeout-minutes: 55
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -106,6 +111,8 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
         continue-on-error: true
+        with:
+          timeout: 900000 # 15 minutes, each attempt: a slow queue is not a failure
       - name: Wait out the stale deployment record
         if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' }}
         run: sleep 75
@@ -113,6 +120,8 @@ jobs:
         id: deployment-retry
         uses: actions/deploy-pages@v4
         continue-on-error: true
+        with:
+          timeout: 900000
       # A busy morning (25 Aug: seven pushes before noon) showed the previous
       # deployment can still be propagating past the 75s window — the retry
       # died too and every collision emailed the Chairman. One more tier,
@@ -123,3 +132,5 @@ jobs:
         run: sleep 150
       - if: ${{ !steps.gate.outputs.skip && steps.deployment.outcome == 'failure' && steps.deployment-retry.outcome == 'failure' }}
         uses: actions/deploy-pages@v4
+        with:
+          timeout: 900000
