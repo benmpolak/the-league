@@ -2,9 +2,18 @@
 /* Ben, reliability pass, 4 Sept: Pages may ship only tested code. FPL bot
  * refreshes can reuse that test result, but their current data is validated
  * below. All other tracked files (including workflows) must match exactly.
- * GitHub API: https://docs.github.com/en/rest/actions/workflow-runs */
+ * GitHub API: https://docs.github.com/en/rest/actions/workflow-runs
+ *
+ * Ben, 6 Nov 2026: while a code push was red, or still testing (15-25
+ * minutes), that rule refused every five-minute data refresh with it, and the
+ * scores on the site froze: 11, 14 and 23 Oct (twice), 4 Nov. Four of those five
+ * pushes changed site code, so "the same code is already live" would not have
+ * saved them. Now, when HEAD's code is not cleared, the release keeps the code
+ * that is already live and lays HEAD's data over it (dataOnlyRelease). New
+ * code still ships only after its own green run. */
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
@@ -20,12 +29,52 @@ const FEED_FILES = new Set(['js/data.js', 'data/data.json', 'data/stats.json', '
 // a recording; nothing under here executes.
 const AUDIO_DIR = 'audio/pod/';
 const isData = p => FEED_FILES.has(p) || p.startsWith(AUDIO_DIR);
+// This script's own manifest ships with the site, so the live copy names the
+// code that is running. Read with a cache-buster: Pages' CDN can hold a copy
+// for ten minutes, and a stale one would roll the site back a release.
+const LIVE_RELEASE = 'https://theleaguehq.co.uk/release.json';
+// If a held-back push changed any of these, the data-only release stands
+// aside and the old freeze applies (Ben, 6 Nov 2026). The bots run the data
+// writers from HEAD, so a changed writer could hand the live code data in a
+// shape it was never tested with: the feed checks test shape for safety, not
+// every field the app reads. (The predictions writers also drive the app in a
+// browser; pinning the app would pin nearly every push, so the ledger's odds
+// are checked instead.) An unchanged gate and deploy workflow mean the
+// data-only release is itself run by tested code.
+const PINNED = [
+  'scripts/fetch_fpl.py', 'scripts/provisional.py', 'scripts/scout_lineups.py', 'scripts/lineups.py',
+  'scripts/snapshot_predictions.js', 'scripts/backfill_predictions.js',
+  'scripts/render_pods.js', 'scripts/pod_voice.js', 'scripts/pod_history.js',
+  'scripts/release_gate.js', '.github/workflows/pages.yml',
+];
+const SERVER_FILES = ['functions/index.js', 'functions/feedcheck.js', 'js/engine.js', 'js/club-media.js', 'functions/package.json', 'functions/package-lock.json'];
 const hash = s => crypto.createHash('sha256').update(s).digest('hex');
-const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).trim();
+const isSha = v => typeof v === 'string' && /^[a-f0-9]{40}$/.test(v);
+const short = sha => sha.slice(0, 7);
+const rows = tree => tree.split('\0').filter(Boolean);
+const pathOf = row => row.slice(row.indexOf('\t') + 1);
 
 function sourceFingerprint(tree) {
-  const rows = tree.split('\0').filter(Boolean).filter(row => !isData(row.slice(row.indexOf('\t') + 1)));
-  return hash(rows.sort().join('\0'));
+  return hash(rows(tree).filter(row => !isData(pathOf(row))).sort().join('\0'));
+}
+// The other half: lets a data-only release see the site already has this data.
+function dataFingerprint(tree) {
+  return hash(rows(tree).filter(row => isData(pathOf(row))).sort().join('\0'));
+}
+function gitRepo(cwd) {
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).trim();
+  const trees = new Map();
+  const tree = sha => {
+    if (!isSha(sha)) throw Error('Invalid commit id');
+    if (!trees.has(sha)) trees.set(sha, git('ls-tree', '-rz', '--full-tree', sha));
+    return trees.get(sha);
+  };
+  return {
+    cwd, git, tree,
+    fingerprint: sha => sourceFingerprint(tree(sha)),
+    ancestor: (a, b) => isSha(a) && spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd }).status === 0,
+    read: p => fs.readFileSync(path.join(cwd, p), 'utf8'),
+  };
 }
 function matchingRun(runs, fingerprint, ancestor, head) {
   const wanted = fingerprint(head);
@@ -111,50 +160,130 @@ function validateFeed(read = p => fs.readFileSync(path.join(ROOT, p), 'utf8')) {
   });
 }
 
+// Base's code with head's data, built in a scratch index so nothing on disk
+// moves until the result has been checked.
+function overlayTree(repo, base, head) {
+  const dataRows = sha => rows(repo.tree(sha)).filter(row => isData(pathOf(row)));
+  const keep = dataRows(head);
+  const kept = new Set(keep.map(pathOf));
+  // mode 0 removes a path: data the held-back push deleted stays deleted
+  const drop = dataRows(base).map(pathOf).filter(p => !kept.has(p)).map(p => `0 ${'0'.repeat(40)}\t${p}`);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'release-overlay-'));
+  const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') };
+  const git = (args, input) => execFileSync('git', args, { cwd: repo.cwd, env, input, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024 }).trim();
+  try {
+    git(['read-tree', base]);
+    git(['update-index', '-z', '--index-info'], [...drop, ...keep].map(row => row + '\0').join(''));
+    const overlay = git(['write-tree']);
+    if (sourceFingerprint(repo.tree(overlay)) !== repo.fingerprint(base)
+      || dataFingerprint(repo.tree(overlay)) !== dataFingerprint(repo.tree(head))) throw Error('the overlay does not match its sources');
+    return overlay;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The feed checks of the code that will read the data, run from the overlaid
+// checkout so they load that code's own functions/feedcheck.js.
+function validateWithLiveCode(cwd) {
+  const r = spawnSync(process.execPath, ['-e', 'try { require(process.argv[1]).validateFeed(); } catch (e) { console.error(e.message); process.exit(1); }',
+    path.join(cwd, 'scripts/release_gate.js')], { cwd, encoding: 'utf8' });
+  if (r.status !== 0) throw Error(`its own feed checks refuse the data: ${(r.stderr || '').trim().slice(0, 300)}`);
+}
+
+// HEAD's code is not cleared, so keep the code the site is already running
+// and lay HEAD's data over it, in the working tree, for Pages to upload.
+// The live code's own test run must still stand: an older green result is
+// only borrowed for code that is already live, never for new code.
+async function dataOnlyRelease(repo, { head, runs, clearance, live }) {
+  const base = live && live.siteCommit;
+  if (!isSha(base)) throw Error('the live release.json names no site commit');
+  if (!repo.ancestor(base, head)) throw Error(`live code ${short(base)} is not in main's history`);
+  const run = matchingRun(runs, repo.fingerprint, repo.ancestor, base);
+  if (await clearance(run) !== 'ready') throw Error(`live code ${short(base)} has no passing test run to stand on`);
+  const blobs = sha => new Map(rows(repo.tree(sha)).map(row => [pathOf(row), row.slice(0, row.indexOf('\t'))]));
+  const [was, now] = [blobs(base), blobs(head)];
+  const moved = PINNED.filter(p => was.get(p) !== now.get(p));
+  if (moved.length) throw Error(`the held-back push changes ${moved.join(', ')}`);
+  const data = dataFingerprint(repo.tree(head));
+  if (live.dataFingerprint === data) return { skip: `the site already has this data on live code ${short(base)}` };
+  repo.git('read-tree', '--reset', '-u', overlayTree(repo, base, head));
+  validateFeed(repo.read); // the checks that came with the data's writers
+  validateWithLiveCode(repo.cwd);
+  return { base, run, data };
+}
+
+function manifest(repo, fields) {
+  // Expected server source, not a claim about what is currently deployed.
+  return { ...fields, expectedServerFiles: Object.fromEntries(SERVER_FILES.map(p => [p, hash(fs.readFileSync(path.join(repo.cwd, p)))])) };
+}
+
+async function release({ repo, head, runs, clearance, loadLive, log = console.log }) {
+  const run = matchingRun(runs, repo.fingerprint, repo.ancestor, head);
+  const state = await clearance(run);
+  const data = dataFingerprint(repo.tree(head));
+  if (state === 'ready') {
+    validateFeed(repo.read);
+    log(`Release approved: ${head}, tested code ${run.head_sha}, run ${run.id}; current feed validated.`);
+    return manifest(repo, {
+      mode: 'tested', siteCommit: head, dataCommit: head, sourceFingerprint: repo.fingerprint(head), dataFingerprint: data,
+      testedCommit: run.head_sha, testRun: run.html_url,
+    });
+  }
+  const held = state === 'pending' ? `code ${short(head)} has no completed checks yet` : `code ${short(head)} failed test run ${run.id}`;
+  let fallback;
+  try {
+    fallback = await dataOnlyRelease(repo, { head, runs, clearance, live: await loadLive() });
+  } catch (e) {
+    if (state !== 'pending') throw Error(`Refusing release: ${held}, and the live code cannot take the new data: ${e.message}`);
+    // Test completion triggers Pages again. Do not occupy its deploy queue
+    // waiting while matchday data commits keep arriving.
+    log(`::warning::Release waits: ${held}, and the live code cannot take the new data (${e.message}). Test completion will retry.`);
+    return { skip: true };
+  }
+  if (fallback.skip) {
+    log(`Nothing to release: ${held}, and ${fallback.skip}.`);
+    return { skip: true };
+  }
+  log(`::warning::Data-only release: ${held}, so the site keeps code ${short(fallback.base)} (test run ${fallback.run.id}) with the data from ${short(head)}.`);
+  return manifest(repo, {
+    mode: 'data-only',
+    note: 'The site is running earlier tested code (siteCommit) with newer data (dataCommit). The newer code waits for its own tests.',
+    siteCommit: fallback.base, dataCommit: head, sourceFingerprint: repo.fingerprint(fallback.base), dataFingerprint: data,
+    testedCommit: fallback.run.head_sha, testRun: fallback.run.html_url,
+    heldBack: { commit: head, sourceFingerprint: repo.fingerprint(head), tests: state, testRun: run?.html_url ?? null },
+  });
+}
+
 async function main() {
-  if (git('status', '--porcelain', '--untracked-files=all')) throw Error('Release requires a clean checkout of the candidate commit');
-  const repo = process.env.GITHUB_REPOSITORY;
+  const repo = gitRepo(ROOT);
+  if (repo.git('status', '--porcelain', '--untracked-files=all')) throw Error('Release requires a clean checkout of the candidate commit');
+  const slug = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
-  if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) throw Error('GitHub repository and read-only Actions token required');
+  if (!slug || !/^[\w.-]+\/[\w.-]+$/.test(slug) || !token) throw Error('GitHub repository and read-only Actions token required');
   const api = async rel => {
-    const r = await fetch(`https://api.github.com/repos/${repo}/${rel}`, {
+    const r = await fetch(`https://api.github.com/repos/${slug}/${rel}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
       signal: AbortSignal.timeout(30000),
     });
     if (!r.ok) throw Error(`GitHub release check failed: HTTP ${r.status}`);
     return r.json();
   };
-  const head = git('rev-parse', 'HEAD');
-  const cache = new Map();
-  const fingerprint = sha => {
-    if (!/^[a-f0-9]{40}$/.test(sha)) throw Error('Invalid commit id');
-    if (!cache.has(sha)) cache.set(sha, sourceFingerprint(git('ls-tree', '-rz', '--full-tree', sha)));
-    return cache.get(sha);
+  const clearance = async run => runState(run, run?.status === 'completed' && run.conclusion === 'success'
+    ? (await api(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`)).jobs : []);
+  const loadLive = async () => {
+    const r = await fetch(`${LIVE_RELEASE}?gate=${Date.now()}`, { signal: AbortSignal.timeout(30000) });
+    if (!r.ok) throw Error(`live release.json: HTTP ${r.status}`);
+    return r.json();
   };
-  const ancestor = (a, b) => /^[a-f0-9]{40}$/.test(a) && spawnSync('git', ['merge-base', '--is-ancestor', a, b], { cwd: ROOT }).status === 0;
+  const head = repo.git('rev-parse', 'HEAD');
   const { workflow_runs: runs } = await api('actions/workflows/test.yml/runs?branch=main&event=push&per_page=100');
-  const run = matchingRun(runs, fingerprint, ancestor, head);
-  const jobs = run?.status === 'completed' && run.conclusion === 'success'
-    ? (await api(`actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`)).jobs : [];
-  const state = runState(run, jobs);
-  if (state === 'pending') {
-    // Test completion triggers Pages again. Do not occupy its deploy queue
-    // waiting while matchday data commits keep arriving.
-    console.log('Code has no completed checks yet; test completion will retry the release.');
+  const result = await release({ repo, head, runs, clearance, loadLive });
+  if (result.skip) {
     if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, 'skip=1\n');
     return;
   }
-  if (state !== 'ready') throw Error(`Refusing release: matching test run ${run.id} did not pass both suites`);
-  validateFeed();
-  const serverFiles = ['functions/index.js', 'functions/feedcheck.js', 'js/engine.js', 'js/club-media.js', 'functions/package.json', 'functions/package-lock.json'];
-  const release = {
-    siteCommit: head, sourceFingerprint: fingerprint(head), testedCommit: run.head_sha,
-    testRun: run.html_url,
-    // Expected server source, not a claim about what is currently deployed.
-    expectedServerFiles: Object.fromEntries(serverFiles.map(p => [p, hash(fs.readFileSync(path.join(ROOT, p)))])),
-  };
-  fs.writeFileSync(path.join(ROOT, 'release.json'), JSON.stringify(release, null, 2) + '\n');
-  console.log(`Release approved: ${head}, tested code ${run.head_sha}, run ${run.id}; current feed validated.`);
+  fs.writeFileSync(path.join(ROOT, 'release.json'), JSON.stringify(result, null, 2) + '\n');
 }
 if (require.main === module) main().catch(e => { console.error(e.message); process.exitCode = 1; });
-module.exports = { FEED_FILES, sourceFingerprint, matchingRun, runState, validateFeed };
+module.exports = { FEED_FILES, PINNED, sourceFingerprint, dataFingerprint, matchingRun, runState, validateFeed, gitRepo, release };
