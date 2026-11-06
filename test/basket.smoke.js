@@ -1,7 +1,9 @@
 /* The basket (Marc, 13 Oct 2026: "you should be able to do multiple trough
  * picks at the same time"). Pins:
- *   1. + puts a line in the basket with the man marked on the pitch, and
- *      unmarks him; his chip and the row say so
+ *   0. one button a row: Sign while the basket is empty, + Basket once it
+ *      is started (Marc and Ian, 16 Oct 2026)
+ *   1. the deal sheet's Basket it puts a line in the basket with the man
+ *      marked on the pitch, and unmarks him; his chip and the row say so
  *   2. + with nobody marked asks who makes way, from the squad the basket
  *      leaves — a man already going out is not offered twice
  *   3. a line that breaks the squad limits is refused at the door
@@ -85,26 +87,45 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
   /* 0 — it says what it is (Ben, 15 Oct 2026: "needs to be a little more obvious") */
   const empty = await p.evaluate(id => {
     state.view = 'transfers'; transfersView.tab = 'trough'; transfersView.q = PLAYER_BY_ID[id].name; render();
-    return { hint: document.querySelector('.basket-hint')?.textContent || '', label: document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim(), bar: !!document.querySelector('.basket-bar') };
+    return { hint: document.querySelector('.basket-hint')?.textContent || '', plus: !!document.querySelector(`#trResults [data-trbasket="${id}"]`), sign: document.querySelector(`#trResults [data-trin="${id}"]`)?.textContent.trim(), bar: !!document.querySelector('.basket-bar') };
   }, ids.mf[0]);
-  chk('an empty basket explains itself above the search', /Signing more than one\?/.test(empty.hint) && /\+ Basket/.test(empty.hint), empty.hint);
-  chk('the button says + Basket, not a bare +', empty.label === '+ Basket', empty.label);
+  chk('an empty basket explains itself above the search', /Signing more than one\?/.test(empty.hint) && /Basket it/.test(empty.hint), empty.hint);
+  // one button a row (Marc and Ian, 16 Oct 2026)
+  chk('an empty basket leaves one button on the row: Sign', empty.sign === 'Sign' && empty.plus === false, JSON.stringify(empty));
   chk('and no bar while the basket is empty', empty.bar === false);
 
-  /* 1 — the marked man goes into the line, and is unmarked */
-  await p.evaluate(out => { transfersView.out = out; }, ids.myMf[0]);
-  chk('a free man has a + Basket beside Sign', await plus(ids.mf[0]) === 'ok');
+  /* 1 — the basket starts on the deal sheet; the marked man goes into the line, and is unmarked */
+  const started = await p.evaluate(async ({ id, out }) => {
+    transfersView.out = out;
+    state.view = 'transfers'; transfersView.tab = 'trough'; transfersView.q = PLAYER_BY_ID[id].name; render();
+    window.__autoConfirm = false; // the real sheet, so its Basket it button is pressed
+    document.querySelector(`#trResults [data-trin="${id}"]`).click();
+    await new Promise(r => setTimeout(r, 120));
+    const alt = document.querySelector('#confirmSheet #cfAlt');
+    const label = alt?.textContent.trim() || '';
+    alt?.click();
+    await new Promise(r => setTimeout(r, 120));
+    window.__autoConfirm = true;
+    return { label, sheet: !!document.querySelector('#confirmSheet'), signs: window._calls ? window._calls.filter(c => c.action === 'troughSign').length : 0 };
+  }, { id: ids.mf[0], out: ids.myMf[0] });
+  chk('the deal sheet offers Basket it, keep shopping', /Basket it, keep shopping/.test(started.label), started.label);
+  chk('and choosing it signs nobody yet and closes the sheet', started.signs === 0 && started.sheet === false, JSON.stringify(started));
   const one = await p.evaluate(out => ({
     basket: transfersView.basket.map(l => [l.in, l.out]), out: transfersView.out,
     chip: document.querySelector(`[data-trout="${out}"]`)?.classList.contains('in-basket'),
     card: document.querySelector('#trBasket')?.textContent.replace(/\s+/g, ' ') || '',
   }), ids.myMf[0]);
-  chk('+ lodges the line with the man marked on the pitch', JSON.stringify(one.basket) === JSON.stringify([[ids.mf[0], ids.myMf[0]]]), JSON.stringify(one));
+  chk('Basket it lodges the line with the man marked on the pitch', JSON.stringify(one.basket) === JSON.stringify([[ids.mf[0], ids.myMf[0]]]), JSON.stringify(one));
   chk('and unmarks him — he is spoken for', one.out === null);
   chk('his chip shows he is going out in the basket', one.chip === true);
   chk('the basket card appears with a Sign all button', /Your basket/.test(one.card) && /Sign all 1/.test(one.card), one.card);
   await p.evaluate(id => { transfersView.q = PLAYER_BY_ID[id].name; render(); }, ids.mf[0]);
   chk('his row now reads In basket, not + Basket', await p.evaluate(id => document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim() === '✓ In basket', ids.mf[0]));
+  const shopping = await p.evaluate(id => {
+    transfersView.q = PLAYER_BY_ID[id].name; render();
+    return { plus: document.querySelector(`#trResults [data-trbasket="${id}"]`)?.textContent.trim(), sign: !!document.querySelector(`#trResults [data-trin="${id}"]`) };
+  }, ids.mf[1]);
+  chk('once the basket is started, a free man reads + Basket instead of Sign — still one button', shopping.plus === '+ Basket' && shopping.sign === false, JSON.stringify(shopping));
   const bar1 = await p.evaluate(() => ({ text: document.querySelector('.basket-bar')?.textContent.replace(/\s+/g, ' ').trim() || '', pos: document.querySelector('.basket-bar') && getComputedStyle(document.querySelector('.basket-bar')).position, hint: !!document.querySelector('.basket-hint') }));
   chk('a bar pinned to the foot of the screen counts the basket and offers Sign all', bar1.pos === 'fixed' && /1 in your basket/.test(bar1.text) && /Sign all 1/.test(bar1.text), JSON.stringify(bar1));
   chk('and the explainer steps aside', bar1.hint === false);
@@ -235,8 +256,8 @@ const noLiveFirebase = pg => pg.evaluate(() => !performance.getEntriesByType('re
     state.view = 'transfers'; transfersView.tab = 'trough'; render();
     return { on: BASKET_ON, sign: document.querySelectorAll('#trResults [data-trin]').length, plus: document.querySelectorAll('#trResults [data-trbasket]').length };
   });
-  // open to everyone since Ben, 16 Oct 2026
-  chk('the real league (no ?sandbox) has the basket too', gated.on === true && gated.sign > 0 && gated.plus > 0, JSON.stringify(gated));
+  // open to everyone since Ben, 16 Oct 2026; one button a row since 6 Nov
+  chk('the real league (no ?sandbox) has the basket too, behind a single Sign', gated.on === true && gated.sign > 0 && gated.plus === 0, JSON.stringify(gated));
   chk('no page loaded the live Firebase SDK', await noLiveFirebase(p) && await noLiveFirebase(live));
 
   await browser.close();

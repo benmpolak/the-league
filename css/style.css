@@ -765,6 +765,9 @@ input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
   opacity: 0; pointer-events: none; transition: all .25s; z-index: 99; box-shadow: var(--shadow);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* phones: clear the bottom tab bar, or every "Lineup saved" sits on My Team
+   and Matches for its few seconds (Fable's UX review, 6 Nov 2026) */
+@media (max-width: 700px) { #toast { bottom: calc(72px + env(safe-area-inset-bottom)); } }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--card2); border-radius: 6px; }
