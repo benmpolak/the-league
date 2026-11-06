@@ -15,6 +15,12 @@
 #    chains off the refresh workflow completing instead. A gate step skips
 #    the deploy when the refresh was a no-op and the site already serves
 #    HEAD, because the refresh runs every five minutes around the clock.
+#
+# While new code is red or still testing, its data still ships, on the code
+# already live (Ben, 6 Nov 2026: four frozen-score days in four weeks). The
+# gate explains itself in scripts/release_gate.js; the published release.json
+# says "mode": "data-only" while that is happening. The beta mirror is not
+# involved: it always serves main's tip, tested or not.
 name: Deploy site to Pages
 
 on:
@@ -78,7 +84,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Require passing tests for this code and validate the current feed
+      # Tested code ships whole. Untested code waits, and the checkout becomes
+      # the live code with this commit's data laid over it; the stamp and the
+      # upload below then ship that. Needs the full history above to find the
+      # live code's commit.
+      - name: Release tested code, or the new data on the code already live
         id: checks
         if: ${{ !steps.gate.outputs.skip }}
         env:
