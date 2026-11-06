@@ -165,7 +165,13 @@ let pass = 0, fail = 0;
         near(before - after, was - gained, 0.02),
         `dropped ${(before - after).toFixed(2)}; he carried ${was.toFixed(2)}, `
         + `${inc ? `${inc.name} brings ${gained.toFixed(2)}` : 'nobody could replace him'}`);
-      t('and the projection did not go up', after < before, `${after.toFixed(2)} vs ${before.toFixed(2)}`);
+      // It can rise, and rightly: if the bench man out-projects the starter he
+      // replaces, the side is better off. Asserting a flat "did not go up" ran
+      // on whoever the live feed put on the bench, and turned red the week
+      // Manzambi out-projected xi[5] (health check, 6 Nov 2026).
+      t('and the projection moves the way the swap does: up only if the man coming on out-projects him',
+        (after - before) * (gained - was) >= -0.02,
+        `${after.toFixed(2)} vs ${before.toFixed(2)}; on ${gained.toFixed(2)}, off ${was.toFixed(2)}`);
       victim.status = 'a';
     })();
 
