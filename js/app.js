@@ -10677,6 +10677,11 @@ function viewDash() {
   const myPos = mid == null ? 0 : table.findIndex(r => r.id === mid) + 1;
   const deadline = new Date(gwFrom(cur));
   // Ben, 4 Sept: both pitches stay visible directly on the mobile dashboard.
+  // Revisited 6 Nov 2026 (Fable UX review, Ben kept it): on a phone they took ~2,000px
+  // before Needs your attention, so under 700px they wait behind "Show the
+  // pitches" for this session only (nothing remembered, the old trap). The
+  // matchup overlay still has the full view. Laptops keep them out.
+  const pitchesOpen = !!window._dashPitchesOpen;
   return `
   ${foundingCard()}
   <div class="settings-grid">
@@ -10696,7 +10701,8 @@ function viewDash() {
       </div>
       <div class="venue-line">${derbyTag(pair[0], pair[1]) ? derbyTag(pair[0], pair[1]) + ' &middot; ' : ''}at ${esc(stadium(pair[0]))}${gwStatus(cur) === 'final' ? ' &middot; full time' : ''}</div>
       ${winProbBar(pair[0], pair[1], cur, mid)}
-        <div class="mu-grid dash-mu" style="margin-top:10px">
+      <button type="button" class="btn ghost small dash-pitch-toggle" id="dashPitchToggle" aria-controls="dashPitches" aria-expanded="${pitchesOpen}">${pitchesOpen ? 'Hide the pitches' : 'Show the pitches'}</button>
+        <div class="mu-grid dash-mu${pitchesOpen ? ' open' : ''}" id="dashPitches" style="margin-top:10px">
         ${pair.map(pmid => `<div>
           <p class="muted" style="font-size:10.5px;text-align:center;margin-bottom:2px">${kitSvg(pmid)} ${esc(teamName(pmid))}</p>
           ${dashMiniPitch(pmid, cur)}
@@ -13582,6 +13588,14 @@ function bindDash() {
   bindGazetteNudge();
   const ofn = $('#offerNudge');
   if (ofn) ofn.onclick = () => { transfersView.tab = 'trades'; state.view = 'transfers'; save(); render(); };
+  // phones only: the button is hidden on wider screens (see viewDash)
+  const dpt = $('#dashPitchToggle');
+  if (dpt) dpt.onclick = () => {
+    window._dashPitchesOpen = !window._dashPitchesOpen;
+    $('#dashPitches')?.classList.toggle('open', window._dashPitchesOpen);
+    dpt.setAttribute('aria-expanded', window._dashPitchesOpen);
+    dpt.textContent = window._dashPitchesOpen ? 'Hide the pitches' : 'Show the pitches';
+  };
   const fb = $('#foundBtn');
   if (fb) fb.onclick = () => clubEditor(+fb.dataset.mid);
   const fl = $('#foundLater');

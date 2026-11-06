@@ -872,6 +872,13 @@ input.auto-rank { -moz-appearance: textfield; appearance: textfield; }
 /* the dashboard's lineup shot stacks: the matchup column is too narrow for
    two readable pitches side by side */
 .dash-mu { grid-template-columns: 1fr; }
+/* phones: the pitches wait behind a button so Needs your attention sits
+   under the score, not 2,000px down (Fable UX review, 6 Nov 2026) */
+.dash-pitch-toggle { display: none; }
+@media (max-width: 700px) {
+  .dash-pitch-toggle { display: inline-block; margin-top: 10px; }
+  .dash-mu:not(.open) { display: none; }
+}
 .dash-side-stack {
   display: flex; flex-direction: column; gap: 14px; min-width: 0;
 }

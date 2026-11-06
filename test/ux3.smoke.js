@@ -727,25 +727,45 @@ const SEED_SEASON = `(() => {
   await g320.close();
 
   // Ben, 4 Sept: both dashboard lineups stay visible, including devices
-  // that previously remembered the mobile panel as closed.
+  // that previously remembered the mobile panel as closed. Revisited 6 Nov
+  // 2026 (Fable UX review, Ben kept it): on a phone they wait behind "Show the pitches"
+  // so Needs your attention sits under the score; one tap brings both back.
+  // Nothing is remembered, so the old stored preference still does nothing.
   const lineupPage = await newPage(dCtx, baseUrl + '?demo');
   for (const width of [320, 390, 1280]) {
     await lineupPage.setViewport({ width, height: 844 });
     const lineups = await lineupPage.evaluate(() => {
       localStorage.setItem(`${LS_NS}-dashmu-open`, '0');
+      window._dashPitchesOpen = false;
       state.view = 'dash'; render();
       const grid = document.querySelector('.dash-mu');
+      const btn = document.querySelector('#dashPitchToggle');
+      const shown = () => !!grid && grid.getBoundingClientRect().height > 0 && !grid.closest('details:not([open])');
+      const phone = innerWidth <= 700;
+      const before = shown(), button = !!btn && btn.checkVisibility();
+      const matchupH = Math.round(grid?.closest('.card')?.getBoundingClientRect().height || 0);
+      const attentionNext = !!grid?.closest('.card')?.nextElementSibling?.querySelector('.dash-attention');
+      if (phone && btn) btn.click();
       return {
+        phone, before, button, matchupH, attentionNext,
         pitches: grid?.querySelectorAll('.pitch').length,
         players: grid?.querySelectorAll('.pitch .pitch-chip').length,
         benches: grid?.querySelectorAll('.bench-strip').length,
-        visible: !!grid && grid.getBoundingClientRect().height > 0 && !grid.closest('details:not([open])'),
+        visible: shown(),
+        label: btn?.textContent, expanded: btn?.getAttribute('aria-expanded'),
         overflow: document.documentElement.scrollWidth > innerWidth,
       };
     });
-    chk(`Dashboard: both lineups and benches visible at ${width}px despite old collapsed preference`,
-      lineups.pitches === 2 && lineups.players === 22 && lineups.benches === 2 && lineups.visible && !lineups.overflow,
-      JSON.stringify(lineups));
+    const both = lineups.pitches === 2 && lineups.players === 22 && lineups.benches === 2 && lineups.visible && !lineups.overflow;
+    if (lineups.phone) {
+      chk(`Dashboard: at ${width}px the pitches wait behind Show the pitches, Needs your attention follows a short matchup card, and one tap shows both lineups`,
+        !lineups.before && lineups.button && lineups.matchupH < 500 && lineups.attentionNext
+          && both && lineups.label === 'Hide the pitches' && lineups.expanded === 'true',
+        JSON.stringify(lineups));
+    } else {
+      chk(`Dashboard: both lineups and benches visible at ${width}px, no button`,
+        lineups.before && !lineups.button && both, JSON.stringify(lineups));
+    }
   }
 
   // My Team on a phone: with the opponent showing, your own pitch comes
