@@ -8885,7 +8885,9 @@ function viewTeam() {
       // Lee: opponent belongs SIDE BY SIDE at the same scale, not a mini
       // pitch in the corner. Their XI renders on a full pitch in one column;
       // your interactive pitch fills the other (the closing tags land after
-      // your pitch block below).
+      // your pitch block below). On a phone the columns stack and the CSS
+      // puts duel-mine on top: their pitch first left yours ~1,180px down
+      // (Fable UX review, 6 Nov 2026).
       if (!teamView.showOpp) return '';
       const pair = pairingsFor(gw).find(pr => pr.includes(mid));
       if (!pair) return '';
@@ -8894,7 +8896,7 @@ function viewTeam() {
       // their arrows too — you want to see the sub that's about to land on the
       // other side of the tie as much as your own (Marc, 24 Aug 2026)
       const oMarks = gwUnderway(gw) ? subMarks(oppMid, gw) : {};
-      return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side">
+      return `${winProbBar(oppMid, mid, gw, mid)}<div class="duel-grid"><div class="duel-side duel-opp">
         <h3 style="text-align:center">${kitSvg(oppMid)} ${esc(teamName(oppMid))} <b class="gold">${gwUnderway(gw) ? liveScoreHtml(oppMid, gw) : projectedGwScore(oppMid, gw)}</b></h3>
         ${adStrip(oppMid * 37 + gw, 3, oppMid)}
         <div class="pitch">${['GK', 'DF', 'MF', 'FW'].map(pos => `<div class="pitch-row">${oxi.map(pid => PLAYER_BY_ID[pid]).filter(p => p.pos === pos).map(p => `
@@ -8915,7 +8917,7 @@ function viewTeam() {
               ${oMarks[p.id] || ''}
             </div>`).join('') || '<span class="muted" style="font-size:11px">an empty bench</span>'}
         </div>
-      </div><div class="duel-side">
+      </div><div class="duel-side duel-mine">
         <h3 style="text-align:center">${crestSvg(mid, 15)} ${kitSvg(mid)} ${esc(teamName(mid))} <b class="gold">${gwUnderway(gw) ? liveScoreHtml(mid, gw) : projectedGwScore(mid, gw)}</b></h3>`;
     })()}
     ${(() => {
