@@ -747,6 +747,51 @@ const SEED_SEASON = `(() => {
       lineups.pitches === 2 && lineups.players === 22 && lineups.benches === 2 && lineups.visible && !lineups.overflow,
       JSON.stringify(lineups));
   }
+
+  // My Team on a phone: with the opponent showing, your own pitch comes
+  // first; a laptop keeps them side by side (Fable UX review, 6 Nov 2026)
+  for (const width of [390, 1280]) {
+    await lineupPage.setViewport({ width, height: 844 });
+    const duel = await lineupPage.evaluate(() => {
+      teamView.mid = whoami && whoami !== -1 ? whoami : state.managers[0].id;
+      teamView.gw = null; teamView.showOpp = true;
+      state.view = 'team'; render();
+      const r = s => document.querySelector(s)?.getBoundingClientRect();
+      const mine = r('.duel-mine'), opp = r('.duel-opp');
+      teamView.showOpp = false;
+      return mine && opp ? { mineTop: Math.round(mine.top), oppTop: Math.round(opp.top), mineLeft: Math.round(mine.left), oppLeft: Math.round(opp.left) } : null;
+    });
+    chk(width <= 980 ? `My Team: own pitch above the opponent's at ${width}px` : `My Team: opponent and own pitch side by side at ${width}px`,
+      !!duel && (width <= 980 ? duel.mineTop < duel.oppTop : duel.mineTop === duel.oppTop && duel.oppLeft < duel.mineLeft),
+      JSON.stringify(duel));
+  }
+
+  // The Trough on a phone: Stats over, club and squad fold into Scouting
+  // tools, position and scope chips stay out, and the list does not scroll
+  // inside the page. A laptop keeps the filters out and the 600px box.
+  for (const width of [390, 1280]) {
+    await lineupPage.setViewport({ width, height: 844 });
+    const tr = await lineupPage.evaluate(() => {
+      window._scoutToolsOpen = {};
+      transfersView = { ...transfersView, tab: 'trough', win: null, club: '', owner: null, scope: 'avail', limit: 20 };
+      state.view = 'transfers'; render();
+      const res = document.querySelector('#trResults');
+      const inTools = s => !!document.querySelector(`.scout-tools-panel ${s}`);
+      const seen = s => !!document.querySelector(s)?.checkVisibility();
+      return {
+        folded: ['#trClub', '#trOwner'].every(inTools) && (inTools('[data-statwin]') || !document.querySelector('[data-statwin]')),
+        hidden: !seen('#trClub') && !seen('#trOwner'),
+        chips: [...document.querySelectorAll('[data-trpos], [data-trscope]')].filter(b => b.checkVisibility()).length,
+        maxH: getComputedStyle(res).maxHeight,
+        nested: res.scrollHeight > res.clientHeight + 2,
+      };
+    });
+    chk(width <= 700 ? `Trough: filters folded into Scouting tools and one page scroll at ${width}px` : `Trough: filters inline and the 600px list kept at ${width}px`,
+      width <= 700 ? tr.folded && tr.hidden && tr.chips === 10 && tr.maxH === 'none' && !tr.nested
+        : !tr.folded && !tr.hidden && tr.chips === 10 && tr.maxH === '600px',
+      JSON.stringify(tr));
+  }
+  await lineupPage.evaluate(() => { state.view = 'dash'; render(); });
   await lineupPage.click('.dash-mu [data-pcard]');
   chk('Dashboard: restored lineup still opens player details', !!(await lineupPage.$('.overlay')));
   await lineupPage.close();
