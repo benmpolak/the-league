@@ -786,9 +786,10 @@ const SEED_SEASON = `(() => {
       JSON.stringify(duel));
   }
 
-  // The Trough on a phone: Stats over, club and squad fold into Scouting
-  // tools, position and scope chips stay out, and the list does not scroll
-  // inside the page. A laptop keeps the filters out and the 600px box.
+  // The Trough on a phone: Stats over folds into Scouting tools; position and
+  // scope chips and the club and squad pickers stay out (Toby lost the club
+  // filter in the drawer, 8 Nov 2026), and the list does not scroll inside
+  // the page. A laptop keeps everything out and the 600px box.
   for (const width of [390, 1280]) {
     await lineupPage.setViewport({ width, height: 844 });
     const tr = await lineupPage.evaluate(() => {
@@ -799,16 +800,17 @@ const SEED_SEASON = `(() => {
       const inTools = s => !!document.querySelector(`.scout-tools-panel ${s}`);
       const seen = s => !!document.querySelector(s)?.checkVisibility();
       return {
-        folded: ['#trClub', '#trOwner'].every(inTools) && (inTools('[data-statwin]') || !document.querySelector('[data-statwin]')),
-        hidden: !seen('#trClub') && !seen('#trOwner'),
+        statFolded: inTools('[data-statwin]') || !document.querySelector('[data-statwin]'),
+        statInTools: inTools('[data-statwin]'),
+        pickersOut: ['#trClub', '#trOwner'].every(s => !inTools(s) && seen(s)),
         chips: [...document.querySelectorAll('[data-trpos], [data-trscope]')].filter(b => b.checkVisibility()).length,
         maxH: getComputedStyle(res).maxHeight,
         nested: res.scrollHeight > res.clientHeight + 2,
       };
     });
-    chk(width <= 700 ? `Trough: filters folded into Scouting tools and one page scroll at ${width}px` : `Trough: filters inline and the 600px list kept at ${width}px`,
-      width <= 700 ? tr.folded && tr.hidden && tr.chips === 10 && tr.maxH === 'none' && !tr.nested
-        : !tr.folded && !tr.hidden && tr.chips === 10 && tr.maxH === '600px',
+    chk(width <= 700 ? `Trough: Stats over folded, club and squad out, one page scroll at ${width}px` : `Trough: filters inline and the 600px list kept at ${width}px`,
+      width <= 700 ? tr.statFolded && tr.pickersOut && tr.chips === 10 && tr.maxH === 'none' && !tr.nested
+        : !tr.statInTools && tr.pickersOut && tr.chips === 10 && tr.maxH === '600px',
       JSON.stringify(tr));
   }
   await lineupPage.evaluate(() => { state.view = 'dash'; render(); });

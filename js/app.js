@@ -10278,10 +10278,11 @@ function bindTransfers() {
         }).join('')}</tbody>
       </table></div>
       ${total > transfersView.limit ? `<div class="show-more"><button class="btn ghost small" id="trMore">Show more</button> <button class="btn ghost small" id="trAll">Show all ${total}</button></div>` : ''}`;
-      // phones: Stats over, the GW range, club and squad fold into Scouting
-      // tools, so the first player sits under the search box instead of
-      // ~400px of controls (Fable UX review, 6 Nov 2026). Position and scope
-      // stay out: they are the filters used every week.
+      // phones: Stats over and the GW range fold into Scouting tools, so the
+      // first player sits under the search box instead of ~400px of controls
+      // (Fable UX review, 6 Nov 2026). Position, scope, club and squad stay
+      // out: they are the filters used every week (club came back out after
+      // Toby lost it in the drawer, 8 Nov 2026).
       const foldFilters = matchMedia('(max-width: 700px)').matches;
       const winHtml = statWindowHtml(transfersView.win || null);
       const clubOwnerHtml = `
@@ -10290,9 +10291,9 @@ function bindTransfers() {
           ${TEAMS.map(t => `<option value="${esc(t.name)}" ${transfersView.club === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
         </select>
         ${ownerFilterHtml('id="trOwner" style="padding:6px 8px;font-size:12px"', transfersView.owner)}`;
-      const foldedOn = [winHtml && transfersView.win, transfersView.club, transfersView.owner != null].filter(Boolean).length;
+      const foldedOn = winHtml && transfersView.win ? 1 : 0;
       results.innerHTML = hint + (foldFilters
-        ? scoutViewHtml('transfers', winHtml + `<div class="scout-filter-selects">${clubOwnerHtml}</div>`, foldedOn)
+        ? scoutViewHtml('transfers', winHtml, foldedOn) + `<div class="scout-filter-selects tr-phone-selects">${clubOwnerHtml}</div>`
         : scoutViewHtml('transfers') + winHtml) + `
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 8px;align-items:center">
         <button class="btn small ${trPosOn().length ? 'ghost' : ''}" data-trpos="" title="Show every position">All</button>

@@ -1456,6 +1456,7 @@ tr.st-red .pname { color: #ff9c9c; }
 .scout-filters .pool-controls { margin: 0 !important; gap: 6px; }
 .scout-filter-selects { display: flex; gap: 6px; flex-wrap: wrap; }
 .scout-filter-selects select { flex: 1; min-width: 0; }
+.tr-phone-selects { margin: 2px 0 8px; }
 .scout-filters + .scout-desk { border-top: 1px solid var(--line); padding-top: 11px; }
 .scout-desk select { min-width: 150px; padding: 7px 9px; font-size: 12px; }
 .scout-columns { border-top: 1px solid var(--line); padding-top: 11px; }
