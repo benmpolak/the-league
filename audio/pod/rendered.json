@@ -3956,5 +3956,292 @@
       },
       "at": "2026-11-06"
     }
+  },
+  "tt-review-gw10": {
+    "25lca9": {
+      "file": "25lca9.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "12mxa8d": {
+      "file": "12mxa8d.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.22,
+          "similarity_boost": 0.8,
+          "style": 0.8,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "r9ehxu": {
+      "file": "r9ehxu.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1s7bzox": {
+      "file": "1s7bzox.mp3",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.16,
+          "similarity_boost": 0.8,
+          "style": 0.9,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "169kst9": {
+      "file": "169kst9.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "mlzujg": {
+      "file": "mlzujg.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.22,
+          "similarity_boost": 0.8,
+          "style": 0.8,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "v4kb93": {
+      "file": "v4kb93.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "brxkow": {
+      "file": "brxkow.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "mqkhqm": {
+      "file": "mqkhqm.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "sgw8y7": {
+      "file": "sgw8y7.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1mhbzlx": {
+      "file": "1mhbzlx.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1ty10n1": {
+      "file": "1ty10n1.mp3",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.16,
+          "similarity_boost": 0.8,
+          "style": 0.9,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "10aaak2": {
+      "file": "10aaak2.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1tu16o7": {
+      "file": "1tu16o7.mp3",
+      "voice": "LWOILCwreWREl2TqLwXv",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.7,
+          "similarity_boost": 0.8,
+          "style": 0.25,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "vozc71": {
+      "file": "vozc71.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1s1mtsp": {
+      "file": "1s1mtsp.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "7zl7y": {
+      "file": "7zl7y.mp3",
+      "voice": "csXxiUN2BUFflsCaDxPM",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.22,
+          "similarity_boost": 0.8,
+          "style": 0.8,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1yryxml": {
+      "file": "1yryxml.mp3",
+      "voice": "Ba0gDDmUUfCeELVrlFFl",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.16,
+          "similarity_boost": 0.8,
+          "style": 0.9,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    },
+    "1a5omdu": {
+      "file": "1a5omdu.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-08"
+    }
   }
 }
