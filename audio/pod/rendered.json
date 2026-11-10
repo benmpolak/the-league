@@ -4242,6 +4242,36 @@
         }
       },
       "at": "2026-11-08"
+    },
+    "ro9wck": {
+      "file": "ro9wck.mp3",
+      "voice": "kVBPcEMsUF1nsAO1oNWw",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.35,
+          "similarity_boost": 0.8,
+          "style": 0.65,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-10"
+    },
+    "y4h1c6": {
+      "file": "y4h1c6.mp3",
+      "voice": "LWOILCwreWREl2TqLwXv",
+      "provider": "elevenlabs",
+      "profile": {
+        "model": "eleven_multilingual_v2",
+        "settings": {
+          "stability": 0.7,
+          "similarity_boost": 0.8,
+          "style": 0.25,
+          "use_speaker_boost": true
+        }
+      },
+      "at": "2026-11-10"
     }
   }
 }
