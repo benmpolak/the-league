@@ -1,0 +1,46 @@
+# The same offline and browser tests as test.yml, once a night against main.
+# Why: test.yml only runs when code is pushed, but the feed changes every five
+# minutes, and a test can go red on fresh FPL data with no push at all. On
+# 11 Nov 2026 a podcast check did exactly that and stopped every render for
+# three days before anyone looked (health check, 13 Nov 2026).
+#
+# Deliberately a separate workflow, not a schedule on test.yml: the release
+# gate and the Pages deploy both key off "Test game engine" runs, and a
+# nightly run must never touch what is live. A red night here means "look
+# before the next push", nothing more.
+name: Nightly health check
+
+on:
+  schedule:
+    - cron: '17 4 * * *'   # 04:17 UTC, clear of the half-hourly refresh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-health
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Start local site
+        run: python3 -m http.server 8125 >/tmp/the-league-http.log 2>&1 &
+      - name: Offline tests
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: npm test
+      - name: Browser smokes
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+        run: npm run test:browser

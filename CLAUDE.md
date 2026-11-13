@@ -26,9 +26,9 @@ if the workflow is broken:
 
 ## Keep your context small — this repo is big
 
-- `js/app.js` is ~13,000 lines (800 KB, more than one context window). NEVER
+- `js/app.js` is ~16,400 lines (over 1 MB, more than one context window). NEVER
   read it top to bottom. Grep for the function you need and read a slice.
-- `functions/index.js` is ~2,600 lines. Same rule.
+- `functions/index.js` is ~2,900 lines. Same rule.
 - Do NOT read `BEN-TODO.md`, `MARC-REQUESTS.md` or anything in `docs/archive/`
   (finished round briefs and handoffs) unless Ben points you at a section.
 - `git log` is mostly `fpl-bot` data-refresh commits. Use
@@ -45,7 +45,7 @@ Landmarks (all in app.js unless noted):
 - `viewH2H`, `viewData`, `viewCup` (Palwin Ham Cup), `viewRules`, `viewSettings`
 - `engine.js` — scoring engine (shared with functions/), `sync.js` — Firebase auth + realtime, `functions/` — server-authoritative mutations
 - `club-media.js` — shared Club Inbox, assistant voices and cross-round media receipts; `docs/MEDIA-CONTINUITY.md` explains the triggers and release contract
-- CSS: single `css/style.css` (~1k lines)
+- CSS: single `css/style.css` (~1,900 lines)
 
 ## Running it locally
 
@@ -66,6 +66,9 @@ python3 -m http.server 8749   # from repo root; it's a static site
 - `npm run test:offline` — node, no browser (includes sim.test.js full-season sim)
 - `npm run test:browser` — puppeteer smokes (demo-night.smoke.js pins QF handicaps [40,22,11,0] — full Points gap)
 - `npm run test:emu` — Firebase emulator rules/functions tests
+- `npm run test:offline` is not quite offline: sim, dgw, engine.parity and window-lifecycle open a browser against `localhost:8125`, so start the server first
+- `test:emu` needs Java (the Firebase emulator). No Java on Ben's Mac as of 13 Nov 2026: open a pull request and let CI run it
+- `.github/workflows/nightly.yml` runs the offline and browser tests against main every night, because the feed can turn a test red with no push. It is separate from test.yml on purpose: the release gate and Pages deploy only watch test.yml
 - New browser smokes default to `http://localhost:8125`, the port CI serves on. 8749 is your local server only; reach it with `TEST_BASE_URL`. A smoke that defaults to 8749 passes locally, fails in CI, and the release gate then holds the new code back (11 Oct 2026, two hours of frozen data on a match day; since 6 Nov the data keeps shipping on the code already live, unless the push touches a data writer or the deploy machinery — `PINNED` in `scripts/release_gate.js`)
 
 ## League glossary (the code speaks this language)
