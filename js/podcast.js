@@ -198,14 +198,6 @@ window.Podcast = (() => {
     }
     return null;
   }
-  // the first slot at or after ms
-  function slotAfter(ms) {
-    for (let fwd = 0; fwd < 14; fwd++) {
-      const at = londonAt(ms, fwd, SLOT_HOUR);
-      if (at >= ms && isSlot(at)) return at;
-    }
-    return null;
-  }
   const previewAt = i => { const k = gwKicks(i); return k ? slotBefore(k.first) : null; };
   // which day a slot actually falls on — the copy used to say "FRIDAY" out
   // loud, which was true until midweek rounds moved previews to a Tuesday
