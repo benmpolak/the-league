@@ -1190,8 +1190,6 @@ const fmtWhen = d => new Date(d).toLocaleString('en-GB', { weekday: 'short', hou
 // history pages should say WHEN a deal happened, not just which gameweek it
 // counts toward (Ben, 1 Sept: "so people can see")
 const fmtStamp = ts => ts ? new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(',', ' ·') : '';
-// win chance from the projected-score gap (logistic; ~12-point gap ≈ 70%)
-const winChance = (sa, sb) => 1 / (1 + Math.pow(10, -(sa - sb) / 25));
 
 /* ----- live win probability -----
    Each player still to play contributes expected points plus uncertainty;
@@ -1697,7 +1695,6 @@ function crestSvgRaw(c, kit, name, size, uid) {
 function teamTag(mid) { return `${kitSvg(mid)} ${esc(teamName(mid))}`; }
 // declared rivalries: mutual = a clásico, one-sided = a derby only one of them
 // believes in (which is funnier)
-function rivalOf(mid) { return rivalsOf(mid)[0] || null; }
 // all declared rivals — the multi-rival array first, the legacy single second
 function rivalsOf(mid) {
   const m = state.managers.find(x => x.id === mid);
@@ -8851,7 +8848,6 @@ function viewTeam() {
   // lineups lock at the gameweek deadline, like the real thing
   const locked = !demoMode && gwHasStarted(gw);
   const cur = currentGwIndex();
-  const ownedNow = ownedIdsAt(cur);   // ownership is a calendar question
   // ...but "current" in the picker is not. Marc, 27 Aug 2026: "it is clearly
   // wrong because it says current next to gameweek 1" — GW1 was finished and
   // locked, and the tag sat on it because the label read the calendar index
@@ -10558,7 +10554,6 @@ function bindTransfers() {
     tradeWith.onchange = () => {
       const other = +tradeWith.value;
       if (!other) { pickers.innerHTML = ''; return; }
-      const cur = currentGwIndex();
       const mine = squadAt(mid, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
       const theirs = squadAt(other, transferGw()).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos]);
       const col = (title, list, side) => `<div style="flex:1;min-width:190px">
@@ -10666,9 +10661,6 @@ function viewDash() {
   const pair = pairingsFor(cur).find(pr => pr.includes(mid));
   const opp = pair ? (pair[0] === mid ? pair[1] : pair[0]) : null;
   const started = gwUnderway(cur); // display truth — a simulated GW counts
-  const my = started ? gwManagerPoints(mid, cur) : projectedGwScore(mid, cur);
-  const their = opp ? (started ? gwManagerPoints(opp, cur) : projectedGwScore(opp, cur)) : 0;
-  const pct = pair ? Math.round(liveWinProb(pair[0], pair[1], cur) * 100) : null;
   const flags = mid == null ? [] : squadAt(mid, cur).filter(p => p.status && p.status !== 'a');
   const offersIn = toArr(state.trades).filter(t => t.status === 'pending' && t.to === mid);
   const myCl = myClaims(mid);
@@ -10982,7 +10974,6 @@ function transferVerdict(wf, horizon) {
   return 'an expensive mistake';
 }
 function reportCardHtml(t) {
-  const kind = t.trade ? 'trade' : t.windowDraft ? 'Window Waiver' : t.waiver ? 'waiver claim' : 'Trough signing';
   const w3 = transferWindowFacts(t, 3);
   const w6 = transferWindowFacts(t, 6);
   const windowRow = (wf, label) => {
@@ -11479,7 +11470,6 @@ function gazetteSheet(gwIdx = null) {
   }
   if (!showing) return;
   progView.gw = showing.gw ?? null;
-  const at = showing.gw ?? null;
   // this week's back pages: everything printed in the last seven days that
   // isn't the edition on the lectern, stacked beneath it in descending
   // freshness — old news moves down the page before it moves out (Ben)
@@ -13953,7 +13943,7 @@ function gwPreviewText(i) {
 function gwPreviewCard(i) {
   const d = gwPreviewData(i);
   if (!d) return '';
-  const { rows, motw, notes, recent } = d;
+  const { rows, motw, notes } = d;
   const trough = '';   // Marc, 30 Aug 2026: the preview is about this tie, not everyone's shopping
   return `<div class="card" style="margin-bottom:18px">
     <h2>GW${GAMEWEEKS[i].n} Preview <span class="tag">projected scores &amp; win chance</span>
@@ -14589,7 +14579,6 @@ function viewTable() {
   const ranked = [...state.managers]
     .map(m => ({ ...m, pts: managerPoints(m.id) }))
     .sort((a, b) => b.pts - a.pts);
-  const hasPts = ranked.some(r => r.pts !== 0);
   // INVESTIGATION UPDATE card removed (Ben, 2 Aug: old Calciopoli gag, goes)
   // Lee (twice): the FULL table must be the first thing this page shows, and
   // the dense H2H-table look beats the big expandable rows. Fixtures and the
@@ -14597,7 +14586,6 @@ function viewTable() {
   // Ben (1 Aug): THE league table is the head-to-head table — 3 for a win,
   // 1 for a draw, W/D/L columns like Draft Fantasy. Overall FPL points is a
   // tiebreak column, not the ranking.
-  const cur = currentGwIndex();
   // (the table no longer ranks in-play scores — Toby, GW1 weekend — so the
   // LIVE tag and the live standings feed are gone with it)
   const mode = tableView.mode;

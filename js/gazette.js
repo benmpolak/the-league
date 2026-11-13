@@ -92,13 +92,6 @@ window.Gazette = (() => {
       || (state.draft.picks || []).some(pk => pk.managerId === oppMid && pk.playerId === pid)
       && state.transfers.some(t => t.managerId === oppMid && t.outId === pid);
   }
-  function dealingsBetween(a, b) {
-    return state.transfers.filter(t => t.trade && (t.managerId === a || t.managerId === b))
-      .filter(t => {
-        const twin = state.transfers.find(u => u.trade && u.managerId === (t.managerId === a ? b : a) && u.inId === t.outId && u.outId === t.inId && u.gw === t.gw);
-        return !!twin && t.managerId === a;
-      });
-  }
   function benchWasteOf(mid, gwIdx) {
     return Math.max(0, optimalXI(mid, gwIdx) - gwManagerPoints(mid, gwIdx));
   }
@@ -1100,7 +1093,7 @@ window.Gazette = (() => {
       const lee = state.managers.find(m => /warner/i.test(managerName(m.id)));
       if (!lee) return '';
       const find = re => state.managers.find(m => re.test(managerName(m.id)));
-      const marc = find(/conway/i), ian = find(/tussie/i), ric = find(/blank/i), wilko = find(/wilko/i);
+      const marc = find(/conway/i), ian = find(/tussie/i), ric = find(/blank/i);
       const toby = state.managers.find(m => /toby/i.test(managerName(m.id)));
       const L = esc(managerName(lee.id)), T = esc(teamName(lee.id));
       const nm = (m, fb) => esc(m ? managerName(m.id) : fb);
