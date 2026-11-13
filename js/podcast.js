@@ -573,9 +573,12 @@ window.Podcast = (() => {
      He is named, never labelled: no nationality is claimed on air, so a wrong
      cohort costs a bad joke rather than the app saying something untrue about
      somebody. An id that matches nobody simply drops out. */
+  /* Set by build() for a second pass only: names the desk has already said in
+     this episode, which Yakolo therefore cannot claim nobody mentioned. */
+  let deskSaid = null;
   function africanOfWeek(gwIdx) {
     if (typeof AFRICAN_NAT === 'undefined' || typeof PLAYERS === 'undefined') return null;
-    const pool = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat));
+    const pool = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat) && !(deskSaid && deskSaid(p.name)));
     if (!pool.length) return null;
     if (gwIdx != null && typeof gwMinutes === 'function') {
       const played = pool
@@ -824,8 +827,27 @@ window.Podcast = (() => {
     const B = [theme(showId)];
     const meta = { pilot: pilotBody, draft: draftBody, preview: previewBody, review: reviewBody, both: bothBody }[kind];
     if (!meta) return null;
-    const built = meta(showId, key, gw, B);
+    let built = meta(showId, key, gw, B);
     if (!built) return null;
+    /* Yakolo's whole call is that nobody on the desk said the name, and the
+       host agrees with him. On 11 Nov 2026 the round's best African scorer was
+       also one half of a head-to-head the host had just read out, so the call
+       was untrue on air (and P12e went red, which stopped every render for
+       three days). If the man he picked is named anywhere else in the episode,
+       build it once more with those names off his list. Everything is keyed,
+       so the second pass differs only in his call. */
+    const yak = B.find(b => b.who === 'Yakolo');
+    if (yak && typeof AFRICAN_NAT !== 'undefined' && typeof PLAYERS !== 'undefined') {
+      const rest = B.filter(b => b.who !== 'Yakolo').map(b => String(b.text || ''));
+      const said = PLAYERS.filter(p => AFRICAN_NAT.has(p.nat)).map(p => p.name)
+        .filter(n => rest.some(t => t.includes(n)));
+      if (said.some(n => String(yak.text).includes(n))) {
+        deskSaid = name => said.some(n => name.includes(n));
+        try { B.length = 0; B.push(theme(showId)); built = meta(showId, key, gw, B); }
+        finally { deskSaid = null; }
+        if (!built) return null;
+      }
+    }
     /* The break goes in HERE rather than inside each body, so all eight
        episodes get it in the same place and no future segment can quietly
        drift it back to a third of the way through. */
